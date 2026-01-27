@@ -11,6 +11,14 @@ const envStatus = {
   GUPSHUP_APP_NAME: process.env.GUPSHUP_APP_NAME || 'missing'
 };
 console.log('[env] WhatsApp config:', envStatus);
+
+// Validate Google Sheets environment variables (warn but don't crash)
+if (!process.env.GOOGLE_SHEET_ID) {
+  console.warn('[env] WARNING: GOOGLE_SHEET_ID not set. Google Sheets sync will be disabled.');
+} else {
+  console.log('[env] Google Sheets config: GOOGLE_SHEET_ID set');
+}
+
 connectDB();
 
 app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173', credentials: true }));

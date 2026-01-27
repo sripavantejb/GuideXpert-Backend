@@ -31,6 +31,11 @@ const formSubmissionSchema = new mongoose.Schema({
     enum: ['SATURDAY_7PM', 'SUNDAY_3PM'],
     required: false
   },
+  sheetRow: {
+    type: Number,
+    default: null,
+    index: true
+  },
   createdAt: {
     type: Date,
     default: Date.now
