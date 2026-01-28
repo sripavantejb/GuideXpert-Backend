@@ -1,49 +1,26 @@
 const sheets = require('../config/googleSheets');
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
-let SHEET_NAME = 'Sheet1'; // Default sheet name, will be updated on first use
+const SHEET_NAME = 'Formresponses'; // Sheet tab name (case-sensitive, no spaces)
 
-// Cache for actual sheet name
+// Cache for actual sheet name (will be set to SHEET_NAME if detection fails)
 let actualSheetName = null;
 
 // Log configuration on module load (for debugging)
 if (SHEET_ID) {
   console.log(`[Google Sheets] Configuration: SHEET_ID=${SHEET_ID}, SHEET_NAME=${SHEET_NAME}`);
-  console.log(`[Google Sheets] Ensure the sheet is shared with: saravan@guidexpert.co.in (Editor access)`);
+  console.log('[Google Sheets] Using sheet name:', SHEET_NAME);
+  console.log('[Google Sheets] Ensure the sheet is shared with: sheets-sync@guidexpert.iam.gserviceaccount.com (Editor access)');
 } else {
   console.warn('[Google Sheets] GOOGLE_SHEET_ID not configured');
 }
 
 /**
- * Get the actual sheet name from the spreadsheet
- * @returns {Promise<string>} - The first sheet's name
+ * Get the sheet name (using configured name directly)
+ * @returns {Promise<string>} - The sheet name
  */
 async function getActualSheetName() {
-  if (actualSheetName) {
-    return actualSheetName;
-  }
-
-  try {
-    const sheetsClient = sheets.getClient ? await sheets.getClient() : sheets;
-    const response = await sheetsClient.spreadsheets.get({
-      spreadsheetId: SHEET_ID,
-    });
-
-    const firstSheet = response.data.sheets?.[0];
-    if (firstSheet?.properties?.title) {
-      actualSheetName = firstSheet.properties.title;
-      console.log(`[Google Sheets] Detected sheet name: "${actualSheetName}"`);
-      return actualSheetName;
-    }
-    
-    // Fallback to default
-    actualSheetName = SHEET_NAME;
-    return actualSheetName;
-  } catch (error) {
-    console.error('[Google Sheets] Error getting sheet name:', error.message);
-    // Fallback to default
-    actualSheetName = SHEET_NAME;
-    return actualSheetName;
-  }
+  // Use the configured sheet name directly
+  return SHEET_NAME;
 }
 
 /**
@@ -73,22 +50,20 @@ async function appendRow(doc) {
     console.error('[Google Sheets] GOOGLE_SHEET_ID not set');
     return null;
   }
+  if (!sheets) {
+    console.error('[Google Sheets] Client not initialized');
+    return null;
+  }
 
   try {
-    // Get authenticated sheets client (ensures ADC credentials are loaded)
-    const sheetsClient = sheets.getClient ? await sheets.getClient() : sheets;
-    
-    // Get the actual sheet name
     const sheetName = await getActualSheetName();
-    
-    // Get current last row number before appending
     const lastRow = await getLastRowNumber();
     const newRowNumber = lastRow + 1;
 
     const values = [formatRowData(doc)];
     const range = `${sheetName}!A:H`; // Append to columns A through H
 
-    await sheetsClient.spreadsheets.values.append({
+    await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
       range: range,
       valueInputOption: 'USER_ENTERED',
@@ -113,7 +88,7 @@ async function appendRow(doc) {
     
     // Check for common permission errors
     if (error.code === 403 || error.response?.status === 403) {
-      console.error('[Google Sheets] Permission denied. Ensure the Google Sheet is shared with saravan@guidexpert.co.in with Editor access.');
+      console.error('[Google Sheets] Permission denied. Ensure the Google Sheet is shared with sheets-sync@guidexpert.iam.gserviceaccount.com with Editor access.');
     }
     if (error.code === 404 || error.response?.status === 404) {
       console.error(`[Google Sheets] Spreadsheet not found. Verify GOOGLE_SHEET_ID: ${SHEET_ID}`);
@@ -134,6 +109,10 @@ async function updateRow(rowNumber, doc) {
     console.error('[Google Sheets] GOOGLE_SHEET_ID not set');
     return false;
   }
+  if (!sheets) {
+    console.error('[Google Sheets] Client not initialized');
+    return false;
+  }
 
   if (!rowNumber || rowNumber < 2) {
     console.error(`[Google Sheets] Invalid row number: ${rowNumber} (must be >= 2 to skip header)`);
@@ -141,16 +120,11 @@ async function updateRow(rowNumber, doc) {
   }
 
   try {
-    // Get authenticated sheets client (ensures ADC credentials are loaded)
-    const sheetsClient = sheets.getClient ? await sheets.getClient() : sheets;
-    
-    // Get the actual sheet name
     const sheetName = await getActualSheetName();
-    
     const values = [formatRowData(doc)];
     const range = `${sheetName}!A${rowNumber}:H${rowNumber}`; // Update specific row
 
-    await sheetsClient.spreadsheets.values.update({
+    await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
       range: range,
       valueInputOption: 'USER_ENTERED',
@@ -175,7 +149,7 @@ async function updateRow(rowNumber, doc) {
     
     // Check for common permission errors
     if (error.code === 403 || error.response?.status === 403) {
-      console.error('[Google Sheets] Permission denied. Ensure the Google Sheet is shared with saravan@guidexpert.co.in with Editor access.');
+      console.error('[Google Sheets] Permission denied. Ensure the Google Sheet is shared with sheets-sync@guidexpert.iam.gserviceaccount.com with Editor access.');
     }
     if (error.code === 404 || error.response?.status === 404) {
       console.error(`[Google Sheets] Spreadsheet not found. Verify GOOGLE_SHEET_ID: ${SHEET_ID}`);
@@ -195,6 +169,10 @@ async function markRowDeleted(rowNumber) {
     console.error('[Google Sheets] GOOGLE_SHEET_ID not set');
     return false;
   }
+  if (!sheets) {
+    console.error('[Google Sheets] Client not initialized');
+    return false;
+  }
 
   if (!rowNumber || rowNumber < 2) {
     console.error(`[Google Sheets] Invalid row number: ${rowNumber} (must be >= 2 to skip header)`);
@@ -202,18 +180,13 @@ async function markRowDeleted(rowNumber) {
   }
 
   try {
-    // Get authenticated sheets client (ensures ADC credentials are loaded)
-    const sheetsClient = sheets.getClient ? await sheets.getClient() : sheets;
-    
-    // Get the actual sheet name
     const sheetName = await getActualSheetName();
-    
     // We'll add a status column (Column I) to mark as DELETED
     // If status column doesn't exist, we'll create it
     const range = `${sheetName}!I${rowNumber}`;
     const values = [['DELETED']];
 
-    await sheetsClient.spreadsheets.values.update({
+    await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
       range: range,
       valueInputOption: 'USER_ENTERED',
@@ -238,7 +211,7 @@ async function markRowDeleted(rowNumber) {
     
     // Check for common permission errors
     if (error.code === 403 || error.response?.status === 403) {
-      console.error('[Google Sheets] Permission denied. Ensure the Google Sheet is shared with saravan@guidexpert.co.in with Editor access.');
+      console.error('[Google Sheets] Permission denied. Ensure the Google Sheet is shared with sheets-sync@guidexpert.iam.gserviceaccount.com with Editor access.');
     }
     if (error.code === 404 || error.response?.status === 404) {
       console.error(`[Google Sheets] Spreadsheet not found. Verify GOOGLE_SHEET_ID: ${SHEET_ID}`);
@@ -257,15 +230,13 @@ async function getLastRowNumber() {
   if (!SHEET_ID) {
     return 1;
   }
+  if (!sheets) {
+    return 1;
+  }
 
   try {
-    // Get authenticated sheets client (ensures ADC credentials are loaded)
-    const sheetsClient = sheets.getClient ? await sheets.getClient() : sheets;
-    
-    // Get the actual sheet name
     const sheetName = await getActualSheetName();
-    
-    const response = await sheetsClient.spreadsheets.values.get({
+    const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
       range: `${sheetName}!A:A`, // Check column A
     });
@@ -285,7 +256,7 @@ async function getLastRowNumber() {
     
     // Check for common permission errors
     if (error.code === 403 || error.response?.status === 403) {
-      console.error('[Google Sheets] Permission denied. Ensure the Google Sheet is shared with saravan@guidexpert.co.in with Editor access.');
+      console.error('[Google Sheets] Permission denied. Ensure the Google Sheet is shared with sheets-sync@guidexpert.iam.gserviceaccount.com with Editor access.');
     }
     if (error.code === 404 || error.response?.status === 404) {
       console.error(`[Google Sheets] Spreadsheet not found. Verify GOOGLE_SHEET_ID: ${SHEET_ID}`);

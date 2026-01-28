@@ -15,8 +15,10 @@ console.log('[env] WhatsApp config:', envStatus);
 // Validate Google Sheets environment variables (warn but don't crash)
 if (!process.env.GOOGLE_SHEET_ID) {
   console.warn('[env] WARNING: GOOGLE_SHEET_ID not set. Google Sheets sync will be disabled.');
+} else if (!process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH) {
+  console.warn('[env] WARNING: GOOGLE_SERVICE_ACCOUNT_KEY_PATH not set. Google Sheets sync will be disabled.');
 } else {
-  console.log('[env] Google Sheets config: GOOGLE_SHEET_ID set');
+  console.log('[env] Google Sheets config: All variables set');
 }
 
 connectDB();
