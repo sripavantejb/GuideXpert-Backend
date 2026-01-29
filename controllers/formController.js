@@ -10,10 +10,17 @@ const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const GOOGLE_SHEET_RANGE = process.env.GOOGLE_SHEET_RANGE || 'Sheet1';
 
 async function appendToSheetIfConfigured(submission) {
-  if (!GOOGLE_SHEET_ID || !submission) return;
+  if (!GOOGLE_SHEET_ID || !submission) {
+    if (!GOOGLE_SHEET_ID) {
+      console.warn('[Sheets] Append skipped: GOOGLE_SHEET_ID not set in .env');
+    }
+    return;
+  }
   try {
     const result = await appendFormSubmission(GOOGLE_SHEET_ID, submission, GOOGLE_SHEET_RANGE);
-    if (!result.success) {
+    if (result.success) {
+      console.log('[Sheets] Row appended to Google Sheet successfully');
+    } else {
       console.error('[Sheets] Append failed (best-effort):', result.error);
     }
   } catch (err) {

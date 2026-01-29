@@ -5,6 +5,8 @@
  */
 
 const { google } = require('googleapis');
+const path = require('path');
+const fs = require('fs');
 
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 
@@ -20,13 +22,14 @@ function getCredentials() {
   }
   const keyPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
   if (keyPath) {
-    try {
-      return require('path').resolve(process.cwd(), keyPath);
-    } catch (e) {
-      console.error('[Sheets] Could not resolve GOOGLE_APPLICATION_CREDENTIALS:', e.message);
+    const resolved = path.isAbsolute(keyPath) ? keyPath : path.resolve(process.cwd(), keyPath);
+    if (!fs.existsSync(resolved)) {
+      console.error('[Sheets] Credentials file not found:', resolved, '(set GOOGLE_APPLICATION_CREDENTIALS or create the file)');
       return null;
     }
+    return resolved;
   }
+  console.error('[Sheets] No credentials: set GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_SHEETS_CREDENTIALS_JSON in .env');
   return null;
 }
 
@@ -102,8 +105,12 @@ async function appendFormSubmission(sheetId, submission, range = 'Sheet1') {
     });
     return { success: true };
   } catch (e) {
-    console.error('[Sheets] Append failed:', e.message);
-    return { success: false, error: e.message };
+    const msg = e.message || String(e);
+    console.error('[Sheets] Append failed:', msg);
+    if (e.response?.data?.error) {
+      console.error('[Sheets] API error:', JSON.stringify(e.response.data.error));
+    }
+    return { success: false, error: msg };
   }
 }
 
