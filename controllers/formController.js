@@ -2,7 +2,23 @@ const { generateOTP, hashOTP, verifyOTP } = require('../utils/otpUtil');
 const otpStore = require('../utils/otpStore');
 const { sendWhatsAppOTP } = require('../utils/gupshupService');
 const { getDemoSlots } = require('../utils/demoSlots');
+const { appendFormSubmission } = require('../utils/sheetsService');
 const FormSubmission = require('../models/FormSubmission');
+
+const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
+const GOOGLE_SHEET_RANGE = process.env.GOOGLE_SHEET_RANGE || 'Sheet1';
+
+async function appendToSheetIfConfigured(submission) {
+  if (!GOOGLE_SHEET_ID || !submission) return;
+  try {
+    const result = await appendFormSubmission(GOOGLE_SHEET_ID, submission, GOOGLE_SHEET_RANGE);
+    if (!result.success) {
+      console.error('[Sheets] Append failed (best-effort):', result.error);
+    }
+  } catch (err) {
+    console.error('[Sheets] Append error (best-effort):', err.message);
+  }
+}
 
 const OTP_EXPIRY_MS = 5 * 60 * 1000;
 
@@ -159,6 +175,8 @@ exports.saveStep1 = async (req, res) => {
 
     console.log('[saveStep1] Verification successful. Document ID:', verification._id);
 
+    await appendToSheetIfConfigured(verification);
+
     return res.status(200).json({ success: true, message: 'Step 1 data saved successfully.' });
   } catch (error) {
     console.error('[saveStep1] Error:', error);
@@ -236,6 +254,8 @@ exports.saveStep2 = async (req, res) => {
 
     console.log('[saveStep2] Save successful. Document ID:', result._id);
 
+    await appendToSheetIfConfigured(result);
+
     return res.status(200).json({ success: true, message: 'Step 2 data saved successfully.' });
   } catch (error) {
     console.error('[saveStep2] Error:', error);
@@ -301,6 +321,8 @@ exports.saveStep3 = async (req, res) => {
     }
 
     console.log('[saveStep3] Save successful. Document ID:', submission._id, 'Registered:', submission.isRegistered);
+
+    await appendToSheetIfConfigured(submission);
 
     otpStore.removeVerified(p);
 
@@ -434,6 +456,8 @@ exports.savePostRegistrationData = async (req, res) => {
 
     console.log('[savePostRegistrationData] Save successful. Document ID:', result._id);
 
+    await appendToSheetIfConfigured(result);
+
     return res.status(200).json({
       success: true,
       message: 'Post-registration data saved successfully.'
@@ -525,8 +549,10 @@ exports.submitApplication = async (req, res) => {
     };
     if (demoInterest === 'YES_SOON') doc.selectedSlot = selectedSlot;
 
-    await FormSubmission.create(doc);
+    const created = await FormSubmission.create(doc);
     otpStore.removeVerified(p);
+
+    await appendToSheetIfConfigured(created);
 
     return res.status(201).json({ success: true, message: 'Application submitted successfully.' });
   } catch (error) {

@@ -1,0 +1,4 @@
+node_modules/
+.env
+*.log
+config/sheets-service-account.json
