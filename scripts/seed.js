@@ -30,9 +30,9 @@ const sampleSubmissions = [
     isRegistered: true,
     registeredAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
     email: 'priya.sharma@example.com',
-    interestLevel: 'VERY_INTERESTED',
+    interestLevel: 5,
     postRegistrationData: {
-      interestLevel: 'VERY_INTERESTED',
+      interestLevel: 5,
       email: 'priya.sharma@example.com',
       completedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000)
     }
@@ -92,9 +92,9 @@ const sampleSubmissions = [
     isRegistered: true,
     registeredAt: new Date(Date.now() - 30 * 60 * 1000),
     email: 'vikram.s@example.com',
-    interestLevel: 'SOMEWHAT_INTERESTED',
+    interestLevel: 3,
     postRegistrationData: {
-      interestLevel: 'SOMEWHAT_INTERESTED',
+      interestLevel: 3,
       email: 'vikram.s@example.com',
       completedAt: new Date(Date.now() - 15 * 60 * 1000)
     }

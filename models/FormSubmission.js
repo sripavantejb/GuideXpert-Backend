@@ -95,14 +95,16 @@ const formSubmissionSchema = new mongoose.Schema({
     match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email address']
   },
   interestLevel: {
-    type: String,
-    enum: ['VERY_INTERESTED', 'SOMEWHAT_INTERESTED', 'EXPLORING'],
+    type: Number,
+    min: 1,
+    max: 5,
     required: false
   },
   postRegistrationData: {
     interestLevel: {
-      type: String,
-      enum: ['VERY_INTERESTED', 'SOMEWHAT_INTERESTED', 'EXPLORING']
+      type: Number,
+      min: 1,
+      max: 5
     },
     email: {
       type: String,

@@ -425,8 +425,9 @@ exports.savePostRegistrationData = async (req, res) => {
     if (!/^\d{10}$/.test(p)) {
       return res.status(400).json({ success: false, message: 'Valid 10-digit Indian phone required' });
     }
-    if (!interestLevel || !['VERY_INTERESTED', 'SOMEWHAT_INTERESTED', 'EXPLORING'].includes(interestLevel)) {
-      return res.status(400).json({ success: false, message: 'interestLevel must be VERY_INTERESTED, SOMEWHAT_INTERESTED, or EXPLORING' });
+    const interestNum = Number(interestLevel);
+    if (!Number.isInteger(interestNum) || interestNum < 1 || interestNum > 5) {
+      return res.status(400).json({ success: false, message: 'interestLevel must be a number from 1 to 5' });
     }
     if (!email || typeof email !== 'string' || !email.trim()) {
       return res.status(400).json({ success: false, message: 'email is required' });
@@ -449,19 +450,19 @@ exports.savePostRegistrationData = async (req, res) => {
     }
 
     const postRegistrationData = {
-      interestLevel,
+      interestLevel: interestNum,
       email: email.trim().toLowerCase(),
       completedAt: new Date()
     };
 
-    console.log('[savePostRegistrationData] Attempting to save:', { phone: p, interestLevel, email: email.trim().toLowerCase() });
+    console.log('[savePostRegistrationData] Attempting to save:', { phone: p, interestLevel: interestNum, email: email.trim().toLowerCase() });
 
     const result = await FormSubmission.findOneAndUpdate(
       { phone: p },
       {
         $set: {
           email: email.trim().toLowerCase(),
-          interestLevel,
+          interestLevel: interestNum,
           postRegistrationData,
           currentStep: 4,
           applicationStatus: 'completed',
