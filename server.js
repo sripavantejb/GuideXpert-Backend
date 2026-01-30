@@ -1,4 +1,5 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./config/db');
@@ -6,13 +7,21 @@ const formRoutes = require('./routes/formRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
+
+// Fail-fast: required for OTP (MSG91 SMS)
+const requiredOtpEnv = ['MSG91_AUTH_KEY', 'MSG91_TEMPLATE_ID', 'OTP_SECRET'];
+const missing = requiredOtpEnv.filter((k) => !process.env[k] || !String(process.env[k]).trim());
+if (missing.length > 0) {
+  console.error('[FATAL] Missing required env for OTP:', missing.join(', '));
+  process.exit(1);
+}
 const envStatus = {
-  GUPSHUP_API_KEY: process.env.GUPSHUP_API_KEY ? `set (${process.env.GUPSHUP_API_KEY.length} chars)` : 'missing',
-  GUPSHUP_SANDBOX_SOURCE: process.env.GUPSHUP_SANDBOX_SOURCE || 'missing',
-  GUPSHUP_APP_NAME: process.env.GUPSHUP_APP_NAME || 'missing',
+  MSG91_AUTH_KEY: process.env.MSG91_AUTH_KEY ? `set (${process.env.MSG91_AUTH_KEY.length} chars)` : 'missing',
+  MSG91_TEMPLATE_ID: process.env.MSG91_TEMPLATE_ID ? 'set' : 'missing',
+  OTP_SECRET: process.env.OTP_SECRET ? 'set' : 'missing',
   ADMIN_JWT_SECRET: process.env.ADMIN_JWT_SECRET ? 'set' : 'missing',
 };
-console.log('[env] WhatsApp config:', envStatus);
+console.log('[env] OTP (MSG91) config:', envStatus);
 if (!process.env.ADMIN_JWT_SECRET) {
   console.warn('[env] ADMIN_JWT_SECRET is not set — admin login and /api/admin/leads will return 500. Add it to .env');
 }

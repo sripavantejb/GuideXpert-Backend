@@ -1,6 +1,7 @@
 const { generateOTP, hashOTP, verifyOTP } = require('../utils/otpUtil');
 const otpStore = require('../utils/otpStore');
-const { sendWhatsAppOTP } = require('../utils/gupshupService');
+const otpRepository = require('../utils/otpRepository');
+const { sendOtp: sendOtpSms } = require('../utils/msg91Service');
 const { getDemoSlots } = require('../utils/demoSlots');
 const { appendFormSubmission } = require('../utils/sheetsService');
 const FormSubmission = require('../models/FormSubmission');
@@ -28,11 +29,12 @@ async function appendToSheetIfConfigured(submission) {
   }
 }
 
-const OTP_EXPIRY_MS = 5 * 60 * 1000;
+const OTP_EXPIRY_MINUTES = Number(process.env.OTP_EXPIRY_MINUTES) || 5;
+const OTP_EXPIRY_MS = OTP_EXPIRY_MINUTES * 60 * 1000;
+const MAX_VERIFY_ATTEMPTS = 3;
 
 function normalizePhone(phone) {
-  const d = String(phone || '').replace(/\D/g, '');
-  return d.length >= 10 ? d.slice(-10) : d;
+  return otpRepository.normalize(phone);
 }
 
 exports.sendOtp = async (req, res) => {
@@ -54,30 +56,30 @@ exports.sendOtp = async (req, res) => {
       return res.status(400).json({ success: false, message: 'occupation is required' });
     }
 
-    const rl = otpStore.checkRateLimit(p);
-    if (!rl.allowed) {
+    const canSend = await otpRepository.canSend(p);
+    if (!canSend.allowed) {
       return res.status(429).json({
         success: false,
-        message: 'Too many OTP requests. Try again after 15 minutes.',
-        retryAfter: rl.retryAfter
+        message: canSend.message || 'Too many OTP requests. Try again later.',
+        retryAfter: canSend.retryAfter
       });
     }
 
     const otp = generateOTP();
     const hashed = hashOTP(otp);
-    otpStore.set(p, hashed, Date.now() + OTP_EXPIRY_MS);
-    otpStore.incrementRateLimit(p);
+    const expiresAt = Date.now() + OTP_EXPIRY_MS;
 
-    const gw = await sendWhatsAppOTP(p, otp);
+    const gw = await sendOtpSms(p, otp);
     if (!gw.success) {
-      return res.status(400).json({
+      return res.status(502).json({
         success: false,
-        message: 'Could not send OTP to WhatsApp.',
-        detail: gw.error || 'WhatsApp service error'
+        message: 'Could not send OTP.',
+        detail: gw.error || 'SMS service error'
       });
     }
 
-    return res.status(200).json({ success: true });
+    await otpRepository.saveOtp(p, hashed, expiresAt);
+    return res.status(200).json({ success: true, message: 'OTP sent successfully' });
   } catch {
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
@@ -97,20 +99,32 @@ exports.verifyOtp = async (req, res) => {
       return res.status(400).json({ success: false, message: 'OTP must be 6 digits' });
     }
 
-    const rec = otpStore.get(p);
-    if (!rec || rec.expiresAt < Date.now()) {
-      otpStore.remove(p);
+    const rec = await otpRepository.getLatest(p);
+    if (!rec) {
       return res.status(400).json({ success: false, message: 'Invalid or expired OTP.' });
     }
-    if (!verifyOTP(String(otp), rec.hashedOtp)) {
+    if (new Date(rec.expiresAt) < new Date()) {
+      await otpRepository.deleteOtp(p);
+      return res.status(400).json({ success: false, message: 'Invalid or expired OTP.' });
+    }
+    if (rec.attempts >= MAX_VERIFY_ATTEMPTS) {
+      await otpRepository.deleteOtp(p);
+      return res.status(400).json({ success: false, message: 'Too many attempts.' });
+    }
+    if (!verifyOTP(String(otp), rec.otpHash)) {
+      const updated = await otpRepository.incrementAttempts(p);
+      if (updated && updated.attempts >= MAX_VERIFY_ATTEMPTS) {
+        await otpRepository.deleteOtp(p);
+      }
       return res.status(400).json({ success: false, message: 'Invalid OTP.' });
     }
 
-    otpStore.remove(p);
+    await otpRepository.deleteOtp(p);
     otpStore.addVerified(p);
 
-    return res.status(200).json({ verified: true });
-  } catch {
+    return res.status(200).json({ success: true, message: 'OTP verified', verified: true });
+  } catch (err) {
+    console.error('[verifyOtp]', err.message);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
