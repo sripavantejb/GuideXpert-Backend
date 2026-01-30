@@ -28,6 +28,8 @@ if (!process.env.ADMIN_JWT_SECRET) {
 
 const allowedOrigins = [
   process.env.FRONTEND_URL,
+  'https://www.guidexpert.co.in',
+  'https://guidexpert.co.in',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
 ].filter(Boolean);
