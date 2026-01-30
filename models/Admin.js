@@ -30,7 +30,7 @@ const adminSchema = new mongoose.Schema({
   }
 });
 
-adminSchema.index({ username: 1 });
+// username already has unique: true → index created automatically
 
 adminSchema.pre('save', function(next) {
   if (!this.isModified('password')) {

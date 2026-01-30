@@ -123,7 +123,7 @@ const formSubmissionSchema = new mongoose.Schema({
   }
 });
 
-formSubmissionSchema.index({ phone: 1 });
+// phone already has unique: true → index created automatically
 formSubmissionSchema.index({ createdAt: -1 });
 formSubmissionSchema.index({ applicationStatus: 1 });
 
