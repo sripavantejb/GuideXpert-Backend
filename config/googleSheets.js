@@ -2,34 +2,49 @@ const { google } = require('googleapis');
 const path = require('path');
 const fs = require('fs');
 
-// Initialize Google Sheets client using service account JSON key
-const serviceAccountKeyPath = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH;
+const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 
-if (!serviceAccountKeyPath) {
-  console.error('[Google Sheets] GOOGLE_SERVICE_ACCOUNT_KEY_PATH not set');
-  module.exports = null;
-  return;
+let sheets = null;
+
+// Option A: Credentials from env — use for both local and hosting (Vercel/Railway/etc.); no file needed
+const credentialsJson = process.env.GOOGLE_SHEETS_CREDENTIALS_JSON;
+if (credentialsJson && typeof credentialsJson === 'string') {
+  try {
+    const credentials = JSON.parse(credentialsJson);
+    const auth = new google.auth.GoogleAuth({
+      credentials,
+      scopes: SCOPES,
+    });
+    sheets = google.sheets({ version: 'v4', auth });
+    console.log('[Google Sheets] Client initialized from GOOGLE_SHEETS_CREDENTIALS_JSON (env)');
+  } catch (e) {
+    console.error('[Google Sheets] Invalid GOOGLE_SHEETS_CREDENTIALS_JSON:', e.message);
+  }
 }
 
-// Resolve absolute path
-const keyPath = path.isAbsolute(serviceAccountKeyPath)
-  ? serviceAccountKeyPath
-  : path.resolve(__dirname, '..', serviceAccountKeyPath);
-
-if (!fs.existsSync(keyPath)) {
-  console.error(`[Google Sheets] Service account key file not found: ${keyPath}`);
-  module.exports = null;
-  return;
+// Option B: Key file (for local dev — GOOGLE_SERVICE_ACCOUNT_KEY_PATH or GOOGLE_APPLICATION_CREDENTIALS)
+if (!sheets) {
+  const serviceAccountKeyPath =
+    process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH || process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (serviceAccountKeyPath) {
+    const keyPath = path.isAbsolute(serviceAccountKeyPath)
+      ? serviceAccountKeyPath
+      : path.resolve(__dirname, '..', serviceAccountKeyPath);
+    if (fs.existsSync(keyPath)) {
+      const auth = new google.auth.GoogleAuth({
+        keyFile: keyPath,
+        scopes: SCOPES,
+      });
+      sheets = google.sheets({ version: 'v4', auth });
+      console.log('[Google Sheets] Client initialized with key file');
+    } else {
+      console.error(`[Google Sheets] Key file not found: ${keyPath}`);
+    }
+  }
 }
 
-const auth = new google.auth.GoogleAuth({
-  keyFile: keyPath,
-  scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-});
-
-const sheets = google.sheets({ version: 'v4', auth });
-
-console.log('[Google Sheets] Client initialized with service account');
-console.log('[Google Sheets] Service account: sheets-sync@guidexpert.iam.gserviceaccount.com');
+if (!sheets) {
+  console.warn('[Google Sheets] No credentials: set GOOGLE_SHEETS_CREDENTIALS_JSON (env) or GOOGLE_APPLICATION_CREDENTIALS (file path)');
+}
 
 module.exports = sheets;
