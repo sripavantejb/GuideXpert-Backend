@@ -111,15 +111,18 @@ exports.sendOtp = async (req, res) => {
 // Direct register for meet (no OTP)
 exports.register = async (req, res) => {
   try {
-    const { name, email, mobile } = req.body || {};
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const email = typeof body.email === 'string' ? body.email.trim() : '';
+    const mobile = typeof body.mobile === 'string' ? body.mobile : String(body.mobile || '').trim();
 
-    if (!name || typeof name !== 'string' || name.trim().length < 2) {
+    if (!name || name.length < 2) {
       return res.status(400).json({ success: false, message: 'Name is required (min 2 characters)' });
     }
-    if (!email || typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email.trim())) {
+    if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
       return res.status(400).json({ success: false, message: 'Valid email is required' });
     }
-    if (!mobile || typeof mobile !== 'string') {
+    if (!mobile) {
       return res.status(400).json({ success: false, message: 'Mobile number is required' });
     }
 
@@ -140,8 +143,8 @@ exports.register = async (req, res) => {
     }
 
     const meetEntry = await MeetEntry.create({
-      name: name.trim(),
-      email: email.trim().toLowerCase(),
+      name,
+      email: email.toLowerCase(),
       mobile: m,
       status: 'registered',
       registeredAt: new Date()
@@ -168,6 +171,13 @@ exports.register = async (req, res) => {
         success: false,
         message: 'This mobile number is already registered for the meeting'
       });
+    }
+    if (error.name === 'ValidationError') {
+      const msg = error.message || (error.errors && Object.values(error.errors)[0]?.message) || 'Invalid registration data.';
+      return res.status(400).json({ success: false, message: msg });
+    }
+    if (error.name === 'CastError') {
+      return res.status(400).json({ success: false, message: 'Invalid registration data. Please check your details.' });
     }
     return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
   }

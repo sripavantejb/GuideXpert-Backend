@@ -42,7 +42,14 @@ async function runTests() {
   // Test 1: Health check
   await testEndpoint('/api/health');
 
-  // Test 2: Send OTP (will fail if MongoDB not connected)
+  // Test 2: Direct register (no OTP) - preferred for meet
+  await testEndpoint('/api/meet/register', 'POST', {
+    name: 'Test User',
+    email: 'test@example.com',
+    mobile: '8888888888'
+  });
+
+  // Test 3: Send OTP (legacy)
   await testEndpoint('/api/meet/send-otp', 'POST', {
     name: 'Test User',
     email: 'test@example.com',
@@ -50,7 +57,8 @@ async function runTests() {
   });
 
   console.log('\n' + '='.repeat(50));
-  console.log('\nIf you see 500 errors above, check:');
+  console.log('\nIf /api/meet/register returns 404: redeploy backend (vercel --prod)');
+  console.log('If you see 500 errors, check:');
   console.log('1. Vercel Environment Variables (especially MONGODB_URI)');
   console.log('2. MongoDB Atlas Network Access (allow 0.0.0.0/0)');
   console.log('3. Vercel deployment logs for detailed error');
