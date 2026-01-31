@@ -324,14 +324,23 @@ const ALL_SLOT_IDS = [
 
 exports.getSlotConfigs = async (req, res) => {
   try {
-    const configs = await SlotConfig.find({ slotId: { $in: ALL_SLOT_IDS } }).lean();
+    const [configs, bookingCounts] = await Promise.all([
+      SlotConfig.find({ slotId: { $in: ALL_SLOT_IDS } }).lean(),
+      FormSubmission.aggregate([
+        { $match: { 'step3Data.selectedSlot': { $exists: true, $ne: null } } },
+        { $group: { _id: '$step3Data.selectedSlot', count: { $sum: 1 } } }
+      ])
+    ]);
+
     const configMap = Object.fromEntries(configs.map((c) => [c.slotId, c.enabled]));
+    const countMap = Object.fromEntries((bookingCounts || []).map((c) => [c._id, c.count]));
 
     const slots = ALL_SLOT_IDS.map((slotId) => {
       const enabled = configMap[slotId];
       return {
         slotId,
-        enabled: enabled !== undefined ? enabled : true
+        enabled: enabled !== undefined ? enabled : true,
+        bookedCount: countMap[slotId] ?? 0
       };
     });
 
