@@ -1,5 +1,17 @@
 const MeetingAttendance = require('../models/MeetingAttendance');
 
+exports.meetingHealth = async (req, res) => {
+  try {
+    await MeetingAttendance.countDocuments();
+    return res.status(200).json({ status: 'ok', message: 'Meeting API and DB connected' });
+  } catch (error) {
+    console.error('[meetingHealth] Error:', error);
+    return res
+      .status(500)
+      .json({ status: 'error', message: process.env.NODE_ENV !== 'production' ? error.message : 'DB or meeting model unavailable' });
+  }
+};
+
 function normalizeMobile(value) {
   if (typeof value !== 'string') return '';
   return value.replace(/\D/g, '').trim();
@@ -44,7 +56,11 @@ exports.registerForMeeting = async (req, res) => {
       return res.status(400).json({ success: false, message: msg || 'Validation failed' });
     }
     console.error('[registerForMeeting] Error:', error);
-    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+    const message =
+      process.env.NODE_ENV !== 'production'
+        ? (error.message || 'Something went wrong. Please try again.')
+        : 'Something went wrong. Please try again.';
+    return res.status(500).json({ success: false, message });
   }
 };
 
