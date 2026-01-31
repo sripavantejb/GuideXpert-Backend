@@ -19,8 +19,7 @@ const meetEntrySchema = new mongoose.Schema({
     type: String,
     required: true,
     trim: true,
-    match: [/^\d{10}$/, 'Mobile must be 10 digits'],
-    unique: true
+    match: [/^\d{10}$/, 'Mobile must be 10 digits']
   },
   status: {
     type: String,

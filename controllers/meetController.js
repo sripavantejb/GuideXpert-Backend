@@ -59,18 +59,6 @@ exports.sendOtp = async (req, res) => {
       });
     }
 
-    // Check if mobile already registered (status: registered or joined)
-    const existingEntry = await MeetEntry.findOne({ 
-      mobile: m,
-      status: { $in: ['registered', 'joined'] }
-    });
-    if (existingEntry) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'This mobile number is already registered for the meeting' 
-      });
-    }
-
     // Generate and send OTP
     const otp = generateOTP();
     const hashed = hashOTP(otp);
@@ -131,17 +119,6 @@ exports.register = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Valid 10-digit mobile number required' });
     }
 
-    const existingEntry = await MeetEntry.findOne({
-      mobile: m,
-      status: { $in: ['registered', 'joined'] }
-    });
-    if (existingEntry) {
-      return res.status(400).json({
-        success: false,
-        message: 'This mobile number is already registered for the meeting'
-      });
-    }
-
     const meetEntry = await MeetEntry.create({
       name,
       email: email.toLowerCase(),
@@ -166,12 +143,6 @@ exports.register = async (req, res) => {
     });
   } catch (error) {
     console.error('[meetController.register] Error:', error);
-    if (error.code === 11000 || (error.name === 'MongoServerError' && error.code === 11000)) {
-      return res.status(400).json({
-        success: false,
-        message: 'This mobile number is already registered for the meeting'
-      });
-    }
     if (error.name === 'ValidationError') {
       const msg = error.message || (error.errors && Object.values(error.errors)[0]?.message) || 'Invalid registration data.';
       return res.status(400).json({ success: false, message: msg });
@@ -287,14 +258,6 @@ exports.verifyOtpAndRegister = async (req, res) => {
     });
   } catch (error) {
     console.error('[meetController.verifyOtpAndRegister] Error:', error);
-    
-    // Handle duplicate key error (mobile already registered)
-    if (error.code === 11000) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'This mobile number is already registered for the meeting' 
-      });
-    }
 
     // Handle Mongoose validation error (e.g. invalid name/email) - clear bad OTP and ask for new one
     if (error.name === 'ValidationError') {
