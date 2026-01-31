@@ -5,6 +5,7 @@ const { sendOtp: sendOtpSms } = require('../utils/msg91Service');
 const { getDemoSlots } = require('../utils/demoSlots');
 const { appendFormSubmission } = require('../utils/sheetsService');
 const FormSubmission = require('../models/FormSubmission');
+const SlotConfig = require('../models/SlotConfig');
 const { appendRow, updateRow, markRowDeleted } = require('../utils/googleSheetsService');
 
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
@@ -318,6 +319,11 @@ exports.saveStep3 = async (req, res) => {
 
     if (!otpStore.isVerified(p)) {
       return res.status(400).json({ success: false, message: 'Phone number must be verified first.' });
+    }
+
+    const slotConfig = await SlotConfig.findOne({ slotId: selectedSlot }).lean();
+    if (slotConfig && slotConfig.enabled === false) {
+      return res.status(400).json({ success: false, message: 'This slot is no longer available. Please choose another.' });
     }
 
     const step3Data = {

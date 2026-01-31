@@ -125,12 +125,13 @@ async function getDemoSlots() {
   }
 
   const configs = await SlotConfig.find({ slotId: { $in: slots.map((s) => s.id) } }).lean();
-  const disabledSet = new Set(
-    configs.filter((c) => c.enabled === false).map((c) => c.slotId)
-  );
-  const filteredSlots = slots.filter((s) => !disabledSet.has(s.id));
+  const configMap = Object.fromEntries(configs.map((c) => [c.slotId, c.enabled]));
+  const slotsWithEnabled = slots.map((s) => ({
+    ...s,
+    enabled: configMap[s.id] !== undefined ? configMap[s.id] : true
+  }));
 
-  return { slots: filteredSlots };
+  return { slots: slotsWithEnabled };
 }
 
 module.exports = { getDemoSlots };
