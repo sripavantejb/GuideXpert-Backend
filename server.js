@@ -5,7 +5,6 @@ const cors = require('cors');
 const connectDB = require('./config/db');
 const formRoutes = require('./routes/formRoutes');
 const adminRoutes = require('./routes/adminRoutes');
-const meetingRoutes = require('./routes/meetingRoutes');
 
 const app = express();
 
@@ -50,7 +49,6 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use('/api', formRoutes);
-app.use('/api/meeting', meetingRoutes);
 app.use('/api/admin', adminRoutes);
 
 app.get('/api/health', (req, res) => {
