@@ -1,9 +1,7 @@
 const { generateOTP, hashOTP, verifyOTP } = require('../utils/otpUtil');
 const { sendOtp: sendOtpSms } = require('../utils/msg91Service');
 const MeetEntry = require('../models/MeetEntry');
-
-// Separate OTP storage for meet registrations to avoid conflicts
-const meetOtpStore = new Map();
+const OtpVerification = require('../models/OtpVerification');
 
 const OTP_EXPIRY_MINUTES = Number(process.env.OTP_EXPIRY_MINUTES) || 5;
 const OTP_EXPIRY_MS = OTP_EXPIRY_MINUTES * 60 * 1000;
@@ -13,14 +11,18 @@ function normalizePhone(phone) {
   return phone?.toString().replace(/\D/g, '').slice(-10);
 }
 
-// Rate limiting helper
-const otpRateLimits = new Map();
-function canSendOtp(mobile) {
-  const now = Date.now();
-  const lastSent = otpRateLimits.get(mobile);
+// Rate limiting helper (using database)
+async function canSendOtp(mobile) {
+  const oneMinuteAgo = new Date(Date.now() - 60000);
+  const recentOtp = await OtpVerification.findOne({
+    phoneNumber: mobile,
+    createdAt: { $gte: oneMinuteAgo }
+  }).sort({ createdAt: -1 }).lean();
   
-  if (lastSent && (now - lastSent < 60000)) { // 1 minute cooldown
-    return { allowed: false, retryAfter: Math.ceil((60000 - (now - lastSent)) / 1000) };
+  if (recentOtp) {
+    const elapsed = Date.now() - recentOtp.createdAt.getTime();
+    const retryAfter = Math.ceil((60000 - elapsed) / 1000);
+    return { allowed: false, retryAfter };
   }
   
   return { allowed: true };
@@ -48,7 +50,7 @@ exports.sendOtp = async (req, res) => {
     }
 
     // Check rate limit
-    const rateCheck = canSendOtp(m);
+    const rateCheck = await canSendOtp(m);
     if (!rateCheck.allowed) {
       return res.status(429).json({
         success: false,
@@ -57,8 +59,11 @@ exports.sendOtp = async (req, res) => {
       });
     }
 
-    // Check if mobile already registered
-    const existingEntry = await MeetEntry.findOne({ mobile: m });
+    // Check if mobile already registered (status: registered or joined)
+    const existingEntry = await MeetEntry.findOne({ 
+      mobile: m,
+      status: { $in: ['registered', 'joined'] }
+    });
     if (existingEntry) {
       return res.status(400).json({ 
         success: false, 
@@ -69,7 +74,7 @@ exports.sendOtp = async (req, res) => {
     // Generate and send OTP
     const otp = generateOTP();
     const hashed = hashOTP(otp);
-    const expiresAt = Date.now() + OTP_EXPIRY_MS;
+    const expiresAt = new Date(Date.now() + OTP_EXPIRY_MS);
 
     const gwResponse = await sendOtpSms(m, otp);
     if (!gwResponse.success) {
@@ -80,16 +85,18 @@ exports.sendOtp = async (req, res) => {
       });
     }
 
-    // Store OTP with user details
-    meetOtpStore.set(m, {
+    // Delete any existing OTP for this phone number
+    await OtpVerification.deleteMany({ phoneNumber: m });
+
+    // Store OTP with user details in database
+    await OtpVerification.create({
+      phoneNumber: m,
       otpHash: hashed,
       expiresAt,
       attempts: 0,
       name: name.trim(),
       email: email.trim().toLowerCase()
     });
-
-    otpRateLimits.set(m, Date.now());
 
     return res.status(200).json({ 
       success: true, 
@@ -119,27 +126,28 @@ exports.verifyOtpAndRegister = async (req, res) => {
       return res.status(400).json({ success: false, message: 'OTP must be 6 digits' });
     }
 
-    // Get stored OTP data
-    const otpData = meetOtpStore.get(m);
+    // Get stored OTP data from database
+    const otpData = await OtpVerification.findOne({ phoneNumber: m });
     if (!otpData) {
       return res.status(400).json({ success: false, message: 'Invalid or expired OTP. Please request a new one.' });
     }
 
     // Check expiry
-    if (Date.now() > otpData.expiresAt) {
-      meetOtpStore.delete(m);
+    if (Date.now() > otpData.expiresAt.getTime()) {
+      await OtpVerification.deleteOne({ phoneNumber: m });
       return res.status(400).json({ success: false, message: 'OTP has expired. Please request a new one.' });
     }
 
     // Check attempts
     if (otpData.attempts >= MAX_VERIFY_ATTEMPTS) {
-      meetOtpStore.delete(m);
+      await OtpVerification.deleteOne({ phoneNumber: m });
       return res.status(400).json({ success: false, message: 'Too many failed attempts. Please request a new OTP.' });
     }
 
     // Verify OTP
     if (!verifyOTP(String(otp), otpData.otpHash)) {
       otpData.attempts += 1;
+      await otpData.save();
       return res.status(400).json({ 
         success: false, 
         message: 'Invalid OTP. Please try again.',
@@ -156,8 +164,8 @@ exports.verifyOtpAndRegister = async (req, res) => {
       registeredAt: new Date()
     });
 
-    // Clear OTP data
-    meetOtpStore.delete(m);
+    // Clear OTP data from database
+    await OtpVerification.deleteOne({ phoneNumber: m });
 
     // Get Meet link from environment
     const meetLink = process.env.GOOGLE_MEET_LINK || 'https://meet.google.com/';
@@ -306,17 +314,6 @@ exports.getMeetStats = async (req, res) => {
   }
 };
 
-// Cleanup expired OTPs periodically (call this on server start)
-function cleanupExpiredOtps() {
-  const now = Date.now();
-  for (const [mobile, data] of meetOtpStore.entries()) {
-    if (now > data.expiresAt) {
-      meetOtpStore.delete(mobile);
-    }
-  }
-}
-
-// Run cleanup every 5 minutes
-setInterval(cleanupExpiredOtps, 5 * 60 * 1000);
+// Note: MongoDB automatically cleans up expired OTPs using TTL index on expiresAt field
 
 module.exports = exports;

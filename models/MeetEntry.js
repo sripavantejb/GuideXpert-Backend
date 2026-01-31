@@ -24,8 +24,8 @@ const meetEntrySchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['registered', 'joined'],
-    default: 'registered'
+    enum: ['pending', 'registered', 'joined'],
+    default: 'pending'
   },
   registeredAt: {
     type: Date,

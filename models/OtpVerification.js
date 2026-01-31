@@ -20,6 +20,16 @@ const otpVerificationSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  // Store user details for meet registration
+  name: {
+    type: String,
+    trim: true
+  },
+  email: {
+    type: String,
+    trim: true,
+    lowercase: true
+  },
   createdAt: {
     type: Date,
     default: Date.now

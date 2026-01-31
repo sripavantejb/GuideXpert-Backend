@@ -1,7 +1,17 @@
 # Backend Deployment Guide
 
-## Issue Fixed
+## Issues Fixed
+
+### 1. Routing Issue (404 Errors)
 Added `vercel.json` configuration file to properly route requests to the Express server on Vercel.
+
+### 2. Serverless OTP Storage Issue (500 Errors)
+**Critical Fix:** Replaced in-memory storage with MongoDB for OTP management.
+- **Problem:** In-memory `Map` objects don't persist across serverless function invocations
+- **Solution:** Use MongoDB `OtpVerification` collection for persistent storage
+- **Result:** OTP system now works correctly in serverless environment
+
+See `SERVERLESS_FIX.md` for detailed technical explanation.
 
 ## Deployment Steps
 
