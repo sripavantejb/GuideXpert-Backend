@@ -11,6 +11,11 @@ const JWT_EXPIRES_IN = process.env.ADMIN_JWT_EXPIRES_IN || '24h';
 const DEV_SAMPLE_USERNAME = 'admin';
 const DEV_SAMPLE_PASSWORD = 'admin123';
 
+const ALL_SLOT_IDS = [
+  'MONDAY_7PM', 'TUESDAY_7PM', 'WEDNESDAY_7PM', 'THURSDAY_7PM',
+  'FRIDAY_7PM', 'SATURDAY_7PM', 'SUNDAY_7PM', 'SUNDAY_11AM'
+];
+
 function isDevAdminAllowed() {
   if (process.env.ALLOW_DEV_ADMIN_LOGIN === 'true') return true;
   return process.env.NODE_ENV !== 'production';
@@ -200,12 +205,16 @@ exports.exportLeads = async (req, res) => {
   try {
     const from = req.query.from ? new Date(req.query.from) : null;
     const to = req.query.to ? new Date(req.query.to) : null;
+    const selectedSlot = (req.query.selectedSlot || '').trim();
 
     const filter = {};
     if (from || to) {
       filter.createdAt = {};
       if (from) filter.createdAt.$gte = from;
       if (to) filter.createdAt.$lte = to;
+    }
+    if (selectedSlot && ALL_SLOT_IDS.includes(selectedSlot)) {
+      filter['step3Data.selectedSlot'] = selectedSlot;
     }
 
     const submissions = await FormSubmission.find(filter).sort({ createdAt: -1 }).lean();
@@ -253,6 +262,7 @@ exports.getAdminLeads = async (req, res) => {
     const applicationStatus = req.query.applicationStatus; // in_progress | registered | completed
     const otpVerified = req.query.otpVerified; // true | false (string)
     const slotBooked = req.query.slotBooked; // true | false (string)
+    const selectedSlot = (req.query.selectedSlot || '').trim();
     const q = (req.query.q || '').trim();
 
     const andConditions = [];
@@ -277,6 +287,11 @@ exports.getAdminLeads = async (req, res) => {
           { isRegistered: { $ne: true } },
           { $or: [{ 'step3Data.selectedSlot': null }, { 'step3Data.selectedSlot': { $exists: false } }] }
         ]
+      });
+    }
+    if (selectedSlot && ALL_SLOT_IDS.includes(selectedSlot)) {
+      andConditions.push({
+        $or: [{ 'step3Data.selectedSlot': selectedSlot }, { selectedSlot }]
       });
     }
     if (q) {
@@ -316,11 +331,6 @@ exports.getAdminLeads = async (req, res) => {
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
-
-const ALL_SLOT_IDS = [
-  'MONDAY_7PM', 'TUESDAY_7PM', 'WEDNESDAY_7PM', 'THURSDAY_7PM',
-  'FRIDAY_7PM', 'SATURDAY_7PM', 'SUNDAY_7PM', 'SUNDAY_11AM'
-];
 
 exports.getSlotConfigs = async (req, res) => {
   try {
