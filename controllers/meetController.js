@@ -150,7 +150,7 @@ exports.register = async (req, res) => {
       registeredAt: new Date()
     });
 
-    const meetLink = process.env.GOOGLE_MEET_LINK || 'https://meet.google.com/';
+    const meetLink = process.env.GOOGLE_MEET_LINK || 'https://meet.google.com/vvb-sjpy-fwx';
 
     return res.status(200).json({
       success: true,
@@ -166,7 +166,7 @@ exports.register = async (req, res) => {
     });
   } catch (error) {
     console.error('[meetController.register] Error:', error);
-    if (error.code === 11000) {
+    if (error.code === 11000 || (error.name === 'MongoServerError' && error.code === 11000)) {
       return res.status(400).json({
         success: false,
         message: 'This mobile number is already registered for the meeting'
@@ -178,6 +178,9 @@ exports.register = async (req, res) => {
     }
     if (error.name === 'CastError') {
       return res.status(400).json({ success: false, message: 'Invalid registration data. Please check your details.' });
+    }
+    if (error.name === 'MongoServerError' || error.name === 'MongoError') {
+      return res.status(400).json({ success: false, message: 'Registration failed. Please try again.' });
     }
     return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
   }
@@ -268,7 +271,7 @@ exports.verifyOtpAndRegister = async (req, res) => {
     await OtpVerification.deleteOne({ phoneNumber: m });
 
     // Get Meet link from environment
-    const meetLink = process.env.GOOGLE_MEET_LINK || 'https://meet.google.com/';
+    const meetLink = process.env.GOOGLE_MEET_LINK || 'https://meet.google.com/vvb-sjpy-fwx';
 
     return res.status(200).json({ 
       success: true, 
