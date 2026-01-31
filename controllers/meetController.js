@@ -169,10 +169,21 @@ exports.verifyOtpAndRegister = async (req, res) => {
       });
     }
 
+    // Sanitize name/email (ensure strings, trim) to avoid validation errors
+    const name = String(otpData.name || '').trim();
+    const email = String(otpData.email || '').trim().toLowerCase();
+    if (!name || name.length < 2 || !email || !/^\S+@\S+\.\S+$/.test(email)) {
+      await OtpVerification.deleteOne({ phoneNumber: m });
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid registration data. Please request a new OTP.'
+      });
+    }
+
     // OTP verified - Create meet entry
     const meetEntry = await MeetEntry.create({
-      name: otpData.name,
-      email: otpData.email,
+      name,
+      email,
       mobile: m,
       status: 'registered',
       registeredAt: new Date()
@@ -199,11 +210,23 @@ exports.verifyOtpAndRegister = async (req, res) => {
   } catch (error) {
     console.error('[meetController.verifyOtpAndRegister] Error:', error);
     
-    // Handle duplicate key error
+    // Handle duplicate key error (mobile already registered)
     if (error.code === 11000) {
       return res.status(400).json({ 
         success: false, 
         message: 'This mobile number is already registered for the meeting' 
+      });
+    }
+
+    // Handle Mongoose validation error (e.g. invalid name/email) - clear bad OTP and ask for new one
+    if (error.name === 'ValidationError') {
+      const m = normalizePhone(req.body?.mobile);
+      if (m && /^\d{10}$/.test(m)) {
+        await OtpVerification.deleteOne({ phoneNumber: m }).catch(() => {});
+      }
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid registration data. Please request a new OTP.'
       });
     }
     
