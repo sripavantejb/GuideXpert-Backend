@@ -143,6 +143,26 @@ exports.register = async (req, res) => {
     });
   } catch (error) {
     console.error('[meetController.register] Error:', error);
+
+    // Return clearer signal when database is unreachable (helps frontend messaging)
+    const message = (error && typeof error.message === 'string') ? error.message.toLowerCase() : '';
+    const isDbDown =
+      error.name === 'MongooseServerSelectionError' ||
+      (message && (
+        message.includes('failed to connect') ||
+        message.includes('could not connect to any servers') ||
+        message.includes('timed out') ||
+        message.includes('getaddrinfo') ||
+        message.includes('connection closed')
+      ));
+
+    if (isDbDown) {
+      return res.status(503).json({
+        success: false,
+        message: 'Service temporarily unavailable. Please try again shortly.',
+        detail: 'Database connection failed. Check MONGODB_URI and Atlas IP allowlist.'
+      });
+    }
     if (error.name === 'ValidationError') {
       const msg = error.message || (error.errors && Object.values(error.errors)[0]?.message) || 'Invalid registration data.';
       return res.status(400).json({ success: false, message: msg });
