@@ -34,7 +34,14 @@ app.use(async (req, res, next) => {
     await connectDB();
     next();
   } catch (err) {
-    next(err);
+    console.error('[DB connection failed]', err.message);
+    // Return clear message so you can see cause of 500 in Network tab
+    res.status(503).json({
+      success: false,
+      message: process.env.MONGODB_URI
+        ? 'Database connection failed. In MongoDB Atlas add 0.0.0.0/0 under Network Access.'
+        : 'Database not configured. Set MONGODB_URI in Vercel (or in .env for local).',
+    });
   }
 });
 
