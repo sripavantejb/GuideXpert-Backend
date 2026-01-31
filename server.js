@@ -2,19 +2,18 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
-const mongoose = require('mongoose');
 const connectDB = require('./config/db');
 const formRoutes = require('./routes/formRoutes');
 const adminRoutes = require('./routes/adminRoutes');
-const meetRoutes = require('./routes/meetRoutes');
 
 const app = express();
 
-// OTP env optional so app can start without MSG91 (e.g. meet/register still works)
+// Fail-fast: required for OTP (MSG91 SMS)
 const requiredOtpEnv = ['MSG91_AUTH_KEY', 'MSG91_TEMPLATE_ID', 'OTP_SECRET'];
-const missingOtp = requiredOtpEnv.filter((k) => !process.env[k] || !String(process.env[k]).trim());
-if (missingOtp.length > 0) {
-  console.warn('[env] Missing OTP env (send-otp/verify-otp will fail):', missingOtp.join(', '));
+const missing = requiredOtpEnv.filter((k) => !process.env[k] || !String(process.env[k]).trim());
+if (missing.length > 0) {
+  console.error('[FATAL] Missing required env for OTP:', missing.join(', '));
+  process.exit(1);
 }
 const envStatus = {
   MSG91_AUTH_KEY: process.env.MSG91_AUTH_KEY ? `set (${process.env.MSG91_AUTH_KEY.length} chars)` : 'missing',
@@ -26,24 +25,6 @@ console.log('[env] OTP (MSG91) config:', envStatus);
 if (!process.env.ADMIN_JWT_SECRET) {
   console.warn('[env] ADMIN_JWT_SECRET is not set — admin login and /api/admin/leads will return 500. Add it to .env');
 }
-
-// On Vercel, ensure MongoDB connects on first request (serverless cold start)
-app.use(async (req, res, next) => {
-  if (mongoose.connection.readyState === 1) return next();
-  try {
-    await connectDB();
-    next();
-  } catch (err) {
-    console.error('[DB connection failed]', err.message);
-    res.status(503).json({
-      success: false,
-      message: process.env.MONGODB_URI
-        ? 'Database connection failed. In MongoDB Atlas add 0.0.0.0/0 under Network Access.'
-        : 'Database not configured. Set MONGODB_URI in Vercel (or in .env for local).',
-    });
-    return;
-  }
-});
 
 const allowedOrigins = [
   process.env.FRONTEND_URL,
@@ -69,7 +50,6 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use('/api', formRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/meet', meetRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'GuideXpert API is running' });
@@ -87,21 +67,18 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-// Vercel: export app for serverless. Local: also start listening.
-module.exports = app;
+// Start server only after MongoDB connection is established
+const startServer = async () => {
+  try {
+    await connectDB();
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+      console.log(`MongoDB connection established. Server ready to accept requests.`);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+};
 
-if (!process.env.VERCEL) {
-  const startServer = async () => {
-    try {
-      await connectDB();
-      app.listen(PORT, () => {
-        console.log(`Server running on port ${PORT}`);
-        console.log(`MongoDB connection established. Server ready to accept requests.`);
-      });
-    } catch (error) {
-      console.error('Failed to start server:', error);
-      process.exit(1);
-    }
-  };
-  startServer();
-}
+startServer();
