@@ -4,6 +4,7 @@ const meetController = require('../controllers/meetController');
 const requireAdmin = require('../middleware/requireAdmin');
 
 // Public routes - for users registering for meet
+router.post('/register', meetController.register);
 router.post('/send-otp', meetController.sendOtp);
 router.post('/verify-otp', meetController.verifyOtpAndRegister);
 router.post('/mark-joined/:mobile', meetController.markJoined);

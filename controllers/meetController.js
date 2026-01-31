@@ -108,6 +108,71 @@ exports.sendOtp = async (req, res) => {
   }
 };
 
+// Direct register for meet (no OTP)
+exports.register = async (req, res) => {
+  try {
+    const { name, email, mobile } = req.body || {};
+
+    if (!name || typeof name !== 'string' || name.trim().length < 2) {
+      return res.status(400).json({ success: false, message: 'Name is required (min 2 characters)' });
+    }
+    if (!email || typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email.trim())) {
+      return res.status(400).json({ success: false, message: 'Valid email is required' });
+    }
+    if (!mobile || typeof mobile !== 'string') {
+      return res.status(400).json({ success: false, message: 'Mobile number is required' });
+    }
+
+    const m = normalizePhone(mobile);
+    if (!/^\d{10}$/.test(m)) {
+      return res.status(400).json({ success: false, message: 'Valid 10-digit mobile number required' });
+    }
+
+    const existingEntry = await MeetEntry.findOne({
+      mobile: m,
+      status: { $in: ['registered', 'joined'] }
+    });
+    if (existingEntry) {
+      return res.status(400).json({
+        success: false,
+        message: 'This mobile number is already registered for the meeting'
+      });
+    }
+
+    const meetEntry = await MeetEntry.create({
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+      mobile: m,
+      status: 'registered',
+      registeredAt: new Date()
+    });
+
+    const meetLink = process.env.GOOGLE_MEET_LINK || 'https://meet.google.com/';
+
+    return res.status(200).json({
+      success: true,
+      message: 'Registration successful! Redirecting to Google Meet...',
+      data: {
+        meetLink,
+        entry: {
+          name: meetEntry.name,
+          email: meetEntry.email,
+          mobile: meetEntry.mobile
+        }
+      }
+    });
+  } catch (error) {
+    console.error('[meetController.register] Error:', error);
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'This mobile number is already registered for the meeting'
+      });
+    }
+    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  }
+};
+
 // Verify OTP and register for meet
 exports.verifyOtpAndRegister = async (req, res) => {
   try {
