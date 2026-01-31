@@ -10,6 +10,11 @@ const { appendRow, updateRow, markRowDeleted } = require('../utils/googleSheetsS
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const GOOGLE_SHEET_RANGE = process.env.GOOGLE_SHEET_RANGE || 'Sheet1';
 
+const VALID_SLOT_ID_REGEX = /^(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)_(7PM|11AM|3PM)$/;
+function isValidSlotId(slot) {
+  return typeof slot === 'string' && VALID_SLOT_ID_REGEX.test(slot);
+}
+
 async function appendToSheetIfConfigured(submission) {
   if (!GOOGLE_SHEET_ID || !submission) {
     if (!GOOGLE_SHEET_ID) {
@@ -129,10 +134,12 @@ exports.verifyOtp = async (req, res) => {
   }
 };
 
-exports.getDemoSlots = (req, res) => {
+exports.getDemoSlots = async (req, res) => {
   try {
-    return res.status(200).json(getDemoSlots());
-  } catch {
+    const result = await getDemoSlots();
+    return res.status(200).json(result);
+  } catch (err) {
+    console.error('[getDemoSlots] Error:', err);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
@@ -302,8 +309,8 @@ exports.saveStep3 = async (req, res) => {
     if (!/^\d{10}$/.test(p)) {
       return res.status(400).json({ success: false, message: 'Valid 10-digit Indian phone required' });
     }
-    if (!selectedSlot || !['SATURDAY_7PM', 'SUNDAY_3PM'].includes(selectedSlot)) {
-      return res.status(400).json({ success: false, message: 'selectedSlot must be SATURDAY_7PM or SUNDAY_3PM' });
+    if (!selectedSlot || !isValidSlotId(selectedSlot)) {
+      return res.status(400).json({ success: false, message: 'selectedSlot must be a valid slot ID (e.g. FRIDAY_7PM, SUNDAY_11AM)' });
     }
     if (!slotDate || isNaN(new Date(slotDate).getTime())) {
       return res.status(400).json({ success: false, message: 'Valid slotDate is required' });
@@ -556,8 +563,8 @@ exports.submitApplication = async (req, res) => {
     if (!demoInterest || !['YES_SOON', 'MAYBE_LATER'].includes(demoInterest)) {
       return res.status(400).json({ success: false, message: 'demoInterest must be YES_SOON or MAYBE_LATER' });
     }
-    if (demoInterest === 'YES_SOON' && !['SATURDAY_7PM', 'SUNDAY_3PM'].includes(selectedSlot)) {
-      return res.status(400).json({ success: false, message: 'selectedSlot is required when demoInterest is YES_SOON' });
+    if (demoInterest === 'YES_SOON' && !isValidSlotId(selectedSlot)) {
+      return res.status(400).json({ success: false, message: 'selectedSlot is required and must be a valid slot ID when demoInterest is YES_SOON' });
     }
 
     if (!otpStore.isVerified(p)) {
@@ -637,8 +644,8 @@ exports.updateApplication = async (req, res) => {
     }
 
     if (selectedSlot !== undefined) {
-      if (submission.demoInterest === 'YES_SOON' && !['SATURDAY_7PM', 'SUNDAY_3PM'].includes(selectedSlot)) {
-        return res.status(400).json({ success: false, message: 'selectedSlot must be SATURDAY_7PM or SUNDAY_3PM when demoInterest is YES_SOON' });
+      if (submission.demoInterest === 'YES_SOON' && !isValidSlotId(selectedSlot)) {
+        return res.status(400).json({ success: false, message: 'selectedSlot must be a valid slot ID when demoInterest is YES_SOON' });
       }
       submission.selectedSlot = selectedSlot;
     }

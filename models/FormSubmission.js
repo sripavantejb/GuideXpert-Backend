@@ -29,7 +29,6 @@ const formSubmissionSchema = new mongoose.Schema({
   },
   selectedSlot: {
     type: String,
-    enum: ['SATURDAY_7PM', 'SUNDAY_3PM'],
     required: false
   },
   step1Data: {
@@ -60,8 +59,7 @@ const formSubmissionSchema = new mongoose.Schema({
   },
   step3Data: {
     selectedSlot: {
-      type: String,
-      enum: ['SATURDAY_7PM', 'SUNDAY_3PM']
+      type: String
     },
     slotDate: {
       type: Date

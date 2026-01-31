@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const Admin = require('../models/Admin');
 const FormSubmission = require('../models/FormSubmission');
+const SlotConfig = require('../models/SlotConfig');
 
 const JWT_SECRET = process.env.ADMIN_JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.ADMIN_JWT_EXPIRES_IN || '24h';
@@ -141,8 +142,7 @@ exports.getAdminStats = async (req, res) => {
       completed,
       otpVerified,
       slotBooked,
-      saturday7pm,
-      sunday3pm,
+      slotAggregation,
       signupsByDay
     ] = await Promise.all([
       FormSubmission.countDocuments({}),
@@ -153,8 +153,10 @@ exports.getAdminStats = async (req, res) => {
       FormSubmission.countDocuments({
         $or: [{ isRegistered: true }, { 'step3Data.selectedSlot': { $exists: true, $ne: null } }]
       }),
-      FormSubmission.countDocuments({ 'step3Data.selectedSlot': 'SATURDAY_7PM' }),
-      FormSubmission.countDocuments({ 'step3Data.selectedSlot': 'SUNDAY_3PM' }),
+      FormSubmission.aggregate([
+        { $match: { 'step3Data.selectedSlot': { $exists: true, $ne: null } } },
+        { $group: { _id: '$step3Data.selectedSlot', count: { $sum: 1 } } }
+      ]),
       FormSubmission.aggregate([
         { $match: { createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } } },
         { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },
@@ -162,7 +164,10 @@ exports.getAdminStats = async (req, res) => {
       ])
     ]);
 
-    const bySlot = { SATURDAY_7PM: saturday7pm, SUNDAY_3PM: sunday3pm };
+    const bySlot = (slotAggregation || []).reduce((acc, { _id, count }) => {
+      acc[_id] = count;
+      return acc;
+    }, {});
     const signupsOverTime = (signupsByDay || []).map((d) => ({ date: d._id, count: d.count }));
 
     return res.status(200).json({
@@ -308,6 +313,69 @@ exports.getAdminLeads = async (req, res) => {
     });
   } catch (error) {
     console.error('[getAdminLeads] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+const ALL_SLOT_IDS = [
+  'MONDAY_7PM', 'TUESDAY_7PM', 'WEDNESDAY_7PM', 'THURSDAY_7PM',
+  'FRIDAY_7PM', 'SATURDAY_7PM', 'SUNDAY_7PM', 'SUNDAY_11AM'
+];
+
+exports.getSlotConfigs = async (req, res) => {
+  try {
+    const configs = await SlotConfig.find({ slotId: { $in: ALL_SLOT_IDS } }).lean();
+    const configMap = Object.fromEntries(configs.map((c) => [c.slotId, c.enabled]));
+
+    const slots = ALL_SLOT_IDS.map((slotId) => {
+      const enabled = configMap[slotId];
+      return {
+        slotId,
+        enabled: enabled !== undefined ? enabled : true
+      };
+    });
+
+    for (const slotId of ALL_SLOT_IDS) {
+      if (configMap[slotId] === undefined) {
+        await SlotConfig.findOneAndUpdate(
+          { slotId },
+          { $set: { enabled: true, updatedAt: new Date() } },
+          { upsert: true }
+        );
+      }
+    }
+
+    return res.status(200).json({ success: true, data: { slots } });
+  } catch (error) {
+    console.error('[getSlotConfigs] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.updateSlotConfig = async (req, res) => {
+  try {
+    const { slotId } = req.params;
+    const { enabled } = req.body || {};
+
+    if (!slotId || !ALL_SLOT_IDS.includes(slotId)) {
+      return res.status(400).json({ success: false, message: 'Invalid slot ID' });
+    }
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'enabled must be a boolean' });
+    }
+
+    const config = await SlotConfig.findOneAndUpdate(
+      { slotId },
+      { $set: { enabled, updatedAt: new Date() } },
+      { upsert: true, new: true }
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: { slotId: config.slotId, enabled: config.enabled }
+    });
+  } catch (error) {
+    console.error('[updateSlotConfig] Error:', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
