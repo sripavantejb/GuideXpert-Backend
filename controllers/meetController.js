@@ -132,6 +132,20 @@ exports.verifyOtpAndRegister = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid or expired OTP. Please request a new one.' });
     }
 
+    // Validate that required fields exist before proceeding
+    if (!otpData.name || !otpData.email) {
+      console.error('[meetController.verifyOtpAndRegister] Invalid OTP data - missing name or email:', { 
+        phoneNumber: m, 
+        hasName: !!otpData.name, 
+        hasEmail: !!otpData.email 
+      });
+      await OtpVerification.deleteOne({ phoneNumber: m });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid registration data. Please request a new OTP.' 
+      });
+    }
+
     // Check expiry
     if (Date.now() > otpData.expiresAt.getTime()) {
       await OtpVerification.deleteOne({ phoneNumber: m });
@@ -194,6 +208,46 @@ exports.verifyOtpAndRegister = async (req, res) => {
     }
     
     return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  }
+};
+
+// Clean up registration data for a mobile number (for debugging/testing)
+exports.cleanupMobile = async (req, res) => {
+  try {
+    const { mobile } = req.body || {};
+
+    if (!mobile || typeof mobile !== 'string') {
+      return res.status(400).json({ success: false, message: 'Mobile number is required' });
+    }
+
+    const m = normalizePhone(mobile);
+    if (!/^\d{10}$/.test(m)) {
+      return res.status(400).json({ success: false, message: 'Valid 10-digit mobile number required' });
+    }
+
+    // Delete OTP verification records
+    const otpDeleted = await OtpVerification.deleteMany({ phoneNumber: m });
+    
+    // Delete meet entry records
+    const meetDeleted = await MeetEntry.deleteMany({ mobile: m });
+
+    console.log('[meetController.cleanupMobile] Cleaned up data:', { 
+      mobile: m, 
+      otpRecords: otpDeleted.deletedCount, 
+      meetRecords: meetDeleted.deletedCount 
+    });
+
+    return res.status(200).json({ 
+      success: true, 
+      message: `Cleanup complete. Deleted ${otpDeleted.deletedCount} OTP record(s) and ${meetDeleted.deletedCount} meet entry record(s).`,
+      data: {
+        otpRecordsDeleted: otpDeleted.deletedCount,
+        meetRecordsDeleted: meetDeleted.deletedCount
+      }
+    });
+  } catch (error) {
+    console.error('[meetController.cleanupMobile] Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to cleanup data. Please try again.' });
   }
 };
 

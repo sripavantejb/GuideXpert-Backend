@@ -7,6 +7,7 @@ const requireAdmin = require('../middleware/requireAdmin');
 router.post('/send-otp', meetController.sendOtp);
 router.post('/verify-otp', meetController.verifyOtpAndRegister);
 router.post('/mark-joined/:mobile', meetController.markJoined);
+router.post('/cleanup', meetController.cleanupMobile);
 
 // Protected admin routes
 router.get('/entries', requireAdmin, meetController.getMeetEntries);
