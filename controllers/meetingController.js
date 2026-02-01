@@ -56,13 +56,7 @@ exports.registerForMeeting = async (req, res) => {
       return res.status(400).json({ success: false, message: msg || 'Validation failed' });
     }
     console.error('[registerForMeeting] Error:', error);
-    // Temporarily show actual error for debugging
-    return res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Something went wrong. Please try again.',
-      errorName: error.name,
-      errorCode: error.code
-    });
+    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
   }
 };
 
