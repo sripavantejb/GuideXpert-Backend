@@ -113,6 +113,15 @@ const formSubmissionSchema = new mongoose.Schema({
       type: Date
     }
   },
+  // Reminder SMS tracking (sent 4 hours before slot)
+  reminderSent: {
+    type: Boolean,
+    default: false
+  },
+  reminderSentAt: {
+    type: Date,
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -126,6 +135,8 @@ const formSubmissionSchema = new mongoose.Schema({
 // phone already has unique: true → index created automatically
 formSubmissionSchema.index({ createdAt: -1 });
 formSubmissionSchema.index({ applicationStatus: 1 });
+// Index for reminder cron job queries
+formSubmissionSchema.index({ isRegistered: 1, reminderSent: 1, 'step3Data.slotDate': 1 });
 
 // Update updatedAt before saving
 formSubmissionSchema.pre('save', function(next) {
