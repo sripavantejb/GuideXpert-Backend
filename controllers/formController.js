@@ -1,7 +1,7 @@
 const { generateOTP, hashOTP, verifyOTP } = require('../utils/otpUtil');
 const otpStore = require('../utils/otpStore');
 const otpRepository = require('../utils/otpRepository');
-const { sendOtp: sendOtpSms } = require('../utils/msg91Service');
+const { sendOtp: sendOtpSms, sendSlotConfirmationSms } = require('../utils/msg91Service');
 const { getDemoSlots } = require('../utils/demoSlots');
 const { appendFormSubmission } = require('../utils/sheetsService');
 const FormSubmission = require('../models/FormSubmission');
@@ -14,6 +14,46 @@ const GOOGLE_SHEET_RANGE = process.env.GOOGLE_SHEET_RANGE || 'Sheet1';
 const VALID_SLOT_ID_REGEX = /^(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)_(7PM|11AM|3PM)$/;
 function isValidSlotId(slot) {
   return typeof slot === 'string' && VALID_SLOT_ID_REGEX.test(slot);
+}
+
+/**
+ * Format slot date for SMS (e.g., "Saturday, 15th Feb")
+ */
+function formatSlotDateForSms(date) {
+  const d = new Date(date);
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  
+  const dayName = days[d.getDay()];
+  const day = d.getDate();
+  const month = months[d.getMonth()];
+  
+  // Add ordinal suffix (1st, 2nd, 3rd, 4th, etc.)
+  const suffix = (day === 1 || day === 21 || day === 31) ? 'st' 
+               : (day === 2 || day === 22) ? 'nd' 
+               : (day === 3 || day === 23) ? 'rd' 
+               : 'th';
+  
+  return `${dayName}, ${day}${suffix} ${month}`;
+}
+
+/**
+ * Format slot time from slot ID for SMS (e.g., "7:00 PM", "11:00 AM")
+ */
+function formatSlotTimeForSms(slotId) {
+  if (!slotId || typeof slotId !== 'string') return '';
+  
+  const timeMap = {
+    '7PM': '7:00 PM',
+    '11AM': '11:00 AM',
+    '3PM': '3:00 PM'
+  };
+  
+  // Extract time part from slot ID (e.g., "FRIDAY_7PM" -> "7PM")
+  const parts = slotId.split('_');
+  const timePart = parts[parts.length - 1];
+  
+  return timeMap[timePart] || timePart;
 }
 
 async function appendToSheetIfConfigured(submission) {
@@ -358,6 +398,29 @@ exports.saveStep3 = async (req, res) => {
     console.log('[saveStep3] Save successful. Document ID:', submission._id, 'Registered:', submission.isRegistered);
 
     await appendToSheetIfConfigured(submission);
+
+    // Send slot confirmation SMS (non-blocking - don't fail the request if SMS fails)
+    try {
+      const smsVariables = {
+        name: submission.step1Data?.fullName || submission.fullName || 'Counsellor',
+        date: formatSlotDateForSms(slotDate),
+        time: formatSlotTimeForSms(selectedSlot)
+      };
+      
+      console.log('[saveStep3] Sending slot confirmation SMS:', { phone: p, variables: smsVariables });
+      
+      const smsResult = await sendSlotConfirmationSms(p, smsVariables);
+      
+      if (!smsResult.success) {
+        console.warn('[saveStep3] Slot confirmation SMS failed:', smsResult.error);
+        // Note: We don't fail the request here - slot is already booked successfully
+      } else {
+        console.log('[saveStep3] Slot confirmation SMS sent successfully');
+      }
+    } catch (smsError) {
+      console.error('[saveStep3] Error sending slot confirmation SMS:', smsError.message);
+      // Don't fail the request - slot booking was successful
+    }
 
     otpStore.removeVerified(p);
 
