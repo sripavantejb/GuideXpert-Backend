@@ -400,6 +400,7 @@ exports.saveStep3 = async (req, res) => {
     await appendToSheetIfConfigured(submission);
 
     // Send slot confirmation SMS (non-blocking - don't fail the request if SMS fails)
+    let smsStatus = { sent: false, error: null };
     try {
       const smsVariables = {
         name: submission.step1Data?.fullName || submission.fullName || 'Counsellor',
@@ -413,13 +414,14 @@ exports.saveStep3 = async (req, res) => {
       
       if (!smsResult.success) {
         console.warn('[saveStep3] Slot confirmation SMS failed:', smsResult.error);
-        // Note: We don't fail the request here - slot is already booked successfully
+        smsStatus = { sent: false, error: smsResult.error };
       } else {
         console.log('[saveStep3] Slot confirmation SMS sent successfully');
+        smsStatus = { sent: true, error: null };
       }
     } catch (smsError) {
       console.error('[saveStep3] Error sending slot confirmation SMS:', smsError.message);
-      // Don't fail the request - slot booking was successful
+      smsStatus = { sent: false, error: smsError.message };
     }
 
     otpStore.removeVerified(p);
@@ -430,7 +432,8 @@ exports.saveStep3 = async (req, res) => {
       data: {
         selectedSlot,
         slotDate: step3Data.slotDate
-      }
+      },
+      smsStatus // Include SMS status for debugging
     });
   } catch (error) {
     console.error('[saveStep3] Error:', error);
