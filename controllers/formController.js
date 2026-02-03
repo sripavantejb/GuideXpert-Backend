@@ -467,7 +467,13 @@ exports.saveStep3 = async (req, res) => {
       if (shouldSendMeetLinkImmediately) {
         console.log('[saveStep3] Slot is within 1 hour - sending meet link SMS immediately');
         
-        const meetLinkResult = await sendMeetLinkSms(p, smsVariables);
+        // Add meeting link variable (maps to ##var## in MSG91 template)
+        const meetLinkVariables = {
+          ...smsVariables,
+          var: process.env.DEMO_MEETING_LINK || 'https://guidexpert.co.in/demo'
+        };
+        
+        const meetLinkResult = await sendMeetLinkSms(p, meetLinkVariables);
         
         if (!meetLinkResult.success) {
           console.warn('[saveStep3] Immediate meet link SMS failed:', meetLinkResult.error);

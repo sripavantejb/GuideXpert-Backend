@@ -152,8 +152,14 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
     // Extract phone numbers
     const phones = usersToSendMeetLink.map(user => user.phone);
 
-    // Prepare variables for the SMS template (if needed)
-    const variables = {};
+    // Prepare variables for the SMS template
+    // var = meeting link (maps to ##var## in MSG91 template)
+    const meetingLink = process.env.DEMO_MEETING_LINK || 'https://guidexpert.co.in/demo';
+    const variables = {
+      var: meetingLink
+    };
+
+    console.log('[Cron] Using meeting link:', meetingLink);
 
     // Send bulk SMS
     const smsResult = await sendBulkMeetLinkSms(phones, variables);
