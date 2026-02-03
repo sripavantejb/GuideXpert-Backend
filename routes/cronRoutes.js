@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const FormSubmission = require('../models/FormSubmission');
-const { sendBulkReminderSms, sendBulkMeetLinkSms } = require('../utils/msg91Service');
+const { sendBulkReminderSms, sendBulkMeetLinkSms, sendBulkReminder30MinSms } = require('../utils/msg91Service');
 
 /**
  * Middleware to verify cron secret key
@@ -195,6 +195,98 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
 
   } catch (error) {
     console.error('[Cron] Error in send-meetlinks:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/cron/send-30min-reminders
+ * Send 30-min live reminder SMS to all users with slots in the next 30 minutes
+ * Protected by CRON_SECRET
+ */
+router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
+  try {
+    console.log('[Cron] Starting 30-min reminder SMS job...');
+
+    // Calculate time window: now to 30 minutes from now
+    const now = new Date();
+    const thirtyMinFromNow = new Date(now.getTime() + 30 * 60 * 1000);
+
+    console.log('[Cron] 30-min reminder time window:', {
+      now: now.toISOString(),
+      thirtyMinFromNow: thirtyMinFromNow.toISOString()
+    });
+
+    // Find all registered users with slots in the next 30 min who haven't received 30-min reminder
+    const usersToSend30MinReminder = await FormSubmission.find({
+      isRegistered: true,
+      reminder30MinSent: { $ne: true },
+      'step3Data.slotDate': {
+        $gte: now,
+        $lte: thirtyMinFromNow
+      }
+    }).lean();
+
+    console.log('[Cron] Found', usersToSend30MinReminder.length, 'users to send 30-min reminders');
+
+    if (usersToSend30MinReminder.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'No 30-min reminders to send',
+        stats: { found: 0, sent: 0, failed: 0 }
+      });
+    }
+
+    // Extract phone numbers
+    const phones = usersToSend30MinReminder.map(user => user.phone);
+
+    // Prepare variables for the SMS template
+    // var = meeting link (maps to ##var## in MSG91 template)
+    const meetingLink = process.env.DEMO_MEETING_LINK || 'https://guidexpert.co.in/demo';
+    const variables = {
+      var: meetingLink
+    };
+
+    console.log('[Cron] Using meeting link for 30-min reminder:', meetingLink);
+
+    // Send bulk SMS
+    const smsResult = await sendBulkReminder30MinSms(phones, variables);
+
+    if (smsResult.success) {
+      // Mark all users as 30-min reminder sent
+      const phoneList = usersToSend30MinReminder.map(u => u.phone);
+      await FormSubmission.updateMany(
+        { phone: { $in: phoneList } },
+        {
+          $set: {
+            reminder30MinSent: true,
+            reminder30MinSentAt: new Date()
+          }
+        }
+      );
+
+      console.log('[Cron] Successfully sent 30-min reminders and updated', phoneList.length, 'records');
+    } else {
+      console.error('[Cron] Failed to send bulk 30-min reminder SMS:', smsResult.error);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: smsResult.success ? '30-min reminders sent successfully' : 'Failed to send some 30-min reminders',
+      stats: {
+        found: usersToSend30MinReminder.length,
+        sent: smsResult.sentCount,
+        failed: smsResult.failedCount
+      },
+      error: smsResult.error || null
+    });
+
+  } catch (error) {
+    console.error('[Cron] Error in send-30min-reminders:', error);
     return res.status(500).json({
       success: false,
       message: 'Internal server error',

@@ -351,11 +351,105 @@ async function sendMeetLinkSms(phone, variables = {}) {
   return { success: result.success, error: result.error };
 }
 
+/**
+ * Send 30-Min Live Reminder SMS to multiple users via MSG91 Flow API.
+ * Used by cron job to send bulk reminders 30 minutes before slot.
+ * @param {Array<string>} phones - Array of 10-digit Indian phone numbers
+ * @param {Object} variables - Template variables (e.g., { var: meetLink })
+ * @returns {Promise<{ success: boolean, sentCount: number, failedCount: number, error?: string }>}
+ */
+async function sendBulkReminder30MinSms(phones, variables = {}) {
+  const authkey = process.env.MSG91_AUTH_KEY;
+  const templateId = process.env.MSG91_30MIN_REMINDER_TEMPLATE_ID;
+
+  if (!authkey || !templateId) {
+    console.warn('[MSG91] 30-Min Reminder SMS not configured (missing AUTH_KEY or 30MIN_REMINDER_TEMPLATE_ID)');
+    return { success: false, sentCount: 0, failedCount: phones.length, error: 'MSG91 30-min reminder not configured' };
+  }
+
+  if (!phones || phones.length === 0) {
+    console.warn('[MSG91] No phone numbers provided for bulk 30-min reminder');
+    return { success: true, sentCount: 0, failedCount: 0 };
+  }
+
+  // Normalize and format phone numbers: extract digits and prepend 91 for India
+  const mobiles = phones.map(phone => {
+    const digits = String(phone).replace(/\D/g, '');
+    return digits.length >= 10 ? '91' + digits.slice(-10) : '91' + digits;
+  }).join(',');
+
+  console.log('[MSG91] Sending bulk 30-min reminder SMS:', {
+    count: phones.length,
+    templateId,
+    variables
+  });
+
+  // Build request body for MSG91 Flow API
+  const requestBody = {
+    flow_id: templateId,
+    mobiles: mobiles,
+    // Pass template variables (var = meeting link)
+    ...variables
+  };
+
+  try {
+    const res = await axios.post(MSG91_FLOW_URL, requestBody, {
+      headers: {
+        'authkey': authkey,
+        'Content-Type': 'application/json'
+      },
+      timeout: 30000,
+      validateStatus: () => true
+    });
+
+    console.log('[MSG91] Bulk 30-min reminder API response:', {
+      status: res.status,
+      data: res.data
+    });
+
+    if (res.status >= 400) {
+      const err = (res.data && (res.data.message || res.data.error)) || `API returned ${res.status}`;
+      console.error('[MSG91] Bulk 30-min reminder failed:', err);
+      return { success: false, sentCount: 0, failedCount: phones.length, error: String(err) };
+    }
+
+    const data = res.data || {};
+    if (data.type === 'error' || data.status === 'error' || data.success === false) {
+      const err = data.message || data.error || 'MSG91 error';
+      console.error('[MSG91] Bulk 30-min reminder failed:', err);
+      return { success: false, sentCount: 0, failedCount: phones.length, error: String(err) };
+    }
+
+    console.log('[MSG91] Bulk 30-min reminder SMS sent successfully to', phones.length, 'users');
+    return { success: true, sentCount: phones.length, failedCount: 0 };
+  } catch (e) {
+    const msg = e.response && e.response.data
+      ? (e.response.data.message || e.response.data.error)
+      : e.message;
+    console.error('[MSG91] Bulk 30-min reminder API exception:', e.message);
+    return { success: false, sentCount: 0, failedCount: phones.length, error: msg || 'Failed to send bulk 30-min reminder SMS' };
+  }
+}
+
+/**
+ * Send single 30-Min Live Reminder SMS via MSG91 Flow API.
+ * Used for immediate 30-min reminder when user books within 30 min of slot.
+ * @param {string} phone - 10-digit Indian phone number
+ * @param {Object} variables - Template variables (e.g., { var: meetLink })
+ * @returns {Promise<{ success: boolean, error?: string }>}
+ */
+async function sendReminder30MinSms(phone, variables = {}) {
+  const result = await sendBulkReminder30MinSms([phone], variables);
+  return { success: result.success, error: result.error };
+}
+
 module.exports = {
   sendOtp,
   sendSlotConfirmationSms,
   sendBulkReminderSms,
   sendReminderSms,
   sendBulkMeetLinkSms,
-  sendMeetLinkSms
+  sendMeetLinkSms,
+  sendBulkReminder30MinSms,
+  sendReminder30MinSms
 };

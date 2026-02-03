@@ -131,6 +131,15 @@ const formSubmissionSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  // 30-Min Live Reminder SMS tracking (sent 30 min before slot)
+  reminder30MinSent: {
+    type: Boolean,
+    default: false
+  },
+  reminder30MinSentAt: {
+    type: Date,
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -148,6 +157,8 @@ formSubmissionSchema.index({ applicationStatus: 1 });
 formSubmissionSchema.index({ isRegistered: 1, reminderSent: 1, 'step3Data.slotDate': 1 });
 // Index for meet link cron job queries
 formSubmissionSchema.index({ isRegistered: 1, meetLinkSent: 1, 'step3Data.slotDate': 1 });
+// Index for 30-min reminder cron job queries
+formSubmissionSchema.index({ isRegistered: 1, reminder30MinSent: 1, 'step3Data.slotDate': 1 });
 
 // Update updatedAt before saving
 formSubmissionSchema.pre('save', function(next) {

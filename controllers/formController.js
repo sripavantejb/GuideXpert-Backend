@@ -1,7 +1,7 @@
 const { generateOTP, hashOTP, verifyOTP } = require('../utils/otpUtil');
 const otpStore = require('../utils/otpStore');
 const otpRepository = require('../utils/otpRepository');
-const { sendOtp: sendOtpSms, sendSlotConfirmationSms, sendReminderSms, sendMeetLinkSms } = require('../utils/msg91Service');
+const { sendOtp: sendOtpSms, sendSlotConfirmationSms, sendReminderSms, sendMeetLinkSms, sendReminder30MinSms } = require('../utils/msg91Service');
 const { getDemoSlots } = require('../utils/demoSlots');
 const { appendFormSubmission } = require('../utils/sheetsService');
 const FormSubmission = require('../models/FormSubmission');
@@ -383,10 +383,13 @@ exports.saveStep3 = async (req, res) => {
     const shouldSendReminderImmediately = hoursUntilSlot <= 4 && hoursUntilSlot > 0;
     // Send meet link immediately if within 1 hour
     const shouldSendMeetLinkImmediately = hoursUntilSlot <= 1 && hoursUntilSlot > 0;
+    // Send 30-min live reminder immediately if within 30 minutes (0.5 hours)
+    const shouldSendReminder30MinImmediately = hoursUntilSlot <= 0.5 && hoursUntilSlot > 0;
 
     console.log('[saveStep3] Hours until slot:', hoursUntilSlot.toFixed(2), 
       'Send reminder immediately:', shouldSendReminderImmediately,
-      'Send meet link immediately:', shouldSendMeetLinkImmediately);
+      'Send meet link immediately:', shouldSendMeetLinkImmediately,
+      'Send 30-min reminder immediately:', shouldSendReminder30MinImmediately);
 
     const submission = await FormSubmission.findOneAndUpdate(
       { phone: p },
@@ -404,7 +407,10 @@ exports.saveStep3 = async (req, res) => {
           reminderSentAt: shouldSendReminderImmediately ? new Date() : null,
           // If booking within 1 hour, we'll send meet link immediately and mark as sent
           meetLinkSent: shouldSendMeetLinkImmediately,
-          meetLinkSentAt: shouldSendMeetLinkImmediately ? new Date() : null
+          meetLinkSentAt: shouldSendMeetLinkImmediately ? new Date() : null,
+          // If booking within 30 min, we'll send 30-min live reminder immediately and mark as sent
+          reminder30MinSent: shouldSendReminder30MinImmediately,
+          reminder30MinSentAt: shouldSendReminder30MinImmediately ? new Date() : null
         }
       },
       { upsert: false, new: true, runValidators: true }
@@ -423,6 +429,7 @@ exports.saveStep3 = async (req, res) => {
     let smsStatus = { sent: false, error: null };
     let reminderStatus = { sent: false, error: null, immediate: false };
     let meetLinkStatus = { sent: false, error: null, immediate: false };
+    let reminder30MinStatus = { sent: false, error: null, immediate: false };
     
     try {
       const smsVariables = {
@@ -488,6 +495,32 @@ exports.saveStep3 = async (req, res) => {
           meetLinkStatus = { sent: true, error: null, immediate: true };
         }
       }
+
+      // If booking within 30 minutes, also send 30-min live reminder SMS immediately
+      if (shouldSendReminder30MinImmediately) {
+        console.log('[saveStep3] Slot is within 30 min - sending 30-min live reminder SMS immediately');
+        
+        // Add meeting link variable (maps to ##var## in MSG91 template)
+        const reminder30MinVariables = {
+          ...smsVariables,
+          var: process.env.DEMO_MEETING_LINK || 'https://guidexpert.co.in/demo'
+        };
+        
+        const reminder30MinResult = await sendReminder30MinSms(p, reminder30MinVariables);
+        
+        if (!reminder30MinResult.success) {
+          console.warn('[saveStep3] Immediate 30-min reminder SMS failed:', reminder30MinResult.error);
+          reminder30MinStatus = { sent: false, error: reminder30MinResult.error, immediate: true };
+          // Update reminder30MinSent to false since it failed
+          await FormSubmission.updateOne(
+            { phone: p },
+            { $set: { reminder30MinSent: false, reminder30MinSentAt: null } }
+          );
+        } else {
+          console.log('[saveStep3] Immediate 30-min reminder SMS sent successfully');
+          reminder30MinStatus = { sent: true, error: null, immediate: true };
+        }
+      }
     } catch (smsError) {
       console.error('[saveStep3] Error sending SMS:', smsError.message);
       smsStatus = { sent: false, error: smsError.message };
@@ -504,7 +537,8 @@ exports.saveStep3 = async (req, res) => {
       },
       smsStatus, // Slot confirmation SMS status
       reminderStatus, // Immediate reminder SMS status (only if slot within 4 hours)
-      meetLinkStatus // Immediate meet link SMS status (only if slot within 1 hour)
+      meetLinkStatus, // Immediate meet link SMS status (only if slot within 1 hour)
+      reminder30MinStatus // Immediate 30-min live reminder SMS status (only if slot within 30 min)
     });
   } catch (error) {
     console.error('[saveStep3] Error:', error);
