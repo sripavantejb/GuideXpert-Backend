@@ -259,9 +259,103 @@ async function sendReminderSms(phone, variables = {}) {
   return { success: result.success, error: result.error };
 }
 
+/**
+ * Send Meet Link SMS to multiple users via MSG91 Flow API.
+ * Used by cron job to send bulk meet links 1 hour before slot.
+ * @param {Array<string>} phones - Array of 10-digit Indian phone numbers
+ * @param {Object} variables - Template variables (optional, e.g., { meetLink })
+ * @returns {Promise<{ success: boolean, sentCount: number, failedCount: number, error?: string }>}
+ */
+async function sendBulkMeetLinkSms(phones, variables = {}) {
+  const authkey = process.env.MSG91_AUTH_KEY;
+  const templateId = process.env.MSG91_MEETLINK_TEMPLATE_ID;
+
+  if (!authkey || !templateId) {
+    console.warn('[MSG91] Meet Link SMS not configured (missing AUTH_KEY or MEETLINK_TEMPLATE_ID)');
+    return { success: false, sentCount: 0, failedCount: phones.length, error: 'MSG91 meet link not configured' };
+  }
+
+  if (!phones || phones.length === 0) {
+    console.warn('[MSG91] No phone numbers provided for bulk meet link');
+    return { success: true, sentCount: 0, failedCount: 0 };
+  }
+
+  // Normalize and format phone numbers: extract digits and prepend 91 for India
+  const mobiles = phones.map(phone => {
+    const digits = String(phone).replace(/\D/g, '');
+    return digits.length >= 10 ? '91' + digits.slice(-10) : '91' + digits;
+  }).join(',');
+
+  console.log('[MSG91] Sending bulk meet link SMS:', {
+    count: phones.length,
+    templateId,
+    variables
+  });
+
+  // Build request body for MSG91 Flow API
+  const requestBody = {
+    flow_id: templateId,
+    mobiles: mobiles,
+    // Pass template variables if any
+    ...variables
+  };
+
+  try {
+    const res = await axios.post(MSG91_FLOW_URL, requestBody, {
+      headers: {
+        'authkey': authkey,
+        'Content-Type': 'application/json'
+      },
+      timeout: 30000,
+      validateStatus: () => true
+    });
+
+    console.log('[MSG91] Bulk meet link API response:', {
+      status: res.status,
+      data: res.data
+    });
+
+    if (res.status >= 400) {
+      const err = (res.data && (res.data.message || res.data.error)) || `API returned ${res.status}`;
+      console.error('[MSG91] Bulk meet link failed:', err);
+      return { success: false, sentCount: 0, failedCount: phones.length, error: String(err) };
+    }
+
+    const data = res.data || {};
+    if (data.type === 'error' || data.status === 'error' || data.success === false) {
+      const err = data.message || data.error || 'MSG91 error';
+      console.error('[MSG91] Bulk meet link failed:', err);
+      return { success: false, sentCount: 0, failedCount: phones.length, error: String(err) };
+    }
+
+    console.log('[MSG91] Bulk meet link SMS sent successfully to', phones.length, 'users');
+    return { success: true, sentCount: phones.length, failedCount: 0 };
+  } catch (e) {
+    const msg = e.response && e.response.data
+      ? (e.response.data.message || e.response.data.error)
+      : e.message;
+    console.error('[MSG91] Bulk meet link API exception:', e.message);
+    return { success: false, sentCount: 0, failedCount: phones.length, error: msg || 'Failed to send bulk meet link SMS' };
+  }
+}
+
+/**
+ * Send single Meet Link SMS via MSG91 Flow API.
+ * Used for immediate meet link when user books within 1 hour of slot.
+ * @param {string} phone - 10-digit Indian phone number
+ * @param {Object} variables - Template variables (optional, e.g., { meetLink })
+ * @returns {Promise<{ success: boolean, error?: string }>}
+ */
+async function sendMeetLinkSms(phone, variables = {}) {
+  const result = await sendBulkMeetLinkSms([phone], variables);
+  return { success: result.success, error: result.error };
+}
+
 module.exports = {
   sendOtp,
   sendSlotConfirmationSms,
   sendBulkReminderSms,
-  sendReminderSms
+  sendReminderSms,
+  sendBulkMeetLinkSms,
+  sendMeetLinkSms
 };

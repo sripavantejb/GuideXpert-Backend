@@ -1,7 +1,7 @@
 const { generateOTP, hashOTP, verifyOTP } = require('../utils/otpUtil');
 const otpStore = require('../utils/otpStore');
 const otpRepository = require('../utils/otpRepository');
-const { sendOtp: sendOtpSms, sendSlotConfirmationSms, sendReminderSms } = require('../utils/msg91Service');
+const { sendOtp: sendOtpSms, sendSlotConfirmationSms, sendReminderSms, sendMeetLinkSms } = require('../utils/msg91Service');
 const { getDemoSlots } = require('../utils/demoSlots');
 const { appendFormSubmission } = require('../utils/sheetsService');
 const FormSubmission = require('../models/FormSubmission');
@@ -374,13 +374,19 @@ exports.saveStep3 = async (req, res) => {
 
     console.log('[saveStep3] Attempting to save:', { phone: p, selectedSlot, slotDate });
 
-    // Check if slot is within 4 hours - if so, we'll send reminder immediately
+    // Check timing for immediate SMS sending
     const now = new Date();
     const slotDateTime = new Date(slotDate);
     const hoursUntilSlot = (slotDateTime - now) / (1000 * 60 * 60);
+    
+    // Send reminder immediately if within 4 hours
     const shouldSendReminderImmediately = hoursUntilSlot <= 4 && hoursUntilSlot > 0;
+    // Send meet link immediately if within 1 hour
+    const shouldSendMeetLinkImmediately = hoursUntilSlot <= 1 && hoursUntilSlot > 0;
 
-    console.log('[saveStep3] Hours until slot:', hoursUntilSlot.toFixed(2), 'Send reminder immediately:', shouldSendReminderImmediately);
+    console.log('[saveStep3] Hours until slot:', hoursUntilSlot.toFixed(2), 
+      'Send reminder immediately:', shouldSendReminderImmediately,
+      'Send meet link immediately:', shouldSendMeetLinkImmediately);
 
     const submission = await FormSubmission.findOneAndUpdate(
       { phone: p },
@@ -394,9 +400,11 @@ exports.saveStep3 = async (req, res) => {
           registeredAt: new Date(),
           updatedAt: new Date(),
           // If booking within 4 hours, we'll send reminder immediately and mark as sent
-          // Otherwise, leave as false for cron to handle
           reminderSent: shouldSendReminderImmediately,
-          reminderSentAt: shouldSendReminderImmediately ? new Date() : null
+          reminderSentAt: shouldSendReminderImmediately ? new Date() : null,
+          // If booking within 1 hour, we'll send meet link immediately and mark as sent
+          meetLinkSent: shouldSendMeetLinkImmediately,
+          meetLinkSentAt: shouldSendMeetLinkImmediately ? new Date() : null
         }
       },
       { upsert: false, new: true, runValidators: true }
@@ -414,6 +422,7 @@ exports.saveStep3 = async (req, res) => {
     // Send slot confirmation SMS (non-blocking - don't fail the request if SMS fails)
     let smsStatus = { sent: false, error: null };
     let reminderStatus = { sent: false, error: null, immediate: false };
+    let meetLinkStatus = { sent: false, error: null, immediate: false };
     
     try {
       const smsVariables = {
@@ -453,6 +462,26 @@ exports.saveStep3 = async (req, res) => {
           reminderStatus = { sent: true, error: null, immediate: true };
         }
       }
+
+      // If booking within 1 hour, also send meet link SMS immediately
+      if (shouldSendMeetLinkImmediately) {
+        console.log('[saveStep3] Slot is within 1 hour - sending meet link SMS immediately');
+        
+        const meetLinkResult = await sendMeetLinkSms(p, smsVariables);
+        
+        if (!meetLinkResult.success) {
+          console.warn('[saveStep3] Immediate meet link SMS failed:', meetLinkResult.error);
+          meetLinkStatus = { sent: false, error: meetLinkResult.error, immediate: true };
+          // Update meetLinkSent to false since it failed
+          await FormSubmission.updateOne(
+            { phone: p },
+            { $set: { meetLinkSent: false, meetLinkSentAt: null } }
+          );
+        } else {
+          console.log('[saveStep3] Immediate meet link SMS sent successfully');
+          meetLinkStatus = { sent: true, error: null, immediate: true };
+        }
+      }
     } catch (smsError) {
       console.error('[saveStep3] Error sending SMS:', smsError.message);
       smsStatus = { sent: false, error: smsError.message };
@@ -468,7 +497,8 @@ exports.saveStep3 = async (req, res) => {
         slotDate: step3Data.slotDate
       },
       smsStatus, // Slot confirmation SMS status
-      reminderStatus // Immediate reminder SMS status (only if slot within 4 hours)
+      reminderStatus, // Immediate reminder SMS status (only if slot within 4 hours)
+      meetLinkStatus // Immediate meet link SMS status (only if slot within 1 hour)
     });
   } catch (error) {
     console.error('[saveStep3] Error:', error);
