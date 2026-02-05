@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const Admin = require('../models/Admin');
 const FormSubmission = require('../models/FormSubmission');
 const SlotConfig = require('../models/SlotConfig');
+const SlotDateOverride = require('../models/SlotDateOverride');
 
 const JWT_SECRET = process.env.ADMIN_JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.ADMIN_JWT_EXPIRES_IN || '24h';
@@ -134,12 +135,98 @@ function mapLeadToDTO(sub) {
     postRegistrationCompletedAt: post.completedAt || null,
     step1CompletedAt: (sub.step1Data || {}).step1CompletedAt || null,
     createdAt: sub.createdAt,
-    updatedAt: sub.updatedAt
+    updatedAt: sub.updatedAt,
+    utm_source: sub.utm_source || null,
+    utm_medium: sub.utm_medium || null,
+    utm_campaign: sub.utm_campaign || null,
+    utm_content: sub.utm_content || null,
+    adminNotes: sub.adminNotes || null,
+    adminNotesUpdatedAt: sub.adminNotesUpdatedAt || null,
+    leadStatus: sub.leadStatus || null,
+    leadDescription: sub.leadDescription || null
   };
 }
 
+const LEAD_STATUS_VALUES = ['Connected', 'Not Connected', 'Call Back Later', 'Not Interested', 'Interested'];
+
+exports.getLeadById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'Lead ID is required' });
+    }
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ success: false, message: 'Lead not found' });
+    }
+    const sub = await FormSubmission.findById(id).lean();
+    if (!sub) {
+      return res.status(404).json({ success: false, message: 'Lead not found' });
+    }
+    return res.status(200).json({ success: true, data: mapLeadToDTO(sub) });
+  } catch (error) {
+    console.error('[getLeadById] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.updateLeadNotes = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { adminNotes, leadStatus, leadDescription } = req.body || {};
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'Lead ID is required' });
+    }
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ success: false, message: 'Lead not found' });
+    }
+    const $set = {};
+    if (adminNotes !== undefined) {
+      const notes = typeof adminNotes === 'string' ? adminNotes.trim().slice(0, 2000) : '';
+      $set.adminNotes = notes;
+      $set.adminNotesUpdatedAt = new Date();
+    }
+    if (leadStatus !== undefined) {
+      const status = typeof leadStatus === 'string' ? leadStatus.trim() : '';
+      if (status && !LEAD_STATUS_VALUES.includes(status)) {
+        return res.status(400).json({ success: false, message: 'Invalid leadStatus' });
+      }
+      $set.leadStatus = status || null;
+    }
+    if (leadDescription !== undefined) {
+      const desc = typeof leadDescription === 'string' ? leadDescription.trim().slice(0, 2000) : '';
+      $set.leadDescription = desc || null;
+    }
+    const updated = await FormSubmission.findByIdAndUpdate(
+      id,
+      Object.keys($set).length ? { $set } : {},
+      { new: true }
+    ).lean();
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Lead not found' });
+    }
+    return res.status(200).json({
+      success: true,
+      data: mapLeadToDTO(updated)
+    });
+  } catch (error) {
+    console.error('[updateLeadNotes] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
 exports.getAdminStats = async (req, res) => {
   try {
+    const from = req.query.from ? new Date(req.query.from) : null;
+    const to = req.query.to ? new Date(req.query.to) : null;
+    const signupsMatch = { createdAt: {} };
+    if (from) signupsMatch.createdAt.$gte = from;
+    if (to) signupsMatch.createdAt.$lte = to;
+    if (!from && !to) {
+      signupsMatch.createdAt.$gte = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    }
+
     const [
       total,
       inProgress,
@@ -163,7 +250,7 @@ exports.getAdminStats = async (req, res) => {
         { $group: { _id: '$step3Data.selectedSlot', count: { $sum: 1 } } }
       ]),
       FormSubmission.aggregate([
-        { $match: { createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } } },
+        { $match: signupsMatch },
         { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },
         { $sort: { _id: 1 } }
       ])
@@ -206,6 +293,7 @@ exports.exportLeads = async (req, res) => {
     const from = req.query.from ? new Date(req.query.from) : null;
     const to = req.query.to ? new Date(req.query.to) : null;
     const selectedSlot = (req.query.selectedSlot || '').trim();
+    const utm_content = (req.query.utm_content || '').trim();
 
     const filter = {};
     if (from || to) {
@@ -215,6 +303,9 @@ exports.exportLeads = async (req, res) => {
     }
     if (selectedSlot && ALL_SLOT_IDS.includes(selectedSlot)) {
       filter['step3Data.selectedSlot'] = selectedSlot;
+    }
+    if (utm_content) {
+      filter.utm_content = utm_content;
     }
 
     const submissions = await FormSubmission.find(filter).sort({ createdAt: -1 }).lean();
@@ -233,6 +324,13 @@ exports.exportLeads = async (req, res) => {
         dto.currentStep ?? '',
         dto.email || '',
         dto.interestLevel || '',
+        dto.utm_source || '',
+        dto.utm_medium || '',
+        dto.utm_campaign || '',
+        dto.utm_content || '',
+        dto.adminNotes || '',
+        dto.leadStatus || '',
+        dto.leadDescription || '',
         dto.createdAt ? dto.createdAt.toISOString() : '',
         dto.updatedAt ? dto.updatedAt.toISOString() : ''
       ];
@@ -240,7 +338,9 @@ exports.exportLeads = async (req, res) => {
 
     const header = [
       'ID', 'Full Name', 'Phone', 'Occupation', 'OTP Verified', 'Slot Booked',
-      'Selected Slot', 'Slot Date', 'Status', 'Step', 'Email', 'Interest', 'Created', 'Updated'
+      'Selected Slot', 'Slot Date', 'Status', 'Step', 'Email', 'Interest',
+      'UTM Source', 'UTM Medium', 'UTM Campaign', 'UTM Content (Influencer)',
+      'Admin Notes', 'Lead Status', 'Lead Description', 'Created', 'Updated'
     ];
     const csvLines = [header.map(escapeCsvCell).join(','), ...rows.map((r) => r.map(escapeCsvCell).join(','))];
     const csv = csvLines.join('\r\n');
@@ -264,9 +364,13 @@ exports.getAdminLeads = async (req, res) => {
     const slotBooked = req.query.slotBooked; // true | false (string)
     const selectedSlot = (req.query.selectedSlot || '').trim();
     const q = (req.query.q || '').trim();
+    const utm_content = (req.query.utm_content || '').trim();
 
     const andConditions = [];
 
+    if (utm_content) {
+      andConditions.push({ utm_content });
+    }
     if (applicationStatus && ['in_progress', 'registered', 'completed'].includes(applicationStatus)) {
       andConditions.push({ applicationStatus });
     }
@@ -395,6 +499,164 @@ exports.updateSlotConfig = async (req, res) => {
     });
   } catch (error) {
     console.error('[updateSlotConfig] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * GET /admin/slots/booking-counts?from=YYYY-MM-DD&to=YYYY-MM-DD
+ * Returns booking counts per (date, slotId) in the given range (IST calendar date).
+ */
+exports.getSlotBookingCounts = async (req, res) => {
+  try {
+    const fromStr = (req.query.from || '').trim();
+    const toStr = (req.query.to || '').trim();
+    if (!fromStr || !toStr) {
+      return res.status(400).json({ success: false, message: 'Query params from and to (YYYY-MM-DD) are required' });
+    }
+    const fromDate = new Date(fromStr);
+    const toDate = new Date(toStr);
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      return res.status(400).json({ success: false, message: 'Invalid from or to date' });
+    }
+
+    const pipeline = [
+      {
+        $match: {
+          'step3Data.slotDate': { $exists: true, $ne: null },
+          'step3Data.selectedSlot': { $exists: true, $ne: null }
+        }
+      },
+      {
+        $addFields: {
+          slotDateIST: {
+            $dateToString: {
+              date: '$step3Data.slotDate',
+              format: '%Y-%m-%d',
+              timezone: 'Asia/Kolkata'
+            }
+          }
+        }
+      },
+      {
+        $match: {
+          slotDateIST: { $gte: fromStr, $lte: toStr }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            date: '$slotDateIST',
+            slotId: '$step3Data.selectedSlot'
+          },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          date: '$_id.date',
+          slotId: '$_id.slotId',
+          count: 1
+        }
+      }
+    ];
+
+    const rawCounts = await FormSubmission.aggregate(pipeline);
+
+    const counts = rawCounts.map((item) => {
+      let dateStr = item.date;
+      if (typeof dateStr === 'string' && dateStr.length >= 10) {
+        dateStr = dateStr.slice(0, 10);
+      } else if (dateStr instanceof Date || (typeof dateStr === 'string' && dateStr)) {
+        dateStr = new Date(dateStr).toISOString().slice(0, 10);
+      }
+      return { date: dateStr, slotId: item.slotId, count: item.count };
+    });
+
+    return res.status(200).json({ success: true, data: { counts } });
+  } catch (error) {
+    console.error('[getSlotBookingCounts] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * GET /admin/slots/overrides?from=YYYY-MM-DD&to=YYYY-MM-DD
+ * Returns date-specific overrides in the given range (for month calendar).
+ */
+exports.getSlotOverrides = async (req, res) => {
+  try {
+    const fromStr = (req.query.from || '').trim();
+    const toStr = (req.query.to || '').trim();
+    if (!fromStr || !toStr) {
+      return res.status(400).json({ success: false, message: 'Query params from and to (YYYY-MM-DD) are required' });
+    }
+    const fromDate = new Date(fromStr);
+    const toDate = new Date(toStr);
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      return res.status(400).json({ success: false, message: 'Invalid from or to date' });
+    }
+    const endOfTo = new Date(toDate);
+    endOfTo.setUTCDate(endOfTo.getUTCDate() + 1);
+
+    const overrides = await SlotDateOverride.find({
+      date: { $gte: fromDate, $lt: endOfTo }
+    }).lean();
+
+    const data = overrides.map((o) => ({
+      date: o.date.toISOString().slice(0, 10),
+      slotId: o.slotId,
+      enabled: o.enabled
+    }));
+
+    return res.status(200).json({ success: true, data: { overrides: data } });
+  } catch (error) {
+    console.error('[getSlotOverrides] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * PUT /admin/slots/overrides
+ * Body: { date: "YYYY-MM-DD", slotId: "MONDAY_7PM", enabled: true }
+ * Upserts override for (date, slotId).
+ */
+exports.setSlotOverride = async (req, res) => {
+  try {
+    const { date: dateStr, slotId, enabled } = req.body || {};
+    if (!dateStr || typeof dateStr !== 'string') {
+      return res.status(400).json({ success: false, message: 'date (YYYY-MM-DD) is required' });
+    }
+    if (!slotId || !ALL_SLOT_IDS.includes(slotId)) {
+      return res.status(400).json({ success: false, message: 'Invalid slotId' });
+    }
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'enabled must be a boolean' });
+    }
+
+    const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) {
+      return res.status(400).json({ success: false, message: 'Invalid date' });
+    }
+    const dateOnly = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+
+    const override = await SlotDateOverride.findOneAndUpdate(
+      { date: dateOnly, slotId },
+      { $set: { enabled, updatedAt: new Date() } },
+      { upsert: true, new: true }
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        date: override.date.toISOString().slice(0, 10),
+        slotId: override.slotId,
+        enabled: override.enabled
+      }
+    });
+  } catch (error) {
+    console.error('[setSlotOverride] Error:', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };

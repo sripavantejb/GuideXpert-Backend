@@ -1,4 +1,6 @@
 const SlotConfig = require('../models/SlotConfig');
+const SlotDateOverride = require('../models/SlotDateOverride');
+const { getISTCalendarDateUTC } = require('./dateHelpers');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
@@ -131,7 +133,25 @@ async function getDemoSlots() {
     enabled: configMap[s.id] !== undefined ? configMap[s.id] : true
   }));
 
-  return { slots: slotsWithEnabled };
+  const slotDates = slotsWithEnabled.map((s) => ({
+    date: getISTCalendarDateUTC(new Date(s.date)),
+    slotId: s.id
+  }));
+  const overridePairs = await SlotDateOverride.find({
+    $or: slotDates.map(({ date, slotId }) => ({ date, slotId }))
+  }).lean();
+  const overrideMap = new Map(overridePairs.map((o) => [`${o.date.toISOString().slice(0, 10)}_${o.slotId}`, o.enabled]));
+
+  const slotsWithOverrides = slotsWithEnabled.map((s) => {
+    const calendarDate = getISTCalendarDateUTC(new Date(s.date));
+    const key = `${calendarDate.toISOString().slice(0, 10)}_${s.id}`;
+    const override = overrideMap.get(key);
+    const enabled = override !== undefined ? override : s.enabled;
+    return { ...s, enabled };
+  });
+
+  const slotsFiltered = slotsWithOverrides.filter((s) => s.enabled);
+  return { slots: slotsFiltered };
 }
 
 module.exports = { getDemoSlots };

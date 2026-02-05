@@ -5,6 +5,7 @@ const cors = require('cors');
 const connectDB = require('./config/db');
 const formRoutes = require('./routes/formRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const influencerRoutes = require('./routes/influencerRoutes');
 const meetingRoutes = require('./routes/meetingRoutes');
 const cronRoutes = require('./routes/cronRoutes');
 
@@ -51,6 +52,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use('/api', formRoutes);
+app.use('/api', influencerRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/meeting', meetingRoutes);
 app.use('/api/cron', cronRoutes);

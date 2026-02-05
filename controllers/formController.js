@@ -6,6 +6,8 @@ const { getDemoSlots } = require('../utils/demoSlots');
 const { appendFormSubmission } = require('../utils/sheetsService');
 const FormSubmission = require('../models/FormSubmission');
 const SlotConfig = require('../models/SlotConfig');
+const SlotDateOverride = require('../models/SlotDateOverride');
+const { getISTCalendarDateUTC } = require('../utils/dateHelpers');
 const { appendRow, updateRow, markRowDeleted } = require('../utils/googleSheetsService');
 
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
@@ -81,6 +83,30 @@ const MAX_VERIFY_ATTEMPTS = 3;
 
 function normalizePhone(phone) {
   return otpRepository.normalize(phone);
+}
+
+/** Build UTM fields from request body (only non-empty strings). */
+function getUtmFromBody(body) {
+  if (!body || typeof body !== 'object') return null;
+  const utm = {};
+  if (typeof body.utm_source === 'string' && body.utm_source.trim()) utm.utm_source = body.utm_source.trim();
+  if (typeof body.utm_medium === 'string' && body.utm_medium.trim()) utm.utm_medium = body.utm_medium.trim();
+  if (typeof body.utm_campaign === 'string' && body.utm_campaign.trim()) utm.utm_campaign = body.utm_campaign.trim();
+  if (typeof body.utm_content === 'string' && body.utm_content.trim()) utm.utm_content = body.utm_content.trim();
+  return Object.keys(utm).length ? utm : null;
+}
+
+/** Merge UTM into update set only when existing doc has no first-touch UTM yet. */
+function mergeUtmIfFirstTouch(setPayload, body, existingDoc) {
+  const utm = getUtmFromBody(body);
+  if (!utm) return;
+  const hasExisting = existingDoc && (
+    (existingDoc.utm_content != null && existingDoc.utm_content !== '') ||
+    (existingDoc.utm_source != null && existingDoc.utm_source !== '')
+  );
+  if (!hasExisting) {
+    Object.assign(setPayload, utm);
+  }
 }
 
 exports.sendOtp = async (req, res) => {
@@ -211,21 +237,23 @@ exports.saveStep1 = async (req, res) => {
       step1CompletedAt: new Date()
     };
 
+    const setPayload = {
+      fullName: fullName.trim(),
+      phone: p,
+      occupation: occupation.trim(),
+      step1Data,
+      currentStep: 1,
+      applicationStatus: 'in_progress',
+      updatedAt: new Date()
+    };
+    const utm = getUtmFromBody(req.body);
+    if (utm) Object.assign(setPayload, utm);
+
     console.log('[saveStep1] Attempting to save:', { phone: p, fullName: fullName.trim(), occupation: occupation.trim() });
 
     const result = await FormSubmission.findOneAndUpdate(
       { phone: p },
-      {
-        $set: {
-          fullName: fullName.trim(),
-          phone: p,
-          occupation: occupation.trim(),
-          step1Data,
-          currentStep: 1,
-          applicationStatus: 'in_progress',
-          updatedAt: new Date()
-        }
-      },
+      { $set: setPayload },
       { upsert: true, new: true, runValidators: true }
     );
 
@@ -302,18 +330,20 @@ exports.saveStep2 = async (req, res) => {
       step2CompletedAt: new Date()
     };
 
+    const setPayload = {
+      step2Data,
+      currentStep: 2,
+      applicationStatus: 'in_progress',
+      updatedAt: new Date()
+    };
+    const existing = await FormSubmission.findOne({ phone: p }).lean();
+    mergeUtmIfFirstTouch(setPayload, req.body, existing);
+
     console.log('[saveStep2] Attempting to save:', { phone: p });
 
     const result = await FormSubmission.findOneAndUpdate(
       { phone: p },
-      {
-        $set: {
-          step2Data,
-          currentStep: 2,
-          applicationStatus: 'in_progress',
-          updatedAt: new Date()
-        }
-      },
+      { $set: setPayload },
       { upsert: false, new: true, runValidators: true }
     );
 
@@ -366,6 +396,13 @@ exports.saveStep3 = async (req, res) => {
       return res.status(400).json({ success: false, message: 'This slot is no longer available. Please choose another.' });
     }
 
+    const slotDateTime = new Date(slotDate);
+    const calendarDate = getISTCalendarDateUTC(slotDateTime);
+    const dateOverride = await SlotDateOverride.findOne({ date: calendarDate, slotId: selectedSlot }).lean();
+    if (dateOverride && dateOverride.enabled === false) {
+      return res.status(400).json({ success: false, message: 'This slot is not available for this date. Please choose another.' });
+    }
+
     const step3Data = {
       selectedSlot,
       slotDate: new Date(slotDate),
@@ -376,7 +413,6 @@ exports.saveStep3 = async (req, res) => {
 
     // Check timing for immediate SMS sending
     const now = new Date();
-    const slotDateTime = new Date(slotDate);
     const hoursUntilSlot = (slotDateTime - now) / (1000 * 60 * 60);
     
     // Send reminder immediately if within 4 hours
@@ -391,28 +427,27 @@ exports.saveStep3 = async (req, res) => {
       'Send meet link immediately:', shouldSendMeetLinkImmediately,
       'Send 30-min reminder immediately:', shouldSendReminder30MinImmediately);
 
+    const setPayload = {
+      selectedSlot,
+      step3Data,
+      currentStep: 3,
+      applicationStatus: 'registered',
+      isRegistered: true,
+      registeredAt: new Date(),
+      updatedAt: new Date(),
+      reminderSent: shouldSendReminderImmediately,
+      reminderSentAt: shouldSendReminderImmediately ? new Date() : null,
+      meetLinkSent: shouldSendMeetLinkImmediately,
+      meetLinkSentAt: shouldSendMeetLinkImmediately ? new Date() : null,
+      reminder30MinSent: shouldSendReminder30MinImmediately,
+      reminder30MinSentAt: shouldSendReminder30MinImmediately ? new Date() : null
+    };
+    const existingStep3 = await FormSubmission.findOne({ phone: p }).lean();
+    mergeUtmIfFirstTouch(setPayload, req.body, existingStep3);
+
     const submission = await FormSubmission.findOneAndUpdate(
       { phone: p },
-      {
-        $set: {
-          selectedSlot,
-          step3Data,
-          currentStep: 3,
-          applicationStatus: 'registered',
-          isRegistered: true,
-          registeredAt: new Date(),
-          updatedAt: new Date(),
-          // If booking within 4 hours, we'll send reminder immediately and mark as sent
-          reminderSent: shouldSendReminderImmediately,
-          reminderSentAt: shouldSendReminderImmediately ? new Date() : null,
-          // If booking within 1 hour, we'll send meet link immediately and mark as sent
-          meetLinkSent: shouldSendMeetLinkImmediately,
-          meetLinkSentAt: shouldSendMeetLinkImmediately ? new Date() : null,
-          // If booking within 30 min, we'll send 30-min live reminder immediately and mark as sent
-          reminder30MinSent: shouldSendReminder30MinImmediately,
-          reminder30MinSentAt: shouldSendReminder30MinImmediately ? new Date() : null
-        }
-      },
+      { $set: setPayload },
       { upsert: false, new: true, runValidators: true }
     );
 
@@ -639,20 +674,21 @@ exports.savePostRegistrationData = async (req, res) => {
       completedAt: new Date()
     };
 
+    const setPayload = {
+      email: email.trim().toLowerCase(),
+      interestLevel: interestNum,
+      postRegistrationData,
+      currentStep: 4,
+      applicationStatus: 'completed',
+      updatedAt: new Date()
+    };
+    mergeUtmIfFirstTouch(setPayload, req.body, submission);
+
     console.log('[savePostRegistrationData] Attempting to save:', { phone: p, interestLevel: interestNum, email: email.trim().toLowerCase() });
 
     const result = await FormSubmission.findOneAndUpdate(
       { phone: p },
-      {
-        $set: {
-          email: email.trim().toLowerCase(),
-          interestLevel: interestNum,
-          postRegistrationData,
-          currentStep: 4,
-          applicationStatus: 'completed',
-          updatedAt: new Date()
-        }
-      },
+      { $set: setPayload },
       { new: true, runValidators: true }
     );
 
@@ -755,6 +791,8 @@ exports.submitApplication = async (req, res) => {
       demoInterest
     };
     if (demoInterest === 'YES_SOON') doc.selectedSlot = selectedSlot;
+    const utm = getUtmFromBody(req.body);
+    if (utm) Object.assign(doc, utm);
 
     const created = await FormSubmission.create(doc);
     otpStore.removeVerified(p);

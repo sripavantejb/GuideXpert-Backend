@@ -70,7 +70,11 @@ function submissionToRow(submission) {
     doc.selectedSlot ?? step3.selectedSlot ?? '',
     doc.registeredAt ? new Date(doc.registeredAt).toISOString() : '',
     doc.createdAt ? new Date(doc.createdAt).toISOString() : '',
-    doc.updatedAt ? new Date(doc.updatedAt).toISOString() : ''
+    doc.updatedAt ? new Date(doc.updatedAt).toISOString() : '',
+    doc.utm_source ?? '',
+    doc.utm_medium ?? '',
+    doc.utm_campaign ?? '',
+    doc.utm_content ?? ''
   ];
 }
 

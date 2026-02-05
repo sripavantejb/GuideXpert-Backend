@@ -72,7 +72,15 @@ curl -X POST https://guide-xpert-backend.vercel.app/api/meet/send-otp \
 
 ### 4. **Common Issues**
 
-**404 Error:**
+**404 on Influencer Endpoints** (`/api/influencer-links`, `/api/influencer-analytics`):
+- Cause: The live deployment does not include the influencer routes.
+- Fix: Redeploy the backend so the latest code is deployed.
+  1. Ensure you are logged in: `vercel login`
+  2. Deploy: `cd backend && vercel --prod`
+  3. Or run: `./deploy.sh` from the backend directory.
+- Verify: `curl -i https://guide-xpert-backend.vercel.app/api/influencer-links` should return 401 (auth required), not 404.
+
+**404 Error (general):**
 - Make sure `vercel.json` is in the backend root directory
 - Redeploy after adding `vercel.json`
 

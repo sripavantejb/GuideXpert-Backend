@@ -140,6 +140,21 @@ const formSubmissionSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  // UTM attribution (first-touch from registration page)
+  utm_source: { type: String, trim: true },
+  utm_medium: { type: String, trim: true },
+  utm_campaign: { type: String, trim: true },
+  utm_content: { type: String, trim: true },
+  // Admin-only notes (internal follow-up, not shown to applicant)
+  adminNotes: { type: String, trim: true, maxlength: 2000 },
+  adminNotesUpdatedAt: { type: Date },
+  // Lead follow-up status and description (admin panel)
+  leadStatus: {
+    type: String,
+    enum: ['Connected', 'Not Connected', 'Call Back Later', 'Not Interested', 'Interested'],
+    trim: true
+  },
+  leadDescription: { type: String, trim: true, maxlength: 2000 },
   createdAt: {
     type: Date,
     default: Date.now
@@ -159,6 +174,7 @@ formSubmissionSchema.index({ isRegistered: 1, reminderSent: 1, 'step3Data.slotDa
 formSubmissionSchema.index({ isRegistered: 1, meetLinkSent: 1, 'step3Data.slotDate': 1 });
 // Index for 30-min reminder cron job queries
 formSubmissionSchema.index({ isRegistered: 1, reminder30MinSent: 1, 'step3Data.slotDate': 1 });
+formSubmissionSchema.index({ utm_content: 1 });
 
 // Update updatedAt before saving
 formSubmissionSchema.pre('save', function(next) {
