@@ -1,7 +1,15 @@
 const axios = require('axios');
 
 const MSG91_SEND_OTP_URL = 'https://control.msg91.com/api/v5/otp';
-const MSG91_FLOW_URL = 'https://control.msg91.com/api/v5/flow/';
+const MSG91_FLOW_URL = 'https://control.msg91.com/api/v5/flow';
+
+function buildRecipients(phones, variables = {}) {
+  return phones.map(phone => {
+    const digits = String(phone).replace(/\D/g, '');
+    const mobile = digits.length >= 10 ? '91' + digits.slice(-10) : '91' + digits;
+    return { mobiles: mobile, ...variables };
+  });
+}
 
 /**
  * Send OTP via MSG91 SMS API (control.msg91.com).
@@ -91,33 +99,31 @@ async function sendSlotConfirmationSms(phone, variables = {}) {
     return { success: false, error: 'MSG91 slot confirmation not configured' };
   }
 
-  // Normalize phone number: extract digits and prepend 91 for India
-  const digits = String(phone).replace(/\D/g, '');
-  const mobile = digits.length >= 10 ? '91' + digits.slice(-10) : '91' + digits;
-
   console.log('[MSG91] Sending slot confirmation SMS:', {
-    mobile: `****${mobile.slice(-4)}`,
+    mobile: `****${String(phone).replace(/\D/g, '').slice(-4)}`,
     templateId,
     variables
   });
 
-  // Build request body for MSG91 Flow API
-  // The flow_id is the template ID from MSG91
-  const requestBody = {
-    flow_id: templateId,
-    mobiles: mobile,
-    // Pass template variables - these should match your MSG91 template placeholders
+  const recipients = buildRecipients([phone], {
     // If your template uses ##name##, ##date##, ##time##, use those exact keys
     name: variables.name || '',
     date: variables.date || '',
     time: variables.time || ''
+  });
+
+  // Build request body for MSG91 Flow API (new format)
+  const requestBody = {
+    template_id: templateId,
+    recipients
   };
 
   try {
     const res = await axios.post(MSG91_FLOW_URL, requestBody, {
       headers: {
+        'accept': 'application/json',
         'authkey': authkey,
-        'Content-Type': 'application/json'
+        'content-type': 'application/json'
       },
       timeout: 15000,
       validateStatus: () => true
@@ -187,12 +193,7 @@ async function sendBulkReminderSms(phones, variables = {}) {
     return { success: true, sentCount: 0, failedCount: 0 };
   }
 
-  // Normalize and format phone numbers: extract digits and prepend 91 for India
-  // MSG91 Flow API accepts comma-separated mobile numbers
-  const mobiles = phones.map(phone => {
-    const digits = String(phone).replace(/\D/g, '');
-    return digits.length >= 10 ? '91' + digits.slice(-10) : '91' + digits;
-  }).join(',');
+  const recipients = buildRecipients(phones, variables);
 
   console.log('[MSG91] Sending bulk reminder SMS:', {
     count: phones.length,
@@ -200,19 +201,18 @@ async function sendBulkReminderSms(phones, variables = {}) {
     variables
   });
 
-  // Build request body for MSG91 Flow API
+  // Build request body for MSG91 Flow API (new format)
   const requestBody = {
-    flow_id: templateId,
-    mobiles: mobiles,
-    // Pass template variables if any
-    ...variables
+    template_id: templateId,
+    recipients
   };
 
   try {
     const res = await axios.post(MSG91_FLOW_URL, requestBody, {
       headers: {
+        'accept': 'application/json',
         'authkey': authkey,
-        'Content-Type': 'application/json'
+        'content-type': 'application/json'
       },
       timeout: 30000, // Longer timeout for bulk
       validateStatus: () => true
@@ -280,11 +280,7 @@ async function sendBulkMeetLinkSms(phones, variables = {}) {
     return { success: true, sentCount: 0, failedCount: 0 };
   }
 
-  // Normalize and format phone numbers: extract digits and prepend 91 for India
-  const mobiles = phones.map(phone => {
-    const digits = String(phone).replace(/\D/g, '');
-    return digits.length >= 10 ? '91' + digits.slice(-10) : '91' + digits;
-  }).join(',');
+  const recipients = buildRecipients(phones, variables);
 
   console.log('[MSG91] Sending bulk meet link SMS:', {
     count: phones.length,
@@ -292,19 +288,18 @@ async function sendBulkMeetLinkSms(phones, variables = {}) {
     variables
   });
 
-  // Build request body for MSG91 Flow API
+  // Build request body for MSG91 Flow API (new format)
   const requestBody = {
-    flow_id: templateId,
-    mobiles: mobiles,
-    // Pass template variables if any
-    ...variables
+    template_id: templateId,
+    recipients
   };
 
   try {
     const res = await axios.post(MSG91_FLOW_URL, requestBody, {
       headers: {
+        'accept': 'application/json',
         'authkey': authkey,
-        'Content-Type': 'application/json'
+        'content-type': 'application/json'
       },
       timeout: 30000,
       validateStatus: () => true
@@ -372,11 +367,7 @@ async function sendBulkReminder30MinSms(phones, variables = {}) {
     return { success: true, sentCount: 0, failedCount: 0 };
   }
 
-  // Normalize and format phone numbers: extract digits and prepend 91 for India
-  const mobiles = phones.map(phone => {
-    const digits = String(phone).replace(/\D/g, '');
-    return digits.length >= 10 ? '91' + digits.slice(-10) : '91' + digits;
-  }).join(',');
+  const recipients = buildRecipients(phones, variables);
 
   console.log('[MSG91] Sending bulk 30-min reminder SMS:', {
     count: phones.length,
@@ -384,19 +375,18 @@ async function sendBulkReminder30MinSms(phones, variables = {}) {
     variables
   });
 
-  // Build request body for MSG91 Flow API
+  // Build request body for MSG91 Flow API (new format)
   const requestBody = {
-    flow_id: templateId,
-    mobiles: mobiles,
-    // Pass template variables (var = meeting link)
-    ...variables
+    template_id: templateId,
+    recipients
   };
 
   try {
     const res = await axios.post(MSG91_FLOW_URL, requestBody, {
       headers: {
+        'accept': 'application/json',
         'authkey': authkey,
-        'Content-Type': 'application/json'
+        'content-type': 'application/json'
       },
       timeout: 30000,
       validateStatus: () => true
