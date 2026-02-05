@@ -4,6 +4,7 @@ const Admin = require('../models/Admin');
 const FormSubmission = require('../models/FormSubmission');
 const SlotConfig = require('../models/SlotConfig');
 const SlotDateOverride = require('../models/SlotDateOverride');
+const { getISTCalendarDateUTC, getISTDayRangeFromString } = require('../utils/dateHelpers');
 
 const JWT_SECRET = process.env.ADMIN_JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.ADMIN_JWT_EXPIRES_IN || '24h';
@@ -16,6 +17,18 @@ const ALL_SLOT_IDS = [
   'MONDAY_7PM', 'TUESDAY_7PM', 'WEDNESDAY_7PM', 'THURSDAY_7PM',
   'FRIDAY_7PM', 'SATURDAY_7PM', 'SUNDAY_7PM', 'SUNDAY_11AM'
 ];
+
+const DAY_NAMES = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+
+function formatSlotLabelForDisplay(slotId) {
+  if (!slotId || typeof slotId !== 'string') return slotId || '';
+  const match = slotId.match(/^(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)_(7PM|11AM|3PM)$/i);
+  if (match) {
+    const dayShort = { MONDAY: 'Mon', TUESDAY: 'Tue', WEDNESDAY: 'Wed', THURSDAY: 'Thu', FRIDAY: 'Fri', SATURDAY: 'Sat', SUNDAY: 'Sun' };
+    return `${dayShort[match[1].toUpperCase()] || match[1]} ${match[2]}`;
+  }
+  return slotId;
+}
 
 function isDevAdminAllowed() {
   if (process.env.ALLOW_DEV_ADMIN_LOGIN === 'true') return true;
@@ -398,6 +411,20 @@ exports.getAdminLeads = async (req, res) => {
         $or: [{ 'step3Data.selectedSlot': selectedSlot }, { selectedSlot }]
       });
     }
+    const slotDate = (req.query.slotDate || '').trim();
+    const istDayRange = getISTDayRangeFromString(slotDate);
+    if (istDayRange) {
+      const { start, end } = istDayRange;
+      console.log('[getAdminLeads] Date filter:', { slotDate, start: start.toISOString(), end: end.toISOString() });
+      // Only show leads with a slot booked on this specific date (IST calendar day)
+      andConditions.push({
+        'step3Data.slotDate': { $gte: start, $lt: end }
+      });
+      // Ensure they have a selected slot
+      andConditions.push({
+        'step3Data.selectedSlot': { $exists: true, $nin: [null, ''] }
+      });
+    }
     if (q) {
       const safe = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       andConditions.push({
@@ -411,11 +438,25 @@ exports.getAdminLeads = async (req, res) => {
 
     const filter = andConditions.length > 0 ? { $and: andConditions } : {};
 
+    console.log('[getAdminLeads] Query params:', { page, limit, slotDate, slotBooked, selectedSlot });
+    console.log('[getAdminLeads] Filter:', JSON.stringify(filter, null, 2));
+
     const skip = (page - 1) * limit;
     const [submissions, total] = await Promise.all([
       FormSubmission.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
       FormSubmission.countDocuments(filter)
     ]);
+    
+    console.log('[getAdminLeads] Found', total, 'leads');
+    // Debug: log first few slotDates to verify filtering
+    if (submissions.length > 0) {
+      console.log('[getAdminLeads] Sample slotDates:', submissions.slice(0, 5).map(s => ({
+        name: s.fullName,
+        slotDate: s.step3Data?.slotDate,
+        slotDateISO: s.step3Data?.slotDate ? new Date(s.step3Data.slotDate).toISOString() : null,
+        selectedSlot: s.step3Data?.selectedSlot
+      })));
+    }
 
     const data = submissions.map((sub) => mapLeadToDTO(sub));
     const totalPages = Math.ceil(total / limit) || 1;
@@ -471,6 +512,50 @@ exports.getSlotConfigs = async (req, res) => {
     return res.status(200).json({ success: true, data: { slots } });
   } catch (error) {
     console.error('[getSlotConfigs] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * GET /admin/slots/for-date?date=YYYY-MM-DD
+ * Returns slots available on that IST calendar date (day-of-week match + SlotConfig + SlotDateOverride).
+ */
+exports.getSlotsForDate = async (req, res) => {
+  try {
+    const dateStr = (req.query.date || '').trim();
+    const istDayRange = getISTDayRangeFromString(dateStr);
+    if (!istDayRange) {
+      return res.status(200).json({ success: true, data: { slots: [] } });
+    }
+    const { start } = istDayRange;
+    const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+    const istDayOfWeek = new Date(start.getTime() + IST_OFFSET_MS).getUTCDay();
+
+    const candidateSlotIds = ALL_SLOT_IDS.filter((slotId) => {
+      const dayName = slotId.split('_')[0];
+      return DAY_NAMES.indexOf(dayName) === istDayOfWeek;
+    });
+
+    const [configs, overrides] = await Promise.all([
+      SlotConfig.find({ slotId: { $in: candidateSlotIds } }).lean(),
+      SlotDateOverride.find({ date: start, slotId: { $in: candidateSlotIds } }).lean()
+    ]);
+
+    const configMap = Object.fromEntries(configs.map((c) => [c.slotId, c.enabled]));
+    const overrideMap = Object.fromEntries(overrides.map((o) => [o.slotId, o.enabled]));
+
+    const slots = candidateSlotIds
+      .filter((slotId) => {
+        const override = overrideMap[slotId];
+        const config = configMap[slotId];
+        const enabled = override !== undefined ? override : (config !== undefined ? config : true);
+        return enabled;
+      })
+      .map((slotId) => ({ slotId, label: formatSlotLabelForDisplay(slotId) }));
+
+    return res.status(200).json({ success: true, data: { slots } });
+  } catch (error) {
+    console.error('[getSlotsForDate] Error:', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
@@ -592,20 +677,18 @@ exports.getSlotOverrides = async (req, res) => {
     if (!fromStr || !toStr) {
       return res.status(400).json({ success: false, message: 'Query params from and to (YYYY-MM-DD) are required' });
     }
-    const fromDate = new Date(fromStr);
-    const toDate = new Date(toStr);
-    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
-      return res.status(400).json({ success: false, message: 'Invalid from or to date' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fromStr) || !/^\d{4}-\d{2}-\d{2}$/.test(toStr)) {
+      return res.status(400).json({ success: false, message: 'Invalid from or to date format (use YYYY-MM-DD)' });
     }
-    const endOfTo = new Date(toDate);
-    endOfTo.setUTCDate(endOfTo.getUTCDate() + 1);
+    const fromDate = getISTCalendarDateUTC(new Date(fromStr + 'T12:00:00.000Z'));
+    const endOfTo = new Date(getISTCalendarDateUTC(new Date(toStr + 'T12:00:00.000Z')).getTime() + 24 * 60 * 60 * 1000);
 
     const overrides = await SlotDateOverride.find({
       date: { $gte: fromDate, $lt: endOfTo }
     }).lean();
 
     const data = overrides.map((o) => ({
-      date: o.date.toISOString().slice(0, 10),
+      date: new Date(o.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
       slotId: o.slotId,
       enabled: o.enabled
     }));
@@ -635,11 +718,10 @@ exports.setSlotOverride = async (req, res) => {
       return res.status(400).json({ success: false, message: 'enabled must be a boolean' });
     }
 
-    const date = new Date(dateStr);
-    if (Number.isNaN(date.getTime())) {
-      return res.status(400).json({ success: false, message: 'Invalid date' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return res.status(400).json({ success: false, message: 'Invalid date format (use YYYY-MM-DD)' });
     }
-    const dateOnly = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+    const dateOnly = getISTCalendarDateUTC(new Date(dateStr + 'T12:00:00.000Z'));
 
     const override = await SlotDateOverride.findOneAndUpdate(
       { date: dateOnly, slotId },
@@ -650,7 +732,7 @@ exports.setSlotOverride = async (req, res) => {
     return res.status(200).json({
       success: true,
       data: {
-        date: override.date.toISOString().slice(0, 10),
+        date: new Date(override.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
         slotId: override.slotId,
         enabled: override.enabled
       }
