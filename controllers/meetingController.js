@@ -60,20 +60,122 @@ exports.registerForMeeting = async (req, res) => {
   }
 };
 
+function buildDateRange(from, to) {
+  const range = {};
+  if (from) {
+    const start = new Date(from);
+    if (!Number.isNaN(start.getTime())) {
+      start.setHours(0, 0, 0, 0);
+      range.$gte = start;
+    }
+  }
+  if (to) {
+    const end = new Date(to);
+    if (!Number.isNaN(end.getTime())) {
+      end.setHours(23, 59, 59, 999);
+      range.$lte = end;
+    }
+  }
+  return Object.keys(range).length ? range : null;
+}
+
+function buildSearchQuery(q) {
+  if (!q) return null;
+  const term = String(q).trim();
+  if (!term) return null;
+  const digits = term.replace(/\D/g, '');
+  const clauses = [{ name: { $regex: term, $options: 'i' } }];
+  if (digits) clauses.push({ mobileNumber: { $regex: digits, $options: 'i' } });
+  else clauses.push({ mobileNumber: { $regex: term, $options: 'i' } });
+  return { $or: clauses };
+}
+
 exports.getMeetingAttendance = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
     const skip = (page - 1) * limit;
+    const uniqueByMobile = String(req.query.uniqueByMobile || '').toLowerCase() === 'true';
+    const dedupeMode = String(req.query.dedupeMode || 'latest').toLowerCase();
+    const sortDirection = dedupeMode === 'oldest' ? 1 : -1;
+    const dateRange = buildDateRange(req.query.from, req.query.to);
+    const searchQuery = buildSearchQuery(req.query.q);
 
-    const [records, total] = await Promise.all([
-      MeetingAttendance.find({})
+    const match = {};
+    if (dateRange) match.timestamp = dateRange;
+    if (searchQuery) Object.assign(match, searchQuery);
+
+    const statsPipeline = [
+      { $match: match },
+      { $group: { _id: '$mobileNumber' } },
+      { $count: 'uniqueAttendees' }
+    ];
+
+    if (uniqueByMobile) {
+      const pipeline = [
+        { $match: match },
+        { $sort: { timestamp: sortDirection } },
+        {
+          $group: {
+            _id: '$mobileNumber',
+            record: { $first: '$$ROOT' }
+          }
+        },
+        { $replaceRoot: { newRoot: '$record' } },
+        { $sort: { timestamp: sortDirection } },
+        { $skip: skip },
+        { $limit: limit }
+      ];
+
+      const [records, totalRecords, uniqueAgg] = await Promise.all([
+        MeetingAttendance.aggregate(pipeline),
+        MeetingAttendance.countDocuments(match),
+        MeetingAttendance.aggregate(statsPipeline)
+      ]);
+
+      const uniqueAttendees = uniqueAgg[0]?.uniqueAttendees || 0;
+      const duplicateCount = Math.max(0, totalRecords - uniqueAttendees);
+      const totalPages = Math.ceil(uniqueAttendees / limit) || 1;
+
+      const data = records.map((r) => ({
+        id: r._id,
+        name: r.name,
+        mobileNumber: r.mobileNumber,
+        timestamp: r.timestamp,
+        attendanceStatus: r.attendanceStatus,
+        createdAt: r.createdAt
+      }));
+
+      return res.status(200).json({
+        success: true,
+        data,
+        pagination: {
+          page,
+          limit,
+          total: uniqueAttendees,
+          totalPages
+        },
+        stats: {
+          totalRecords,
+          uniqueAttendees,
+          duplicateCount
+        }
+      });
+    }
+
+    const [records, totalRecords, uniqueAgg] = await Promise.all([
+      MeetingAttendance.find(match)
         .sort({ timestamp: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      MeetingAttendance.countDocuments({})
+      MeetingAttendance.countDocuments(match),
+      MeetingAttendance.aggregate(statsPipeline)
     ]);
+
+    const uniqueAttendees = uniqueAgg[0]?.uniqueAttendees || 0;
+    const duplicateCount = Math.max(0, totalRecords - uniqueAttendees);
+    const totalPages = Math.ceil(totalRecords / limit) || 1;
 
     const data = records.map((r) => ({
       id: r._id,
@@ -83,7 +185,6 @@ exports.getMeetingAttendance = async (req, res) => {
       attendanceStatus: r.attendanceStatus,
       createdAt: r.createdAt
     }));
-    const totalPages = Math.ceil(total / limit) || 1;
 
     return res.status(200).json({
       success: true,
@@ -91,8 +192,13 @@ exports.getMeetingAttendance = async (req, res) => {
       pagination: {
         page,
         limit,
-        total,
+        total: totalRecords,
         totalPages
+      },
+      stats: {
+        totalRecords,
+        uniqueAttendees,
+        duplicateCount
       }
     });
   } catch (error) {

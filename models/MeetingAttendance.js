@@ -35,6 +35,8 @@ const meetingAttendanceSchema = new mongoose.Schema({
 
 meetingAttendanceSchema.index({ timestamp: -1 });
 meetingAttendanceSchema.index({ createdAt: -1 });
+meetingAttendanceSchema.index({ mobileNumber: 1 });
+meetingAttendanceSchema.index({ mobileNumber: 1, timestamp: -1 });
 
 meetingAttendanceSchema.pre('save', function() {
   this.timestamp = this.timestamp || Date.now();
