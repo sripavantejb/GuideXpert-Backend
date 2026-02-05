@@ -33,10 +33,8 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
   'https://www.guidexpert.co.in',
   'https://guidexpert.co.in',
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
 ].filter(Boolean);
-if (allowedOrigins.length === 0) allowedOrigins.push('http://localhost:5173');
+if (allowedOrigins.length === 0) allowedOrigins.push('https://guidexpert.co.in');
 app.use(cors({
   origin: function(origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
