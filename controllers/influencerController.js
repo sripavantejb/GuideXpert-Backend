@@ -181,3 +181,36 @@ exports.getInfluencerAnalytics = async (req, res) => {
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
+
+/**
+ * GET /api/influencer-analytics/trend — registrations per day (for chart).
+ * Query: from, to (ISO date strings, optional).
+ */
+exports.getInfluencerTrend = async (req, res) => {
+  try {
+    const { from, to } = req.query || {};
+    const match = { applicationStatus: { $in: ['registered', 'completed'] } };
+    if (from || to) {
+      match.registeredAt = {};
+      if (from) match.registeredAt.$gte = new Date(from);
+      if (to) match.registeredAt.$lte = new Date(to);
+    }
+    match.utm_content = { $exists: true, $ne: null, $ne: '' };
+    const pipeline = [
+      { $match: match },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$registeredAt' } },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } },
+      { $project: { date: '$_id', count: 1, _id: 0 } }
+    ];
+    const results = await FormSubmission.aggregate(pipeline);
+    return res.status(200).json({ success: true, data: results });
+  } catch (err) {
+    console.error('[getInfluencerTrend]', err);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};

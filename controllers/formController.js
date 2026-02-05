@@ -398,7 +398,12 @@ exports.saveStep3 = async (req, res) => {
 
     const slotDateTime = new Date(slotDate);
     const calendarDate = getISTCalendarDateUTC(slotDateTime);
-    const dateOverride = await SlotDateOverride.findOne({ date: calendarDate, slotId: selectedSlot }).lean();
+    const istDateStr = calendarDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const utcMidnightSameDay = new Date(istDateStr + 'T00:00:00.000Z');
+    const dateOverride = await SlotDateOverride.findOne({
+      slotId: selectedSlot,
+      $or: [{ date: calendarDate }, { date: utcMidnightSameDay }]
+    }).lean();
     if (dateOverride && dateOverride.enabled === false) {
       return res.status(400).json({ success: false, message: 'This slot is not available for this date. Please choose another.' });
     }
