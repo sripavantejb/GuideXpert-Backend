@@ -35,6 +35,7 @@ function buildUtmLink(influencerName, platform, campaign) {
  */
 exports.createInfluencerLink = async (req, res) => {
   try {
+    console.log('[createInfluencerLink] Request body:', JSON.stringify(req.body));
     const { influencerName, platform, campaign } = req.body || {};
     if (!influencerName || typeof influencerName !== 'string' || !influencerName.trim()) {
       return res.status(400).json({ success: false, message: 'Influencer name is required.' });
@@ -55,7 +56,9 @@ exports.createInfluencerLink = async (req, res) => {
     };
 
     if (req.body.save === true) {
+      console.log('[createInfluencerLink] Saving to database:', payload);
       const doc = await InfluencerLink.create(payload);
+      console.log('[createInfluencerLink] Saved successfully, id:', doc._id);
       return res.status(201).json({
         success: true,
         data: {
@@ -89,6 +92,7 @@ exports.createInfluencerLink = async (req, res) => {
 exports.listInfluencerLinks = async (req, res) => {
   try {
     const links = await InfluencerLink.find({}).sort({ createdAt: -1 }).lean();
+    console.log('[listInfluencerLinks] Found', links.length, 'links');
     const data = links.map(doc => ({
       id: doc._id,
       influencerName: doc.influencerName,
@@ -169,12 +173,21 @@ exports.getInfluencerAnalytics = async (req, res) => {
     }
 
     const results = await FormSubmission.aggregate(pipeline);
-    const data = results.map(r => ({
-      influencerName: r.influencerName || r._id,
-      platform: r.platform || '',
-      totalRegistrations: r.totalRegistrations,
-      latestRegistration: r.latestRegistration || null
-    }));
+    const data = results.map(r => {
+      // Decode URL-encoded influencer name (utm_content stores encoded value)
+      let name = r.influencerName || r._id || '';
+      try {
+        name = decodeURIComponent(name);
+      } catch {
+        // Keep original if decode fails
+      }
+      return {
+        influencerName: name,
+        platform: r.platform || '',
+        totalRegistrations: r.totalRegistrations,
+        latestRegistration: r.latestRegistration || null
+      };
+    });
     return res.status(200).json({ success: true, data });
   } catch (err) {
     console.error('[getInfluencerAnalytics]', err);
