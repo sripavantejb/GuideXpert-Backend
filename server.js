@@ -7,6 +7,7 @@ const formRoutes = require('./routes/formRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const influencerRoutes = require('./routes/influencerRoutes');
 const meetingRoutes = require('./routes/meetingRoutes');
+const trainingRoutes = require('./routes/trainingRoutes');
 const cronRoutes = require('./routes/cronRoutes');
 const counsellorAuthRoutes = require('./routes/counsellorAuthRoutes');
 const studentRoutes = require('./routes/studentRoutes');
@@ -63,6 +64,7 @@ app.use('/api', formRoutes);
 app.use('/api', influencerRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/meeting', meetingRoutes);
+app.use('/api/training', trainingRoutes);
 app.use('/api/cron', cronRoutes);
 
 app.get('/api/health', (req, res) => {

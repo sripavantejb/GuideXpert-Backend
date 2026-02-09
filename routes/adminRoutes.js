@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { login, getAdminLeads, getLeadById, updateLeadNotes, getAdminStats, exportLeads, getSlotConfigs, getSlotsForDate, updateSlotConfig, getSlotBookingCounts, getSlotOverrides, setSlotOverride } = require('../controllers/adminController');
 const { getMeetingAttendance } = require('../controllers/meetingController');
+const { getTrainingAttendance } = require('../controllers/trainingController');
 const requireAdmin = require('../middleware/requireAdmin');
 
 router.post('/login', login);
@@ -17,5 +18,6 @@ router.get('/slots/overrides', requireAdmin, getSlotOverrides);
 router.put('/slots/overrides', requireAdmin, setSlotOverride);
 router.put('/slots/:slotId', requireAdmin, updateSlotConfig);
 router.get('/meeting-attendance', requireAdmin, getMeetingAttendance);
+router.get('/training-attendance', requireAdmin, getTrainingAttendance);
 
 module.exports = router;
