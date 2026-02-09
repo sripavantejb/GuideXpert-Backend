@@ -5,6 +5,7 @@ const { sendOtp: sendOtpSms, sendSlotConfirmationSms, sendReminderSms, sendMeetL
 const { getDemoSlots } = require('../utils/demoSlots');
 const { appendFormSubmission } = require('../utils/sheetsService');
 const FormSubmission = require('../models/FormSubmission');
+const VerifiedPhoneSession = require('../models/VerifiedPhoneSession');
 const SlotConfig = require('../models/SlotConfig');
 const SlotDateOverride = require('../models/SlotDateOverride');
 const { getISTCalendarDateUTC } = require('../utils/dateHelpers');
@@ -193,6 +194,12 @@ exports.verifyOtp = async (req, res) => {
 
     await otpRepository.deleteOtp(p);
     otpStore.addVerified(p);
+    // Persist for serverless: assessment submit may hit another instance
+    await VerifiedPhoneSession.findOneAndUpdate(
+      { phone: p },
+      { $set: { verifiedAt: new Date() } },
+      { upsert: true }
+    );
 
     return res.status(200).json({ success: true, message: 'OTP verified', verified: true });
   } catch (err) {

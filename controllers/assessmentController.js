@@ -1,6 +1,9 @@
 const otpStore = require('../utils/otpStore');
 const otpRepository = require('../utils/otpRepository');
 const AssessmentSubmission = require('../models/AssessmentSubmission');
+const VerifiedPhoneSession = require('../models/VerifiedPhoneSession');
+
+const VERIFIED_TTL_MS = 15 * 60 * 1000; // 15 min
 
 const MAX_SCORE = 12;
 
@@ -81,8 +84,13 @@ exports.submitAssessment = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Valid 10-digit Indian phone required' });
     }
 
-    if (!otpStore.isVerified(p)) {
-      return res.status(400).json({ success: false, message: 'Phone number must be verified first.' });
+    const inMemoryVerified = otpStore.isVerified(p);
+    if (!inMemoryVerified) {
+      const since = new Date(Date.now() - VERIFIED_TTL_MS);
+      const session = await VerifiedPhoneSession.findOne({ phone: p, verifiedAt: { $gte: since } }).lean();
+      if (!session) {
+        return res.status(400).json({ success: false, message: 'Phone number must be verified first.' });
+      }
     }
 
     if (!answers || typeof answers !== 'object') {
