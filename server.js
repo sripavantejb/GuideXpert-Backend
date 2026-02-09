@@ -8,6 +8,8 @@ const adminRoutes = require('./routes/adminRoutes');
 const influencerRoutes = require('./routes/influencerRoutes');
 const meetingRoutes = require('./routes/meetingRoutes');
 const cronRoutes = require('./routes/cronRoutes');
+const counsellorAuthRoutes = require('./routes/counsellorAuthRoutes');
+const studentRoutes = require('./routes/studentRoutes');
 
 const app = express();
 
@@ -27,6 +29,9 @@ const envStatus = {
 console.log('[env] OTP (MSG91) config:', envStatus);
 if (!process.env.ADMIN_JWT_SECRET) {
   console.warn('[env] ADMIN_JWT_SECRET is not set — admin login and /api/admin/leads will return 500. Add it to .env');
+}
+if (!process.env.COUNSELLOR_JWT_SECRET) {
+  console.warn('[env] COUNSELLOR_JWT_SECRET is not set — counsellor login and /api/counsellor/students will return 500. Add it to .env');
 }
 
 const allowedOrigins = [
@@ -51,6 +56,9 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Mount more specific paths first so /api/counsellor/students is never handled by generic /api
+app.use('/api/counsellor/students', studentRoutes);
+app.use('/api/counsellor', counsellorAuthRoutes);
 app.use('/api', formRoutes);
 app.use('/api', influencerRoutes);
 app.use('/api/admin', adminRoutes);
