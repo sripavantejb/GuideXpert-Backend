@@ -5,9 +5,9 @@ const VerifiedPhoneSession = require('../models/VerifiedPhoneSession');
 
 const VERIFIED_TTL_MS = 15 * 60 * 1000; // 15 min
 
-const MAX_SCORE = 12;
+const MAX_SCORE = 10;
 
-/** Correct answers for MCQs (exact option text, trim for comparison). Q11 is short answer, scored separately. */
+/** Correct answers for MCQs (exact option text, trim for comparison). */
 const CORRECT_ANSWERS = {
   q1: 'To guide students based on their needs and suitability',
   q2: 'Counsellor explains all suitable options ethically',
@@ -17,7 +17,6 @@ const CORRECT_ANSWERS = {
   q7: 'Explain the risk and guide properly',
   q9: 'Referrals and personal networks',
   q10: 'Build rapport and understand needs',
-  q11: null, // short answer: award 2 if non-empty and reasonable length
   q12: 'To save time and ensure right fit',
   q13: 'Student with no clarity and urgency pressure'
 };
@@ -39,26 +38,14 @@ function scoreMcq(userAnswer, correct) {
 }
 
 /**
- * Score Q11 (short answer): 2 points if non-empty and reasonable length (e.g. >= 10 chars).
- */
-function scoreQ11(userAnswer) {
-  const s = trimAnswer(userAnswer);
-  if (!s) return 0;
-  return s.length >= 10 ? 2 : 0;
-}
-
-/**
  * Compute total score from answers object.
  */
 function computeScore(answers) {
   if (!answers || typeof answers !== 'object') return { score: 0, maxScore: MAX_SCORE };
   let score = 0;
   for (const [qId, correct] of Object.entries(CORRECT_ANSWERS)) {
-    const userVal = answers[qId];
-    if (qId === 'q11') {
-      score += scoreQ11(userVal);
-    } else if (correct) {
-      score += scoreMcq(userVal, correct);
+    if (correct) {
+      score += scoreMcq(answers[qId], correct);
     }
   }
   return { score, maxScore: MAX_SCORE };
