@@ -25,7 +25,6 @@ async function seedCounsellor() {
     const email = process.env.COUNSELLOR_EMAIL || await ask('Counsellor email: ');
     const password = process.env.COUNSELLOR_PASSWORD || await ask('Counsellor password (min 6 chars): ');
     const name = process.env.COUNSELLOR_NAME || (await ask('Counsellor name: ')) || 'Counsellor';
-    let phone = process.env.COUNSELLOR_PHONE || (await ask('Counsellor phone (10 digits, optional for OTP login): ')) || '';
 
     if (!email || !email.includes('@')) {
       console.error('Valid email is required.');
@@ -36,12 +35,6 @@ async function seedCounsellor() {
       process.exit(1);
     }
 
-    phone = phone.replace(/\D/g, '');
-    if (phone && phone.length !== 10) {
-      console.error('Phone must be 10 digits if provided.');
-      process.exit(1);
-    }
-
     const existing = await Counsellor.findOne({ email: email.toLowerCase().trim() });
     if (existing) {
       console.log('Counsellor with this email already exists.');
@@ -49,16 +42,13 @@ async function seedCounsellor() {
       return;
     }
 
-    const payload = {
+    await Counsellor.create({
       email: email.toLowerCase().trim(),
       password,
       name: name.trim() || 'Counsellor',
       role: 'counsellor',
-    };
-    if (phone) payload.phone = phone;
-
-    await Counsellor.create(payload);
-    console.log('Counsellor created successfully. You can now log in at /counsellor/login (email/password or mobile OTP if phone was set).');
+    });
+    console.log('Counsellor created successfully. You can now log in at /counsellor/login');
     process.exit(0);
   } catch (err) {
     if (err.code === 11000) {

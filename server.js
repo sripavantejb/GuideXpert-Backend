@@ -12,7 +12,6 @@ const meetingRoutes = require('./routes/meetingRoutes');
 const trainingRoutes = require('./routes/trainingRoutes');
 const cronRoutes = require('./routes/cronRoutes');
 const counsellorAuthRoutes = require('./routes/counsellorAuthRoutes');
-const counsellorSessionRoutes = require('./routes/counsellorSessionRoutes');
 const studentRoutes = require('./routes/studentRoutes');
 const collegePredictorRoutes = require('./routes/collegePredictorRoutes');
 
@@ -20,30 +19,23 @@ const app = express();
 
 // Fail-fast: required for OTP (MSG91 SMS)
 const requiredOtpEnv = ['MSG91_AUTH_KEY', 'MSG91_TEMPLATE_ID', 'OTP_SECRET'];
-const missingOtp = requiredOtpEnv.filter((k) => !process.env[k] || !String(process.env[k]).trim());
-if (missingOtp.length > 0) {
-  console.error('[FATAL] Missing required env for OTP:', missingOtp.join(', '));
+const missing = requiredOtpEnv.filter((k) => !process.env[k] || !String(process.env[k]).trim());
+if (missing.length > 0) {
+  console.error('[FATAL] Missing required env for OTP:', missing.join(', '));
   process.exit(1);
 }
-
-// Fail-fast: required for counsellor login (JWT)
-const requiredCounsellorEnv = ['COUNSELLOR_JWT_SECRET'];
-const missingCounsellor = requiredCounsellorEnv.filter((k) => !process.env[k] || !String(process.env[k]).trim());
-if (missingCounsellor.length > 0) {
-  console.error('[FATAL] Missing required env for counsellor login:', missingCounsellor.join(', '));
-  process.exit(1);
-}
-
 const envStatus = {
   MSG91_AUTH_KEY: process.env.MSG91_AUTH_KEY ? `set (${process.env.MSG91_AUTH_KEY.length} chars)` : 'missing',
   MSG91_TEMPLATE_ID: process.env.MSG91_TEMPLATE_ID ? 'set' : 'missing',
   OTP_SECRET: process.env.OTP_SECRET ? 'set' : 'missing',
   ADMIN_JWT_SECRET: process.env.ADMIN_JWT_SECRET ? 'set' : 'missing',
-  COUNSELLOR_JWT_SECRET: process.env.COUNSELLOR_JWT_SECRET ? 'set' : 'missing',
 };
 console.log('[env] OTP (MSG91) config:', envStatus);
 if (!process.env.ADMIN_JWT_SECRET) {
   console.warn('[env] ADMIN_JWT_SECRET is not set — admin login and /api/admin/leads will return 500. Add it to .env');
+}
+if (!process.env.COUNSELLOR_JWT_SECRET) {
+  console.warn('[env] COUNSELLOR_JWT_SECRET is not set — counsellor login and /api/counsellor/students will return 500. Add it to .env');
 }
 
 const allowedOrigins = [
@@ -70,7 +62,6 @@ app.use(express.urlencoded({ extended: true }));
 
 // Mount more specific paths first so /api/counsellor/students is never handled by generic /api
 app.use('/api/counsellor/students', studentRoutes);
-app.use('/api/counsellor/sessions', counsellorSessionRoutes);
 app.use('/api/counsellor/college-predictor', collegePredictorRoutes);
 app.use('/api/counsellor', counsellorAuthRoutes);
 app.use('/api', formRoutes);

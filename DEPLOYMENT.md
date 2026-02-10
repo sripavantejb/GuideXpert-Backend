@@ -45,9 +45,6 @@ Make sure these environment variables are set in your Vercel project settings:
 **Required for Admin:**
 - `ADMIN_JWT_SECRET` - JWT secret for admin authentication
 
-**Required for Counsellor portal (login and OTP):**
-- `COUNSELLOR_JWT_SECRET` - JWT secret for counsellor authentication (mobile OTP login and protected routes). If missing, the server will not start.
-
 **Required for CORS:**
 - `FRONTEND_URL` - Your frontend URL (e.g., https://guidexpert.co.in)
 

@@ -15,13 +15,6 @@ const counsellorSchema = new mongoose.Schema({
     lowercase: true,
     unique: true,
   },
-  phone: {
-    type: String,
-    trim: true,
-    match: [/^\d{10}$/, 'Phone must be 10 digits'],
-    unique: true,
-    sparse: true,
-  },
   password: {
     type: String,
     required: true,
