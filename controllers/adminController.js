@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const Admin = require('../models/Admin');
 const FormSubmission = require('../models/FormSubmission');
 const AssessmentSubmission = require('../models/AssessmentSubmission');
+const AssessmentSubmission2 = require('../models/AssessmentSubmission2');
 const SlotConfig = require('../models/SlotConfig');
 const SlotDateOverride = require('../models/SlotDateOverride');
 const { getISTCalendarDateUTC, getISTDayRangeFromString } = require('../utils/dateHelpers');
@@ -772,6 +773,38 @@ exports.getAssessmentSubmissions = async (req, res) => {
     });
   } catch (error) {
     console.error('[getAssessmentSubmissions] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * GET /admin/assessment-2-submissions
+ * Query: page, limit
+ * Returns list of assessment 2 submissions with score for admin panel.
+ */
+exports.getAssessment2Submissions = async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const skip = (page - 1) * limit;
+
+    const [submissions, total] = await Promise.all([
+      AssessmentSubmission2.find({})
+        .sort({ submittedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+        .select('fullName phone score maxScore submittedAt'),
+      AssessmentSubmission2.countDocuments({})
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      submissions,
+      total
+    });
+  } catch (error) {
+    console.error('[getAssessment2Submissions] Error:', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
