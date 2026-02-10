@@ -131,6 +131,20 @@ exports.deleteInfluencerLink = async (req, res) => {
   }
 };
 
+// Treat date query as YYYY-MM-DD: from = start of day UTC, to = end of day UTC (accurate full-day filter)
+function parseDateRange(from, to) {
+  const range = {};
+  if (from && typeof from === 'string') {
+    const fromStr = from.trim().length === 10 ? `${from.trim()}T00:00:00.000Z` : from.trim();
+    range.$gte = new Date(fromStr);
+  }
+  if (to && typeof to === 'string') {
+    const toStr = to.trim().length === 10 ? `${to.trim()}T23:59:59.999Z` : to.trim();
+    range.$lte = new Date(toStr);
+  }
+  return Object.keys(range).length ? range : null;
+}
+
 /**
  * GET /api/influencer-analytics — aggregate registrations by utm_content (influencer).
  * Only counts users who completed slot booking (Step 3); link clicks are not counted.
@@ -140,11 +154,8 @@ exports.getInfluencerAnalytics = async (req, res) => {
   try {
     const { from, to, sort } = req.query || {};
     const match = { applicationStatus: { $in: ['registered', 'completed'] } };
-    if (from || to) {
-      match.registeredAt = {};
-      if (from) match.registeredAt.$gte = new Date(from);
-      if (to) match.registeredAt.$lte = new Date(to);
-    }
+    const dateRange = parseDateRange(from, to);
+    if (dateRange) match.registeredAt = dateRange;
     const pipeline = [
       { $match: match },
       { $match: { utm_content: { $exists: true, $ne: null, $ne: '' } } },
@@ -173,21 +184,85 @@ exports.getInfluencerAnalytics = async (req, res) => {
     }
 
     const results = await FormSubmission.aggregate(pipeline);
-    const data = results.map(r => {
-      // Decode URL-encoded influencer name (utm_content stores encoded value)
+
+    // Normalize utm_content for merging: decode, trim, lowercase key
+    function normalizeUtmContent(raw) {
+      if (raw == null || typeof raw !== 'string') return '';
+      let s = raw.trim();
+      try {
+        s = decodeURIComponent(s);
+      } catch {
+        // keep as-is if decode fails
+      }
+      return s.trim().toLowerCase();
+    }
+
+    // Merge rows with same normalized name + platform (one row per influencer)
+    const byKey = new Map();
+    for (const r of results) {
       let name = r.influencerName || r._id || '';
       try {
         name = decodeURIComponent(name);
       } catch {
-        // Keep original if decode fails
+        // keep original
       }
-      return {
-        influencerName: name,
-        platform: r.platform || '',
-        totalRegistrations: r.totalRegistrations,
-        latestRegistration: r.latestRegistration || null
-      };
-    });
+      name = name.trim();
+      const platform = (r.platform || '').trim();
+      const platformLower = platform.toLowerCase();
+      const key = `${normalizeUtmContent(r.influencerName || r._id)}|${platformLower}`;
+
+      if (byKey.has(key)) {
+        const existing = byKey.get(key);
+        existing.totalRegistrations += r.totalRegistrations ?? 0;
+        if (r.latestRegistration && (!existing.latestRegistration || new Date(r.latestRegistration) > new Date(existing.latestRegistration))) {
+          existing.latestRegistration = r.latestRegistration;
+        }
+        if (name.length > (existing.influencerName || '').length) {
+          existing.influencerName = name;
+        }
+      } else {
+        byKey.set(key, {
+          influencerName: name,
+          platform,
+          totalRegistrations: r.totalRegistrations ?? 0,
+          latestRegistration: r.latestRegistration || null
+        });
+      }
+    }
+
+    // Only show influencers that exist in influencerlinks (MongoDB); one row per unique influencer+platform
+    const savedLinks = await InfluencerLink.find({}, { influencerName: 1, platform: 1 }).lean();
+    const resultRows = [];
+    const seenKeys = new Set();
+    for (const link of savedLinks) {
+      const key = `${normalizeUtmContent(link.influencerName)}|${(link.platform || '').trim().toLowerCase()}`;
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      const analyticsRow = byKey.get(key);
+      if (analyticsRow) {
+        resultRows.push({
+          influencerName: link.influencerName,
+          platform: link.platform || analyticsRow.platform,
+          totalRegistrations: analyticsRow.totalRegistrations ?? 0,
+          latestRegistration: analyticsRow.latestRegistration || null
+        });
+      } else {
+        resultRows.push({
+          influencerName: link.influencerName,
+          platform: link.platform || '',
+          totalRegistrations: 0,
+          latestRegistration: null
+        });
+      }
+    }
+
+    let data = resultRows;
+    if (sort === 'latest') {
+      data = [...data].sort((a, b) => new Date(b.latestRegistration || 0) - new Date(a.latestRegistration || 0));
+    } else {
+      data = [...data].sort((a, b) => (b.totalRegistrations ?? 0) - (a.totalRegistrations ?? 0));
+    }
+
     return res.status(200).json({ success: true, data });
   } catch (err) {
     console.error('[getInfluencerAnalytics]', err);
@@ -203,17 +278,14 @@ exports.getInfluencerTrend = async (req, res) => {
   try {
     const { from, to } = req.query || {};
     const match = { applicationStatus: { $in: ['registered', 'completed'] } };
-    if (from || to) {
-      match.registeredAt = {};
-      if (from) match.registeredAt.$gte = new Date(from);
-      if (to) match.registeredAt.$lte = new Date(to);
-    }
+    const dateRange = parseDateRange(from, to);
+    if (dateRange) match.registeredAt = dateRange;
     match.utm_content = { $exists: true, $ne: null, $ne: '' };
     const pipeline = [
       { $match: match },
       {
         $group: {
-          _id: { $dateToString: { format: '%Y-%m-%d', date: '$registeredAt' } },
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$registeredAt', timezone: 'Asia/Kolkata' } },
           count: { $sum: 1 }
         }
       },
