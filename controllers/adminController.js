@@ -7,6 +7,7 @@ const AssessmentSubmission2 = require('../models/AssessmentSubmission2');
 const SlotConfig = require('../models/SlotConfig');
 const SlotDateOverride = require('../models/SlotDateOverride');
 const { getISTCalendarDateUTC, getISTDayRangeFromString } = require('../utils/dateHelpers');
+const { getQuestionResults, CORRECT_ANSWERS, CORRECT_ANSWERS_2 } = require('./assessmentController');
 
 const JWT_SECRET = process.env.ADMIN_JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.ADMIN_JWT_EXPIRES_IN || '24h';
@@ -805,6 +806,60 @@ exports.getAssessment2Submissions = async (req, res) => {
     });
   } catch (error) {
     console.error('[getAssessment2Submissions] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * GET /admin/assessment-submissions/:id
+ * Returns one assessment submission with questionResults for admin detail view.
+ */
+exports.getAssessmentSubmissionById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'Submission id is required.' });
+    }
+    const submission = await AssessmentSubmission.findById(id)
+      .select('fullName phone score maxScore submittedAt answers')
+      .lean();
+    if (!submission) {
+      return res.status(404).json({ success: false, message: 'Submission not found.' });
+    }
+    const questionResults = getQuestionResults(submission.answers || {}, CORRECT_ANSWERS);
+    return res.status(200).json({
+      success: true,
+      submission: { ...submission, questionResults }
+    });
+  } catch (error) {
+    console.error('[getAssessmentSubmissionById] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * GET /admin/assessment-2-submissions/:id
+ * Returns one assessment 2 submission with questionResults for admin detail view.
+ */
+exports.getAssessment2SubmissionById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'Submission id is required.' });
+    }
+    const submission = await AssessmentSubmission2.findById(id)
+      .select('fullName phone score maxScore submittedAt answers')
+      .lean();
+    if (!submission) {
+      return res.status(404).json({ success: false, message: 'Submission not found.' });
+    }
+    const questionResults = getQuestionResults(submission.answers || {}, CORRECT_ANSWERS_2);
+    return res.status(200).json({
+      success: true,
+      submission: { ...submission, questionResults }
+    });
+  } catch (error) {
+    console.error('[getAssessment2SubmissionById] Error:', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };

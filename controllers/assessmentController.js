@@ -84,6 +84,33 @@ function computeScore2(answers) {
   return { score, maxScore: MAX_SCORE_2 };
 }
 
+/**
+ * Returns per-question results for feedback/report.
+ * @param {Object} answers - User answers keyed by question id
+ * @param {Object} correctAnswersMap - Map of questionId -> correct answer text
+ * @returns {Array<{ questionId: string, correct: boolean, userAnswer: string, correctAnswer: string }>}
+ */
+function getQuestionResults(answers, correctAnswersMap) {
+  if (!answers || typeof answers !== 'object' || !correctAnswersMap) return [];
+  const results = [];
+  for (const [qId, correctAnswer] of Object.entries(correctAnswersMap)) {
+    if (correctAnswer == null) continue;
+    const userAnswer = trimAnswer(answers[qId] ?? '');
+    const correct = scoreMcq(userAnswer, correctAnswer) === 1;
+    results.push({
+      questionId: qId,
+      correct,
+      userAnswer: userAnswer || '',
+      correctAnswer: String(correctAnswer).trim()
+    });
+  }
+  return results;
+}
+
+exports.getQuestionResults = getQuestionResults;
+exports.CORRECT_ANSWERS = CORRECT_ANSWERS;
+exports.CORRECT_ANSWERS_2 = CORRECT_ANSWERS_2;
+
 exports.submitAssessment = async (req, res) => {
   try {
     const { name, phone, answers } = req.body || {};
@@ -118,6 +145,7 @@ exports.submitAssessment = async (req, res) => {
     }
 
     const { score, maxScore } = computeScore(answers);
+    const questionResults = getQuestionResults(answers, CORRECT_ANSWERS);
 
     const payload = {
       fullName,
@@ -139,7 +167,8 @@ exports.submitAssessment = async (req, res) => {
       success: true,
       message: 'Assessment submitted successfully.',
       score: doc.score,
-      maxScore: doc.maxScore
+      maxScore: doc.maxScore,
+      questionResults
     });
   } catch (err) {
     console.error('[submitAssessment]', err.message);
@@ -181,6 +210,7 @@ exports.submitAssessment2 = async (req, res) => {
     }
 
     const { score, maxScore } = computeScore2(answers);
+    const questionResults = getQuestionResults(answers, CORRECT_ANSWERS_2);
 
     const payload = {
       fullName,
@@ -202,7 +232,8 @@ exports.submitAssessment2 = async (req, res) => {
       success: true,
       message: 'Assessment 2 submitted successfully.',
       score: doc.score,
-      maxScore: doc.maxScore
+      maxScore: doc.maxScore,
+      questionResults
     });
   } catch (err) {
     console.error('[submitAssessment2]', err.message);
