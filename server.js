@@ -12,6 +12,7 @@ const meetingRoutes = require('./routes/meetingRoutes');
 const trainingRoutes = require('./routes/trainingRoutes');
 const cronRoutes = require('./routes/cronRoutes');
 const counsellorAuthRoutes = require('./routes/counsellorAuthRoutes');
+const counsellorSessionRoutes = require('./routes/counsellorSessionRoutes');
 const studentRoutes = require('./routes/studentRoutes');
 const collegePredictorRoutes = require('./routes/collegePredictorRoutes');
 
@@ -62,6 +63,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Mount more specific paths first so /api/counsellor/students is never handled by generic /api
 app.use('/api/counsellor/students', studentRoutes);
+app.use('/api/counsellor/sessions', counsellorSessionRoutes);
 app.use('/api/counsellor/college-predictor', collegePredictorRoutes);
 app.use('/api/counsellor', counsellorAuthRoutes);
 app.use('/api', formRoutes);
