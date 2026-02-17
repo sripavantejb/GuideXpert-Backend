@@ -1,0 +1,6 @@
+node_modules/
+.env
+*.log
+# Google Cloud service account key — never commit
+config/sheets-service-account.json
+**/sheets-service-account*.json
