@@ -3,6 +3,7 @@ const router = express.Router();
 const { login, getAdminLeads, getLeadById, updateLeadNotes, getAdminStats, exportLeads, getSlotConfigs, getSlotsForDate, updateSlotConfig, getSlotBookingCounts, getSlotOverrides, setSlotOverride, getAssessmentSubmissions, getAssessment2Submissions, getAssessment3Submissions, getAssessmentSubmissionById, getAssessment2SubmissionById, getAssessment3SubmissionById } = require('../controllers/adminController');
 const { getMeetingAttendance } = require('../controllers/meetingController');
 const { getTrainingAttendance } = require('../controllers/trainingController');
+const { getTrainingFeedback } = require('../controllers/feedbackController');
 const requireAdmin = require('../middleware/requireAdmin');
 
 router.post('/login', login);
@@ -19,6 +20,7 @@ router.put('/slots/overrides', requireAdmin, setSlotOverride);
 router.put('/slots/:slotId', requireAdmin, updateSlotConfig);
 router.get('/meeting-attendance', requireAdmin, getMeetingAttendance);
 router.get('/training-attendance', requireAdmin, getTrainingAttendance);
+router.get('/training-feedback', requireAdmin, getTrainingFeedback);
 router.get('/assessment-submissions', requireAdmin, getAssessmentSubmissions);
 router.get('/assessment-submissions/:id', requireAdmin, getAssessmentSubmissionById);
 router.get('/assessment-2-submissions', requireAdmin, getAssessment2Submissions);
