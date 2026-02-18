@@ -68,7 +68,7 @@ exports.submitTrainingFeedback = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Years of experience must be a number between 0 and 50' });
     }
 
-    const record = await TrainingFeedback.create({
+    const createPayload = {
       name,
       mobileNumber,
       whatsappNumber,
@@ -78,9 +78,13 @@ exports.submitTrainingFeedback = async (req, res) => {
       dateOfBirth: dob,
       gender,
       educationQualification,
-      yearsOfExperience: Math.floor(yoe),
-      anythingToConvey: anythingToConvey || undefined
-    });
+      yearsOfExperience: Math.floor(yoe)
+    };
+    if (anythingToConvey && String(anythingToConvey).trim()) {
+      createPayload.anythingToConvey = String(anythingToConvey).trim().slice(0, 1000);
+    }
+
+    const record = await TrainingFeedback.create(createPayload);
 
     return res.status(201).json({
       success: true,
@@ -97,7 +101,14 @@ exports.submitTrainingFeedback = async (req, res) => {
       const msg = Object.values(error.errors).map((e) => e.message).join('; ');
       return res.status(400).json({ success: false, message: msg || 'Validation failed' });
     }
-    console.error('[submitTrainingFeedback] Error:', error);
+    if (error.name === 'MongoServerSelectionError' || error.name === 'MongoNetworkError') {
+      console.error('[submitTrainingFeedback] MongoDB connection error:', error.message);
+      return res.status(503).json({ success: false, message: 'Service temporarily unavailable. Please try again in a moment.' });
+    }
+    console.error('[submitTrainingFeedback] Error:', error.name, error.message);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error(error.stack);
+    }
     return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
   }
 };

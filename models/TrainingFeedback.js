@@ -68,14 +68,6 @@ const trainingFeedbackSchema = new mongoose.Schema({
     trim: true,
     maxlength: 1000,
     default: ''
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
   }
 }, { timestamps: true });
 
