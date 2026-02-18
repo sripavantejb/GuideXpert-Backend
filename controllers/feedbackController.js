@@ -97,19 +97,36 @@ exports.submitTrainingFeedback = async (req, res) => {
       }
     });
   } catch (error) {
+    const isMongoOrConnection =
+      !error.name ? false
+        : error.name === 'MongoServerSelectionError' ||
+          error.name === 'MongoNetworkError' ||
+          error.name === 'MongoTimeoutError' ||
+          error.name === 'MongoError' ||
+          String(error.message || '').includes('buffering') ||
+          String(error.message || '').includes('connect');
+
     if (error.name === 'ValidationError') {
       const msg = Object.values(error.errors).map((e) => e.message).join('; ');
       return res.status(400).json({ success: false, message: msg || 'Validation failed' });
     }
-    if (error.name === 'MongoServerSelectionError' || error.name === 'MongoNetworkError') {
-      console.error('[submitTrainingFeedback] MongoDB connection error:', error.message);
+    if (error.name === 'CastError') {
+      return res.status(400).json({ success: false, message: 'Invalid data format for one or more fields.' });
+    }
+    if (isMongoOrConnection) {
+      console.error('[submitTrainingFeedback] MongoDB/connection error:', error.name, error.message);
       return res.status(503).json({ success: false, message: 'Service temporarily unavailable. Please try again in a moment.' });
     }
+
     console.error('[submitTrainingFeedback] Error:', error.name, error.message);
-    if (process.env.NODE_ENV !== 'production') {
-      console.error(error.stack);
-    }
-    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+    console.error(error.stack);
+
+    const exposeDetail = process.env.NODE_ENV !== 'production' || process.env.EXPOSE_API_ERROR === 'true';
+    return res.status(500).json({
+      success: false,
+      message: 'Something went wrong. Please try again.',
+      ...(exposeDetail && { detail: error.message })
+    });
   }
 };
 
