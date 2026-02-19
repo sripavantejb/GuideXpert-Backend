@@ -7,7 +7,8 @@ const PLATFORM_TO_SOURCE = {
   Instagram: 'instagram',
   YouTube: 'youtube',
   Twitter: 'twitter',
-  WhatsApp: 'whatsapp'
+  WhatsApp: 'whatsapp',
+  Telegram: 'telegram'
 };
 
 function getBaseUrl() {
@@ -41,9 +42,9 @@ exports.createInfluencerLink = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Influencer name is required.' });
     }
     const platformVal = platform || 'Instagram';
-    const allowed = ['Instagram', 'YouTube', 'Twitter', 'WhatsApp'];
+    const allowed = ['Instagram', 'YouTube', 'Twitter', 'WhatsApp', 'Telegram'];
     if (!allowed.includes(platformVal)) {
-      return res.status(400).json({ success: false, message: 'Invalid platform. Use Instagram, YouTube, Twitter, or WhatsApp.' });
+      return res.status(400).json({ success: false, message: 'Invalid platform. Use Instagram, YouTube, Twitter, WhatsApp, or Telegram.' });
     }
     const campaignVal = (campaign && typeof campaign === 'string' && campaign.trim()) ? campaign.trim() : 'guide_xperts';
     const utmLink = buildUtmLink(influencerName.trim(), platformVal, campaignVal);
