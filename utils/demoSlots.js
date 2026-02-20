@@ -82,7 +82,7 @@ async function getDemoSlots() {
       } else {
         add('SATURDAY', '7PM', 19, 0);
         add('SUNDAY', '11AM', 11, 0);
-        add('SUNDAY', '7PM', 19, 0);
+        add('SUNDAY', '3PM', 15, 0);
       }
       break;
     }
@@ -90,10 +90,10 @@ async function getDemoSlots() {
       if (ref.hours < 18) {
         add('SATURDAY', '7PM', 19, 0);
         add('SUNDAY', '11AM', 11, 0);
-        add('SUNDAY', '7PM', 19, 0);
+        add('SUNDAY', '3PM', 15, 0);
       } else {
         add('SUNDAY', '11AM', 11, 0);
-        add('SUNDAY', '7PM', 19, 0);
+        add('SUNDAY', '3PM', 15, 0);
         add('MONDAY', '7PM', 19, 0);
       }
       break;
@@ -101,10 +101,10 @@ async function getDemoSlots() {
     case 0: { // Sunday — cutoff 10:00 AM
       if (ref.hours < 10) {
         add('SUNDAY', '11AM', 11, 0);
-        add('SUNDAY', '7PM', 19, 0);
+        add('SUNDAY', '3PM', 15, 0);
         add('MONDAY', '7PM', 19, 0);
       } else {
-        add('SUNDAY', '7PM', 19, 0);
+        add('SUNDAY', '3PM', 15, 0);
         add('MONDAY', '7PM', 19, 0);
       }
       break;
