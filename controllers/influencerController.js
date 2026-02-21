@@ -88,20 +88,53 @@ exports.createInfluencerLink = async (req, res) => {
 };
 
 /**
- * GET /api/influencer-links — list all saved influencer links.
+ * GET /api/influencer-links — list all saved influencer links with per-link lead count.
  */
 exports.listInfluencerLinks = async (req, res) => {
   try {
     const links = await InfluencerLink.find({}).sort({ createdAt: -1 }).lean();
     console.log('[listInfluencerLinks] Found', links.length, 'links');
-    const data = links.map(doc => ({
-      id: doc._id,
-      influencerName: doc.influencerName,
-      platform: doc.platform,
-      campaign: doc.campaign,
-      utmLink: doc.utmLink,
-      createdAt: doc.createdAt
-    }));
+
+    const data = await Promise.all(
+      links.map(async (doc) => {
+        const utmSource = (PLATFORM_TO_SOURCE[doc.platform] || (doc.platform || '').toLowerCase()).toLowerCase();
+        const utmContentRaw = (doc.influencerName || '').trim();
+        const utmContentEncoded = utmContentRaw ? encodeURIComponent(utmContentRaw) : '';
+        const utmContentValues =
+          utmContentRaw && utmContentEncoded !== utmContentRaw
+            ? [utmContentRaw, utmContentEncoded]
+            : utmContentRaw
+              ? [utmContentRaw]
+              : [];
+
+        // Match by influencer name (utm_content) + platform (utm_source) only, so leads
+        // are attributed to links with the same name and platform (case-insensitive).
+        const leadFilter = {
+          applicationStatus: { $in: ['registered', 'completed'] },
+          $expr: { $eq: [{ $toLower: { $ifNull: ['$utm_source', ''] } }, utmSource] },
+        };
+        if (utmContentValues.length > 0) {
+          leadFilter.utm_content = utmContentValues.length > 1 ? { $in: utmContentValues } : utmContentValues[0];
+        }
+
+        const [leadCount, latestDoc] = await Promise.all([
+          FormSubmission.countDocuments(leadFilter),
+          FormSubmission.findOne(leadFilter, { registeredAt: 1 }).sort({ registeredAt: -1 }).lean(),
+        ]);
+
+        return {
+          id: doc._id,
+          influencerName: doc.influencerName,
+          platform: doc.platform,
+          campaign: doc.campaign,
+          utmLink: doc.utmLink,
+          createdAt: doc.createdAt,
+          leadCount: leadCount || 0,
+          latestLeadAt: latestDoc?.registeredAt || null,
+        };
+      })
+    );
+
     return res.status(200).json({ success: true, data });
   } catch (err) {
     console.error('[listInfluencerLinks]', err);
