@@ -99,23 +99,32 @@ exports.listInfluencerLinks = async (req, res) => {
       links.map(async (doc) => {
         const utmSource = (PLATFORM_TO_SOURCE[doc.platform] || (doc.platform || '').toLowerCase()).toLowerCase();
         const utmContentRaw = (doc.influencerName || '').trim();
+        const utmContentNorm = utmContentRaw.toLowerCase();
         const utmContentEncoded = utmContentRaw ? encodeURIComponent(utmContentRaw) : '';
-        const utmContentValues =
-          utmContentRaw && utmContentEncoded !== utmContentRaw
-            ? [utmContentRaw, utmContentEncoded]
-            : utmContentRaw
-              ? [utmContentRaw]
-              : [];
+        const utmContentValues = utmContentRaw
+          ? (utmContentEncoded !== utmContentRaw ? [utmContentRaw, utmContentEncoded] : [utmContentRaw])
+          : [];
 
-        // Match by influencer name (utm_content) + platform (utm_source) only, so leads
-        // are attributed to links with the same name and platform (case-insensitive).
+        // Match by influencer name (utm_content: exact raw/encoded or case-insensitive trim) + platform (utm_source, or empty for legacy).
         const leadFilter = {
           applicationStatus: { $in: ['registered', 'completed'] },
-          $expr: { $eq: [{ $toLower: { $ifNull: ['$utm_source', ''] } }, utmSource] },
+          $expr: {
+            $and: [
+              { $or: [
+                { $eq: [{ $toLower: { $trim: { input: { $ifNull: ['$utm_source', ''] } } } }, utmSource] },
+                { $eq: [{ $trim: { input: { $ifNull: ['$utm_source', ''] } } }, ''] },
+              ]},
+              utmContentNorm
+                ? {
+                    $or: [
+                      { $in: ['$utm_content', utmContentValues] },
+                      { $eq: [{ $toLower: { $trim: { input: { $ifNull: ['$utm_content', ''] } } } }, utmContentNorm] },
+                    ],
+                  }
+                : { $eq: [{ $trim: { input: { $ifNull: ['$utm_content', ''] } } }, ''] },
+            ],
+          },
         };
-        if (utmContentValues.length > 0) {
-          leadFilter.utm_content = utmContentValues.length > 1 ? { $in: utmContentValues } : utmContentValues[0];
-        }
 
         const [leadCount, latestDoc] = await Promise.all([
           FormSubmission.countDocuments(leadFilter),
