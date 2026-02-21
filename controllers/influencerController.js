@@ -97,7 +97,7 @@ exports.listInfluencerLinks = async (req, res) => {
 
     const data = await Promise.all(
       links.map(async (doc) => {
-        const utmSource = (PLATFORM_TO_SOURCE[doc.platform] || (doc.platform || '').toLowerCase()).toLowerCase();
+        const utmCampaign = ((doc.campaign || '').trim() || 'guide_xperts').toLowerCase();
         const utmContentRaw = (doc.influencerName || '').trim();
         const utmContentNorm = utmContentRaw.toLowerCase();
         const utmContentEncoded = utmContentRaw ? encodeURIComponent(utmContentRaw) : '';
@@ -105,14 +105,18 @@ exports.listInfluencerLinks = async (req, res) => {
           ? (utmContentEncoded !== utmContentRaw ? [utmContentRaw, utmContentEncoded] : [utmContentRaw])
           : [];
 
-        // Match by influencer name (utm_content: exact raw/encoded or case-insensitive trim) + platform (utm_source, or empty for legacy).
+        // Match by influencer name (utm_content) + campaign name (utm_campaign), so lead count is per link/campaign.
+        // Campaign compared case-insensitive; allow empty utm_campaign in DB to match default 'guide_xperts'.
         const leadFilter = {
           applicationStatus: { $in: ['registered', 'completed'] },
           $expr: {
             $and: [
               { $or: [
-                { $eq: [{ $toLower: { $trim: { input: { $ifNull: ['$utm_source', ''] } } } }, utmSource] },
-                { $eq: [{ $trim: { input: { $ifNull: ['$utm_source', ''] } } }, ''] },
+                { $eq: [{ $toLower: { $trim: { input: { $ifNull: ['$utm_campaign', ''] } } } }, utmCampaign] },
+                { $and: [
+                  { $eq: [{ $trim: { input: { $ifNull: ['$utm_campaign', ''] } } }, ''] },
+                  { $in: [utmCampaign, ['guide_xperts', '']] },
+                ]},
               ]},
               utmContentNorm
                 ? {
