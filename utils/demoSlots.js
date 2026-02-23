@@ -77,10 +77,14 @@ async function getDemoSlots() {
   switch (ref.dayOfWeek) {
     case 5: { // Friday — cutoff 6:00 PM
       if (ref.hours < 18) {
+        add('FRIDAY', '6PM', 18, 0);
         add('FRIDAY', '7PM', 19, 0);
+        add('SATURDAY', '6PM', 18, 0);
         add('SATURDAY', '7PM', 19, 0);
       } else {
+        add('SATURDAY', '6PM', 18, 0);
         add('SATURDAY', '7PM', 19, 0);
+        add('SUNDAY', '6PM', 18, 0);
         add('SUNDAY', '11AM', 11, 0);
         add('SUNDAY', '3PM', 15, 0);
       }
@@ -88,23 +92,31 @@ async function getDemoSlots() {
     }
     case 6: { // Saturday — cutoff 6:00 PM
       if (ref.hours < 18) {
+        add('SATURDAY', '6PM', 18, 0);
         add('SATURDAY', '7PM', 19, 0);
+        add('SUNDAY', '6PM', 18, 0);
         add('SUNDAY', '11AM', 11, 0);
         add('SUNDAY', '3PM', 15, 0);
       } else {
+        add('SUNDAY', '6PM', 18, 0);
         add('SUNDAY', '11AM', 11, 0);
         add('SUNDAY', '3PM', 15, 0);
+        add('MONDAY', '6PM', 18, 0);
         add('MONDAY', '7PM', 19, 0);
       }
       break;
     }
     case 0: { // Sunday — cutoff 10:00 AM
       if (ref.hours < 10) {
+        add('SUNDAY', '6PM', 18, 0);
         add('SUNDAY', '11AM', 11, 0);
         add('SUNDAY', '3PM', 15, 0);
+        add('MONDAY', '6PM', 18, 0);
         add('MONDAY', '7PM', 19, 0);
       } else {
+        add('SUNDAY', '6PM', 18, 0);
         add('SUNDAY', '3PM', 15, 0);
+        add('MONDAY', '6PM', 18, 0);
         add('MONDAY', '7PM', 19, 0);
       }
       break;
@@ -114,10 +126,14 @@ async function getDemoSlots() {
     case 3: // Wednesday
     case 4: { // Thursday — cutoff 6:00 PM for all
       if (ref.hours < 18) {
+        add(DAY_NAMES[ref.dayOfWeek], '6PM', 18, 0);
         add(DAY_NAMES[ref.dayOfWeek], '7PM', 19, 0);
+        add(DAY_NAMES[(ref.dayOfWeek + 1) % 7], '6PM', 18, 0);
         add(DAY_NAMES[(ref.dayOfWeek + 1) % 7], '7PM', 19, 0);
       } else {
+        add(DAY_NAMES[(ref.dayOfWeek + 1) % 7], '6PM', 18, 0);
         add(DAY_NAMES[(ref.dayOfWeek + 1) % 7], '7PM', 19, 0);
+        add(DAY_NAMES[(ref.dayOfWeek + 2) % 7], '6PM', 18, 0);
         add(DAY_NAMES[(ref.dayOfWeek + 2) % 7], '7PM', 19, 0);
       }
       break;

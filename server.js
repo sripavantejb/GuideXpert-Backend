@@ -12,6 +12,7 @@ const influencerRoutes = require('./routes/influencerRoutes');
 const meetingRoutes = require('./routes/meetingRoutes');
 const trainingRoutes = require('./routes/trainingRoutes');
 const feedbackRoutes = require('./routes/feedbackRoutes');
+const referralRoutes = require('./routes/referralRoutes');
 const cronRoutes = require('./routes/cronRoutes');
 const counsellorAuthRoutes = require('./routes/counsellorAuthRoutes');
 const studentRoutes = require('./routes/studentRoutes');
@@ -75,6 +76,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/meeting', meetingRoutes);
 app.use('/api/training', trainingRoutes);
 app.use('/api/feedback', feedbackRoutes);
+app.use('/api/referral', referralRoutes);
 app.use('/api/cron', cronRoutes);
 
 app.get('/api/health', (req, res) => {

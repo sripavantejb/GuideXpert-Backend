@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { sendOtp, verifyOtp, getDemoSlots, submitApplication, saveStep1, saveStep2, saveStep3, checkRegistrationStatus, savePostRegistrationData, getAllSubmissions } = require('../controllers/formController');
+const { sendOtp, verifyOtp, logPhone, getDemoSlots, submitApplication, saveStep1, saveStep2, saveStep3, checkRegistrationStatus, savePostRegistrationData, getAllSubmissions } = require('../controllers/formController');
 
 router.post('/send-otp', sendOtp);
 router.post('/verify-otp', verifyOtp);
+router.post('/log-phone', logPhone);
 router.get('/demo-slots', getDemoSlots);
 router.post('/submit-application', submitApplication);
 router.post('/save-step1', saveStep1);

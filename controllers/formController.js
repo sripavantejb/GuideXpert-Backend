@@ -6,6 +6,7 @@ const { getDemoSlots } = require('../utils/demoSlots');
 const { appendFormSubmission } = require('../utils/sheetsService');
 const FormSubmission = require('../models/FormSubmission');
 const VerifiedPhoneSession = require('../models/VerifiedPhoneSession');
+const WebsiteLogin = require('../models/WebsiteLogin');
 const SlotConfig = require('../models/SlotConfig');
 const SlotDateOverride = require('../models/SlotDateOverride');
 const { getISTCalendarDateUTC } = require('../utils/dateHelpers');
@@ -14,7 +15,7 @@ const { appendRow, updateRow, markRowDeleted } = require('../utils/googleSheetsS
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const GOOGLE_SHEET_RANGE = process.env.GOOGLE_SHEET_RANGE || 'Sheet1';
 
-const VALID_SLOT_ID_REGEX = /^(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)_(7PM|11AM|3PM)$/;
+const VALID_SLOT_ID_REGEX = /^(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)_(7PM|11AM|3PM|6PM)$/;
 function isValidSlotId(slot) {
   return typeof slot === 'string' && VALID_SLOT_ID_REGEX.test(slot);
 }
@@ -49,7 +50,8 @@ function formatSlotTimeForSms(slotId) {
   const timeMap = {
     '7PM': '7:00 PM',
     '11AM': '11:00 AM',
-    '3PM': '3:00 PM'
+    '3PM': '3:00 PM',
+    '6PM': '6:00 PM'
   };
   
   // Extract time part from slot ID (e.g., "FRIDAY_7PM" -> "7PM")
@@ -204,6 +206,29 @@ exports.verifyOtp = async (req, res) => {
     return res.status(200).json({ success: true, message: 'OTP verified', verified: true });
   } catch (err) {
     console.error('[verifyOtp]', err.message);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * POST body: { phone } only.
+ * Saves the phone number to DB as a "website login" (for external sites that only send phone).
+ */
+exports.logPhone = async (req, res) => {
+  try {
+    const phone = req.body?.phone || req.body?.whatsappNumber;
+    if (!phone || typeof phone !== 'string') {
+      return res.status(400).json({ success: false, message: 'phone is required' });
+    }
+    const p = normalizePhone(phone);
+    if (!/^\d{10}$/.test(p)) {
+      return res.status(400).json({ success: false, message: 'Valid 10-digit Indian phone required' });
+    }
+
+    await WebsiteLogin.create({ phone: p });
+    return res.status(200).json({ success: true, message: 'Phone logged' });
+  } catch (err) {
+    console.error('[logPhone]', err.message);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
