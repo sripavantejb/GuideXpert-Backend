@@ -115,15 +115,16 @@ function mergeUtmIfFirstTouch(setPayload, body, existingDoc) {
 exports.sendOtp = async (req, res) => {
   try {
     const { fullName, occupation } = req.body || {};
-    const phone = req.body?.phone || req.body?.whatsappNumber;
+    const phoneRaw = req.body?.phone || req.body?.whatsappNumber;
 
     if (!fullName || typeof fullName !== 'string' || fullName.trim().length < 2) {
       return res.status(400).json({ success: false, message: 'fullName is required' });
     }
-    if (!phone || typeof phone !== 'string') {
+    if (phoneRaw == null || phoneRaw === '') {
       return res.status(400).json({ success: false, message: 'phone is required' });
     }
-    const p = normalizePhone(phone);
+    const phoneStr = typeof phoneRaw === 'string' ? phoneRaw.trim() : String(phoneRaw);
+    const p = normalizePhone(phoneStr);
     if (!/^\d{10}$/.test(p)) {
       return res.status(400).json({ success: false, message: 'Valid 10-digit Indian phone required' });
     }
@@ -164,10 +165,11 @@ exports.verifyOtp = async (req, res) => {
   try {
     const phoneRaw = req.body?.phone ?? req.body?.whatsappNumber;
     const otp = req.body?.otp;
-    if (!phoneRaw || typeof phoneRaw !== 'string') {
+    if (phoneRaw == null || phoneRaw === '') {
       return res.status(400).json({ success: false, message: 'phone is required' });
     }
-    const p = normalizePhone(phoneRaw);
+    const phoneStr = typeof phoneRaw === 'string' ? phoneRaw.trim() : String(phoneRaw);
+    const p = normalizePhone(phoneStr);
     if (!/^\d{10}$/.test(p)) {
       return res.status(400).json({ success: false, message: 'Valid 10-digit Indian phone required' });
     }
