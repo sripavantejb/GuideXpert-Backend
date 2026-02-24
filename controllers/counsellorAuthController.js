@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const Counsellor = require('../models/Counsellor');
 const otpStore = require('../utils/otpStore');
@@ -85,9 +86,25 @@ exports.loginWithPhone = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Verify OTP first' });
     }
 
-    const counsellor = await Counsellor.findOne({ phone: normalized });
+    let counsellor = await Counsellor.findOne({ phone: normalized });
     if (!counsellor) {
-      return res.status(401).json({ success: false, message: 'No counsellor account linked to this number' });
+      const defaultName = process.env.COUNSELLOR_DEFAULT_NAME || 'Counsellor';
+      const placeholderEmail = `counsellor-${normalized}@guidexpert.phone`;
+      const randomPassword = crypto.randomBytes(12).toString('hex');
+      try {
+        counsellor = await Counsellor.create({
+          phone: normalized,
+          name: defaultName,
+          email: placeholderEmail,
+          password: randomPassword,
+          role: 'counsellor',
+        });
+      } catch (err) {
+        if (err.code === 11000) {
+          counsellor = await Counsellor.findOne({ phone: normalized });
+        }
+        if (!counsellor) throw err;
+      }
     }
 
     otpStore.removeVerified(normalized);
