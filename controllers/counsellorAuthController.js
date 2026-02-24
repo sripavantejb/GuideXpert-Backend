@@ -26,7 +26,7 @@ exports.login = async (req, res) => {
     }
     if (!JWT_SECRET) {
       console.error('[Counsellor] COUNSELLOR_JWT_SECRET not set');
-      return res.status(500).json({ success: false, message: 'Server configuration error' });
+      return res.status(500).json({ success: false, message: 'Counsellor login is not configured. Please contact support.' });
     }
 
     const counsellor = await Counsellor.findOne({ email: email.trim().toLowerCase() });
@@ -71,7 +71,7 @@ exports.loginWithPhone = async (req, res) => {
     }
     if (!JWT_SECRET) {
       console.error('[Counsellor] COUNSELLOR_JWT_SECRET not set — set it in .env / Vercel env vars');
-      return res.status(500).json({ success: false, message: 'Server configuration error' });
+      return res.status(500).json({ success: false, message: 'Counsellor login is not configured. Please contact support.' });
     }
 
     const normalized = otpStore.normalize(phone);
