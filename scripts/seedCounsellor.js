@@ -1,7 +1,8 @@
 /**
  * One-time seed: create first counsellor user.
  * Run: node scripts/seedCounsellor.js (from backend directory)
- * Uses COUNSELLOR_EMAIL, COUNSELLOR_PASSWORD, COUNSELLOR_NAME from .env, or prompts if missing.
+ * Uses COUNSELLOR_EMAIL, COUNSELLOR_PASSWORD, COUNSELLOR_NAME, COUNSELLOR_PHONE from .env, or prompts if missing.
+ * COUNSELLOR_PHONE (10 digits) enables OTP login at /counsellor/login. Existing counsellors need phone set (e.g. via DB) to use OTP.
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const readline = require('readline');
@@ -25,6 +26,7 @@ async function seedCounsellor() {
     const email = process.env.COUNSELLOR_EMAIL || await ask('Counsellor email: ');
     const password = process.env.COUNSELLOR_PASSWORD || await ask('Counsellor password (min 6 chars): ');
     const name = process.env.COUNSELLOR_NAME || (await ask('Counsellor name: ')) || 'Counsellor';
+    let phone = process.env.COUNSELLOR_PHONE || await ask('Counsellor phone (10 digits, optional for OTP login): ');
 
     if (!email || !email.includes('@')) {
       console.error('Valid email is required.');
@@ -35,6 +37,17 @@ async function seedCounsellor() {
       process.exit(1);
     }
 
+    if (phone) {
+      phone = phone.replace(/\D/g, '');
+      phone = phone.length >= 10 ? phone.slice(-10) : '';
+      if (phone.length !== 10) {
+        console.error('Phone must be 10 digits; skipping phone for this counsellor.');
+        phone = undefined;
+      }
+    } else {
+      phone = undefined;
+    }
+
     const existing = await Counsellor.findOne({ email: email.toLowerCase().trim() });
     if (existing) {
       console.log('Counsellor with this email already exists.');
@@ -42,13 +55,15 @@ async function seedCounsellor() {
       return;
     }
 
-    await Counsellor.create({
+    const payload = {
       email: email.toLowerCase().trim(),
       password,
       name: name.trim() || 'Counsellor',
       role: 'counsellor',
-    });
-    console.log('Counsellor created successfully. You can now log in at /counsellor/login');
+    };
+    if (phone) payload.phone = phone;
+    await Counsellor.create(payload);
+    console.log('Counsellor created successfully. You can now log in at /counsellor/login' + (phone ? ' (OTP or email/password).' : ' (email/password only; add phone for OTP).'));
     process.exit(0);
   } catch (err) {
     if (err.code === 11000) {

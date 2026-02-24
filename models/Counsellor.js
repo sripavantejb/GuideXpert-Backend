@@ -20,6 +20,14 @@ const counsellorSchema = new mongoose.Schema({
     required: true,
     minlength: 6,
   },
+  phone: {
+    type: String,
+    trim: true,
+    match: /^\d{10}$/,
+    unique: true,
+    sparse: true,
+    default: null,
+  },
   role: {
     type: String,
     default: 'counsellor',
@@ -29,6 +37,14 @@ const counsellorSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+});
+
+counsellorSchema.pre('save', function (next) {
+  if (this.phone != null && String(this.phone).trim() !== '') {
+    const digits = String(this.phone).replace(/\D/g, '');
+    this.phone = digits.length >= 10 ? digits.slice(-10) : null;
+  }
+  next();
 });
 
 counsellorSchema.pre('save', function (next) {

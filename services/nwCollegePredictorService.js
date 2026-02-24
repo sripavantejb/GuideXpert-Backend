@@ -60,9 +60,8 @@ async function getPredictedColleges(offset, limit, body) {
   };
   if (Array.isArray(body.branch_codes)) payload.branch_codes = body.branch_codes;
   else if (body.branch_codes != null) payload.branch_codes = body.branch_codes;
-  if (Array.isArray(body.districts)) payload.districts = body.districts;
-  else if (body.districts != null) payload.districts = body.districts || [];
-  if (body.sort_order != null && body.sort_order !== '') payload.sort_order = body.sort_order;
+  payload.districts = Array.isArray(body.districts) ? body.districts : (body.districts != null ? body.districts || [] : []);
+  payload.sort_order = (body.sort_order != null && body.sort_order !== '') ? body.sort_order : 'ASC';
 
   try {
     const res = await axios.post(url, payload, {
