@@ -200,17 +200,24 @@ exports.verifyOtp = async (req, res) => {
 
     await otpRepository.deleteOtp(p);
     otpStore.addVerified(p);
-    // Persist for serverless: assessment submit may hit another instance
-    await VerifiedPhoneSession.findOneAndUpdate(
-      { phone: p },
-      { $set: { verifiedAt: new Date() } },
-      { upsert: true }
-    );
+    // Persist for serverless: login-with-phone may hit another instance
+    try {
+      await VerifiedPhoneSession.findOneAndUpdate(
+        { phone: p },
+        { $set: { verifiedAt: new Date() } },
+        { upsert: true }
+      );
+    } catch (sessionErr) {
+      console.error('[verifyOtp] VerifiedPhoneSession update failed (continuing):', sessionErr.message);
+    }
 
     return res.status(200).json({ success: true, message: 'OTP verified', verified: true });
   } catch (err) {
-    console.error('[verifyOtp]', err.message);
-    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+    console.error('[verifyOtp]', err.message, err.stack);
+    const message = process.env.NODE_ENV === 'production'
+      ? 'Verification failed. Please try again.'
+      : (err.message || 'Something went wrong.');
+    return res.status(500).json({ success: false, message });
   }
 };
 
