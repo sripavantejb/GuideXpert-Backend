@@ -155,6 +155,9 @@ exports.sendOtp = async (req, res) => {
     }
 
     await otpRepository.saveOtp(p, hashed, expiresAt);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[sendOtp] OTP saved for phone ending', p.slice(-4));
+    }
     return res.status(200).json({ success: true, message: 'OTP sent successfully' });
   } catch {
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
@@ -178,9 +181,19 @@ exports.verifyOtp = async (req, res) => {
       return res.status(400).json({ success: false, message: 'OTP must be 6 digits' });
     }
 
-    const rec = await otpRepository.getLatest(p);
+    let rec = await otpRepository.getLatest(p);
     if (!rec) {
-      return res.status(400).json({ success: false, message: 'No OTP found for this number. Please request a new OTP first.' });
+      await new Promise((r) => setTimeout(r, 1500));
+      rec = await otpRepository.getLatest(p);
+    }
+    if (!rec) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('[verifyOtp] No OTP found for phone ending', p.slice(-4));
+      }
+      return res.status(400).json({
+        success: false,
+        message: 'No OTP found for this number. Request a new OTP and verify within a few minutes. Use the same number you used to request the OTP.',
+      });
     }
     if (new Date(rec.expiresAt) < new Date()) {
       await otpRepository.deleteOtp(p);
