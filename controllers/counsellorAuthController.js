@@ -1,9 +1,19 @@
 const jwt = require('jsonwebtoken');
 const Counsellor = require('../models/Counsellor');
 const otpStore = require('../utils/otpStore');
+const VerifiedPhoneSession = require('../models/VerifiedPhoneSession');
 
 const JWT_SECRET = process.env.COUNSELLOR_JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.COUNSELLOR_JWT_EXPIRES_IN || '24h';
+
+/** 15 min window to use verified phone (matches VerifiedPhoneSession TTL) */
+const VERIFIED_PHONE_WINDOW_MS = 15 * 60 * 1000;
+
+async function isPhoneVerifiedInDb(phone) {
+  const since = new Date(Date.now() - VERIFIED_PHONE_WINDOW_MS);
+  const doc = await VerifiedPhoneSession.findOne({ phone, verifiedAt: { $gte: since } }).lean();
+  return !!doc;
+}
 
 exports.login = async (req, res) => {
   try {
@@ -60,7 +70,7 @@ exports.loginWithPhone = async (req, res) => {
       return res.status(400).json({ success: false, message: 'phone is required' });
     }
     if (!JWT_SECRET) {
-      console.error('[Counsellor] COUNSELLOR_JWT_SECRET not set');
+      console.error('[Counsellor] COUNSELLOR_JWT_SECRET not set — set it in .env / Vercel env vars');
       return res.status(500).json({ success: false, message: 'Server configuration error' });
     }
 
@@ -69,7 +79,9 @@ exports.loginWithPhone = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Valid 10-digit phone required' });
     }
 
-    if (!otpStore.isVerified(normalized)) {
+    const verifiedInMemory = otpStore.isVerified(normalized);
+    const verifiedInDb = await isPhoneVerifiedInDb(normalized);
+    if (!verifiedInMemory && !verifiedInDb) {
       return res.status(401).json({ success: false, message: 'Verify OTP first' });
     }
 

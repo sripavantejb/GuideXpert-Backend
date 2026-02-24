@@ -37,6 +37,7 @@ Go to your Vercel dashboard and verify these are set:
 - [ ] `OTP_SECRET` - Strong random string
 - [ ] `GOOGLE_MEET_LINK` - Your Google Meet link
 - [ ] `ADMIN_JWT_SECRET` - Admin JWT secret
+- [ ] `COUNSELLOR_JWT_SECRET` - Counsellor phone-login JWT secret (without this, counsellor login returns 500)
 - [ ] `FRONTEND_URL` - https://guidexpert.co.in (or your frontend URL)
 
 **Optional:**

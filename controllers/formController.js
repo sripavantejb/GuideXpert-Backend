@@ -80,7 +80,7 @@ async function appendToSheetIfConfigured(submission) {
   }
 }
 
-const OTP_EXPIRY_MINUTES = Number(process.env.OTP_EXPIRY_MINUTES) || 5;
+const OTP_EXPIRY_MINUTES = Number(process.env.OTP_EXPIRY_MINUTES) || 10;
 const OTP_EXPIRY_MS = OTP_EXPIRY_MINUTES * 60 * 1000;
 const MAX_VERIFY_ATTEMPTS = 3;
 
@@ -162,36 +162,38 @@ exports.sendOtp = async (req, res) => {
 
 exports.verifyOtp = async (req, res) => {
   try {
-    const { phone, otp } = req.body || {};
-    if (!phone || typeof phone !== 'string') {
+    const phoneRaw = req.body?.phone ?? req.body?.whatsappNumber;
+    const otp = req.body?.otp;
+    if (!phoneRaw || typeof phoneRaw !== 'string') {
       return res.status(400).json({ success: false, message: 'phone is required' });
     }
-    const p = normalizePhone(phone);
+    const p = normalizePhone(phoneRaw);
     if (!/^\d{10}$/.test(p)) {
       return res.status(400).json({ success: false, message: 'Valid 10-digit Indian phone required' });
     }
-    if (!otp || typeof otp !== 'string' || !/^\d{6}$/.test(String(otp))) {
+    const otpStr = otp != null ? String(otp).trim() : '';
+    if (!/^\d{6}$/.test(otpStr)) {
       return res.status(400).json({ success: false, message: 'OTP must be 6 digits' });
     }
 
     const rec = await otpRepository.getLatest(p);
     if (!rec) {
-      return res.status(400).json({ success: false, message: 'Invalid or expired OTP.' });
+      return res.status(400).json({ success: false, message: 'No OTP found for this number. Please request a new OTP first.' });
     }
     if (new Date(rec.expiresAt) < new Date()) {
       await otpRepository.deleteOtp(p);
-      return res.status(400).json({ success: false, message: 'Invalid or expired OTP.' });
+      return res.status(400).json({ success: false, message: 'OTP has expired. Please request a new OTP.' });
     }
     if (rec.attempts >= MAX_VERIFY_ATTEMPTS) {
       await otpRepository.deleteOtp(p);
-      return res.status(400).json({ success: false, message: 'Too many attempts.' });
+      return res.status(400).json({ success: false, message: 'Too many attempts. Please request a new OTP.' });
     }
-    if (!verifyOTP(String(otp), rec.otpHash)) {
+    if (!verifyOTP(otpStr, rec.otpHash)) {
       const updated = await otpRepository.incrementAttempts(p);
       if (updated && updated.attempts >= MAX_VERIFY_ATTEMPTS) {
         await otpRepository.deleteOtp(p);
       }
-      return res.status(400).json({ success: false, message: 'Invalid OTP.' });
+      return res.status(400).json({ success: false, message: 'Invalid OTP. Please check the code and try again.' });
     }
 
     await otpRepository.deleteOtp(p);
