@@ -4,8 +4,11 @@ const Counsellor = require('../models/Counsellor');
 const otpStore = require('../utils/otpStore');
 const VerifiedPhoneSession = require('../models/VerifiedPhoneSession');
 
-const JWT_SECRET = process.env.COUNSELLOR_JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.COUNSELLOR_JWT_EXPIRES_IN || '24h';
+
+function getJwtSecret() {
+  return process.env.COUNSELLOR_JWT_SECRET || '';
+}
 
 /** 15 min window to use verified phone (matches VerifiedPhoneSession TTL) */
 const VERIFIED_PHONE_WINDOW_MS = 15 * 60 * 1000;
@@ -39,7 +42,8 @@ async function findOneByPhone(normalized) {
  * @returns {{ token: string, user: object }}
  */
 async function findOrCreateCounsellorAndGetToken(normalized) {
-  if (!JWT_SECRET) {
+  const JWT_SECRET = getJwtSecret();
+  if (!JWT_SECRET || !String(JWT_SECRET).trim()) {
     const err = new Error('Counsellor login is not configured.');
     err.code = 'CONFIG';
     throw err;
@@ -79,9 +83,10 @@ async function findOrCreateCounsellorAndGetToken(normalized) {
     counsellor = await findOneByPhone(normalized);
     if (!counsellor) throw counsellorErr;
   }
+  const secret = getJwtSecret();
   const token = jwt.sign(
     { counsellorId: counsellor._id.toString() },
-    JWT_SECRET,
+    secret,
     { expiresIn: JWT_EXPIRES_IN }
   );
   return {
@@ -106,7 +111,8 @@ exports.login = async (req, res) => {
     if (!password || typeof password !== 'string') {
       return res.status(400).json({ success: false, message: 'password is required' });
     }
-    if (!JWT_SECRET) {
+    const secret = getJwtSecret();
+    if (!secret || !String(secret).trim()) {
       console.error('[Counsellor] COUNSELLOR_JWT_SECRET not set');
       return res.status(500).json({ success: false, message: 'Counsellor login is not configured. Please contact support.' });
     }
@@ -123,7 +129,7 @@ exports.login = async (req, res) => {
 
     const token = jwt.sign(
       { counsellorId: counsellor._id.toString() },
-      JWT_SECRET,
+      secret,
       { expiresIn: JWT_EXPIRES_IN }
     );
     return res.status(200).json({
@@ -151,7 +157,8 @@ exports.loginWithPhone = async (req, res) => {
     if (!phone || typeof phone !== 'string') {
       return res.status(400).json({ success: false, message: 'phone is required' });
     }
-    if (!JWT_SECRET) {
+    const secret = getJwtSecret();
+    if (!secret || !String(secret).trim()) {
       console.error('[Counsellor] COUNSELLOR_JWT_SECRET not set — set it in .env / Vercel env vars');
       return res.status(500).json({ success: false, message: 'Counsellor login is not configured. Please contact support.' });
     }
@@ -198,4 +205,10 @@ exports.loginWithPhone = async (req, res) => {
       message: 'Login failed. Please try again.',
     });
   }
+};
+
+/** GET /api/counsellor/config-status — returns whether counsellor login is configured (for debugging). No auth. */
+exports.configStatus = (req, res) => {
+  const configured = !!(process.env.COUNSELLOR_JWT_SECRET && String(process.env.COUNSELLOR_JWT_SECRET).trim());
+  return res.status(200).json({ counsellorLoginConfigured: configured });
 };
