@@ -18,6 +18,7 @@ const counsellorAuthRoutes = require('./routes/counsellorAuthRoutes');
 const posterRoutes = require('./routes/posterRoutes');
 const studentRoutes = require('./routes/studentRoutes');
 const collegePredictorRoutes = require('./routes/collegePredictorRoutes');
+const { configStatus: counsellorConfigStatus } = require('./controllers/counsellorAuthController');
 
 const app = express();
 
@@ -70,6 +71,7 @@ app.use(express.urlencoded({ extended: true }));
 // Mount more specific paths first so /api/counsellor/students is never handled by generic /api
 app.use('/api/counsellor/students', studentRoutes);
 app.use('/api/counsellor/college-predictor', collegePredictorRoutes);
+app.get('/api/counsellor/config-status', counsellorConfigStatus);
 app.use('/api/counsellor', posterRoutes);
 app.use('/api/counsellor', counsellorAuthRoutes);
 app.use('/api', formRoutes);
