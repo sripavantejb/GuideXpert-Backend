@@ -108,17 +108,35 @@ exports.loginWithPhone = async (req, res) => {
           });
         } catch (err) {
           if (err.code === 11000) {
-            counsellor = await Counsellor.findOne({ phone: normalized });
+            try {
+              counsellor = await Counsellor.findOne({ phone: normalized });
+            } catch (findErr) {
+              console.error('[Counsellor loginWithPhone] findOne after 11000 failed:', findErr.message);
+            }
+          }
+          if (!counsellor) {
+            try {
+              counsellor = await Counsellor.findOne({ phone: normalized });
+            } catch (_) {}
           }
           if (!counsellor) throw err;
         }
       }
     } catch (counsellorErr) {
       console.error('[Counsellor loginWithPhone] Counsellor lookup/create failed:', counsellorErr.message, counsellorErr.stack);
-      return res.status(500).json({
-        success: false,
-        message: 'Login failed. Please try again or contact support.',
-      });
+      try {
+        counsellor = await Counsellor.findOne({ phone: normalized });
+      } catch (retryErr) {
+        console.error('[Counsellor loginWithPhone] Retry findOne failed:', retryErr.message);
+      }
+      if (counsellor) {
+        // Proceed with login
+      } else {
+        return res.status(500).json({
+          success: false,
+          message: 'Login failed. Please try again or contact support.',
+        });
+      }
     }
 
     otpStore.removeVerified(normalized);
