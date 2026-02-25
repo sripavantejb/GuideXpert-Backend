@@ -229,12 +229,24 @@ exports.verifyOtp = async (req, res) => {
     const counsellorLogin = req.body?.counsellorLogin === true;
     if (counsellorLogin) {
       try {
+        // Only grant counsellor access if phone is in the access form (FormSubmission with OTP verified)
+        const submission = await FormSubmission.findOne({ phone: p, 'step2Data.otpVerified': true }).lean();
+        if (!submission) {
+          otpStore.removeVerified(p);
+          return res.status(200).json({
+            success: true,
+            message: 'OTP verified',
+            verified: true,
+            allowedAccess: false,
+          });
+        }
         const payload = await findOrCreateCounsellorAndGetToken(p);
         otpStore.removeVerified(p);
         return res.status(200).json({
           success: true,
           message: 'OTP verified',
           verified: true,
+          allowedAccess: true,
           token: payload.token,
           user: payload.user,
         });
