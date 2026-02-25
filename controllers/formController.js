@@ -242,6 +242,14 @@ exports.verifyOtp = async (req, res) => {
         }
         const payload = await findOrCreateCounsellorAndGetToken(p);
         otpStore.removeVerified(p);
+        const fullName = submission.fullName || submission.step1Data?.fullName;
+        const email = submission.email;
+        const occupation = submission.occupation || submission.step1Data?.occupation;
+        const accessForm = {};
+        if (fullName != null && String(fullName).trim()) accessForm.fullName = String(fullName).trim();
+        if (email != null && String(email).trim()) accessForm.email = String(email).trim().toLowerCase();
+        if (occupation != null && String(occupation).trim()) accessForm.occupation = String(occupation).trim();
+        if (submission.phone) accessForm.phone = submission.phone;
         return res.status(200).json({
           success: true,
           message: 'OTP verified',
@@ -249,6 +257,7 @@ exports.verifyOtp = async (req, res) => {
           allowedAccess: true,
           token: payload.token,
           user: payload.user,
+          accessForm: Object.keys(accessForm).length ? accessForm : undefined,
         });
       } catch (err) {
         if (err.code === 'CONFIG') {
