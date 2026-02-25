@@ -10,9 +10,13 @@ Your IP is not allowed. In Atlas:
 ---`;
 
 const connectDB = async () => {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) {
-    throw new Error('MONGODB_URI is not defined. Add it to .env (see .env.example).');
+  let uri = process.env.MONGODB_URI;
+  if (!uri || !uri.trim()) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('MONGODB_URI is not defined. Add it to .env (see .env.example).');
+    }
+    uri = 'mongodb://localhost:27017/guidexpert';
+    console.warn('[db] MONGODB_URI not set — using dev default:', uri);
   }
 
   const isAtlas = uri.includes('mongodb.net');

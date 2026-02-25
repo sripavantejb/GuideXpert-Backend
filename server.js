@@ -21,12 +21,15 @@ const collegePredictorRoutes = require('./routes/collegePredictorRoutes');
 
 const app = express();
 
-// Fail-fast: required for OTP (MSG91 SMS)
+// OTP (MSG91): required in production only; in dev allow startup without them
 const requiredOtpEnv = ['MSG91_AUTH_KEY', 'MSG91_TEMPLATE_ID', 'OTP_SECRET'];
 const missing = requiredOtpEnv.filter((k) => !process.env[k] || !String(process.env[k]).trim());
 if (missing.length > 0) {
-  console.error('[FATAL] Missing required env for OTP:', missing.join(', '));
-  process.exit(1);
+  if (process.env.NODE_ENV === 'production') {
+    console.error('[FATAL] Missing required env for OTP:', missing.join(', '));
+    process.exit(1);
+  }
+  console.warn('[env] OTP not configured (dev):', missing.join(', '), '— SMS/OTP routes will fail until set in .env');
 }
 const envStatus = {
   MSG91_AUTH_KEY: process.env.MSG91_AUTH_KEY ? `set (${process.env.MSG91_AUTH_KEY.length} chars)` : 'missing',
