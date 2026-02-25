@@ -16,6 +16,23 @@ async function isPhoneVerifiedInDb(phone) {
   return !!doc;
 }
 
+function isDuplicateKeyError(err) {
+  if (!err) return false;
+  if (err.code === 11000 || err.code === 11001) return true;
+  if (err.name === 'MongoServerError' && (err.code === 11000 || err.code === 11001)) return true;
+  if (Array.isArray(err.writeErrors) && err.writeErrors.some((e) => e.code === 11000 || e.code === 11001)) return true;
+  return false;
+}
+
+async function findOneByPhone(normalized) {
+  try {
+    return await Counsellor.findOne({ phone: normalized });
+  } catch (e) {
+    console.error('[findOrCreateCounsellor] findOne failed:', e.message);
+    return null;
+  }
+}
+
 /**
  * Find or create Counsellor by phone and return JWT + user. Used by loginWithPhone and by verify-otp when counsellorLogin: true.
  * @param {string} normalized - 10-digit normalized phone
@@ -32,7 +49,8 @@ async function findOrCreateCounsellorAndGetToken(normalized) {
     counsellor = await Counsellor.findOne({ phone: normalized });
     if (!counsellor) {
       const defaultName = process.env.COUNSELLOR_DEFAULT_NAME || 'Counsellor';
-      const placeholderEmail = `counsellor-${normalized}@guidexpert.phone`;
+      const uniqueSuffix = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+      const placeholderEmail = `counsellor-${normalized}-${uniqueSuffix}@guidexpert.phone`;
       const randomPassword = crypto.randomBytes(12).toString('hex');
       try {
         counsellor = await Counsellor.create({
@@ -43,28 +61,22 @@ async function findOrCreateCounsellorAndGetToken(normalized) {
           role: 'counsellor',
         });
       } catch (err) {
-        if (err.code === 11000) {
-          try {
-            counsellor = await Counsellor.findOne({ phone: normalized });
-          } catch (findErr) {
-            console.error('[findOrCreateCounsellor] findOne after 11000 failed:', findErr.message);
-          }
+        if (isDuplicateKeyError(err)) {
+          counsellor = await findOneByPhone(normalized);
         }
         if (!counsellor) {
-          try {
-            counsellor = await Counsellor.findOne({ phone: normalized });
-          } catch (_) {}
+          counsellor = await findOneByPhone(normalized);
+        }
+        if (err.name === 'ValidationError') {
+          console.error('[findOrCreateCounsellor] ValidationError on create:', err.message);
+          if (!counsellor) counsellor = await findOneByPhone(normalized);
         }
         if (!counsellor) throw err;
       }
     }
   } catch (counsellorErr) {
     console.error('[findOrCreateCounsellor] lookup/create failed:', counsellorErr.message, counsellorErr.stack);
-    try {
-      counsellor = await Counsellor.findOne({ phone: normalized });
-    } catch (retryErr) {
-      console.error('[findOrCreateCounsellor] retry findOne failed:', retryErr.message);
-    }
+    counsellor = await findOneByPhone(normalized);
     if (!counsellor) throw counsellorErr;
   }
   const token = jwt.sign(

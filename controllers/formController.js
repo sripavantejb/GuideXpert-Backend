@@ -242,7 +242,12 @@ exports.verifyOtp = async (req, res) => {
         if (err.code === 'CONFIG') {
           return res.status(500).json({ success: false, message: 'Counsellor login is not configured. Please contact support.' });
         }
-        console.error('[verifyOtp] counsellorLogin failed:', err.message, err.stack);
+        console.error('[verifyOtp] counsellorLogin failed:', {
+          name: err.name,
+          code: err.code,
+          message: err.message,
+          keyPattern: err.keyPattern,
+        }, err.stack);
         return res.status(500).json({ success: false, message: 'Login failed. Please try again or contact support.' });
       }
     }
