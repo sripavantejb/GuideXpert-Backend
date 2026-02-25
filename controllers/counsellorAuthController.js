@@ -16,6 +16,75 @@ async function isPhoneVerifiedInDb(phone) {
   return !!doc;
 }
 
+/**
+ * Find or create Counsellor by phone and return JWT + user. Used by loginWithPhone and by verify-otp when counsellorLogin: true.
+ * @param {string} normalized - 10-digit normalized phone
+ * @returns {{ token: string, user: object }}
+ */
+async function findOrCreateCounsellorAndGetToken(normalized) {
+  if (!JWT_SECRET) {
+    const err = new Error('Counsellor login is not configured.');
+    err.code = 'CONFIG';
+    throw err;
+  }
+  let counsellor;
+  try {
+    counsellor = await Counsellor.findOne({ phone: normalized });
+    if (!counsellor) {
+      const defaultName = process.env.COUNSELLOR_DEFAULT_NAME || 'Counsellor';
+      const placeholderEmail = `counsellor-${normalized}@guidexpert.phone`;
+      const randomPassword = crypto.randomBytes(12).toString('hex');
+      try {
+        counsellor = await Counsellor.create({
+          phone: normalized,
+          name: defaultName,
+          email: placeholderEmail,
+          password: randomPassword,
+          role: 'counsellor',
+        });
+      } catch (err) {
+        if (err.code === 11000) {
+          try {
+            counsellor = await Counsellor.findOne({ phone: normalized });
+          } catch (findErr) {
+            console.error('[findOrCreateCounsellor] findOne after 11000 failed:', findErr.message);
+          }
+        }
+        if (!counsellor) {
+          try {
+            counsellor = await Counsellor.findOne({ phone: normalized });
+          } catch (_) {}
+        }
+        if (!counsellor) throw err;
+      }
+    }
+  } catch (counsellorErr) {
+    console.error('[findOrCreateCounsellor] lookup/create failed:', counsellorErr.message, counsellorErr.stack);
+    try {
+      counsellor = await Counsellor.findOne({ phone: normalized });
+    } catch (retryErr) {
+      console.error('[findOrCreateCounsellor] retry findOne failed:', retryErr.message);
+    }
+    if (!counsellor) throw counsellorErr;
+  }
+  const token = jwt.sign(
+    { counsellorId: counsellor._id.toString() },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN }
+  );
+  return {
+    token,
+    user: {
+      id: counsellor._id,
+      name: counsellor.name,
+      email: counsellor.email,
+      role: counsellor.role,
+    },
+  };
+}
+
+exports.findOrCreateCounsellorAndGetToken = findOrCreateCounsellorAndGetToken;
+
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body || {};
@@ -91,70 +160,24 @@ exports.loginWithPhone = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Verify OTP first' });
     }
 
-    let counsellor;
+    let payload;
     try {
-      counsellor = await Counsellor.findOne({ phone: normalized });
-      if (!counsellor) {
-        const defaultName = process.env.COUNSELLOR_DEFAULT_NAME || 'Counsellor';
-        const placeholderEmail = `counsellor-${normalized}@guidexpert.phone`;
-        const randomPassword = crypto.randomBytes(12).toString('hex');
-        try {
-          counsellor = await Counsellor.create({
-            phone: normalized,
-            name: defaultName,
-            email: placeholderEmail,
-            password: randomPassword,
-            role: 'counsellor',
-          });
-        } catch (err) {
-          if (err.code === 11000) {
-            try {
-              counsellor = await Counsellor.findOne({ phone: normalized });
-            } catch (findErr) {
-              console.error('[Counsellor loginWithPhone] findOne after 11000 failed:', findErr.message);
-            }
-          }
-          if (!counsellor) {
-            try {
-              counsellor = await Counsellor.findOne({ phone: normalized });
-            } catch (_) {}
-          }
-          if (!counsellor) throw err;
-        }
+      payload = await findOrCreateCounsellorAndGetToken(normalized);
+    } catch (err) {
+      if (err.code === 'CONFIG') {
+        return res.status(500).json({ success: false, message: 'Counsellor login is not configured. Please contact support.' });
       }
-    } catch (counsellorErr) {
-      console.error('[Counsellor loginWithPhone] Counsellor lookup/create failed:', counsellorErr.message, counsellorErr.stack);
-      try {
-        counsellor = await Counsellor.findOne({ phone: normalized });
-      } catch (retryErr) {
-        console.error('[Counsellor loginWithPhone] Retry findOne failed:', retryErr.message);
-      }
-      if (counsellor) {
-        // Proceed with login
-      } else {
-        return res.status(500).json({
-          success: false,
-          message: 'Login failed. Please try again or contact support.',
-        });
-      }
+      return res.status(500).json({
+        success: false,
+        message: 'Login failed. Please try again or contact support.',
+      });
     }
 
     otpStore.removeVerified(normalized);
-
-    const token = jwt.sign(
-      { counsellorId: counsellor._id.toString() },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRES_IN }
-    );
     return res.status(200).json({
       success: true,
-      token,
-      user: {
-        id: counsellor._id,
-        name: counsellor.name,
-        email: counsellor.email,
-        role: counsellor.role,
-      },
+      token: payload.token,
+      user: payload.user,
     });
   } catch (error) {
     console.error('[Counsellor loginWithPhone]', error.message, error.stack);

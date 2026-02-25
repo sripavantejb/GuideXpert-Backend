@@ -11,6 +11,7 @@ const SlotConfig = require('../models/SlotConfig');
 const SlotDateOverride = require('../models/SlotDateOverride');
 const { getISTCalendarDateUTC } = require('../utils/dateHelpers');
 const { appendRow, updateRow, markRowDeleted } = require('../utils/googleSheetsService');
+const { findOrCreateCounsellorAndGetToken } = require('./counsellorAuthController');
 
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const GOOGLE_SHEET_RANGE = process.env.GOOGLE_SHEET_RANGE || 'Sheet1';
@@ -222,6 +223,28 @@ exports.verifyOtp = async (req, res) => {
       );
     } catch (sessionErr) {
       console.error('[verifyOtp] VerifiedPhoneSession update failed (continuing):', sessionErr.message);
+    }
+
+    // Same flow as registration: optionally complete counsellor login in this request (one verify call)
+    const counsellorLogin = req.body?.counsellorLogin === true;
+    if (counsellorLogin) {
+      try {
+        const payload = await findOrCreateCounsellorAndGetToken(p);
+        otpStore.removeVerified(p);
+        return res.status(200).json({
+          success: true,
+          message: 'OTP verified',
+          verified: true,
+          token: payload.token,
+          user: payload.user,
+        });
+      } catch (err) {
+        if (err.code === 'CONFIG') {
+          return res.status(500).json({ success: false, message: 'Counsellor login is not configured. Please contact support.' });
+        }
+        console.error('[verifyOtp] counsellorLogin failed:', err.message, err.stack);
+        return res.status(500).json({ success: false, message: 'Login failed. Please try again or contact support.' });
+      }
     }
 
     return res.status(200).json({ success: true, message: 'OTP verified', verified: true });
