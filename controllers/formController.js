@@ -5,6 +5,7 @@ const { sendOtp: sendOtpSms, sendSlotConfirmationSms, sendReminderSms, sendMeetL
 const { getDemoSlots } = require('../utils/demoSlots');
 const { appendFormSubmission } = require('../utils/sheetsService');
 const FormSubmission = require('../models/FormSubmission');
+const TrainingFeedback = require('../models/TrainingFeedback');
 const VerifiedPhoneSession = require('../models/VerifiedPhoneSession');
 const WebsiteLogin = require('../models/WebsiteLogin');
 const SlotConfig = require('../models/SlotConfig');
@@ -229,9 +230,11 @@ exports.verifyOtp = async (req, res) => {
     const counsellorLogin = req.body?.counsellorLogin === true;
     if (counsellorLogin) {
       try {
-        // Only grant counsellor access if phone is in the access form (FormSubmission with OTP verified)
-        const submission = await FormSubmission.findOne({ phone: p, 'step2Data.otpVerified': true }).lean();
-        if (!submission) {
+        // Only grant counsellor access if phone is in activation form results (TrainingFeedback)
+        const record = await TrainingFeedback.findOne({ $or: [{ mobileNumber: p }, { whatsappNumber: p }] })
+          .sort({ createdAt: -1 })
+          .lean();
+        if (!record) {
           otpStore.removeVerified(p);
           return res.status(200).json({
             success: true,
@@ -242,14 +245,12 @@ exports.verifyOtp = async (req, res) => {
         }
         const payload = await findOrCreateCounsellorAndGetToken(p);
         otpStore.removeVerified(p);
-        const fullName = submission.fullName || submission.step1Data?.fullName;
-        const email = submission.email;
-        const occupation = submission.occupation || submission.step1Data?.occupation;
         const accessForm = {};
-        if (fullName != null && String(fullName).trim()) accessForm.fullName = String(fullName).trim();
-        if (email != null && String(email).trim()) accessForm.email = String(email).trim().toLowerCase();
-        if (occupation != null && String(occupation).trim()) accessForm.occupation = String(occupation).trim();
-        if (submission.phone) accessForm.phone = submission.phone;
+        const fullName = record.name != null ? String(record.name).trim() : '';
+        if (fullName) accessForm.fullName = fullName;
+        if (record.email != null && String(record.email).trim()) accessForm.email = String(record.email).trim().toLowerCase();
+        if (record.occupation != null && String(record.occupation).trim()) accessForm.occupation = String(record.occupation).trim();
+        accessForm.phone = p;
         return res.status(200).json({
           success: true,
           message: 'OTP verified',
