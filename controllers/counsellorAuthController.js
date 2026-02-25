@@ -81,30 +81,44 @@ exports.loginWithPhone = async (req, res) => {
     }
 
     const verifiedInMemory = otpStore.isVerified(normalized);
-    const verifiedInDb = await isPhoneVerifiedInDb(normalized);
+    let verifiedInDb = false;
+    try {
+      verifiedInDb = await isPhoneVerifiedInDb(normalized);
+    } catch (dbErr) {
+      console.error('[Counsellor loginWithPhone] isPhoneVerifiedInDb failed:', dbErr.message);
+    }
     if (!verifiedInMemory && !verifiedInDb) {
       return res.status(401).json({ success: false, message: 'Verify OTP first' });
     }
 
-    let counsellor = await Counsellor.findOne({ phone: normalized });
-    if (!counsellor) {
-      const defaultName = process.env.COUNSELLOR_DEFAULT_NAME || 'Counsellor';
-      const placeholderEmail = `counsellor-${normalized}@guidexpert.phone`;
-      const randomPassword = crypto.randomBytes(12).toString('hex');
-      try {
-        counsellor = await Counsellor.create({
-          phone: normalized,
-          name: defaultName,
-          email: placeholderEmail,
-          password: randomPassword,
-          role: 'counsellor',
-        });
-      } catch (err) {
-        if (err.code === 11000) {
-          counsellor = await Counsellor.findOne({ phone: normalized });
+    let counsellor;
+    try {
+      counsellor = await Counsellor.findOne({ phone: normalized });
+      if (!counsellor) {
+        const defaultName = process.env.COUNSELLOR_DEFAULT_NAME || 'Counsellor';
+        const placeholderEmail = `counsellor-${normalized}@guidexpert.phone`;
+        const randomPassword = crypto.randomBytes(12).toString('hex');
+        try {
+          counsellor = await Counsellor.create({
+            phone: normalized,
+            name: defaultName,
+            email: placeholderEmail,
+            password: randomPassword,
+            role: 'counsellor',
+          });
+        } catch (err) {
+          if (err.code === 11000) {
+            counsellor = await Counsellor.findOne({ phone: normalized });
+          }
+          if (!counsellor) throw err;
         }
-        if (!counsellor) throw err;
       }
+    } catch (counsellorErr) {
+      console.error('[Counsellor loginWithPhone] Counsellor lookup/create failed:', counsellorErr.message, counsellorErr.stack);
+      return res.status(500).json({
+        success: false,
+        message: 'Login failed. Please try again or contact support.',
+      });
     }
 
     otpStore.removeVerified(normalized);
@@ -125,10 +139,10 @@ exports.loginWithPhone = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('[Counsellor loginWithPhone]', error);
+    console.error('[Counsellor loginWithPhone]', error.message, error.stack);
     return res.status(500).json({
       success: false,
-      message: process.env.NODE_ENV === 'production' ? 'Something went wrong.' : error.message,
+      message: 'Login failed. Please try again.',
     });
   }
 };
