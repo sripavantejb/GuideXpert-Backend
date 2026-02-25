@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const Counsellor = require('../models/Counsellor');
 const otpStore = require('../utils/otpStore');
 const VerifiedPhoneSession = require('../models/VerifiedPhoneSession');
@@ -41,6 +42,14 @@ async function findOneByPhone(normalized) {
  * @param {string} normalized - 10-digit normalized phone
  * @returns {{ token: string, user: object }}
  */
+async function ensureMongoConnected() {
+  if (mongoose.connection.readyState === 1) return;
+  await new Promise((r) => setTimeout(r, 2000));
+  if (mongoose.connection.readyState !== 1) {
+    throw new Error('Database not connected. Try again in a moment.');
+  }
+}
+
 async function findOrCreateCounsellorAndGetToken(normalized) {
   const JWT_SECRET = getJwtSecret();
   if (!JWT_SECRET || !String(JWT_SECRET).trim()) {
@@ -48,6 +57,7 @@ async function findOrCreateCounsellorAndGetToken(normalized) {
     err.code = 'CONFIG';
     throw err;
   }
+  await ensureMongoConnected();
   let counsellor;
   try {
     counsellor = await Counsellor.findOne({ phone: normalized });

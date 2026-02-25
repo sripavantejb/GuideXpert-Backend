@@ -248,7 +248,10 @@ exports.verifyOtp = async (req, res) => {
           message: err.message,
           keyPattern: err.keyPattern,
         }, err.stack);
-        return res.status(500).json({ success: false, message: 'Login failed. Please try again or contact support.' });
+        const safeMessage = process.env.NODE_ENV === 'production'
+          ? 'Login failed. Please try again or contact support.'
+          : (err.message || 'Login failed. Please try again or contact support.');
+        return res.status(500).json({ success: false, message: safeMessage });
       }
     }
 

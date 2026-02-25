@@ -44,20 +44,13 @@ counsellorSchema.pre('save', function (next) {
     const digits = String(this.phone).replace(/\D/g, '');
     this.phone = digits.length >= 10 ? digits.slice(-10) : null;
   }
-  next();
+  if (typeof next === 'function') next();
 });
 
-counsellorSchema.pre('save', function (next) {
-  if (!this.isModified('password')) return next();
-  const self = this;
-  bcrypt.genSalt(10, function (err, salt) {
-    if (err) return next(err);
-    bcrypt.hash(self.password, salt, function (err, hash) {
-      if (err) return next(err);
-      self.password = hash;
-      next();
-    });
-  });
+counsellorSchema.pre('save', async function () {
+  if (!this.isModified('password')) return;
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
 });
 
 counsellorSchema.methods.comparePassword = function (candidatePassword) {
