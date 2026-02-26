@@ -388,7 +388,7 @@ exports.submitCareerDna = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Career DNA assessment submitted successfully.',
+      message: 'Psychometric assessment submitted successfully.',
       data: {
         score: doc.score,
         maxScore: doc.maxScore,

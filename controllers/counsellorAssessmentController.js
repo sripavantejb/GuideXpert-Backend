@@ -13,7 +13,7 @@ function getFrontendBase() {
 }
 
 /**
- * Build UTM link for counsellor assessment (Career DNA or Course Fit).
+ * Build UTM link for counsellor assessment (Psychometric Test or Course Fit).
  * utm_content = counsellorId so we can attribute submissions.
  */
 function buildAssessmentLink(counsellorId, assessmentType) {
@@ -30,7 +30,7 @@ function buildAssessmentLink(counsellorId, assessmentType) {
 
 /**
  * GET /api/counsellor/assessment-links
- * Returns the counsellor's unique UTM links for Career DNA and Course Fit.
+ * Returns the counsellor's unique UTM links for Psychometric Test and Course Fit.
  */
 exports.getAssessmentLinks = async (req, res) => {
   try {
@@ -44,7 +44,7 @@ exports.getAssessmentLinks = async (req, res) => {
     return res.status(200).json({
       success: true,
       data: {
-        careerDna: { link: careerDnaLink, title: 'Career DNA Test' },
+        careerDna: { link: careerDnaLink, title: 'Psychometric Test' },
         courseFit: { link: courseFitLink, title: 'Course Fit Test' },
       },
     });
