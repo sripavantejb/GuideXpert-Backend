@@ -1,4 +1,5 @@
 const TrainingFeedback = require('../models/TrainingFeedback');
+const AssessmentSubmission3 = require('../models/AssessmentSubmission3');
 
 function to10Digits(val) {
   if (val == null) return '';
@@ -62,6 +63,28 @@ exports.submitTrainingFeedback = async (req, res) => {
     const yoe = Number(yearsOfExperience);
     if (Number.isNaN(yoe) || yoe < 0 || yoe > 50 || yoe !== Math.floor(yoe)) {
       return res.status(400).json({ success: false, message: 'Years of experience must be 0–50.' });
+    }
+
+    // Only allow submission if user completed training (phone in AssessmentSubmission3)
+    const inAssessment3 = await AssessmentSubmission3.findOne({ phone: mobileNumber }).lean();
+    if (!inAssessment3) {
+      return res.status(403).json({
+        success: false,
+        code: 'NOT_COMPLETED_TRAINING',
+        message: 'You have not yet completed the assessments. Please complete the training first.'
+      });
+    }
+
+    // Prevent duplicate activation feedback
+    const existingFeedback = await TrainingFeedback.findOne({
+      $or: [{ mobileNumber }, { whatsappNumber }]
+    }).lean();
+    if (existingFeedback) {
+      return res.status(409).json({
+        success: false,
+        code: 'ALREADY_SUBMITTED',
+        message: 'You have already completed the feedback.'
+      });
     }
 
     const doc = {
