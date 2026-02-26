@@ -4,6 +4,15 @@ const { login, getAdminLeads, getLeadById, updateLeadNotes, getAdminStats, expor
 const { getMeetingAttendance } = require('../controllers/meetingController');
 const { getTrainingAttendance } = require('../controllers/trainingController');
 const { getTrainingFeedback } = require('../controllers/feedbackController');
+const {
+  adminList,
+  adminCreate,
+  adminGetOne,
+  adminUpdate,
+  adminDelete,
+  adminPublish,
+  adminUnpublish,
+} = require('../controllers/announcementController');
 const requireAdmin = require('../middleware/requireAdmin');
 
 router.post('/login', login);
@@ -27,5 +36,12 @@ router.get('/assessment-2-submissions', requireAdmin, getAssessment2Submissions)
 router.get('/assessment-2-submissions/:id', requireAdmin, getAssessment2SubmissionById);
 router.get('/assessment-3-submissions', requireAdmin, getAssessment3Submissions);
 router.get('/assessment-3-submissions/:id', requireAdmin, getAssessment3SubmissionById);
+router.get('/announcements', requireAdmin, adminList);
+router.post('/announcements', requireAdmin, adminCreate);
+router.get('/announcements/:id', requireAdmin, adminGetOne);
+router.patch('/announcements/:id', requireAdmin, adminUpdate);
+router.delete('/announcements/:id', requireAdmin, adminDelete);
+router.post('/announcements/:id/publish', requireAdmin, adminPublish);
+router.post('/announcements/:id/unpublish', requireAdmin, adminUnpublish);
 
 module.exports = router;
