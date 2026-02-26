@@ -190,18 +190,35 @@ exports.adminAnalytics = async (req, res) => {
       .sort({ readAt: -1 })
       .lean();
     const viewCount = reads.length;
+    const counsellorIdsFromReads = [...new Set(reads.map((r) => r.counsellor?._id ?? r.counsellor).filter(Boolean))];
+    const counsellorNameDocs = await Counsellor.find({ _id: { $in: counsellorIdsFromReads } }).select('name').lean();
+    const toDisplayName = (raw) => {
+      if (raw == null || String(raw).trim() === '') return 'Unknown';
+      const s = String(raw).trim();
+      if (s.toLowerCase() === 'counsellor') return 'Unknown';
+      return s;
+    };
+    const nameMap = new Map(counsellorNameDocs.map((c) => [String(c._id), toDisplayName(c.name)]));
+    const getName = (r) => toDisplayName(nameMap.get(String(r.counsellor?._id ?? r.counsellor)) ?? r.counsellor?.name);
+
     const reactionCounts = { helpful: 0, appreciated: 0, great: 0, important: 0 };
     const reactions = { helpful: [], appreciated: [], great: [], important: [] };
     let acknowledgedCount = 0;
     const viewedBy = reads.map((r) => {
+      const counsellorId = r.counsellor?._id?.toString();
+      const name = getName(r);
       if (r.reactionType && reactions[r.reactionType]) {
         reactionCounts[r.reactionType]++;
-        reactions[r.reactionType].push({ name: r.counsellor?.name ?? 'Unknown' });
+        reactions[r.reactionType].push({
+          counsellorId,
+          name,
+          reactedAt: r.readAt,
+        });
       }
       if (r.acknowledged) acknowledgedCount++;
       return {
-        counsellorId: r.counsellor?._id?.toString(),
-        name: r.counsellor?.name ?? 'Unknown',
+        counsellorId,
+        name,
         readAt: r.readAt,
         reactionType: r.reactionType || null,
         acknowledged: !!r.acknowledged,
@@ -209,7 +226,7 @@ exports.adminAnalytics = async (req, res) => {
     });
     const viewedCounsellorIds = new Set(reads.map((r) => String(r.counsellor?._id ?? r.counsellor)).filter(Boolean));
     const allCounsellors = await Counsellor.find({}).select('name').lean();
-    const notViewedBy = allCounsellors.filter((c) => !viewedCounsellorIds.has(String(c._id))).map((c) => ({ counsellorId: c._id.toString(), name: c.name ?? 'Unknown' }));
+    const notViewedBy = allCounsellors.filter((c) => !viewedCounsellorIds.has(String(c._id))).map((c) => ({ counsellorId: c._id.toString(), name: toDisplayName(c.name) }));
     const totalReactions = Object.values(reactionCounts).reduce((s, n) => s + n, 0);
     const engagementRate = totalCounsellors > 0 ? Math.round((viewCount / totalCounsellors) * 100) : 0;
     return res.json({
@@ -448,9 +465,20 @@ exports.counsellorEngagement = async (req, res) => {
       .populate('counsellor', 'name')
       .sort({ readAt: -1 })
       .lean();
+    const counsellorIdsFromReads = [...new Set(reads.map((r) => r.counsellor?._id ?? r.counsellor).filter(Boolean))];
+    const counsellorNameDocs = await Counsellor.find({ _id: { $in: counsellorIdsFromReads } }).select('name').lean();
+    const toDisplayName = (raw) => {
+      if (raw == null || String(raw).trim() === '') return 'Unknown';
+      const s = String(raw).trim();
+      if (s.toLowerCase() === 'counsellor') return 'Unknown';
+      return s;
+    };
+    const nameMap = new Map(counsellorNameDocs.map((c) => [String(c._id), toDisplayName(c.name)]));
+    const getName = (r) => toDisplayName(nameMap.get(String(r.counsellor?._id ?? r.counsellor)) ?? r.counsellor?.name);
+
     const viewedBy = reads.map((r) => ({
       counsellorId: r.counsellor?._id?.toString() ?? r.counsellor,
-      name: r.counsellor?.name ?? 'Unknown',
+      name: getName(r),
       readAt: r.readAt,
     }));
     const reactions = { helpful: [], appreciated: [], great: [], important: [] };
@@ -458,7 +486,7 @@ exports.counsellorEngagement = async (req, res) => {
       if (r.reactionType && reactions[r.reactionType]) {
         reactions[r.reactionType].push({
           counsellorId: r.counsellor?._id?.toString() ?? r.counsellor,
-          name: r.counsellor?.name ?? 'Unknown',
+          name: getName(r),
         });
       }
     });
