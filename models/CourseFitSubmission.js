@@ -32,6 +32,11 @@ const courseFitSubmissionSchema = new mongoose.Schema(
     score: { type: Number, required: true, min: 0 },
     maxScore: { type: Number, required: true, min: 0 },
     submittedAt: { type: Date, default: Date.now },
+    scoreBreakdown: { type: mongoose.Schema.Types.Mixed, default: null },
+    primaryType: { type: String, trim: true, default: '' },
+    secondaryType: { type: String, trim: true, default: '' },
+    recommendedPath: { type: String, trim: true, default: '' },
+    suggestedCourses: { type: [String], default: [] },
   },
   { timestamps: true }
 );
