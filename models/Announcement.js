@@ -27,6 +27,10 @@ const announcementSchema = new mongoose.Schema(
       enum: ['draft', 'published'],
       default: 'draft',
     },
+    pinned: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );

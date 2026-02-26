@@ -16,6 +16,15 @@ const announcementReadSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    reactionType: {
+      type: String,
+      enum: ['helpful', 'appreciated', 'great', 'important'],
+      default: null,
+    },
+    acknowledged: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: false }
 );

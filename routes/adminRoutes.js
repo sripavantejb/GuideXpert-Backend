@@ -12,6 +12,7 @@ const {
   adminDelete,
   adminPublish,
   adminUnpublish,
+  adminAnalytics,
 } = require('../controllers/announcementController');
 const requireAdmin = require('../middleware/requireAdmin');
 
@@ -38,6 +39,7 @@ router.get('/assessment-3-submissions', requireAdmin, getAssessment3Submissions)
 router.get('/assessment-3-submissions/:id', requireAdmin, getAssessment3SubmissionById);
 router.get('/announcements', requireAdmin, adminList);
 router.post('/announcements', requireAdmin, adminCreate);
+router.get('/announcements/:id/analytics', requireAdmin, adminAnalytics);
 router.get('/announcements/:id', requireAdmin, adminGetOne);
 router.patch('/announcements/:id', requireAdmin, adminUpdate);
 router.delete('/announcements/:id', requireAdmin, adminDelete);
