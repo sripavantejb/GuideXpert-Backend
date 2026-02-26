@@ -23,7 +23,7 @@ exports.adminList = async (req, res) => {
 
     const list = await Announcement.find(filter).sort({ createdAt: -1 }).lean();
     const items = list.map((a) => ({
-      id: a._id,
+      id: a._id != null ? a._id.toString() : a._id,
       title: a.title,
       preview: stripHtml(a.description),
       priority: a.priority,
@@ -56,7 +56,7 @@ exports.adminCreate = async (req, res) => {
     return res.status(201).json({
       success: true,
       data: {
-        id: created._id,
+        id: created._id != null ? created._id.toString() : created._id,
         title: created.title,
         preview: stripHtml(created.description),
         priority: created.priority,
@@ -81,7 +81,7 @@ exports.adminGetOne = async (req, res) => {
     return res.json({
       success: true,
       data: {
-        id: announcement._id,
+        id: announcement._id != null ? announcement._id.toString() : announcement._id,
         title: announcement.title,
         description: announcement.description,
         priority: announcement.priority,
@@ -113,7 +113,7 @@ exports.adminUpdate = async (req, res) => {
     return res.json({
       success: true,
       data: {
-        id: announcement._id,
+        id: announcement._id != null ? announcement._id.toString() : announcement._id,
         title: announcement.title,
         preview: stripHtml(announcement.description),
         priority: announcement.priority,
@@ -156,7 +156,7 @@ exports.adminPublish = async (req, res) => {
     return res.json({
       success: true,
       data: {
-        id: announcement._id,
+        id: announcement._id != null ? announcement._id.toString() : announcement._id,
         status: getStatus(announcement),
         updatedAt: announcement.updatedAt,
       },
@@ -180,7 +180,7 @@ exports.adminUnpublish = async (req, res) => {
     return res.json({
       success: true,
       data: {
-        id: announcement._id,
+        id: announcement._id != null ? announcement._id.toString() : announcement._id,
         status: 'draft',
         updatedAt: announcement.updatedAt,
       },
@@ -212,7 +212,7 @@ exports.counsellorList = async (req, res) => {
       .then((ids) => new Set(ids.map(String)));
 
     const items = announcements.map((a) => ({
-      id: a._id,
+      id: a._id != null ? a._id.toString() : a._id,
       title: a.title,
       preview: stripHtml(a.description, 120),
       priority: a.priority,
@@ -244,7 +244,7 @@ exports.counsellorGetOne = async (req, res) => {
     return res.json({
       success: true,
       data: {
-        id: announcement._id,
+        id: announcement._id != null ? announcement._id.toString() : announcement._id,
         title: announcement.title,
         description: announcement.description,
         priority: announcement.priority,
