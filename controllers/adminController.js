@@ -7,7 +7,14 @@ const AssessmentSubmission2 = require('../models/AssessmentSubmission2');
 const AssessmentSubmission3 = require('../models/AssessmentSubmission3');
 const SlotConfig = require('../models/SlotConfig');
 const SlotDateOverride = require('../models/SlotDateOverride');
+const MeetingAttendance = require('../models/MeetingAttendance');
 const { getISTCalendarDateUTC, getISTDayRangeFromString } = require('../utils/dateHelpers');
+
+function normalizePhoneTo10(value) {
+  if (value == null) return '';
+  const digits = String(value).replace(/\D/g, '');
+  return digits.length >= 10 ? digits.slice(-10) : digits;
+}
 const { getQuestionResults, CORRECT_ANSWERS, CORRECT_ANSWERS_2, CORRECT_ANSWERS_3 } = require('./assessmentController');
 
 const JWT_SECRET = process.env.ADMIN_JWT_SECRET;
@@ -23,6 +30,15 @@ const ALL_SLOT_IDS = [
   'MONDAY_6PM', 'TUESDAY_6PM', 'WEDNESDAY_6PM', 'THURSDAY_6PM',
   'FRIDAY_6PM', 'SATURDAY_6PM', 'SUNDAY_6PM'
 ];
+
+/** Lead is "slot booked" if any of: isRegistered, step3Data.selectedSlot, or root selectedSlot is set. */
+const SLOT_BOOKED_CONDITION = {
+  $or: [
+    { isRegistered: true },
+    { 'step3Data.selectedSlot': { $exists: true, $nin: [null, ''] } },
+    { selectedSlot: { $exists: true, $nin: [null, ''] } }
+  ]
+};
 
 const DAY_NAMES = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 
@@ -141,8 +157,8 @@ function mapLeadToDTO(sub) {
     occupation: sub.occupation,
     otpVerified: !!step2.otpVerified,
     step2CompletedAt: step2.step2CompletedAt || null,
-    slotBooked: !!(sub.isRegistered || step3.selectedSlot),
-    selectedSlot: step3.selectedSlot || null,
+    slotBooked: !!(sub.isRegistered || step3.selectedSlot || sub.selectedSlot),
+    selectedSlot: step3.selectedSlot || sub.selectedSlot || null,
     slotDate: step3.slotDate || null,
     step3CompletedAt: step3.step3CompletedAt || null,
     isRegistered: !!sub.isRegistered,
@@ -253,33 +269,53 @@ exports.getAdminStats = async (req, res) => {
       completed,
       otpVerified,
       slotBooked,
+      otpVerifiedSlotBooked,
       slotAggregation,
-      signupsByDay
+      signupsByDay,
+      meetingAttendeePhones,
+      slotBookedLeadsPhones
     ] = await Promise.all([
       FormSubmission.countDocuments({}),
       FormSubmission.countDocuments({ applicationStatus: 'in_progress' }),
       FormSubmission.countDocuments({ applicationStatus: 'registered' }),
       FormSubmission.countDocuments({ applicationStatus: 'completed' }),
       FormSubmission.countDocuments({ 'step2Data.otpVerified': true }),
+      FormSubmission.countDocuments(SLOT_BOOKED_CONDITION),
       FormSubmission.countDocuments({
-        $or: [{ isRegistered: true }, { 'step3Data.selectedSlot': { $exists: true, $ne: null } }]
+        $and: [{ 'step2Data.otpVerified': true }, SLOT_BOOKED_CONDITION]
       }),
       FormSubmission.aggregate([
-        { $match: { 'step3Data.selectedSlot': { $exists: true, $ne: null } } },
-        { $group: { _id: '$step3Data.selectedSlot', count: { $sum: 1 } } }
+        { $match: SLOT_BOOKED_CONDITION },
+        { $addFields: { _slotId: { $ifNull: ['$step3Data.selectedSlot', '$selectedSlot'] } } },
+        { $match: { _slotId: { $exists: true, $nin: [null, ''] } } },
+        { $group: { _id: '$_slotId', count: { $sum: 1 } } }
       ]),
       FormSubmission.aggregate([
         { $match: signupsMatch },
         { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },
         { $sort: { _id: 1 } }
-      ])
+      ]),
+      MeetingAttendance.aggregate([{ $group: { _id: '$mobileNumber' } }]),
+      FormSubmission.find(SLOT_BOOKED_CONDITION).select('phone').lean()
     ]);
+
+    const attendeePhonesSet = new Set(
+      (meetingAttendeePhones || []).map((r) => normalizePhoneTo10(r._id)).filter(Boolean)
+    );
+    const demoAttended = (slotBookedLeadsPhones || []).filter((lead) =>
+      attendeePhonesSet.has(normalizePhoneTo10(lead.phone))
+    ).length;
+    const demoNotAttended = Math.max(0, slotBooked - demoAttended);
+    const otpNotVerified = Math.max(0, total - otpVerified);
+    const otpVerifiedSlotNotBooked = Math.max(0, otpVerified - otpVerifiedSlotBooked);
 
     const bySlot = (slotAggregation || []).reduce((acc, { _id, count }) => {
       acc[_id] = count;
       return acc;
     }, {});
     const signupsOverTime = (signupsByDay || []).map((d) => ({ date: d._id, count: d.count }));
+    // Placeholder: pageVisited mirrors total leads until dedicated visit tracking is added.
+    const pageVisited = total;
 
     return res.status(200).json({
       success: true,
@@ -289,7 +325,13 @@ exports.getAdminStats = async (req, res) => {
         registered,
         completed,
         otpVerified,
+        otpNotVerified,
         slotBooked,
+        otpVerifiedSlotBooked,
+        otpVerifiedSlotNotBooked,
+        demoAttended,
+        demoNotAttended,
+        pageVisited,
         bySlot,
         signupsOverTime
       }
@@ -321,7 +363,7 @@ exports.exportLeads = async (req, res) => {
       if (to) filter.createdAt.$lte = to;
     }
     if (selectedSlot && ALL_SLOT_IDS.includes(selectedSlot)) {
-      filter['step3Data.selectedSlot'] = selectedSlot;
+      filter.$or = [{ 'step3Data.selectedSlot': selectedSlot }, { selectedSlot: selectedSlot }];
     }
     if (utm_content) {
       filter.utm_content = utm_content;
@@ -401,20 +443,19 @@ exports.getAdminLeads = async (req, res) => {
       });
     }
     if (slotBooked === 'true') {
-      andConditions.push({
-        $or: [{ isRegistered: true }, { 'step3Data.selectedSlot': { $exists: true, $ne: null } }]
-      });
+      andConditions.push(SLOT_BOOKED_CONDITION);
     } else if (slotBooked === 'false') {
       andConditions.push({
         $and: [
           { isRegistered: { $ne: true } },
-          { $or: [{ 'step3Data.selectedSlot': null }, { 'step3Data.selectedSlot': { $exists: false } }] }
+          { $or: [{ 'step3Data.selectedSlot': null }, { 'step3Data.selectedSlot': { $exists: false } }, { 'step3Data.selectedSlot': '' }] },
+          { $or: [{ selectedSlot: null }, { selectedSlot: { $exists: false } }, { selectedSlot: '' }] }
         ]
       });
     }
     if (selectedSlot && ALL_SLOT_IDS.includes(selectedSlot)) {
       andConditions.push({
-        $or: [{ 'step3Data.selectedSlot': selectedSlot }, { selectedSlot }]
+        $or: [{ 'step3Data.selectedSlot': selectedSlot }, { selectedSlot: selectedSlot }]
       });
     }
     const slotDate = (req.query.slotDate || '').trim();
@@ -426,9 +467,12 @@ exports.getAdminLeads = async (req, res) => {
       andConditions.push({
         'step3Data.slotDate': { $gte: start, $lt: end }
       });
-      // Ensure they have a selected slot
+      // Ensure they have a selected slot (step3 or root)
       andConditions.push({
-        'step3Data.selectedSlot': { $exists: true, $nin: [null, ''] }
+        $or: [
+          { 'step3Data.selectedSlot': { $exists: true, $nin: [null, ''] } },
+          { selectedSlot: { $exists: true, $nin: [null, ''] } }
+        ]
       });
     }
     if (q) {
@@ -614,8 +658,8 @@ exports.getSlotBookingCounts = async (req, res) => {
     const pipeline = [
       {
         $match: {
-          'step3Data.slotDate': { $exists: true, $ne: null },
-          'step3Data.selectedSlot': { $exists: true, $ne: null }
+          ...SLOT_BOOKED_CONDITION,
+          'step3Data.slotDate': { $exists: true, $ne: null }
         }
       },
       {
@@ -626,19 +670,21 @@ exports.getSlotBookingCounts = async (req, res) => {
               format: '%Y-%m-%d',
               timezone: 'Asia/Kolkata'
             }
-          }
+          },
+          _slotId: { $ifNull: ['$step3Data.selectedSlot', '$selectedSlot'] }
         }
       },
       {
         $match: {
-          slotDateIST: { $gte: fromStr, $lte: toStr }
+          slotDateIST: { $gte: fromStr, $lte: toStr },
+          _slotId: { $exists: true, $nin: [null, ''] }
         }
       },
       {
         $group: {
           _id: {
             date: '$slotDateIST',
-            slotId: '$step3Data.selectedSlot'
+            slotId: '$_slotId'
           },
           count: { $sum: 1 }
         }
