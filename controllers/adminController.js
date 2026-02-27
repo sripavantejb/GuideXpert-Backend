@@ -273,7 +273,10 @@ exports.getAdminStats = async (req, res) => {
       slotAggregation,
       signupsByDay,
       meetingAttendeePhones,
-      slotBookedLeadsPhones
+      slotBookedLeadsPhones,
+      assessment1Phones,
+      assessment2Phones,
+      assessment3Phones
     ] = await Promise.all([
       FormSubmission.countDocuments({}),
       FormSubmission.countDocuments({ applicationStatus: 'in_progress' }),
@@ -296,7 +299,10 @@ exports.getAdminStats = async (req, res) => {
         { $sort: { _id: 1 } }
       ]),
       MeetingAttendance.aggregate([{ $group: { _id: '$mobileNumber' } }]),
-      FormSubmission.find(SLOT_BOOKED_CONDITION).select('phone').lean()
+      FormSubmission.find(SLOT_BOOKED_CONDITION).select('phone').lean(),
+      AssessmentSubmission.distinct('phone'),
+      AssessmentSubmission2.distinct('phone'),
+      AssessmentSubmission3.distinct('phone')
     ]);
 
     const attendeePhonesSet = new Set(
@@ -308,6 +314,21 @@ exports.getAdminStats = async (req, res) => {
     const demoNotAttended = Math.max(0, slotBooked - demoAttended);
     const otpNotVerified = Math.max(0, total - otpVerified);
     const otpVerifiedSlotNotBooked = Math.max(0, otpVerified - otpVerifiedSlotBooked);
+
+    const assessmentPhonesSet = new Set(
+      [
+        ...(assessment1Phones || []),
+        ...(assessment2Phones || []),
+        ...(assessment3Phones || [])
+      ].map(normalizePhoneTo10).filter(Boolean)
+    );
+    const demoAttendedLeads = (slotBookedLeadsPhones || []).filter((lead) =>
+      attendeePhonesSet.has(normalizePhoneTo10(lead.phone))
+    );
+    const assessmentWritten = demoAttendedLeads.filter((lead) =>
+      assessmentPhonesSet.has(normalizePhoneTo10(lead.phone))
+    ).length;
+    const assessmentNotWritten = Math.max(0, demoAttended - assessmentWritten);
 
     const bySlot = (slotAggregation || []).reduce((acc, { _id, count }) => {
       acc[_id] = count;
@@ -331,6 +352,8 @@ exports.getAdminStats = async (req, res) => {
         otpVerifiedSlotNotBooked,
         demoAttended,
         demoNotAttended,
+        assessmentWritten,
+        assessmentNotWritten,
         pageVisited,
         bySlot,
         signupsOverTime
