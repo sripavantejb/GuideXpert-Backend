@@ -8,6 +8,7 @@ const AssessmentSubmission3 = require('../models/AssessmentSubmission3');
 const SlotConfig = require('../models/SlotConfig');
 const SlotDateOverride = require('../models/SlotDateOverride');
 const MeetingAttendance = require('../models/MeetingAttendance');
+const TrainingFeedback = require('../models/TrainingFeedback');
 const { getISTCalendarDateUTC, getISTDayRangeFromString } = require('../utils/dateHelpers');
 
 function normalizePhoneTo10(value) {
@@ -276,7 +277,9 @@ exports.getAdminStats = async (req, res) => {
       slotBookedLeadsPhones,
       assessment1Phones,
       assessment2Phones,
-      assessment3Phones
+      assessment3Phones,
+      activationFormMobilePhones,
+      activationFormWhatsappPhones
     ] = await Promise.all([
       FormSubmission.countDocuments({}),
       FormSubmission.countDocuments({ applicationStatus: 'in_progress' }),
@@ -302,7 +305,9 @@ exports.getAdminStats = async (req, res) => {
       FormSubmission.find(SLOT_BOOKED_CONDITION).select('phone').lean(),
       AssessmentSubmission.distinct('phone'),
       AssessmentSubmission2.distinct('phone'),
-      AssessmentSubmission3.distinct('phone')
+      AssessmentSubmission3.distinct('phone'),
+      TrainingFeedback.distinct('mobileNumber'),
+      TrainingFeedback.distinct('whatsappNumber')
     ]);
 
     const attendeePhonesSet = new Set(
@@ -330,6 +335,20 @@ exports.getAdminStats = async (req, res) => {
     ).length;
     const assessmentNotWritten = Math.max(0, demoAttended - assessmentWritten);
 
+    const activationFormPhonesSet = new Set(
+      [
+        ...(activationFormMobilePhones || []),
+        ...(activationFormWhatsappPhones || [])
+      ].map(normalizePhoneTo10).filter(Boolean)
+    );
+    const assessmentWrittenLeads = demoAttendedLeads.filter((lead) =>
+      assessmentPhonesSet.has(normalizePhoneTo10(lead.phone))
+    );
+    const activationFormCompleted = assessmentWrittenLeads.filter((lead) =>
+      activationFormPhonesSet.has(normalizePhoneTo10(lead.phone))
+    ).length;
+    const activationFormNotDone = Math.max(0, assessmentWritten - activationFormCompleted);
+
     const bySlot = (slotAggregation || []).reduce((acc, { _id, count }) => {
       acc[_id] = count;
       return acc;
@@ -354,6 +373,8 @@ exports.getAdminStats = async (req, res) => {
         demoNotAttended,
         assessmentWritten,
         assessmentNotWritten,
+        activationFormCompleted,
+        activationFormNotDone,
         pageVisited,
         bySlot,
         signupsOverTime
