@@ -9,6 +9,7 @@ const SlotConfig = require('../models/SlotConfig');
 const SlotDateOverride = require('../models/SlotDateOverride');
 const MeetingAttendance = require('../models/MeetingAttendance');
 const TrainingFeedback = require('../models/TrainingFeedback');
+const Counsellor = require('../models/Counsellor');
 const { getISTCalendarDateUTC, getISTDayRangeFromString } = require('../utils/dateHelpers');
 
 function normalizePhoneTo10(value) {
@@ -279,7 +280,8 @@ exports.getAdminStats = async (req, res) => {
       assessment2Phones,
       assessment3Phones,
       activationFormMobilePhones,
-      activationFormWhatsappPhones
+      activationFormWhatsappPhones,
+      counsellorPhones
     ] = await Promise.all([
       FormSubmission.countDocuments({}),
       FormSubmission.countDocuments({ applicationStatus: 'in_progress' }),
@@ -307,7 +309,8 @@ exports.getAdminStats = async (req, res) => {
       AssessmentSubmission2.distinct('phone'),
       AssessmentSubmission3.distinct('phone'),
       TrainingFeedback.distinct('mobileNumber'),
-      TrainingFeedback.distinct('whatsappNumber')
+      TrainingFeedback.distinct('whatsappNumber'),
+      Counsellor.distinct('phone')
     ]);
 
     const attendeePhonesSet = new Set(
@@ -349,6 +352,14 @@ exports.getAdminStats = async (req, res) => {
     ).length;
     const activationFormNotDone = Math.max(0, assessmentWritten - activationFormCompleted);
 
+    const counsellorPhonesSet = new Set(
+      (counsellorPhones || []).map(normalizePhoneTo10).filter(Boolean)
+    );
+    const counsellorDashboardLoggedIn = [...activationFormPhonesSet].filter((phone) =>
+      counsellorPhonesSet.has(phone)
+    ).length;
+    const counsellorDashboardNotLoggedIn = Math.max(0, activationFormCompleted - counsellorDashboardLoggedIn);
+
     const bySlot = (slotAggregation || []).reduce((acc, { _id, count }) => {
       acc[_id] = count;
       return acc;
@@ -375,6 +386,8 @@ exports.getAdminStats = async (req, res) => {
         assessmentNotWritten,
         activationFormCompleted,
         activationFormNotDone,
+        counsellorDashboardLoggedIn,
+        counsellorDashboardNotLoggedIn,
         pageVisited,
         bySlot,
         signupsOverTime
