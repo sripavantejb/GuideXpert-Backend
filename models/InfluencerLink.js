@@ -26,6 +26,11 @@ const influencerLinkSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  cost: {
+    type: Number,
+    default: null,
+    min: 0
+  },
   createdAt: {
     type: Date,
     default: Date.now

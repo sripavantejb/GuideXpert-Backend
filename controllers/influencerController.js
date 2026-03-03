@@ -31,13 +31,23 @@ function buildUtmLink(influencerName, platform, campaign) {
 }
 
 /**
+ * Parse and validate optional cost from request (non-negative number or null).
+ */
+function parseCost(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const n = Number(value);
+  if (Number.isNaN(n) || n < 0) return undefined;
+  return n;
+}
+
+/**
  * POST /api/influencer-links — create and optionally save influencer UTM link.
- * Body: { influencerName, platform, campaign? } or { influencerName, platform, campaign?, save?: boolean }
+ * Body: { influencerName, platform, campaign?, cost?, save?: boolean }
  */
 exports.createInfluencerLink = async (req, res) => {
   try {
     console.log('[createInfluencerLink] Request body:', JSON.stringify(req.body));
-    const { influencerName, platform, campaign } = req.body || {};
+    const { influencerName, platform, campaign, cost } = req.body || {};
     if (!influencerName || typeof influencerName !== 'string' || !influencerName.trim()) {
       return res.status(400).json({ success: false, message: 'Influencer name is required.' });
     }
@@ -57,6 +67,12 @@ exports.createInfluencerLink = async (req, res) => {
     };
 
     if (req.body.save === true) {
+      const costVal = parseCost(cost);
+      if (costVal === undefined) {
+        return res.status(400).json({ success: false, message: 'Cost must be a non-negative number.' });
+      }
+      if (costVal !== null) payload.cost = costVal;
+
       console.log('[createInfluencerLink] Saving to database:', payload);
       const doc = await InfluencerLink.create(payload);
       console.log('[createInfluencerLink] Saved successfully, id:', doc._id);
@@ -68,6 +84,7 @@ exports.createInfluencerLink = async (req, res) => {
           platform: doc.platform,
           campaign: doc.campaign,
           utmLink: doc.utmLink,
+          cost: doc.cost ?? null,
           createdAt: doc.createdAt
         }
       });
@@ -135,14 +152,20 @@ exports.listInfluencerLinks = async (req, res) => {
           FormSubmission.findOne(leadFilter, { registeredAt: 1 }).sort({ registeredAt: -1 }).lean(),
         ]);
 
+        const count = leadCount || 0;
+        const costNum = doc.cost != null && typeof doc.cost === 'number' ? doc.cost : null;
+        const costPerLead = (costNum != null && costNum > 0 && count > 0) ? costNum / count : null;
+
         return {
           id: doc._id,
           influencerName: doc.influencerName,
           platform: doc.platform,
           campaign: doc.campaign,
           utmLink: doc.utmLink,
+          cost: costNum,
+          costPerLead,
           createdAt: doc.createdAt,
-          leadCount: leadCount || 0,
+          leadCount: count,
           latestLeadAt: latestDoc?.registeredAt || null,
         };
       })
@@ -174,6 +197,104 @@ exports.deleteInfluencerLink = async (req, res) => {
     return res.status(200).json({ success: true, message: 'Link deleted.' });
   } catch (err) {
     console.error('[deleteInfluencerLink]', err);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * Build lead filter for a link doc (same logic as listInfluencerLinks).
+ */
+async function getLeadStatsForLink(doc) {
+  const utmCampaign = ((doc.campaign || '').trim() || 'guide_xperts').toLowerCase();
+  const utmContentRaw = (doc.influencerName || '').trim();
+  const utmContentNorm = utmContentRaw.toLowerCase();
+  const utmContentEncoded = utmContentRaw ? encodeURIComponent(utmContentRaw) : '';
+  const utmContentValues = utmContentRaw
+    ? (utmContentEncoded !== utmContentRaw ? [utmContentRaw, utmContentEncoded] : [utmContentRaw])
+    : [];
+
+  const leadFilter = {
+    applicationStatus: { $in: ['registered', 'completed'] },
+    $expr: {
+      $and: [
+        { $or: [
+          { $eq: [{ $toLower: { $trim: { input: { $ifNull: ['$utm_campaign', ''] } } } }, utmCampaign] },
+          { $and: [
+            { $eq: [{ $trim: { input: { $ifNull: ['$utm_campaign', ''] } } }, ''] },
+            { $in: [utmCampaign, ['guide_xperts', '']] },
+          ]},
+        ]},
+        utmContentNorm
+          ? {
+              $or: [
+                { $in: ['$utm_content', utmContentValues] },
+                { $eq: [{ $toLower: { $trim: { input: { $ifNull: ['$utm_content', ''] } } } }, utmContentNorm] },
+              ],
+            }
+          : { $eq: [{ $trim: { input: { $ifNull: ['$utm_content', ''] } } }, ''] },
+      ],
+    },
+  };
+
+  const [leadCount, latestDoc] = await Promise.all([
+    FormSubmission.countDocuments(leadFilter),
+    FormSubmission.findOne(leadFilter, { registeredAt: 1 }).sort({ registeredAt: -1 }).lean(),
+  ]);
+  return { leadCount: leadCount || 0, latestLeadAt: latestDoc?.registeredAt || null };
+}
+
+/**
+ * PATCH /api/influencer-links/:id — update a saved link (e.g. cost).
+ * Body: { cost?: number | null }
+ */
+exports.updateInfluencerLink = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'Link ID is required.' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid link ID.' });
+    }
+    const costVal = parseCost(req.body?.cost);
+    if (costVal === undefined) {
+      return res.status(400).json({ success: false, message: 'Cost must be a non-negative number or null.' });
+    }
+
+    const doc = await InfluencerLink.findByIdAndUpdate(
+      id,
+      { cost: costVal },
+      { new: true, runValidators: true }
+    ).lean();
+    if (!doc) {
+      return res.status(404).json({ success: false, message: 'Link not found.' });
+    }
+
+    const { leadCount, latestLeadAt } = await getLeadStatsForLink(doc);
+    const costNum = doc.cost != null && typeof doc.cost === 'number' ? doc.cost : null;
+    const costPerLead = (costNum != null && costNum > 0 && leadCount > 0) ? costNum / leadCount : null;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        id: doc._id,
+        influencerName: doc.influencerName,
+        platform: doc.platform,
+        campaign: doc.campaign,
+        utmLink: doc.utmLink,
+        cost: costNum,
+        costPerLead,
+        createdAt: doc.createdAt,
+        leadCount,
+        latestLeadAt,
+      },
+    });
+  } catch (err) {
+    if (err.name === 'ValidationError') {
+      const msg = Object.values(err.errors).map(e => e.message).join('; ');
+      return res.status(400).json({ success: false, message: msg || 'Validation failed.' });
+    }
+    console.error('[updateInfluencerLink]', err);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
