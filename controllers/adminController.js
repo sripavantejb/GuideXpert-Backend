@@ -487,7 +487,7 @@ exports.exportLeads = async (req, res) => {
 exports.getAdminLeads = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const limit = Math.min(5000, Math.max(1, parseInt(req.query.limit, 10) || 50));
     const applicationStatus = req.query.applicationStatus; // in_progress | registered | completed
     const otpVerified = req.query.otpVerified; // true | false (string)
     const slotBooked = req.query.slotBooked; // true | false (string)
