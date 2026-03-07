@@ -53,7 +53,8 @@ exports.createAdmin = async (req, res) => {
     if (!username || typeof username !== 'string' || !username.trim()) {
       return res.status(400).json({ success: false, message: 'username is required' });
     }
-    if (!password || typeof password !== 'string' || password.length < 6) {
+    const trimmedPassword = typeof password === 'string' ? password.trim() : '';
+    if (!password || typeof password !== 'string' || trimmedPassword.length < 6) {
       return res.status(400).json({ success: false, message: 'password is required (min 6 characters)' });
     }
     const normalizedUsername = username.trim().toLowerCase();
@@ -67,11 +68,12 @@ exports.createAdmin = async (req, res) => {
     }
     const admin = await Admin.create({
       username: normalizedUsername,
-      password: password.trim(),
+      password: trimmedPassword,
       name: typeof name === 'string' ? name.trim().slice(0, 100) : '',
       isSuperAdmin: !!isSuperAdmin,
       sectionAccess: sectionList,
     });
+    console.log('[createAdmin] Admin created:', normalizedUsername);
     return res.status(201).json({
       success: true,
       data: toAdminDTO(admin),

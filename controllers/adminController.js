@@ -73,6 +73,8 @@ exports.login = async (req, res) => {
       return res.status(500).json({ success: false, message: 'Server configuration error' });
     }
 
+    const passwordToCheck = typeof password === 'string' ? password.trim() : '';
+
     let admin = await Admin.findOne({ username: username.trim().toLowerCase() });
 
     // Development only: if sample credentials are used and no user "admin" exists, create sample admin
@@ -104,7 +106,7 @@ exports.login = async (req, res) => {
     }
     let valid = false;
     try {
-      valid = await admin.comparePassword(password);
+      valid = await admin.comparePassword(passwordToCheck);
     } catch (compareErr) {
       console.error('[Admin login] comparePassword failed:', compareErr);
     }
@@ -123,6 +125,9 @@ exports.login = async (req, res) => {
       }
     }
     if (!valid) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Admin login] Invalid password for user:', admin.username);
+      }
       return res.status(401).json({ success: false, message: 'Invalid username or password' });
     }
 
