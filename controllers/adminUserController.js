@@ -84,3 +84,29 @@ exports.createAdmin = async (req, res) => {
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
+
+/**
+ * DELETE /admin/admins/:id — remove admin (super admin only). Cannot delete self.
+ */
+exports.deleteAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const currentAdminId = req.admin._id.toString();
+    const targetId = id;
+    if (currentAdminId === targetId) {
+      return res.status(403).json({ success: false, message: 'You cannot remove your own account.' });
+    }
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(targetId)) {
+      return res.status(404).json({ success: false, message: 'Admin not found.' });
+    }
+    const deleted = await Admin.findByIdAndDelete(targetId);
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: 'Admin not found.' });
+    }
+    return res.status(200).json({ success: true, message: 'Admin removed.' });
+  } catch (error) {
+    console.error('[deleteAdmin] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
