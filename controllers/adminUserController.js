@@ -110,3 +110,58 @@ exports.deleteAdmin = async (req, res) => {
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
+
+/**
+ * PATCH /admin/admins/:id/password — reset another admin's password (super admin only).
+ * Body: { newPassword }
+ */
+exports.resetAdminPassword = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { newPassword } = req.body || {};
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: 'newPassword is required (min 6 characters)' });
+    }
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ success: false, message: 'Admin not found.' });
+    }
+    const admin = await Admin.findById(id);
+    if (!admin) {
+      return res.status(404).json({ success: false, message: 'Admin not found.' });
+    }
+    admin.password = newPassword.trim();
+    await admin.save();
+    return res.status(200).json({ success: true, message: 'Password updated.' });
+  } catch (error) {
+    console.error('[resetAdminPassword] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * PATCH /admin/me/password — change own password (any admin).
+ * Body: { currentPassword, newPassword }
+ */
+exports.changeMyPassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || typeof currentPassword !== 'string') {
+      return res.status(400).json({ success: false, message: 'Current password is required.' });
+    }
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: 'New password must be at least 6 characters.' });
+    }
+    const admin = req.admin;
+    const match = await admin.comparePassword(currentPassword);
+    if (!match) {
+      return res.status(400).json({ success: false, message: 'Current password is incorrect.' });
+    }
+    admin.password = newPassword.trim();
+    await admin.save();
+    return res.status(200).json({ success: true, message: 'Password changed.' });
+  } catch (error) {
+    console.error('[changeMyPassword] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
