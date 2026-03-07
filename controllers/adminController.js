@@ -102,7 +102,11 @@ exports.login = async (req, res) => {
     }
 
     if (!admin) {
-      return res.status(401).json({ success: false, message: 'Invalid username or password' });
+      const payload = { success: false, message: 'Invalid username or password' };
+      if (process.env.NODE_ENV !== 'production') {
+        payload.hint = 'Use the same backend where this user was created. In dev, set VITE_API_URL to that API (e.g. http://localhost:5000/api).';
+      }
+      return res.status(401).json(payload);
     }
     let valid = false;
     try {
@@ -128,7 +132,11 @@ exports.login = async (req, res) => {
       if (process.env.NODE_ENV !== 'production') {
         console.log('[Admin login] Invalid password for user:', admin.username);
       }
-      return res.status(401).json({ success: false, message: 'Invalid username or password' });
+      const payload = { success: false, message: 'Invalid username or password' };
+      if (process.env.NODE_ENV !== 'production') {
+        payload.hint = 'Use the same backend where this user was created. In dev, set VITE_API_URL to that API (e.g. http://localhost:5000/api).';
+      }
+      return res.status(401).json(payload);
     }
 
     const token = jwt.sign(
