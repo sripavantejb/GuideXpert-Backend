@@ -86,6 +86,7 @@ exports.login = async (req, res) => {
             username: DEV_SAMPLE_USERNAME,
             password: DEV_SAMPLE_PASSWORD,
             name: 'Admin',
+            isSuperAdmin: true,
           });
           console.log('[Admin] Sample dev admin created (username: admin, password: admin123)');
         } catch (createErr) {
@@ -133,7 +134,12 @@ exports.login = async (req, res) => {
     return res.status(200).json({
       success: true,
       token,
-      user: { id: admin._id, username: admin.username }
+      user: {
+        id: admin._id,
+        username: admin.username,
+        isSuperAdmin: !!admin.isSuperAdmin,
+        sectionAccess: Array.isArray(admin.sectionAccess) ? admin.sectionAccess : []
+      }
     });
   } catch (error) {
     console.error('[Admin login] Error:', error);

@@ -20,6 +20,14 @@ const adminSchema = new mongoose.Schema({
     trim: true,
     maxlength: 100
   },
+  isSuperAdmin: {
+    type: Boolean,
+    default: false
+  },
+  sectionAccess: {
+    type: [String],
+    default: []
+  },
   createdAt: {
     type: Date,
     default: Date.now
