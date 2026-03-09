@@ -9,18 +9,18 @@ const VERIFIED_TTL_MS = 15 * 60 * 1000; // 15 min
 
 const MAX_SCORE = 10;
 
-/** Correct answers for MCQs (exact option text, trim for comparison). */
+/** Correct answers for Training Assessment - 1 (q1–q10, exact option text). */
 const CORRECT_ANSWERS = {
-  q1: 'To guide students based on their needs and suitability',
-  q2: 'Counsellor explains all suitable options ethically',
-  q3: 'A structured conversation',
-  q5: 'Giving false guarantees',
-  q6: 'Because wrong guidance affects student futures',
-  q7: 'Explain the risk and guide properly',
-  q9: 'Referrals and personal networks',
-  q10: 'Build rapport and understand needs',
-  q12: 'To save time and ensure right fit',
-  q13: 'Student with no clarity and urgency pressure'
+  q1: 'B. Help students with honest, ethical and personalised career guidance',
+  q2: 'C. Sharing facts only',
+  q3: 'A. Suggesting options or recommendations',
+  q4: 'C. Help students make informed decisions',
+  q5: 'B. Listening and asking questions',
+  q6: 'D. Admissions depend on eligibility, seat availability, and university criteria',
+  q7: 'B. Placements depend on student skills, companies visiting, and past records',
+  q8: 'C. Acknowledge both views and suggest balanced options',
+  q9: 'B. Acknowledge → Validate → Balance → Guide',
+  q10: 'C. Calm and guiding tone'
 };
 
 const MAX_SCORE_2 = 15;
