@@ -55,13 +55,16 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
   'https://www.guidexpert.co.in',
   'https://guidexpert.co.in',
+  'https://guide-xpert-frontend.vercel.app',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
 ].filter(Boolean);
 if (allowedOrigins.length === 0) allowedOrigins.push('https://guidexpert.co.in');
+// Allow any Vercel preview/production frontend (*.vercel.app)
+const vercelOriginRegex = /^https:\/\/[a-z0-9-]+(-[a-z0-9-]+)*\.vercel\.app$/;
 app.use(cors({
   origin: function(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.includes(origin) || vercelOriginRegex.test(origin)) {
       return callback(null, origin || allowedOrigins[0]);
     }
     return callback(null, false);
