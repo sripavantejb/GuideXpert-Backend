@@ -4,8 +4,10 @@ const otpRepository = require('../utils/otpRepository');
 const { sendOtp: sendOtpSms, sendSlotConfirmationSms, sendReminderSms, sendMeetLinkSms, sendReminder30MinSms } = require('../utils/msg91Service');
 const { getDemoSlots } = require('../utils/demoSlots');
 const { appendFormSubmission } = require('../utils/sheetsService');
+const jwt = require('jsonwebtoken');
 const FormSubmission = require('../models/FormSubmission');
 const TrainingFeedback = require('../models/TrainingFeedback');
+const TrainingFormSubmission = require('../models/TrainingFormSubmission');
 const VerifiedPhoneSession = require('../models/VerifiedPhoneSession');
 const WebsiteLogin = require('../models/WebsiteLogin');
 const SlotConfig = require('../models/SlotConfig');
@@ -270,6 +272,55 @@ exports.verifyOtp = async (req, res) => {
           message: err.message,
           keyPattern: err.keyPattern,
         }, err.stack);
+        const safeMessage = process.env.NODE_ENV === 'production'
+          ? 'Login failed. Please try again or contact support.'
+          : (err.message || 'Login failed. Please try again or contact support.');
+        return res.status(500).json({ success: false, message: safeMessage });
+      }
+    }
+
+    // Webinar login: only grant access if phone is in training form submissions
+    const webinarLogin = req.body?.webinarLogin === true;
+    if (webinarLogin) {
+      const webinarSecret = process.env.WEBINAR_JWT_SECRET || process.env.COUNSELLOR_JWT_SECRET || '';
+      if (!webinarSecret || !String(webinarSecret).trim()) {
+        otpStore.removeVerified(p);
+        return res.status(500).json({ success: false, message: 'Webinar login is not configured. Please contact support.' });
+      }
+      try {
+        const record = await TrainingFormSubmission.findOne({ mobileNumber: p }).sort({ createdAt: -1 }).lean();
+        if (!record) {
+          otpStore.removeVerified(p);
+          return res.status(200).json({
+            success: true,
+            message: 'OTP verified',
+            verified: true,
+            allowedAccess: false,
+          });
+        }
+        otpStore.removeVerified(p);
+        const webinarExpiresIn = process.env.WEBINAR_JWT_EXPIRES_IN || '24h';
+        const token = jwt.sign(
+          { webinarPhone: p, trainingFormId: record._id.toString(), role: 'webinar' },
+          webinarSecret.trim(),
+          { expiresIn: webinarExpiresIn }
+        );
+        const user = {
+          name: record.fullName != null ? String(record.fullName).trim() : '',
+          phone: p,
+          email: record.email != null ? String(record.email).trim() : '',
+        };
+        return res.status(200).json({
+          success: true,
+          message: 'OTP verified',
+          verified: true,
+          allowedAccess: true,
+          token,
+          user,
+        });
+      } catch (err) {
+        console.error('[verifyOtp] webinarLogin failed:', err.message, err.stack);
+        otpStore.removeVerified(p);
         const safeMessage = process.env.NODE_ENV === 'production'
           ? 'Login failed. Please try again or contact support.'
           : (err.message || 'Login failed. Please try again or contact support.');
