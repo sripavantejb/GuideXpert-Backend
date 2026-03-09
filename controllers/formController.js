@@ -8,6 +8,7 @@ const jwt = require('jsonwebtoken');
 const FormSubmission = require('../models/FormSubmission');
 const TrainingFeedback = require('../models/TrainingFeedback');
 const TrainingFormSubmission = require('../models/TrainingFormSubmission');
+const TrainingFormResponse = require('../models/TrainingFormResponse');
 const VerifiedPhoneSession = require('../models/VerifiedPhoneSession');
 const WebsiteLogin = require('../models/WebsiteLogin');
 const SlotConfig = require('../models/SlotConfig');
@@ -279,7 +280,7 @@ exports.verifyOtp = async (req, res) => {
       }
     }
 
-    // Webinar login: only grant access if phone is in training form submissions
+    // Webinar login: only grant access if phone is in training form submissions or responses (same 10-digit normalization as form save)
     const webinarLogin = req.body?.webinarLogin === true;
     if (webinarLogin) {
       const webinarSecret = process.env.WEBINAR_JWT_SECRET || process.env.COUNSELLOR_JWT_SECRET || '';
@@ -288,7 +289,11 @@ exports.verifyOtp = async (req, res) => {
         return res.status(500).json({ success: false, message: 'Webinar login is not configured. Please contact support.' });
       }
       try {
-        const record = await TrainingFormSubmission.findOne({ mobileNumber: p }).sort({ createdAt: -1 }).lean();
+        // Check both collections: live submissions use TrainingFormSubmission; seeded/legacy may use TrainingFormResponse
+        let record = await TrainingFormSubmission.findOne({ mobileNumber: p }).sort({ createdAt: -1 }).lean();
+        if (!record) {
+          record = await TrainingFormResponse.findOne({ mobileNumber: p }).sort({ createdAt: -1 }).lean();
+        }
         if (!record) {
           otpStore.removeVerified(p);
           return res.status(200).json({

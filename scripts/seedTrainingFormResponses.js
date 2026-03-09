@@ -52,11 +52,11 @@ function parseTimestamp(str) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-/** Normalize mobile: digits only, first 10. Return null if fewer than 10 digits. */
+/** Normalize mobile: digits only, last 10 (matches training form save and webinar login lookup). Return null if fewer than 10 digits. */
 function normalizeMobile(str) {
   if (str == null) return null;
   const digits = String(str).replace(/\D/g, '');
-  return digits.length >= 10 ? digits.slice(0, 10) : null;
+  return digits.length >= 10 ? digits.slice(-10) : null;
 }
 
 function isValidEmail(str) {
