@@ -11,7 +11,7 @@ const influencerLinkSchema = new mongoose.Schema({
     type: String,
     required: true,
     trim: true,
-    enum: ['Instagram', 'YouTube', 'Twitter', 'WhatsApp', 'Telegram'],
+    enum: ['Instagram', 'YouTube', 'Twitter', 'X', 'WhatsApp', 'Telegram', 'Facebook', 'LinkedIn'],
     default: 'Instagram'
   },
   campaign: {
