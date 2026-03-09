@@ -8,6 +8,8 @@ const AssessmentSubmission3 = require('../models/AssessmentSubmission3');
 const SlotConfig = require('../models/SlotConfig');
 const SlotDateOverride = require('../models/SlotDateOverride');
 const MeetingAttendance = require('../models/MeetingAttendance');
+const TrainingFeedback = require('../models/TrainingFeedback');
+const Counsellor = require('../models/Counsellor');
 const { getISTCalendarDateUTC, getISTDayRangeFromString } = require('../utils/dateHelpers');
 
 function normalizePhoneTo10(value) {
@@ -71,6 +73,8 @@ exports.login = async (req, res) => {
       return res.status(500).json({ success: false, message: 'Server configuration error' });
     }
 
+    const passwordToCheck = typeof password === 'string' ? password.trim() : '';
+
     let admin = await Admin.findOne({ username: username.trim().toLowerCase() });
 
     // Development only: if sample credentials are used and no user "admin" exists, create sample admin
@@ -84,6 +88,7 @@ exports.login = async (req, res) => {
             username: DEV_SAMPLE_USERNAME,
             password: DEV_SAMPLE_PASSWORD,
             name: 'Admin',
+            isSuperAdmin: true,
           });
           console.log('[Admin] Sample dev admin created (username: admin, password: admin123)');
         } catch (createErr) {
@@ -97,11 +102,15 @@ exports.login = async (req, res) => {
     }
 
     if (!admin) {
-      return res.status(401).json({ success: false, message: 'Invalid username or password' });
+      const payload = { success: false, message: 'Invalid username or password' };
+      if (process.env.NODE_ENV !== 'production') {
+        payload.hint = 'Use the same backend where this user was created. In dev, set VITE_API_URL to that API (e.g. http://localhost:5000/api).';
+      }
+      return res.status(401).json(payload);
     }
     let valid = false;
     try {
-      valid = await admin.comparePassword(password);
+      valid = await admin.comparePassword(passwordToCheck);
     } catch (compareErr) {
       console.error('[Admin login] comparePassword failed:', compareErr);
     }
@@ -120,7 +129,14 @@ exports.login = async (req, res) => {
       }
     }
     if (!valid) {
-      return res.status(401).json({ success: false, message: 'Invalid username or password' });
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Admin login] Invalid password for user:', admin.username);
+      }
+      const payload = { success: false, message: 'Invalid username or password' };
+      if (process.env.NODE_ENV !== 'production') {
+        payload.hint = 'Use the same backend where this user was created. In dev, set VITE_API_URL to that API (e.g. http://localhost:5000/api).';
+      }
+      return res.status(401).json(payload);
     }
 
     const token = jwt.sign(
@@ -131,7 +147,12 @@ exports.login = async (req, res) => {
     return res.status(200).json({
       success: true,
       token,
-      user: { id: admin._id, username: admin.username }
+      user: {
+        id: admin._id,
+        username: admin.username,
+        isSuperAdmin: !!admin.isSuperAdmin,
+        sectionAccess: Array.isArray(admin.sectionAccess) ? admin.sectionAccess : []
+      }
     });
   } catch (error) {
     console.error('[Admin login] Error:', error);
@@ -251,16 +272,27 @@ exports.updateLeadNotes = async (req, res) => {
   }
 };
 
+// Stats are scoped to the selected date range (from/to query). All FormSubmission counts use this filter.
+function buildStatsDateFilter(fromStr, toStr) {
+  const fromDate = fromStr ? new Date(fromStr + 'T00:00:00.000Z') : null;
+  const toDate = toStr ? new Date(toStr + 'T23:59:59.999Z') : null;
+  const fromValid = fromDate && !Number.isNaN(fromDate.getTime());
+  const toValid = toDate && !Number.isNaN(toDate.getTime());
+  if (fromValid && toValid) {
+    return { createdAt: { $gte: fromDate, $lte: toDate } };
+  }
+  const defaultTo = new Date();
+  defaultTo.setUTCHours(23, 59, 59, 999);
+  const defaultFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  defaultFrom.setUTCHours(0, 0, 0, 0);
+  return { createdAt: { $gte: defaultFrom, $lte: defaultTo } };
+}
+
 exports.getAdminStats = async (req, res) => {
   try {
-    const from = req.query.from ? new Date(req.query.from) : null;
-    const to = req.query.to ? new Date(req.query.to) : null;
-    const signupsMatch = { createdAt: {} };
-    if (from) signupsMatch.createdAt.$gte = from;
-    if (to) signupsMatch.createdAt.$lte = to;
-    if (!from && !to) {
-      signupsMatch.createdAt.$gte = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    }
+    const fromStr = (req.query.from || '').trim();
+    const toStr = (req.query.to || '').trim();
+    const dateFilter = buildStatsDateFilter(fromStr, toStr);
 
     const [
       total,
@@ -276,33 +308,39 @@ exports.getAdminStats = async (req, res) => {
       slotBookedLeadsPhones,
       assessment1Phones,
       assessment2Phones,
-      assessment3Phones
+      assessment3Phones,
+      activationFormMobilePhones,
+      activationFormWhatsappPhones,
+      counsellorPhones
     ] = await Promise.all([
-      FormSubmission.countDocuments({}),
-      FormSubmission.countDocuments({ applicationStatus: 'in_progress' }),
-      FormSubmission.countDocuments({ applicationStatus: 'registered' }),
-      FormSubmission.countDocuments({ applicationStatus: 'completed' }),
-      FormSubmission.countDocuments({ 'step2Data.otpVerified': true }),
-      FormSubmission.countDocuments(SLOT_BOOKED_CONDITION),
+      FormSubmission.countDocuments(dateFilter),
+      FormSubmission.countDocuments({ $and: [dateFilter, { applicationStatus: 'in_progress' }] }),
+      FormSubmission.countDocuments({ $and: [dateFilter, { applicationStatus: 'registered' }] }),
+      FormSubmission.countDocuments({ $and: [dateFilter, { applicationStatus: 'completed' }] }),
+      FormSubmission.countDocuments({ $and: [dateFilter, { 'step2Data.otpVerified': true }] }),
+      FormSubmission.countDocuments({ $and: [dateFilter, SLOT_BOOKED_CONDITION] }),
       FormSubmission.countDocuments({
-        $and: [{ 'step2Data.otpVerified': true }, SLOT_BOOKED_CONDITION]
+        $and: [dateFilter, { 'step2Data.otpVerified': true }, SLOT_BOOKED_CONDITION]
       }),
       FormSubmission.aggregate([
-        { $match: SLOT_BOOKED_CONDITION },
+        { $match: { $and: [dateFilter, SLOT_BOOKED_CONDITION] } },
         { $addFields: { _slotId: { $ifNull: ['$step3Data.selectedSlot', '$selectedSlot'] } } },
         { $match: { _slotId: { $exists: true, $nin: [null, ''] } } },
         { $group: { _id: '$_slotId', count: { $sum: 1 } } }
       ]),
       FormSubmission.aggregate([
-        { $match: signupsMatch },
+        { $match: dateFilter },
         { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },
         { $sort: { _id: 1 } }
       ]),
       MeetingAttendance.aggregate([{ $group: { _id: '$mobileNumber' } }]),
-      FormSubmission.find(SLOT_BOOKED_CONDITION).select('phone').lean(),
+      FormSubmission.find({ $and: [dateFilter, SLOT_BOOKED_CONDITION] }).select('phone').lean(),
       AssessmentSubmission.distinct('phone'),
       AssessmentSubmission2.distinct('phone'),
-      AssessmentSubmission3.distinct('phone')
+      AssessmentSubmission3.distinct('phone'),
+      TrainingFeedback.distinct('mobileNumber'),
+      TrainingFeedback.distinct('whatsappNumber'),
+      Counsellor.distinct('phone')
     ]);
 
     const attendeePhonesSet = new Set(
@@ -330,6 +368,28 @@ exports.getAdminStats = async (req, res) => {
     ).length;
     const assessmentNotWritten = Math.max(0, demoAttended - assessmentWritten);
 
+    const activationFormPhonesSet = new Set(
+      [
+        ...(activationFormMobilePhones || []),
+        ...(activationFormWhatsappPhones || [])
+      ].map(normalizePhoneTo10).filter(Boolean)
+    );
+    const assessmentWrittenLeads = demoAttendedLeads.filter((lead) =>
+      assessmentPhonesSet.has(normalizePhoneTo10(lead.phone))
+    );
+    const activationFormCompleted = assessmentWrittenLeads.filter((lead) =>
+      activationFormPhonesSet.has(normalizePhoneTo10(lead.phone))
+    ).length;
+    const activationFormNotDone = Math.max(0, assessmentWritten - activationFormCompleted);
+
+    const counsellorPhonesSet = new Set(
+      (counsellorPhones || []).map(normalizePhoneTo10).filter(Boolean)
+    );
+    const counsellorDashboardLoggedIn = [...activationFormPhonesSet].filter((phone) =>
+      counsellorPhonesSet.has(phone)
+    ).length;
+    const counsellorDashboardNotLoggedIn = Math.max(0, activationFormCompleted - counsellorDashboardLoggedIn);
+
     const bySlot = (slotAggregation || []).reduce((acc, { _id, count }) => {
       acc[_id] = count;
       return acc;
@@ -354,6 +414,10 @@ exports.getAdminStats = async (req, res) => {
         demoNotAttended,
         assessmentWritten,
         assessmentNotWritten,
+        activationFormCompleted,
+        activationFormNotDone,
+        counsellorDashboardLoggedIn,
+        counsellorDashboardNotLoggedIn,
         pageVisited,
         bySlot,
         signupsOverTime
@@ -442,7 +506,7 @@ exports.exportLeads = async (req, res) => {
 exports.getAdminLeads = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const limit = Math.min(5000, Math.max(1, parseInt(req.query.limit, 10) || 50));
     const applicationStatus = req.query.applicationStatus; // in_progress | registered | completed
     const otpVerified = req.query.otpVerified; // true | false (string)
     const slotBooked = req.query.slotBooked; // true | false (string)

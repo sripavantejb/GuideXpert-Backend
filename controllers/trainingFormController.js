@@ -103,6 +103,9 @@ exports.submitTrainingForm = async (req, res) => {
   }
 };
 
+/** Alias for routes that use submitTrainingFormResponse (e.g. trainingFormRoutes). */
+exports.submitTrainingFormResponse = exports.submitTrainingForm;
+
 /**
  * GET /api/admin/training-form-responses — list with pagination and filters (admin only).
  */

@@ -16,8 +16,15 @@ const {
   adminAnalytics,
 } = require('../controllers/announcementController');
 const requireAdmin = require('../middleware/requireAdmin');
+const requireSuperAdmin = require('../middleware/requireSuperAdmin');
+const { listAdmins, createAdmin, deleteAdmin, resetAdminPassword, changeMyPassword } = require('../controllers/adminUserController');
 
 router.post('/login', login);
+router.get('/admins', requireAdmin, requireSuperAdmin, listAdmins);
+router.post('/admins', requireAdmin, requireSuperAdmin, createAdmin);
+router.delete('/admins/:id', requireAdmin, requireSuperAdmin, deleteAdmin);
+router.patch('/admins/:id/password', requireAdmin, requireSuperAdmin, resetAdminPassword);
+router.patch('/me/password', requireAdmin, changeMyPassword);
 router.get('/leads', requireAdmin, getAdminLeads);
 router.get('/leads/:id', requireAdmin, getLeadById);
 router.patch('/leads/:id', requireAdmin, updateLeadNotes);
