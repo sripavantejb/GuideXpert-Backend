@@ -23,25 +23,20 @@ const CORRECT_ANSWERS = {
   q10: 'C. Calm and guiding tone'
 };
 
-const MAX_SCORE_2 = 15;
+const MAX_SCORE_2 = 10;
 
-/** Correct answers for Assessment 2 (q1–q15). */
+/** Correct answers for Assessment 2 (q1–q10). */
 const CORRECT_ANSWERS_2 = {
-  q1: "Understanding the student's background",
-  q2: 'Ask questions to understand interests and goals',
-  q3: 'Explain the support process without guarantees',
-  q4: 'Explain limitations and suggest suitable alternatives',
-  q5: 'Giving honest and realistic guidance',
-  q6: 'Listening and understanding student needs',
-  q7: 'When there is no response after multiple follow-ups',
-  q8: 'Providing clarity and guidance to students',
-  q9: 'Admissions process and documentation',
-  q10: 'Transparency and honest communication',
-  q11: 'Identifying students who genuinely fit the program',
-  q12: 'To protect students and save time',
-  q13: 'To ensure the right person is involved in decisions',
-  q14: 'It can break trust with one side',
-  q15: 'Creating balance between parent and student expectations'
+  q1: 'Social Media',
+  q2: 'Post consistently',
+  q3: 'Curiosity and self-reflection',
+  q4: 'Higher lead generation',
+  q5: 'Personal network',
+  q6: 'Start casual conversations about students',
+  q7: 'One lead can bring many more leads',
+  q8: 'Student career confusion after Intermediate',
+  q9: 'I want to help your students',
+  q10: 'Short-term enquiries and low trust'
 };
 
 const MAX_SCORE_3 = 20;
