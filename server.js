@@ -23,6 +23,7 @@ const counsellorAssessmentRoutes = require('./routes/counsellorAssessmentRoutes'
 const assessmentCareerDnaRoutes = require('./routes/assessmentCareerDnaRoutes');
 const assessmentCourseFitRoutes = require('./routes/assessmentCourseFitRoutes');
 const announcementRoutes = require('./routes/announcementRoutes');
+const certificateRoutes = require('./routes/certificateRoutes');
 const { configStatus: counsellorConfigStatus } = require('./controllers/counsellorAuthController');
 
 const app = express();
@@ -98,6 +99,7 @@ app.use('/api/feedback', feedbackRoutes);
 app.use('/api/training-form', trainingFormRoutes);
 app.use('/api/referral', referralRoutes);
 app.use('/api/cron', cronRoutes);
+app.use('/api/certificate', certificateRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'GuideXpert API is running' });

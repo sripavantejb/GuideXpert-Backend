@@ -1,25 +1,31 @@
 const TrainingFormSubmission = require('../models/TrainingFormSubmission');
+const TrainingFormResponse = require('../models/TrainingFormResponse');
 
 function to10Digits(val) {
   if (val == null) return '';
   return String(val).replace(/\D/g, '').trim().slice(-10).slice(0, 10);
 }
 
+/** Parse ISO date string (yyyy-mm-dd) only; return null if invalid. */
+function parseISODate(str) {
+  if (str == null || typeof str !== 'string') return null;
+  const trimmed = str.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
+  const d = new Date(trimmed + 'T00:00:00.000Z');
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 function buildDateRange(from, to) {
   const range = {};
-  if (from) {
-    const start = new Date(from);
-    if (!Number.isNaN(start.getTime())) {
-      start.setHours(0, 0, 0, 0);
-      range.$gte = start;
-    }
+  const start = parseISODate(from);
+  if (start) {
+    start.setUTCHours(0, 0, 0, 0);
+    range.$gte = start;
   }
-  if (to) {
-    const end = new Date(to);
-    if (!Number.isNaN(end.getTime())) {
-      end.setHours(23, 59, 59, 999);
-      range.$lte = end;
-    }
+  const end = parseISODate(to);
+  if (end) {
+    end.setUTCHours(23, 59, 59, 999);
+    range.$lte = end;
   }
   return Object.keys(range).length ? range : null;
 }
@@ -106,8 +112,24 @@ exports.submitTrainingForm = async (req, res) => {
 /** Alias for routes that use submitTrainingFormResponse (e.g. trainingFormRoutes). */
 exports.submitTrainingFormResponse = exports.submitTrainingForm;
 
+/** Map a raw doc to the API shape (both models share the same schema). */
+function toResponseRow(r) {
+  return {
+    id: r._id,
+    fullName: r.fullName,
+    mobileNumber: r.mobileNumber,
+    email: r.email,
+    occupation: r.occupation,
+    sessionRating: r.sessionRating,
+    suggestions: r.suggestions,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  };
+}
+
 /**
  * GET /api/admin/training-form-responses — list with pagination and filters (admin only).
+ * Reads from both TrainingFormSubmission (live) and TrainingFormResponse (seeded/imported).
  */
 exports.getTrainingFormResponses = async (req, res) => {
   try {
@@ -125,29 +147,27 @@ exports.getTrainingFormResponses = async (req, res) => {
       match.sessionRating = sessionRating;
     }
 
-    const [records, total, ratingStats] = await Promise.all([
-      TrainingFormSubmission.find(match).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
-      TrainingFormSubmission.countDocuments(match),
+    const [submissionDocs, responseDocs, submissionRatingStats, responseRatingStats] = await Promise.all([
+      TrainingFormSubmission.find(match).sort({ createdAt: -1 }).lean(),
+      TrainingFormResponse.find(match).sort({ createdAt: -1 }).lean(),
       TrainingFormSubmission.aggregate([{ $match: match }, { $group: { _id: '$sessionRating', count: { $sum: 1 } } }]),
+      TrainingFormResponse.aggregate([{ $match: match }, { $group: { _id: '$sessionRating', count: { $sum: 1 } } }]),
     ]);
 
+    const merged = [...submissionDocs, ...responseDocs].sort(
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+    );
+    const total = merged.length;
     const totalPages = Math.ceil(total / limit) || 1;
-    const bySessionRating = (ratingStats || []).reduce((acc, r) => {
-      acc[r._id] = r.count;
-      return acc;
-    }, {});
+    const pageRecords = merged.slice(skip, skip + limit);
 
-    const data = records.map((r) => ({
-      id: r._id,
-      fullName: r.fullName,
-      mobileNumber: r.mobileNumber,
-      email: r.email,
-      occupation: r.occupation,
-      sessionRating: r.sessionRating,
-      suggestions: r.suggestions,
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt,
-    }));
+    const bySessionRating = {};
+    [...(submissionRatingStats || []), ...(responseRatingStats || [])].forEach((r) => {
+      const key = r._id;
+      bySessionRating[key] = (bySessionRating[key] || 0) + r.count;
+    });
+
+    const data = pageRecords.map(toResponseRow);
 
     return res.status(200).json({
       success: true,
