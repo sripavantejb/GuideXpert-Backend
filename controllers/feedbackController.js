@@ -1,9 +1,9 @@
 const TrainingFeedback = require('../models/TrainingFeedback');
 const AssessmentSubmission3 = require('../models/AssessmentSubmission3');
+const otpRepository = require('../utils/otpRepository');
 
 function to10Digits(val) {
-  if (val == null) return '';
-  return String(val).replace(/\D/g, '').trim().slice(0, 10);
+  return otpRepository.normalize(val);
 }
 
 /**
@@ -185,23 +185,57 @@ exports.getTrainingFeedback = async (req, res) => {
       match.occupation = { $regex: String(occupation).trim(), $options: 'i' };
     }
 
-    const [records, total, genderStats] = await Promise.all([
-      TrainingFeedback.find(match).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
-      TrainingFeedback.countDocuments(match),
-      TrainingFeedback.aggregate([{ $match: match }, { $group: { _id: '$gender', count: { $sum: 1 } } }])
-    ]);
+    const rawTotal = await TrainingFeedback.countDocuments(match);
 
-    const totalPages = Math.ceil(total / limit) || 1;
-    const stats = {
-      total,
-      byGender: (genderStats || []).reduce((acc, g) => {
-        acc[g._id] = g.count;
-        return acc;
-      }, {})
-    };
+    const pipeline = [
+      { $match: match },
+      { $addFields: { normalizedMobile: '$mobileNumber' } },
+      { $sort: { createdAt: -1 } },
+      { $group: { _id: '$normalizedMobile', doc: { $first: '$$ROOT' } } },
+      { $replaceRoot: { newRoot: '$doc' } },
+      {
+        $facet: {
+          totalUnique: [{ $count: 'total' }],
+          genderStats: [{ $group: { _id: '$gender', count: { $sum: 1 } } }],
+          paginated: [
+            { $sort: { createdAt: -1 } },
+            { $skip: skip },
+            { $limit: limit },
+            {
+              $project: {
+                id: '$_id',
+                name: 1,
+                mobileNumber: 1,
+                whatsappNumber: 1,
+                email: 1,
+                addressOfCommunication: 1,
+                occupation: 1,
+                dateOfBirth: 1,
+                gender: 1,
+                educationQualification: 1,
+                yearsOfExperience: 1,
+                anythingToConvey: 1,
+                createdAt: 1,
+                updatedAt: 1
+              }
+            }
+          ]
+        }
+      }
+    ];
 
-    const data = records.map((r) => ({
-      id: r._id,
+    const aggResult = await TrainingFeedback.aggregate(pipeline);
+    const first = Array.isArray(aggResult) && aggResult[0] ? aggResult[0] : {};
+    const uniqueCount = first?.totalUnique?.[0]?.total ?? 0;
+    const duplicateCount = Math.max(0, rawTotal - uniqueCount);
+    const genderStats = first?.genderStats ?? [];
+    const byGender = genderStats.reduce((acc, g) => {
+      if (g._id) acc[g._id] = g.count;
+      return acc;
+    }, {});
+    const rawPaginated = first?.paginated ?? [];
+    const data = rawPaginated.map((r) => ({
+      id: r.id || r._id,
       name: r.name,
       mobileNumber: r.mobileNumber,
       whatsappNumber: r.whatsappNumber,
@@ -217,10 +251,18 @@ exports.getTrainingFeedback = async (req, res) => {
       updatedAt: r.updatedAt
     }));
 
+    const totalPages = Math.ceil(uniqueCount / limit) || 1;
+    const stats = {
+      totalSubmissions: rawTotal,
+      uniqueCount,
+      duplicateCount,
+      byGender
+    };
+
     return res.status(200).json({
       success: true,
       data,
-      pagination: { page, limit, total, totalPages },
+      pagination: { page, limit, total: uniqueCount, totalPages },
       stats
     });
   } catch (err) {

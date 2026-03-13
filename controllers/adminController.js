@@ -1124,40 +1124,69 @@ exports.getMissingLeads = async (req, res) => {
 
     const dateRange = buildAssessmentDateRange(req.query.from, req.query.to);
     const activationFormFilter = dateRange ? { createdAt: dateRange } : {};
-    const [mobileNumbers, whatsappNumbers] = await Promise.all([
-      TrainingFeedback.distinct('mobileNumber', activationFormFilter),
-      TrainingFeedback.distinct('whatsappNumber', activationFormFilter)
-    ]);
-    const allPhones = [...(mobileNumbers || []), ...(whatsappNumbers || [])]
+    const mobileNumbers = await TrainingFeedback.distinct('mobileNumber', activationFormFilter);
+    const uniqueMobiles = (mobileNumbers || [])
       .filter(Boolean)
       .map((p) => String(p).replace(/\D/g, '').trim().slice(-10))
       .filter((p) => p.length === 10);
-    const activationPhones = Array.isArray(allPhones) ? [...new Set(allPhones)].map((p) => String(p)) : [];
+    const activationPhones = [...new Set(uniqueMobiles)].map((p) => String(p));
+    const uniqueActivationCount = activationPhones.length;
 
     const searchQuery = buildAssessmentSearchQuery(req.query.q);
 
     const assessment3MatchForCount = dateRange ? { submittedAt: dateRange } : {};
-    const [activationFormCount, assessment3Total] = await Promise.all([
+    const [rawActivationCount, assessment3Total] = await Promise.all([
       TrainingFeedback.countDocuments(activationFormFilter),
       AssessmentSubmission3.countDocuments(assessment3MatchForCount)
     ]);
+    const activationFormCount = uniqueActivationCount;
+    const activationFormDuplicateCount = Math.max(0, rawActivationCount - uniqueActivationCount);
 
-    const match = { phone: { $nin: activationPhones } };
-    if (dateRange) match.submittedAt = dateRange;
-    if (searchQuery) Object.assign(match, searchQuery);
+    const matchBase = {};
+    if (dateRange) matchBase.submittedAt = dateRange;
+    if (searchQuery) Object.assign(matchBase, searchQuery);
 
-    const rawTotal = await AssessmentSubmission3.countDocuments(match);
-
-    const pipeline = [
-      { $match: match },
-      { $sort: { submittedAt: -1 } },
-      { $group: { _id: '$phone', doc: { $first: '$$ROOT' } } },
-      { $replaceRoot: { newRoot: '$doc' } },
+    const addFieldsNormalized = {
+      $addFields: {
+        normalizedPhone: {
+          $function: {
+            body: function(phone) {
+              var s = String(phone || '');
+              var digits = s.replace(/\D/g, '');
+              return digits.length >= 10 ? digits.slice(-10) : digits;
+            },
+            args: ['$phone'],
+            lang: 'js'
+          }
+        }
+      }
+    };
+    const addFieldsNormalizedFallback = {
+      $addFields: {
+        normalizedPhone: {
+          $substrCP: [
+            { $ifNull: ['$phone', ''] },
+            { $max: [0, { $subtract: [{ $strLenCP: { $ifNull: ['$phone', ''] } }, 10] }] },
+            10
+          ]
+        }
+      }
+    };
+    const tailStages = [
+      { $match: { $and: [{ normalizedPhone: { $regex: /^\d{10}$/ } }, { normalizedPhone: { $nin: activationPhones } }] } },
       { $sort: { submittedAt: -1 } },
       {
         $facet: {
-          totalCount: [{ $count: 'total' }],
+          rawCount: [{ $count: 'total' }],
+          totalCount: [
+            { $group: { _id: '$normalizedPhone', doc: { $first: '$$ROOT' } } },
+            { $replaceRoot: { newRoot: '$doc' } },
+            { $count: 'total' }
+          ],
           paginated: [
+            { $group: { _id: '$normalizedPhone', doc: { $first: '$$ROOT' } } },
+            { $replaceRoot: { newRoot: '$doc' } },
+            { $sort: { submittedAt: -1 } },
             { $skip: skip },
             { $limit: limit },
             { $project: { fullName: 1, phone: 1, score: 1, maxScore: 1, submittedAt: 1, _id: 1 } }
@@ -1165,9 +1194,21 @@ exports.getMissingLeads = async (req, res) => {
         }
       }
     ];
+    const pipeline = [{ $match: matchBase }, addFieldsNormalized, ...tailStages];
 
-    const aggResult = await AssessmentSubmission3.aggregate(pipeline);
+    let aggResult;
+    try {
+      aggResult = await AssessmentSubmission3.aggregate(pipeline);
+    } catch (err) {
+      if (err.message && (err.message.includes('$function') || err.message.includes('JavaScript'))) {
+        const pipelineFallback = [{ $match: matchBase }, addFieldsNormalizedFallback, ...tailStages];
+        aggResult = await AssessmentSubmission3.aggregate(pipelineFallback);
+      } else {
+        throw err;
+      }
+    }
     const first = Array.isArray(aggResult) && aggResult[0] ? aggResult[0] : {};
+    const rawTotal = first?.rawCount?.[0]?.total ?? 0;
     const total = first?.totalCount?.[0]?.total ?? 0;
     const submissions = Array.isArray(first?.paginated) ? first.paginated : [];
     const duplicateCount = Math.max(0, rawTotal - total);
@@ -1178,6 +1219,7 @@ exports.getMissingLeads = async (req, res) => {
       total,
       duplicateCount,
       activationFormCount,
+      activationFormDuplicateCount,
       assessment3Total
     });
   } catch (error) {
