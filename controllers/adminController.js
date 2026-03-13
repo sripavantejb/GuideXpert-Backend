@@ -882,9 +882,42 @@ exports.setSlotOverride = async (req, res) => {
   }
 };
 
+function buildAssessmentDateRange(from, to) {
+  const range = {};
+  if (from) {
+    const start = new Date(from);
+    if (!Number.isNaN(start.getTime())) {
+      start.setHours(0, 0, 0, 0);
+      range.$gte = start;
+    }
+  }
+  if (to) {
+    const end = new Date(to);
+    if (!Number.isNaN(end.getTime())) {
+      end.setHours(23, 59, 59, 999);
+      range.$lte = end;
+    }
+  }
+  return Object.keys(range).length ? range : null;
+}
+
+function buildAssessmentSearchQuery(q) {
+  if (!q) return null;
+  const term = String(q).trim();
+  if (!term) return null;
+  const digits = term.replace(/\D/g, '');
+  const clauses = [{ fullName: { $regex: term, $options: 'i' } }];
+  if (digits) {
+    clauses.push({ phone: { $regex: digits, $options: 'i' } });
+  } else {
+    clauses.push({ phone: { $regex: term, $options: 'i' } });
+  }
+  return { $or: clauses };
+}
+
 /**
  * GET /admin/assessment-submissions
- * Query: page, limit
+ * Query: page, limit, from, to, q
  * Returns list of assessment submissions with score for admin panel.
  */
 exports.getAssessmentSubmissions = async (req, res) => {
@@ -892,15 +925,21 @@ exports.getAssessmentSubmissions = async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
     const skip = (page - 1) * limit;
+    const dateRange = buildAssessmentDateRange(req.query.from, req.query.to);
+    const searchQuery = buildAssessmentSearchQuery(req.query.q);
+
+    const match = {};
+    if (dateRange) match.submittedAt = dateRange;
+    if (searchQuery) Object.assign(match, searchQuery);
 
     const [submissions, total] = await Promise.all([
-      AssessmentSubmission.find({})
+      AssessmentSubmission.find(match)
         .sort({ submittedAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean()
         .select('fullName phone score maxScore submittedAt'),
-      AssessmentSubmission.countDocuments({})
+      AssessmentSubmission.countDocuments(match)
     ]);
 
     return res.status(200).json({
@@ -916,7 +955,7 @@ exports.getAssessmentSubmissions = async (req, res) => {
 
 /**
  * GET /admin/assessment-2-submissions
- * Query: page, limit
+ * Query: page, limit, from, to, q
  * Returns list of assessment 2 submissions with score for admin panel.
  */
 exports.getAssessment2Submissions = async (req, res) => {
@@ -924,15 +963,21 @@ exports.getAssessment2Submissions = async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
     const skip = (page - 1) * limit;
+    const dateRange = buildAssessmentDateRange(req.query.from, req.query.to);
+    const searchQuery = buildAssessmentSearchQuery(req.query.q);
+
+    const match = {};
+    if (dateRange) match.submittedAt = dateRange;
+    if (searchQuery) Object.assign(match, searchQuery);
 
     const [submissions, total] = await Promise.all([
-      AssessmentSubmission2.find({})
+      AssessmentSubmission2.find(match)
         .sort({ submittedAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean()
         .select('fullName phone score maxScore submittedAt'),
-      AssessmentSubmission2.countDocuments({})
+      AssessmentSubmission2.countDocuments(match)
     ]);
 
     return res.status(200).json({
@@ -1002,6 +1047,7 @@ exports.getAssessment2SubmissionById = async (req, res) => {
 
 /**
  * GET /admin/assessment-3-submissions
+ * Query: page, limit, from, to, q
  * Returns list of assessment 3 submissions with score for admin panel.
  */
 exports.getAssessment3Submissions = async (req, res) => {
@@ -1009,15 +1055,21 @@ exports.getAssessment3Submissions = async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
     const skip = (page - 1) * limit;
+    const dateRange = buildAssessmentDateRange(req.query.from, req.query.to);
+    const searchQuery = buildAssessmentSearchQuery(req.query.q);
+
+    const match = {};
+    if (dateRange) match.submittedAt = dateRange;
+    if (searchQuery) Object.assign(match, searchQuery);
 
     const [submissions, total] = await Promise.all([
-      AssessmentSubmission3.find({})
+      AssessmentSubmission3.find(match)
         .sort({ submittedAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean()
         .select('fullName phone score maxScore submittedAt'),
-      AssessmentSubmission3.countDocuments({})
+      AssessmentSubmission3.countDocuments(match)
     ]);
 
     return res.status(200).json({
@@ -1054,6 +1106,82 @@ exports.getAssessment3SubmissionById = async (req, res) => {
     });
   } catch (error) {
     console.error('[getAssessment3SubmissionById] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * GET /admin/missing-leads
+ * Query: page, limit, from, to, q
+ * Returns leads in AssessmentSubmission3 who have not submitted the training activation form (TrainingFeedback).
+ * Deduplicated by phone (latest submission per phone).
+ */
+exports.getMissingLeads = async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const skip = (page - 1) * limit;
+
+    const dateRange = buildAssessmentDateRange(req.query.from, req.query.to);
+    const activationFormFilter = dateRange ? { createdAt: dateRange } : {};
+    const [mobileNumbers, whatsappNumbers] = await Promise.all([
+      TrainingFeedback.distinct('mobileNumber', activationFormFilter),
+      TrainingFeedback.distinct('whatsappNumber', activationFormFilter)
+    ]);
+    const allPhones = [...(mobileNumbers || []), ...(whatsappNumbers || [])]
+      .filter(Boolean)
+      .map((p) => String(p).replace(/\D/g, '').trim().slice(-10))
+      .filter((p) => p.length === 10);
+    const activationPhones = Array.isArray(allPhones) ? [...new Set(allPhones)].map((p) => String(p)) : [];
+
+    const searchQuery = buildAssessmentSearchQuery(req.query.q);
+
+    const assessment3MatchForCount = dateRange ? { submittedAt: dateRange } : {};
+    const [activationFormCount, assessment3Total] = await Promise.all([
+      TrainingFeedback.countDocuments(activationFormFilter),
+      AssessmentSubmission3.countDocuments(assessment3MatchForCount)
+    ]);
+
+    const match = { phone: { $nin: activationPhones } };
+    if (dateRange) match.submittedAt = dateRange;
+    if (searchQuery) Object.assign(match, searchQuery);
+
+    const rawTotal = await AssessmentSubmission3.countDocuments(match);
+
+    const pipeline = [
+      { $match: match },
+      { $sort: { submittedAt: -1 } },
+      { $group: { _id: '$phone', doc: { $first: '$$ROOT' } } },
+      { $replaceRoot: { newRoot: '$doc' } },
+      { $sort: { submittedAt: -1 } },
+      {
+        $facet: {
+          totalCount: [{ $count: 'total' }],
+          paginated: [
+            { $skip: skip },
+            { $limit: limit },
+            { $project: { fullName: 1, phone: 1, score: 1, maxScore: 1, submittedAt: 1, _id: 1 } }
+          ]
+        }
+      }
+    ];
+
+    const aggResult = await AssessmentSubmission3.aggregate(pipeline);
+    const first = Array.isArray(aggResult) && aggResult[0] ? aggResult[0] : {};
+    const total = first?.totalCount?.[0]?.total ?? 0;
+    const submissions = Array.isArray(first?.paginated) ? first.paginated : [];
+    const duplicateCount = Math.max(0, rawTotal - total);
+
+    return res.status(200).json({
+      success: true,
+      submissions,
+      total,
+      duplicateCount,
+      activationFormCount,
+      assessment3Total
+    });
+  } catch (error) {
+    console.error('[getMissingLeads] Error:', error.message || error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
