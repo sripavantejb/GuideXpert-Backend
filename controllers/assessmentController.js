@@ -33,7 +33,7 @@ const CORRECT_ANSWERS_2 = {
 
 const MAX_SCORE_3 = 5;
 
-/** Correct answers for Assessment 3 (Session 3, q1–q5). */
+/** Correct answers for Assessment 3 (Session 3, q1–q5). Aligned with Training workflow CSV. */
 const CORRECT_ANSWERS_3 = {
   q1: 'b) Post consistently on social media',
   q2: 'd) Create curiosity and engagement',
@@ -44,7 +44,7 @@ const CORRECT_ANSWERS_3 = {
 
 const MAX_SCORE_4 = 5;
 
-/** Correct answers for Assessment 4 (Session 4, q1–q5). */
+/** Correct answers for Assessment 4 (Session 4, q1–q5). Aligned with Training workflow CSV. */
 const CORRECT_ANSWERS_4 = {
   q1: 'c) Seat-focused and fee-focused content',
   q2: 'd) Short-term enquiries and low trust',
@@ -55,7 +55,7 @@ const CORRECT_ANSWERS_4 = {
 
 const MAX_SCORE_5 = 5;
 
-/** Correct answers for Assessment 5 (Session 5, q1–q5). */
+/** Correct answers for Assessment 5 (Session 5, q1–q5). Aligned with Training workflow CSV. */
 const CORRECT_ANSWERS_5 = {
   q1: 'a) Using mobile number and OTP',
   q2: 'b) By sharing NAT exam link through referral portal',
