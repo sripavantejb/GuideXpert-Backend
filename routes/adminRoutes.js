@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { login, getAdminLeads, getLeadById, updateLeadNotes, getAdminStats, exportLeads, getSlotConfigs, getSlotsForDate, updateSlotConfig, getSlotBookingCounts, getSlotOverrides, setSlotOverride, getAssessmentSubmissions, getAssessment2Submissions, getAssessment3Submissions, getAssessmentSubmissionById, getAssessment2SubmissionById, getAssessment3SubmissionById, getMissingLeads } = require('../controllers/adminController');
+const { login, getAdminLeads, getLeadById, updateLeadNotes, getAdminStats, exportLeads, getSlotConfigs, getSlotsForDate, updateSlotConfig, getSlotBookingCounts, getSlotOverrides, setSlotOverride, getAssessmentSubmissions, getAssessment2Submissions, getAssessment3Submissions, getAssessmentSubmissionById, getAssessment2SubmissionById, getAssessment3SubmissionById, getAssessment4Submissions, getAssessment4SubmissionById, getAssessment5Submissions, getAssessment5SubmissionById, getMissingLeads } = require('../controllers/adminController');
 const { getMeetingAttendance } = require('../controllers/meetingController');
 const { getTrainingAttendance } = require('../controllers/trainingController');
 const { getTrainingFeedback } = require('../controllers/feedbackController');
@@ -46,6 +46,10 @@ router.get('/assessment-2-submissions', requireAdmin, getAssessment2Submissions)
 router.get('/assessment-2-submissions/:id', requireAdmin, getAssessment2SubmissionById);
 router.get('/assessment-3-submissions', requireAdmin, getAssessment3Submissions);
 router.get('/assessment-3-submissions/:id', requireAdmin, getAssessment3SubmissionById);
+router.get('/assessment-4-submissions', requireAdmin, getAssessment4Submissions);
+router.get('/assessment-4-submissions/:id', requireAdmin, getAssessment4SubmissionById);
+router.get('/assessment-5-submissions', requireAdmin, getAssessment5Submissions);
+router.get('/assessment-5-submissions/:id', requireAdmin, getAssessment5SubmissionById);
 router.get('/missing-leads', requireAdmin, getMissingLeads);
 router.get('/announcements', requireAdmin, adminList);
 router.post('/announcements', requireAdmin, adminCreate);

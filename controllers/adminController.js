@@ -5,6 +5,8 @@ const FormSubmission = require('../models/FormSubmission');
 const AssessmentSubmission = require('../models/AssessmentSubmission');
 const AssessmentSubmission2 = require('../models/AssessmentSubmission2');
 const AssessmentSubmission3 = require('../models/AssessmentSubmission3');
+const AssessmentSubmission4 = require('../models/AssessmentSubmission4');
+const AssessmentSubmission5 = require('../models/AssessmentSubmission5');
 const SlotConfig = require('../models/SlotConfig');
 const SlotDateOverride = require('../models/SlotDateOverride');
 const MeetingAttendance = require('../models/MeetingAttendance');
@@ -17,7 +19,7 @@ function normalizePhoneTo10(value) {
   const digits = String(value).replace(/\D/g, '');
   return digits.length >= 10 ? digits.slice(-10) : digits;
 }
-const { getQuestionResults, CORRECT_ANSWERS, CORRECT_ANSWERS_2, CORRECT_ANSWERS_3 } = require('./assessmentController');
+const { getQuestionResults, CORRECT_ANSWERS, CORRECT_ANSWERS_2, CORRECT_ANSWERS_3, CORRECT_ANSWERS_4, CORRECT_ANSWERS_5 } = require('./assessmentController');
 
 const JWT_SECRET = process.env.ADMIN_JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.ADMIN_JWT_EXPIRES_IN || '24h';
@@ -1106,6 +1108,132 @@ exports.getAssessment3SubmissionById = async (req, res) => {
     });
   } catch (error) {
     console.error('[getAssessment3SubmissionById] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * GET /admin/assessment-4-submissions
+ * Query: page, limit, from, to, q
+ */
+exports.getAssessment4Submissions = async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const skip = (page - 1) * limit;
+    const dateRange = buildAssessmentDateRange(req.query.from, req.query.to);
+    const searchQuery = buildAssessmentSearchQuery(req.query.q);
+
+    const match = {};
+    if (dateRange) match.submittedAt = dateRange;
+    if (searchQuery) Object.assign(match, searchQuery);
+
+    const [submissions, total] = await Promise.all([
+      AssessmentSubmission4.find(match)
+        .sort({ submittedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+        .select('fullName phone score maxScore submittedAt'),
+      AssessmentSubmission4.countDocuments(match)
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      submissions,
+      total
+    });
+  } catch (error) {
+    console.error('[getAssessment4Submissions] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * GET /admin/assessment-4-submissions/:id
+ */
+exports.getAssessment4SubmissionById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'Submission id is required.' });
+    }
+    const submission = await AssessmentSubmission4.findById(id)
+      .select('fullName phone score maxScore submittedAt answers')
+      .lean();
+    if (!submission) {
+      return res.status(404).json({ success: false, message: 'Submission not found.' });
+    }
+    const questionResults = getQuestionResults(submission.answers || {}, CORRECT_ANSWERS_4);
+    return res.status(200).json({
+      success: true,
+      submission: { ...submission, questionResults }
+    });
+  } catch (error) {
+    console.error('[getAssessment4SubmissionById] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * GET /admin/assessment-5-submissions
+ * Query: page, limit, from, to, q
+ */
+exports.getAssessment5Submissions = async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const skip = (page - 1) * limit;
+    const dateRange = buildAssessmentDateRange(req.query.from, req.query.to);
+    const searchQuery = buildAssessmentSearchQuery(req.query.q);
+
+    const match = {};
+    if (dateRange) match.submittedAt = dateRange;
+    if (searchQuery) Object.assign(match, searchQuery);
+
+    const [submissions, total] = await Promise.all([
+      AssessmentSubmission5.find(match)
+        .sort({ submittedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+        .select('fullName phone score maxScore submittedAt'),
+      AssessmentSubmission5.countDocuments(match)
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      submissions,
+      total
+    });
+  } catch (error) {
+    console.error('[getAssessment5Submissions] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * GET /admin/assessment-5-submissions/:id
+ */
+exports.getAssessment5SubmissionById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'Submission id is required.' });
+    }
+    const submission = await AssessmentSubmission5.findById(id)
+      .select('fullName phone score maxScore submittedAt answers')
+      .lean();
+    if (!submission) {
+      return res.status(404).json({ success: false, message: 'Submission not found.' });
+    }
+    const questionResults = getQuestionResults(submission.answers || {}, CORRECT_ANSWERS_5);
+    return res.status(200).json({
+      success: true,
+      submission: { ...submission, questionResults }
+    });
+  } catch (error) {
+    console.error('[getAssessment5SubmissionById] Error:', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
