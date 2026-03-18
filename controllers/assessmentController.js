@@ -6,6 +6,7 @@ const AssessmentSubmission3 = require('../models/AssessmentSubmission3');
 const AssessmentSubmission4 = require('../models/AssessmentSubmission4');
 const AssessmentSubmission5 = require('../models/AssessmentSubmission5');
 const VerifiedPhoneSession = require('../models/VerifiedPhoneSession');
+const TrainingFeedback = require('../models/TrainingFeedback');
 
 const VERIFIED_TTL_MS = 15 * 60 * 1000; // 15 min
 
@@ -386,6 +387,21 @@ exports.checkAssessment3Eligibility = async (req, res) => {
     });
   } catch (err) {
     console.error('[checkAssessment3Eligibility]', err.message);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.checkActivationEligibility = async (req, res) => {
+  try {
+    const rawPhone = req.query?.phone ?? req.body?.phone ?? req.body?.mobileNumber;
+    const p = normalizePhone(rawPhone);
+    if (!/^\d{10}$/.test(p)) {
+      return res.status(400).json({ success: false, message: 'Valid 10-digit phone required' });
+    }
+    const exists = !!(await TrainingFeedback.exists({ mobileNumber: p }));
+    return res.status(200).json({ success: true, eligible: exists, data: { exists, phone: p } });
+  } catch (err) {
+    console.error('[checkActivationEligibility]', err.message);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
