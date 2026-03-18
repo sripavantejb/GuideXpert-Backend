@@ -51,17 +51,42 @@ async function getPredictedColleges(offset, limit, body) {
     headers['X-Source'] = process.env.NW_PREDICTORS_X_SOURCE;
   }
 
-  const payload = {
-    entrance_exam_name_enum: body.entrance_exam_name_enum,
-    admission_category_name_enum: body.admission_category_name_enum,
-    cutoff_from: body.cutoff_from,
-    cutoff_to: body.cutoff_to,
-    reservation_category_code: body.reservation_category_code,
+  let entranceExam = (body.entrance_exam_name_enum != null && String(body.entrance_exam_name_enum).trim() !== '') ? String(body.entrance_exam_name_enum).trim() : '';
+  if (process.env.NW_PREDICTORS_ENTRANCE_EXAM_OVERRIDE && String(process.env.NW_PREDICTORS_ENTRANCE_EXAM_OVERRIDE).trim() !== '') {
+    entranceExam = String(process.env.NW_PREDICTORS_ENTRANCE_EXAM_OVERRIDE).trim();
+  }
+  if (!entranceExam) {
+    throw Object.assign(new Error('entrance_exam_name_enum is required'), {
+      response: 'entrance_exam_name_enum is required; please select an entrance exam',
+      res_status: 'INVALID_INPUT_FORMAT',
+      http_status_code: 400,
+    });
+  }
+  const cutoffFromInt = Number.isInteger(body.cutoff_from) ? body.cutoff_from : parseInt(Number(body.cutoff_from), 10);
+  const cutoffToInt = Number.isInteger(body.cutoff_to) ? body.cutoff_to : parseInt(Number(body.cutoff_to), 10);
+  const innerBody = {
+    entrance_exam_name_enum: entranceExam,
+    admission_category_name_enum: (body.admission_category_name_enum != null && String(body.admission_category_name_enum).trim() !== '') ? String(body.admission_category_name_enum).trim() : 'GENERAL',
+    cutoff_from: Number.isInteger(cutoffFromInt) ? cutoffFromInt : 0,
+    cutoff_to: Number.isInteger(cutoffToInt) ? cutoffToInt : 0,
+    reservation_category_code: (body.reservation_category_code != null && String(body.reservation_category_code).trim() !== '') ? String(body.reservation_category_code).trim() : 'GNT2S',
   };
-  if (Array.isArray(body.branch_codes)) payload.branch_codes = body.branch_codes;
-  else if (body.branch_codes != null) payload.branch_codes = body.branch_codes;
-  payload.districts = Array.isArray(body.districts) ? body.districts : (body.districts != null ? body.districts || [] : []);
-  payload.sort_order = (body.sort_order != null && body.sort_order !== '') ? body.sort_order : 'ASC';
+  if (Array.isArray(body.branch_codes) && body.branch_codes.length > 0) innerBody.branch_codes = body.branch_codes;
+  innerBody.districts = Array.isArray(body.districts) ? body.districts : (body.districts != null ? body.districts || [] : []);
+  innerBody.sort_order = (body.sort_order != null && body.sort_order !== '') ? String(body.sort_order).toUpperCase() : 'ASC';
+
+  const dataJson = JSON.stringify(innerBody);
+  // API doc: data must be JSON string wrapped in single quotes: "'{...}'"
+  const usePlainData = process.env.NW_PREDICTORS_DATA_PLAIN === 'true';
+  const dataValue = usePlainData ? dataJson : "'" + dataJson + "'";
+  const payload = {
+    clientKeyDetailsId: 1,
+    data: dataValue,
+  };
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[nwCollegePredictor] entrance_exam_name_enum:', entranceExam, '| data format:', usePlainData ? 'plain' : 'quoted');
+  }
 
   try {
     const res = await axios.post(url, payload, {

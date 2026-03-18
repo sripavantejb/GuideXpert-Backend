@@ -21,11 +21,13 @@ const counsellorAuthRoutes = require('./routes/counsellorAuthRoutes');
 const posterRoutes = require('./routes/posterRoutes');
 const studentRoutes = require('./routes/studentRoutes');
 const collegePredictorRoutes = require('./routes/collegePredictorRoutes');
+const collegePredictorPublicRoutes = require('./routes/collegePredictorPublicRoutes');
 const counsellorAssessmentRoutes = require('./routes/counsellorAssessmentRoutes');
 const assessmentCareerDnaRoutes = require('./routes/assessmentCareerDnaRoutes');
 const assessmentCourseFitRoutes = require('./routes/assessmentCourseFitRoutes');
 const announcementRoutes = require('./routes/announcementRoutes');
 const certificateRoutes = require('./routes/certificateRoutes');
+const webinarAssessmentRoutes = require('./routes/webinarAssessmentRoutes');
 const { configStatus: counsellorConfigStatus } = require('./controllers/counsellorAuthController');
 
 const app = express();
@@ -79,6 +81,8 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Public college predictor (no auth) — mount before counsellor routes
+app.use('/api/college-predictor', collegePredictorPublicRoutes);
 // Mount more specific paths first so /api/counsellor/students is never handled by generic /api
 app.use('/api/counsellor/students', studentRoutes);
 app.use('/api/counsellor/announcements', announcementRoutes);
@@ -104,6 +108,7 @@ app.use('/api/training-form', trainingFormRoutes);
 app.use('/api/referral', referralRoutes);
 app.use('/api/cron', cronRoutes);
 app.use('/api/certificate', certificateRoutes);
+app.use('/api/webinar-assessment', webinarAssessmentRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'GuideXpert API is running' });

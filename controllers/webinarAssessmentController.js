@@ -1,0 +1,159 @@
+const jwt = require('jsonwebtoken');
+const WebinarAssessmentSubmission = require('../models/WebinarAssessmentSubmission');
+const TrainingFormSubmission = require('../models/TrainingFormSubmission');
+const TrainingFormResponse = require('../models/TrainingFormResponse');
+
+const VALID_IDS = ['a1', 'a2', 'a3', 'a4', 'a5'];
+
+function getWebinarSecret() {
+  return process.env.WEBINAR_JWT_SECRET || process.env.COUNSELLOR_JWT_SECRET || '';
+}
+
+/**
+ * Optionally decode webinar JWT from Authorization: Bearer <token>.
+ * Returns { phone, fullName } or { phone: null, fullName: null }.
+ */
+async function getWebinarUserFromToken(req) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || typeof authHeader !== 'string' || !authHeader.startsWith('Bearer ')) {
+    return { phone: null, fullName: null };
+  }
+  const token = authHeader.slice(7).trim();
+  const secret = getWebinarSecret();
+  if (!secret || !token) return { phone: null, fullName: null };
+  try {
+    const decoded = jwt.verify(token, secret);
+    const phone = decoded?.webinarPhone && /^\d{10}$/.test(String(decoded.webinarPhone))
+      ? String(decoded.webinarPhone)
+      : null;
+    let fullName = null;
+    if (phone) {
+      let record = await TrainingFormSubmission.findOne({ mobileNumber: phone }).sort({ createdAt: -1 }).lean();
+      if (!record) record = await TrainingFormResponse.findOne({ mobileNumber: phone }).sort({ createdAt: -1 }).lean();
+      if (record && record.fullName) fullName = String(record.fullName).trim();
+    }
+    return { phone, fullName };
+  } catch (e) {
+    return { phone: null, fullName: null };
+  }
+}
+
+function parseHistoryLimit(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 5;
+  return Math.max(1, Math.min(20, Math.floor(n)));
+}
+
+/**
+ * POST /submit
+ * Body: { assessmentId, score, total, results, answers }
+ * Optional: Authorization: Bearer <webinar JWT> to attach phone/name.
+ * Stores each attempt as a new record so history can be shown.
+ */
+async function submitWebinarAssessment(req, res) {
+  try {
+    const { assessmentId, score, total, results, answers } = req.body || {};
+
+    if (!assessmentId || !VALID_IDS.includes(assessmentId)) {
+      return res.status(400).json({ success: false, message: 'Valid assessmentId (a1–a5) is required.' });
+    }
+    if (typeof score !== 'number' || score < 0) {
+      return res.status(400).json({ success: false, message: 'score must be a non-negative number.' });
+    }
+    if (typeof total !== 'number' || total < 0) {
+      return res.status(400).json({ success: false, message: 'total must be a non-negative number.' });
+    }
+    if (!Array.isArray(results)) {
+      return res.status(400).json({ success: false, message: 'results must be an array.' });
+    }
+    const answersObj = answers && typeof answers === 'object' ? answers : {};
+
+    const { phone, fullName } = await getWebinarUserFromToken(req);
+
+    const payload = {
+      assessmentId,
+      phone: phone || undefined,
+      fullName: fullName || undefined,
+      score,
+      total,
+      results: results.map((r) => ({
+        questionId: r.questionId,
+        text: r.text || '',
+        correct: !!r.correct,
+        userAnswer: r.userAnswer != null ? String(r.userAnswer) : '',
+        correctAnswer: r.correctAnswer != null ? String(r.correctAnswer) : '',
+      })),
+      answers: answersObj,
+      submittedAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const created = await WebinarAssessmentSubmission.create(payload);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Assessment saved.',
+      data: {
+        assessmentId,
+        score,
+        total,
+        submittedAt: created.submittedAt,
+      },
+    });
+  } catch (err) {
+    console.error('[submitWebinarAssessment]', err);
+    const message = process.env.NODE_ENV === 'development' ? err.message : 'Failed to save assessment.';
+    return res.status(500).json({ success: false, message });
+  }
+}
+
+/**
+ * GET /history?assessmentId=a1&limit=5
+ * Returns latest attempts for authenticated webinar user.
+ * Never throws: returns 200 with { attempts: [] } on auth/DB errors so frontend can use localStorage fallback.
+ */
+async function getWebinarAssessmentHistory(req, res) {
+  let phone = null;
+  try {
+    const assessmentId = String(req.query?.assessmentId || '').trim();
+    if (!VALID_IDS.includes(assessmentId)) {
+      return res.status(400).json({ success: false, message: 'Valid assessmentId (a1–a5) is required.' });
+    }
+
+    try {
+      const user = await getWebinarUserFromToken(req);
+      phone = user?.phone ?? null;
+    } catch (authErr) {
+      console.warn('[getWebinarAssessmentHistory] getWebinarUserFromToken', authErr?.message || authErr);
+    }
+    if (!phone) {
+      return res.status(200).json({ success: true, data: { attempts: [] } });
+    }
+
+    const limit = parseHistoryLimit(req.query?.limit);
+    let attempts = [];
+    try {
+      attempts = await WebinarAssessmentSubmission.find({ assessmentId, phone })
+        .sort({ submittedAt: -1, createdAt: -1 })
+        .limit(limit)
+        .select({ _id: 1, score: 1, total: 1, submittedAt: 1, createdAt: 1, updatedAt: 1 })
+        .lean();
+      if (!Array.isArray(attempts)) attempts = [];
+    } catch (dbErr) {
+      console.error('[getWebinarAssessmentHistory] find failed', dbErr);
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: { attempts },
+    });
+  } catch (err) {
+    console.error('[getWebinarAssessmentHistory]', err);
+    return res.status(200).json({ success: true, data: { attempts: [] } });
+  }
+}
+
+module.exports = {
+  submitWebinarAssessment,
+  getWebinarAssessmentHistory,
+};

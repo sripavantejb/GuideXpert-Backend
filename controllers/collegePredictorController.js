@@ -17,32 +17,85 @@ async function getPredictedCollegesHandler(req, res) {
   }
 
   const body = req.body || {};
-  const cutoffFrom = Number(body.cutoff_from);
-  const cutoffTo = Number(body.cutoff_to);
-  if (typeof body.cutoff_from !== 'undefined' && (Number.isNaN(cutoffFrom) || cutoffFrom < 0)) {
+  const entranceExamRaw = body.entrance_exam_name_enum;
+  const entranceExamTrimmed = (entranceExamRaw != null && String(entranceExamRaw).trim() !== '') ? String(entranceExamRaw).trim() : '';
+  if (!entranceExamTrimmed) {
     return res.status(400).json({
-      response: 'cutoff_from must be a non-negative number',
+      response: 'entrance_exam_name_enum is required; please select an entrance exam',
       res_status: 'INVALID_INPUT_FORMAT',
       http_status_code: 400,
     });
   }
-  if (typeof body.cutoff_to !== 'undefined' && (Number.isNaN(cutoffTo) || cutoffTo < 0)) {
+
+  const rawFrom = body.cutoff_from;
+  const rawTo = body.cutoff_to;
+  const cutoffFrom = rawFrom != null && rawFrom !== '' ? parseInt(Number(rawFrom), 10) : NaN;
+  const cutoffTo = rawTo != null && rawTo !== '' ? parseInt(Number(rawTo), 10) : NaN;
+
+  const hasFrom = rawFrom !== undefined && rawFrom !== null && rawFrom !== '';
+  const hasTo = rawTo !== undefined && rawTo !== null && rawTo !== '';
+
+  if (!hasFrom) {
     return res.status(400).json({
-      response: 'cutoff_to must be a non-negative number',
+      response: 'cutoff_from is required',
       res_status: 'INVALID_INPUT_FORMAT',
       http_status_code: 400,
     });
   }
-  if (!Number.isNaN(cutoffFrom) && !Number.isNaN(cutoffTo) && cutoffFrom > cutoffTo) {
+  if (!hasTo) {
     return res.status(400).json({
-      response: 'Invalid cutoff range',
+      response: 'cutoff_to is required',
+      res_status: 'INVALID_INPUT_FORMAT',
+      http_status_code: 400,
+    });
+  }
+  if (!Number.isInteger(cutoffFrom) || cutoffFrom < 0) {
+    return res.status(400).json({
+      response: 'cutoff_from must be a non-negative integer',
+      res_status: 'INVALID_INPUT_FORMAT',
+      http_status_code: 400,
+    });
+  }
+  if (!Number.isInteger(cutoffTo) || cutoffTo < 0) {
+    return res.status(400).json({
+      response: 'cutoff_to must be a non-negative integer',
+      res_status: 'INVALID_INPUT_FORMAT',
+      http_status_code: 400,
+    });
+  }
+  if (cutoffFrom >= cutoffTo) {
+    return res.status(400).json({
+      response: 'cutoff_to must be greater than cutoff_from',
       res_status: 'INVALID_CUTOFF_RANGE',
       http_status_code: 400,
     });
   }
 
+  const sortOrder = (body.sort_order != null && body.sort_order !== '') ? String(body.sort_order).toUpperCase() : 'ASC';
+  if (sortOrder !== 'ASC' && sortOrder !== 'DESC') {
+    return res.status(400).json({
+      response: 'sort_order must be ASC or DESC',
+      res_status: 'INVALID_INPUT_FORMAT',
+      http_status_code: 400,
+    });
+  }
+
+  const normalizedBody = {
+    ...body,
+    cutoff_from: cutoffFrom,
+    cutoff_to: cutoffTo,
+    entrance_exam_name_enum: entranceExamTrimmed,
+    admission_category_name_enum: body.admission_category_name_enum != null && body.admission_category_name_enum !== '' ? String(body.admission_category_name_enum).trim() : 'GENERAL',
+    reservation_category_code: body.reservation_category_code != null && body.reservation_category_code !== '' ? String(body.reservation_category_code).trim() : 'GNT2S',
+    sort_order: sortOrder,
+  };
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[college-predictor] entrance_exam_name_enum:', JSON.stringify(normalizedBody.entrance_exam_name_enum));
+  }
+
   try {
-    const data = await getPredictedColleges(offset, limit, body);
+    const data = await getPredictedColleges(offset, limit, normalizedBody);
     return res.status(200).json(data);
   } catch (err) {
     const status = err.http_status_code || 502;
