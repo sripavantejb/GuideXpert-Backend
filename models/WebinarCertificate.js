@@ -5,7 +5,8 @@ const schema = new mongoose.Schema(
     certificateId: { type: String, required: true, unique: true, trim: true },
     fullName: { type: String, required: true, trim: true, maxlength: 200 },
     dateIssued: { type: String, required: true, trim: true, maxlength: 50 },
-    mobileNumber: { type: String, trim: true, default: null },
+    // Keep undefined when not provided so sparse unique index does not store null duplicates.
+    mobileNumber: { type: String, trim: true, default: undefined },
   },
   { timestamps: true }
 );

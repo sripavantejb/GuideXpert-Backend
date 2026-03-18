@@ -78,7 +78,14 @@ exports.createCertificate = async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('[createCertificate]', err);
+    if (err?.code === 11000) {
+      const key = Object.keys(err.keyPattern || {})[0] || 'field';
+      return res.status(409).json({
+        success: false,
+        message: `Certificate already exists for this ${key}.`,
+      });
+    }
+    console.error('[createCertificate]', err?.message || err);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
