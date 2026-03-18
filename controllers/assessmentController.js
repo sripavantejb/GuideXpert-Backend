@@ -363,6 +363,33 @@ exports.submitAssessment3 = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/assessment-3/check?phone=XXXXXXXXXX
+ * Public lightweight eligibility check for poster/download flows.
+ */
+exports.checkAssessment3Eligibility = async (req, res) => {
+  try {
+    const rawPhone = req.query?.phone ?? req.body?.phone ?? req.body?.mobileNumber;
+    const p = normalizePhone(rawPhone);
+    if (!/^\d{10}$/.test(p)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid 10-digit Indian phone required',
+      });
+    }
+
+    const exists = !!(await AssessmentSubmission3.exists({ phone: p }));
+    return res.status(200).json({
+      success: true,
+      eligible: exists,
+      data: { exists, phone: p },
+    });
+  } catch (err) {
+    console.error('[checkAssessment3Eligibility]', err.message);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
 exports.submitAssessment4 = async (req, res) => {
   try {
     const { name, phone, answers } = req.body || {};
