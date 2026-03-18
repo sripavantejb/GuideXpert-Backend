@@ -2,6 +2,7 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
+const mongoose = require('mongoose');
 const connectDB = require('./config/db');
 const formRoutes = require('./routes/formRoutes');
 const assessmentRoutes = require('./routes/assessmentRoutes');
@@ -81,6 +82,20 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Ensure MongoDB is connected before handling requests (Vercel serverless cold start)
+let dbConnectPromise = null;
+app.use(async (req, res, next) => {
+  if (mongoose.connection.readyState === 1) return next();
+  if (!dbConnectPromise) dbConnectPromise = connectDB();
+  try {
+    await dbConnectPromise;
+    next();
+  } catch (err) {
+    console.error('[ensureDB]', err?.message || err);
+    next(err);
+  }
+});
+
 // Public college predictor (no auth) — mount before counsellor routes
 app.use('/api/college-predictor', collegePredictorPublicRoutes);
 // Mount more specific paths first so /api/counsellor/students is never handled by generic /api
@@ -126,7 +141,7 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-// Start server only after MongoDB connection is established
+// Start server only after MongoDB connection is established (local dev only)
 const startServer = async () => {
   try {
     await connectDB();
@@ -140,4 +155,8 @@ const startServer = async () => {
   }
 };
 
-startServer();
+if (process.env.VERCEL !== '1') {
+  startServer();
+}
+
+module.exports = app;

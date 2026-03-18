@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const WebinarAssessmentSubmission = require('../models/WebinarAssessmentSubmission');
 const TrainingFormSubmission = require('../models/TrainingFormSubmission');
 const TrainingFormResponse = require('../models/TrainingFormResponse');
@@ -68,7 +69,23 @@ async function submitWebinarAssessment(req, res) {
     }
     const answersObj = answers && typeof answers === 'object' ? answers : {};
 
-    const { phone, fullName } = await getWebinarUserFromToken(req);
+    let phone = null;
+    let fullName = null;
+    try {
+      const user = await getWebinarUserFromToken(req);
+      phone = user?.phone ?? null;
+      fullName = user?.fullName ?? null;
+    } catch (authErr) {
+      console.warn('[submitWebinarAssessment] getWebinarUserFromToken', authErr?.message || authErr);
+    }
+
+    const sanitizedResults = results.map((r) => ({
+      questionId: r != null && r.questionId != null ? String(r.questionId) : '',
+      text: r != null && r.text != null ? String(r.text) : '',
+      correct: !!(r != null && r.correct),
+      userAnswer: r != null && r.userAnswer != null ? String(r.userAnswer) : '',
+      correctAnswer: r != null && r.correctAnswer != null ? String(r.correctAnswer) : '',
+    }));
 
     const payload = {
       assessmentId,
@@ -76,13 +93,7 @@ async function submitWebinarAssessment(req, res) {
       fullName: fullName || undefined,
       score,
       total,
-      results: results.map((r) => ({
-        questionId: r.questionId,
-        text: r.text || '',
-        correct: !!r.correct,
-        userAnswer: r.userAnswer != null ? String(r.userAnswer) : '',
-        correctAnswer: r.correctAnswer != null ? String(r.correctAnswer) : '',
-      })),
+      results: sanitizedResults,
       answers: answersObj,
       submittedAt: new Date(),
       updatedAt: new Date(),
@@ -101,7 +112,21 @@ async function submitWebinarAssessment(req, res) {
       },
     });
   } catch (err) {
-    console.error('[submitWebinarAssessment]', err);
+    console.error('[submitWebinarAssessment]', err.name, err.message, process.env.NODE_ENV === 'development' ? err.stack : '');
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid submission data.',
+        ...(process.env.NODE_ENV === 'development' && { details: err.message }),
+      });
+    }
+    const isConnectionError =
+      mongoose.connection.readyState !== 1 ||
+      (err.name && (err.name === 'MongoServerError' || err.name === 'MongoNetworkError' || err.name === 'MongoTimeoutError')) ||
+      (err.message && typeof err.message === 'string' && (err.message.includes('connection') || err.message.includes('not open')));
+    if (isConnectionError) {
+      return res.status(503).json({ success: false, message: 'Service temporarily unavailable. Please try again.' });
+    }
     const message = process.env.NODE_ENV === 'development' ? err.message : 'Failed to save assessment.';
     return res.status(500).json({ success: false, message });
   }
