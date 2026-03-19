@@ -36,6 +36,7 @@ const webinarProgressSchema = new mongoose.Schema(
     },
     lastActiveModule: { type: String, default: null },
     lastActivityAt: { type: Date, default: Date.now },
+    certificateDownloadedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

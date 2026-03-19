@@ -174,6 +174,27 @@ async function getProgress(req, res) {
   }
 }
 
+// POST /api/webinar-progress/certificate-downloaded
+async function recordCertificateDownload(req, res) {
+  try {
+    const user = await getWebinarUserFromToken(req);
+    if (!user.phone) {
+      return res.status(401).json({ success: false, message: 'Authentication required.' });
+    }
+
+    await WebinarProgress.findOneAndUpdate(
+      { phone: user.phone },
+      { $set: { certificateDownloadedAt: new Date() } },
+      { new: true, upsert: true }
+    );
+
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('[recordCertificateDownload]', err);
+    return res.status(500).json({ success: false, message: 'Failed to record certificate download.' });
+  }
+}
+
 // GET /api/admin/webinar-progress
 async function adminListProgress(req, res) {
   try {
@@ -488,6 +509,7 @@ async function adminProgressExport(req, res) {
 module.exports = {
   syncProgress,
   getProgress,
+  recordCertificateDownload,
   adminListProgress,
   adminProgressStats,
   adminProgressDetail,
