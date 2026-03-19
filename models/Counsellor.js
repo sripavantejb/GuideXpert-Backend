@@ -39,12 +39,11 @@ const counsellorSchema = new mongoose.Schema({
   },
 });
 
-counsellorSchema.pre('save', function (next) {
+counsellorSchema.pre('save', function () {
   if (this.phone != null && String(this.phone).trim() !== '') {
     const digits = String(this.phone).replace(/\D/g, '');
     this.phone = digits.length >= 10 ? digits.slice(-10) : null;
   }
-  if (typeof next === 'function') next();
 });
 
 counsellorSchema.pre('save', async function () {

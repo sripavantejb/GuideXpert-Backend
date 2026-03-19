@@ -58,11 +58,6 @@ const webinarAssessmentSubmissionSchema = new mongoose.Schema({
 webinarAssessmentSubmissionSchema.index({ assessmentId: 1, phone: 1 });
 webinarAssessmentSubmissionSchema.index({ submittedAt: -1 });
 
-webinarAssessmentSubmissionSchema.pre('save', function (next) {
-  this.updatedAt = new Date();
-  next();
-});
-
 const WebinarAssessmentSubmission = mongoose.model(
   'WebinarAssessmentSubmission',
   webinarAssessmentSubmissionSchema

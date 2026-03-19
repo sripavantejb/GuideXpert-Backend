@@ -40,21 +40,11 @@ const adminSchema = new mongoose.Schema({
 
 // username already has unique: true → index created automatically
 
-adminSchema.pre('save', function(next) {
-  if (!this.isModified('password')) {
-    this.updatedAt = Date.now();
-    return next();
-  }
-  const self = this;
-  bcrypt.genSalt(10, function(err, salt) {
-    if (err) return next(err);
-    bcrypt.hash(self.password, salt, function(err, hash) {
-      if (err) return next(err);
-      self.password = hash;
-      self.updatedAt = Date.now();
-      next();
-    });
-  });
+adminSchema.pre('save', async function() {
+  this.updatedAt = Date.now();
+  if (!this.isModified('password')) return;
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
 });
 
 adminSchema.methods.comparePassword = function(candidatePassword) {

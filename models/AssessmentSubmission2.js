@@ -46,9 +46,8 @@ const assessmentSubmission2Schema = new mongoose.Schema({
 assessmentSubmission2Schema.index({ submittedAt: -1 });
 assessmentSubmission2Schema.index({ phone: 1 });
 
-assessmentSubmission2Schema.pre('save', function (next) {
+assessmentSubmission2Schema.pre('save', function () {
   this.updatedAt = Date.now();
-  next();
 });
 
 const AssessmentSubmission2 = mongoose.model('AssessmentSubmission2', assessmentSubmission2Schema);

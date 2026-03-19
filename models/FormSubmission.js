@@ -177,9 +177,8 @@ formSubmissionSchema.index({ isRegistered: 1, reminder30MinSent: 1, 'step3Data.s
 formSubmissionSchema.index({ utm_content: 1 });
 
 // Update updatedAt before saving
-formSubmissionSchema.pre('save', function(next) {
+formSubmissionSchema.pre('save', function() {
   this.updatedAt = Date.now();
-  next();
 });
 
 // Log collection name when model is created
