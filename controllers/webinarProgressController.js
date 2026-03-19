@@ -33,7 +33,26 @@ async function getWebinarUserFromToken(req) {
   }
 }
 
+const STATUS_RANK = { locked: 0, unlocked: 1, in_progress: 2, completed: 3 };
+const ALL_MODULE_IDS = ['intro', 's2', 'a1', 's3', 'a2', 's4', 'a3', 's5', 'a4', 's6', 'a5'];
+const TOTAL_MODULES = ALL_MODULE_IDS.length;
+
+function statusRankExpr(fieldPath) {
+  return {
+    $switch: {
+      branches: [
+        { case: { $eq: [fieldPath, 'completed'] }, then: 3 },
+        { case: { $eq: [fieldPath, 'in_progress'] }, then: 2 },
+        { case: { $eq: [fieldPath, 'unlocked'] }, then: 1 },
+      ],
+      default: 0,
+    },
+  };
+}
+
 // POST /api/webinar-progress/sync
+// Uses an aggregation-pipeline update so every merge operation happens
+// atomically inside MongoDB -- no read-then-write race.
 async function syncProgress(req, res) {
   try {
     const user = await getWebinarUserFromToken(req);
@@ -41,26 +60,92 @@ async function syncProgress(req, res) {
       return res.status(401).json({ success: false, message: 'Authentication required.' });
     }
 
-    const { completedModules, modules, lastActiveModule, overallPercent } = req.body || {};
+    const { completedModules, modules, lastActiveModule } = req.body || {};
+    const now = new Date();
 
-    const updateData = {
+    const stage1 = {
       fullName: user.fullName || '',
-      lastActivityAt: new Date(),
+      lastActivityAt: now,
     };
-    if (Array.isArray(completedModules)) updateData.completedModules = completedModules;
-    if (modules && typeof modules === 'object') {
-      updateData.modules = new Map(Object.entries(modules));
+
+    if (Array.isArray(completedModules)) {
+      stage1.completedModules = {
+        $setUnion: [{ $ifNull: ['$completedModules', []] }, completedModules],
+      };
     }
-    if (typeof lastActiveModule === 'string') updateData.lastActiveModule = lastActiveModule;
-    if (typeof overallPercent === 'number') updateData.overallPercent = Math.max(0, Math.min(100, overallPercent));
 
-    await WebinarProgress.findOneAndUpdate(
+    if (typeof lastActiveModule === 'string') {
+      stage1.lastActiveModule = lastActiveModule;
+    }
+
+    if (modules && typeof modules === 'object') {
+      for (const [moduleId, mod] of Object.entries(modules)) {
+        if (!mod || typeof mod !== 'object') continue;
+        const p = `modules.${moduleId}`;
+        const curStatus = { $ifNull: [`$${p}.status`, 'locked'] };
+
+        if (mod.status && STATUS_RANK[mod.status] != null) {
+          const incoming = STATUS_RANK[mod.status];
+          stage1[`${p}.status`] = {
+            $cond: {
+              if: { $gt: [incoming, statusRankExpr(curStatus)] },
+              then: mod.status,
+              else: curStatus,
+            },
+          };
+        }
+
+        if (typeof mod.progressPercent === 'number') {
+          stage1[`${p}.progressPercent`] = {
+            $max: [{ $ifNull: [`$${p}.progressPercent`, 0] }, mod.progressPercent],
+          };
+        }
+        if (typeof mod.watchedSeconds === 'number') {
+          stage1[`${p}.watchedSeconds`] = {
+            $max: [{ $ifNull: [`$${p}.watchedSeconds`, 0] }, mod.watchedSeconds],
+          };
+        }
+        if (typeof mod.maxWatchedSeconds === 'number') {
+          stage1[`${p}.maxWatchedSeconds`] = {
+            $max: [{ $ifNull: [`$${p}.maxWatchedSeconds`, 0] }, mod.maxWatchedSeconds],
+          };
+        }
+        if (mod.completedAt) {
+          stage1[`${p}.completedAt`] = {
+            $ifNull: [`$${p}.completedAt`, new Date(mod.completedAt)],
+          };
+        }
+        if (mod.unlockedAt) {
+          stage1[`${p}.unlockedAt`] = {
+            $ifNull: [`$${p}.unlockedAt`, new Date(mod.unlockedAt)],
+          };
+        }
+      }
+    }
+
+    const pipeline = [{ $set: stage1 }];
+
+    if (Array.isArray(completedModules)) {
+      pipeline.push({
+        $set: {
+          overallPercent: {
+            $round: [
+              { $multiply: [{ $divide: [{ $size: { $ifNull: ['$completedModules', []] } }, TOTAL_MODULES] }, 100] },
+              0,
+            ],
+          },
+        },
+      });
+    }
+
+    const updated = await WebinarProgress.findOneAndUpdate(
       { phone: user.phone },
-      { $set: updateData },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
+      pipeline,
+      { upsert: true, new: true, updatePipeline: true }
+    ).lean();
 
-    return res.status(200).json({ success: true, message: 'Progress synced.' });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).json({ success: true, data: updated });
   } catch (err) {
     console.error('[syncProgress]', err);
     return res.status(500).json({ success: false, message: 'Failed to sync progress.' });
@@ -76,6 +161,8 @@ async function getProgress(req, res) {
     }
 
     const doc = await WebinarProgress.findOne({ phone: user.phone }).lean();
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
     if (!doc) {
       return res.status(200).json({ success: true, data: null });
     }
@@ -237,6 +324,8 @@ async function adminProgressDetail(req, res) {
       return res.status(404).json({ success: false, message: 'No progress found for this user.' });
     }
 
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
     return res.status(200).json({ success: true, data: doc });
   } catch (err) {
     console.error('[adminProgressDetail]', err);
@@ -296,8 +385,6 @@ async function adminAssessmentDetail(req, res) {
   }
 }
 
-const ALL_MODULE_IDS = ['intro', 's2', 'a1', 's3', 'a2', 's4', 'a3', 's5', 'a4', 's6', 'a5'];
-
 // PATCH /api/admin/webinar-progress/:phone
 async function adminUpdateProgress(req, res) {
   try {
@@ -307,80 +394,66 @@ async function adminUpdateProgress(req, res) {
     }
 
     const { moduleUpdates, bulkAction } = req.body || {};
-
-    let doc = await WebinarProgress.findOne({ phone });
-    if (!doc) {
-      doc = new WebinarProgress({ phone, completedModules: [], modules: new Map() });
-    }
-
-    const completed = new Set(doc.completedModules || []);
     const now = new Date();
+
+    const existing = await WebinarProgress.findOne({ phone }).lean();
+    const completed = new Set(existing?.completedModules || []);
+    const $set = { lastActivityAt: now };
 
     if (bulkAction === 'complete_all') {
       for (const id of ALL_MODULE_IDS) {
         completed.add(id);
-        doc.modules.set(id, {
-          status: 'completed',
-          progressPercent: 100,
-          completedAt: now,
-          unlockedAt: now,
-          watchedSeconds: 0,
-          maxWatchedSeconds: 0,
-          score: null,
-          totalScore: null,
-        });
+        $set[`modules.${id}.status`] = 'completed';
+        $set[`modules.${id}.progressPercent`] = 100;
+        $set[`modules.${id}.completedAt`] = now;
+        $set[`modules.${id}.unlockedAt`] = now;
       }
     } else if (bulkAction === 'reset') {
       completed.clear();
       for (const id of ALL_MODULE_IDS) {
-        doc.modules.set(id, {
-          status: id === 'intro' ? 'unlocked' : 'locked',
-          progressPercent: 0,
-          completedAt: null,
-          unlockedAt: id === 'intro' ? now : null,
-          watchedSeconds: 0,
-          maxWatchedSeconds: 0,
-          score: null,
-          totalScore: null,
-        });
+        $set[`modules.${id}.status`] = id === 'intro' ? 'unlocked' : 'locked';
+        $set[`modules.${id}.progressPercent`] = 0;
+        $set[`modules.${id}.completedAt`] = null;
+        $set[`modules.${id}.unlockedAt`] = id === 'intro' ? now : null;
+        $set[`modules.${id}.watchedSeconds`] = 0;
+        $set[`modules.${id}.maxWatchedSeconds`] = 0;
+        $set[`modules.${id}.score`] = null;
+        $set[`modules.${id}.totalScore`] = null;
       }
     } else if (moduleUpdates && typeof moduleUpdates === 'object') {
       for (const [moduleId, action] of Object.entries(moduleUpdates)) {
         if (!ALL_MODULE_IDS.includes(moduleId)) continue;
-        const existing = doc.modules.get(moduleId) || {};
 
         if (action === 'complete') {
           completed.add(moduleId);
-          doc.modules.set(moduleId, {
-            ...existing,
-            status: 'completed',
-            progressPercent: 100,
-            completedAt: now,
-            unlockedAt: existing.unlockedAt || now,
-          });
+          $set[`modules.${moduleId}.status`] = 'completed';
+          $set[`modules.${moduleId}.progressPercent`] = 100;
+          $set[`modules.${moduleId}.completedAt`] = now;
+          const prev = existing?.modules?.[moduleId];
+          $set[`modules.${moduleId}.unlockedAt`] = prev?.unlockedAt || now;
         } else if (action === 'uncomplete') {
           completed.delete(moduleId);
-          doc.modules.set(moduleId, {
-            ...existing,
-            status: 'unlocked',
-            progressPercent: 0,
-            completedAt: null,
-          });
+          $set[`modules.${moduleId}.status`] = 'unlocked';
+          $set[`modules.${moduleId}.progressPercent`] = 0;
+          $set[`modules.${moduleId}.completedAt`] = null;
         }
       }
     } else {
       return res.status(400).json({ success: false, message: 'Provide moduleUpdates or bulkAction.' });
     }
 
-    doc.completedModules = Array.from(completed);
-    doc.overallPercent = Math.round((doc.completedModules.length / ALL_MODULE_IDS.length) * 100);
-    doc.lastActivityAt = now;
+    const completedArr = Array.from(completed);
+    $set.completedModules = completedArr;
+    $set.overallPercent = Math.round((completedArr.length / ALL_MODULE_IDS.length) * 100);
 
-    await doc.save();
+    const updated = await WebinarProgress.findOneAndUpdate(
+      { phone },
+      { $set },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
 
-    const lean = doc.toObject();
     res.setHeader('Cache-Control', 'no-store');
-    return res.status(200).json({ success: true, data: lean });
+    return res.status(200).json({ success: true, data: updated });
   } catch (err) {
     console.error('[adminUpdateProgress]', err);
     return res.status(500).json({ success: false, message: 'Failed to update progress.' });
