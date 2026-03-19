@@ -36,6 +36,7 @@ async function getWebinarUserFromToken(req) {
 async function syncProgress(req, res) {
   try {
     const user = await getWebinarUserFromToken(req);
+    console.log('[syncProgress] phone:', user.phone, 'body keys:', req.body ? Object.keys(req.body) : 'NO BODY');
     if (!user.phone) {
       return res.status(401).json({ success: false, message: 'Authentication required.' });
     }
