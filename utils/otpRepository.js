@@ -49,17 +49,23 @@ async function canSend(phone) {
 }
 
 /**
- * Save OTP (hashed) for a phone. Overwrites any existing OTP for that phone.
+ * Save OTP (hashed) for a phone. Uses atomic upsert to avoid race conditions
+ * where a delete succeeds but create fails, leaving no OTP record.
  */
 async function saveOtp(phone, otpHash, expiresAt) {
   const p = normalize(phone);
-  await OtpVerification.deleteMany({ phoneNumber: p });
-  await OtpVerification.create({
-    phoneNumber: p,
-    otpHash,
-    expiresAt: new Date(expiresAt),
-    attempts: 0
-  });
+  await OtpVerification.findOneAndUpdate(
+    { phoneNumber: p },
+    {
+      $set: {
+        otpHash,
+        expiresAt: new Date(expiresAt),
+        attempts: 0,
+        createdAt: new Date(),
+      },
+    },
+    { upsert: true, new: true }
+  );
 }
 
 /**

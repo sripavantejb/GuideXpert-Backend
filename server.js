@@ -56,6 +56,9 @@ if (!process.env.ADMIN_JWT_SECRET) {
 if (!process.env.COUNSELLOR_JWT_SECRET) {
   console.warn('[env] COUNSELLOR_JWT_SECRET is not set — counsellor login and /api/counsellor/students will return 500. Add it to .env');
 }
+if (!process.env.WEBINAR_JWT_SECRET && !process.env.COUNSELLOR_JWT_SECRET) {
+  console.warn('[env] WEBINAR_JWT_SECRET and COUNSELLOR_JWT_SECRET are both missing — webinar login will fail. Set at least one in .env / Vercel env vars.');
+}
 
 const allowedOrigins = [
   process.env.FRONTEND_URL,

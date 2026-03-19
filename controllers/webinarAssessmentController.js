@@ -7,7 +7,7 @@ const TrainingFormResponse = require('../models/TrainingFormResponse');
 const VALID_IDS = ['a1', 'a2', 'a3', 'a4', 'a5'];
 
 function getWebinarSecret() {
-  return process.env.WEBINAR_JWT_SECRET || process.env.COUNSELLOR_JWT_SECRET || '';
+  return process.env.WEBINAR_JWT_SECRET || process.env.COUNSELLOR_JWT_SECRET || process.env.JWT_SECRET || '';
 }
 
 /**

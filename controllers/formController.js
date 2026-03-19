@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const { generateOTP, hashOTP, verifyOTP } = require('../utils/otpUtil');
 const otpStore = require('../utils/otpStore');
 const otpRepository = require('../utils/otpRepository');
@@ -159,12 +160,21 @@ exports.sendOtp = async (req, res) => {
       });
     }
 
-    await otpRepository.saveOtp(p, hashed, expiresAt);
+    try {
+      await otpRepository.saveOtp(p, hashed, expiresAt);
+    } catch (saveErr) {
+      console.error('[sendOtp] Failed to save OTP for phone ending', p.slice(-4), saveErr.message);
+      return res.status(500).json({
+        success: false,
+        message: 'OTP was sent but could not be saved. Please request a new OTP in a minute.',
+      });
+    }
     if (process.env.NODE_ENV !== 'production') {
       console.log('[sendOtp] OTP saved for phone ending', p.slice(-4));
     }
     return res.status(200).json({ success: true, message: 'OTP sent successfully' });
-  } catch {
+  } catch (err) {
+    console.error('[sendOtp] Unexpected error:', err?.message || err);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
@@ -192,9 +202,12 @@ exports.verifyOtp = async (req, res) => {
       rec = await otpRepository.getLatest(p);
     }
     if (!rec) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.warn('[verifyOtp] No OTP found for phone ending', p.slice(-4));
-      }
+      await new Promise((r) => setTimeout(r, 2000));
+      rec = await otpRepository.getLatest(p);
+    }
+    if (!rec) {
+      console.warn('[verifyOtp] No OTP found after 3 attempts for phone ending', p.slice(-4),
+        '| DB state:', mongoose.connection.readyState);
       return res.status(400).json({
         success: false,
         message: 'No OTP found for this number. Request a new OTP and verify within a few minutes. Use the same number you used to request the OTP.',
@@ -283,8 +296,9 @@ exports.verifyOtp = async (req, res) => {
     // Webinar login: only grant access if phone is in training form submissions or responses (same 10-digit normalization as form save)
     const webinarLogin = req.body?.webinarLogin === true;
     if (webinarLogin) {
-      const webinarSecret = process.env.WEBINAR_JWT_SECRET || process.env.COUNSELLOR_JWT_SECRET || '';
+      const webinarSecret = process.env.WEBINAR_JWT_SECRET || process.env.COUNSELLOR_JWT_SECRET || process.env.JWT_SECRET || '';
       if (!webinarSecret || !String(webinarSecret).trim()) {
+        console.error('[verifyOtp] Webinar JWT secret missing. Set WEBINAR_JWT_SECRET or COUNSELLOR_JWT_SECRET or JWT_SECRET in env.');
         otpStore.removeVerified(p);
         return res.status(500).json({ success: false, message: 'Webinar login is not configured. Please contact support.' });
       }
