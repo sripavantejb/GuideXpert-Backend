@@ -41,11 +41,13 @@ const app = express();
 const requiredOtpEnv = ['MSG91_AUTH_KEY', 'MSG91_TEMPLATE_ID', 'OTP_SECRET'];
 const missing = requiredOtpEnv.filter((k) => !process.env[k] || !String(process.env[k]).trim());
 if (missing.length > 0) {
-  if (process.env.NODE_ENV === 'production') {
-    console.error('[FATAL] Missing required env for OTP:', missing.join(', '));
-    process.exit(1);
-  }
-  console.warn('[env] OTP not configured (dev):', missing.join(', '), '— SMS/OTP routes will fail until set in .env');
+  // Never crash the whole API for OTP-only env gaps.
+  // Keep non-OTP routes (blogs, health, etc.) available.
+  console.warn(
+    '[env] OTP not fully configured:',
+    missing.join(', '),
+    '— OTP/SMS routes may fail until env vars are set.'
+  );
 }
 const envStatus = {
   MSG91_AUTH_KEY: process.env.MSG91_AUTH_KEY ? `set (${process.env.MSG91_AUTH_KEY.length} chars)` : 'missing',
