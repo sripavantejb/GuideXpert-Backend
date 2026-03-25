@@ -146,6 +146,8 @@ app.use('/api', influencerRoutes);
 app.use('/blogs', blogRoutes);
 // Backward compatible alias (can be removed once all clients migrate)
 app.use('/api/blogs', blogRoutes);
+// Compatibility alias for misconfigured clients sending /api/api/blogs
+app.use('/api/api/blogs', blogRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/meeting', meetingRoutes);
 app.use('/api/training', trainingRoutes);
