@@ -101,12 +101,14 @@ app.use(express.urlencoded({ extended: true }));
 // Ensure MongoDB is connected before handling requests (Vercel serverless cold start)
 let dbConnectPromise = null;
 app.use(async (req, res, next) => {
+  if (req.path === '/api/health') return next();
   if (mongoose.connection.readyState === 1) return next();
   if (!dbConnectPromise) dbConnectPromise = connectDB();
   try {
     await dbConnectPromise;
     next();
   } catch (err) {
+    dbConnectPromise = null;
     console.error('[ensureDB]', err?.message || err);
     next(err);
   }

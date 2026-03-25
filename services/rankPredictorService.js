@@ -26,111 +26,119 @@ function loadTsExports(relativeFile) {
   return sandbox.module.exports;
 }
 
-const { apEamcetPredictedRanks2025 } = loadTsExports('apEamcetPrecitedRanks.ts');
-const { jeeAdvancePredictedRanks2025 } = loadTsExports('jeeAdvanceRankPredictorRanks.ts');
-const { jeeMainPercentilePredictedRanks } = loadTsExports('jeeMainPercentilePredictorRanks.ts');
-const { jeeMainPredictedRanks } = loadTsExports('jeeMainRankPredictorRanks.ts');
-const { kcet2025PredictedRanks } = loadTsExports('kcetPredictedRanks.ts');
-const { keam2025PredictedRank } = loadTsExports('keamPredictedRank.ts');
-const { mhtcetPredictedRanks2025 } = loadTsExports('mhtcetPredictedRanks.ts');
-const { tneaPredictedRanks2025 } = loadTsExports('tneaPredictedRanks.ts');
-const { tsEamcet2025PredictedRanks } = loadTsExports('tsEamcet2023PredictedRanks.ts');
-const { wbJeeRankPredictorRanks2025 } = loadTsExports('wbJeeRankPredictorRanks.ts');
+let examsCache = null;
 
-const EXAMS = {
-  apeamcet: {
-    id: 'apeamcet',
-    name: 'AP EAMCET',
-    minScore: 0,
-    maxScore: 100,
-    mode: 'range-table',
-    data: apEamcetPredictedRanks2025,
-    metricLabel: 'Predicted Rank',
-  },
-  jeeadvanced: {
-    id: 'jeeadvanced',
-    name: 'JEE Advanced',
-    minScore: 0,
-    maxScore: 360,
-    mode: 'range-table',
-    data: jeeAdvancePredictedRanks2025,
-    metricLabel: 'Predicted Rank',
-  },
-  jeemainpercentile: {
-    id: 'jeemainpercentile',
-    name: 'JEE Main Percentile',
-    minScore: -40,
-    maxScore: 300,
-    mode: 'range-table',
-    data: jeeMainPercentilePredictedRanks,
-    metricLabel: 'Estimated Percentile',
-  },
-  jeemainmarks: {
-    id: 'jeemainmarks',
-    name: 'JEE Main Rank (Score Table)',
-    minScore: 0,
-    maxScore: 100,
-    mode: 'range-table',
-    data: jeeMainPredictedRanks,
-    metricLabel: 'Predicted Rank',
-  },
-  kcet: {
-    id: 'kcet',
-    name: 'KCET',
-    minScore: 0,
-    maxScore: 100,
-    mode: 'range-table',
-    data: kcet2025PredictedRanks,
-    metricLabel: 'Predicted Rank',
-  },
-  keam: {
-    id: 'keam',
-    name: 'KEAM',
-    minScore: 0,
-    maxScore: 600,
-    mode: 'range-table',
-    data: keam2025PredictedRank,
-    metricLabel: 'Predicted Rank',
-  },
-  mhcet: {
-    id: 'mhcet',
-    name: 'MHT CET',
-    minScore: 0,
-    maxScore: 200,
-    mode: 'difficulty-map',
-    data: mhtcetPredictedRanks2025,
-    requiredOption: 'difficulty',
-    options: ['Easy', 'Moderate', 'Difficult'],
-    metricLabel: 'Estimated Percentile',
-  },
-  tnea: {
-    id: 'tnea',
-    name: 'TNEA',
-    minScore: 0,
-    maxScore: 200,
-    mode: 'range-table',
-    data: tneaPredictedRanks2025,
-    metricLabel: 'Predicted Rank',
-  },
-  tseamcet: {
-    id: 'tseamcet',
-    name: 'TS EAMCET',
-    minScore: 0,
-    maxScore: 160,
-    mode: 'range-table',
-    data: tsEamcet2025PredictedRanks,
-    metricLabel: 'Predicted Rank',
-  },
-  wbjee: {
-    id: 'wbjee',
-    name: 'WBJEE',
-    minScore: 0,
-    maxScore: 200,
-    mode: 'range-table',
-    data: wbJeeRankPredictorRanks2025,
-    metricLabel: 'Predicted Rank',
-  },
-};
+function getExams() {
+  if (examsCache) return examsCache;
+
+  const { apEamcetPredictedRanks2025 } = loadTsExports('apEamcetPrecitedRanks.ts');
+  const { jeeAdvancePredictedRanks2025 } = loadTsExports('jeeAdvanceRankPredictorRanks.ts');
+  const { jeeMainPercentilePredictedRanks } = loadTsExports('jeeMainPercentilePredictorRanks.ts');
+  const { jeeMainPredictedRanks } = loadTsExports('jeeMainRankPredictorRanks.ts');
+  const { kcet2025PredictedRanks } = loadTsExports('kcetPredictedRanks.ts');
+  const { keam2025PredictedRank } = loadTsExports('keamPredictedRank.ts');
+  const { mhtcetPredictedRanks2025 } = loadTsExports('mhtcetPredictedRanks.ts');
+  const { tneaPredictedRanks2025 } = loadTsExports('tneaPredictedRanks.ts');
+  const { tsEamcet2025PredictedRanks } = loadTsExports('tsEamcet2023PredictedRanks.ts');
+  const { wbJeeRankPredictorRanks2025 } = loadTsExports('wbJeeRankPredictorRanks.ts');
+
+  examsCache = {
+    apeamcet: {
+      id: 'apeamcet',
+      name: 'AP EAMCET',
+      minScore: 0,
+      maxScore: 100,
+      mode: 'range-table',
+      data: apEamcetPredictedRanks2025,
+      metricLabel: 'Predicted Rank',
+    },
+    jeeadvanced: {
+      id: 'jeeadvanced',
+      name: 'JEE Advanced',
+      minScore: 0,
+      maxScore: 360,
+      mode: 'range-table',
+      data: jeeAdvancePredictedRanks2025,
+      metricLabel: 'Predicted Rank',
+    },
+    jeemainpercentile: {
+      id: 'jeemainpercentile',
+      name: 'JEE Main Percentile',
+      minScore: -40,
+      maxScore: 300,
+      mode: 'range-table',
+      data: jeeMainPercentilePredictedRanks,
+      metricLabel: 'Estimated Percentile',
+    },
+    jeemainmarks: {
+      id: 'jeemainmarks',
+      name: 'JEE Main Rank (Score Table)',
+      minScore: 0,
+      maxScore: 100,
+      mode: 'range-table',
+      data: jeeMainPredictedRanks,
+      metricLabel: 'Predicted Rank',
+    },
+    kcet: {
+      id: 'kcet',
+      name: 'KCET',
+      minScore: 0,
+      maxScore: 100,
+      mode: 'range-table',
+      data: kcet2025PredictedRanks,
+      metricLabel: 'Predicted Rank',
+    },
+    keam: {
+      id: 'keam',
+      name: 'KEAM',
+      minScore: 0,
+      maxScore: 600,
+      mode: 'range-table',
+      data: keam2025PredictedRank,
+      metricLabel: 'Predicted Rank',
+    },
+    mhcet: {
+      id: 'mhcet',
+      name: 'MHT CET',
+      minScore: 0,
+      maxScore: 200,
+      mode: 'difficulty-map',
+      data: mhtcetPredictedRanks2025,
+      requiredOption: 'difficulty',
+      options: ['Easy', 'Moderate', 'Difficult'],
+      metricLabel: 'Estimated Percentile',
+    },
+    tnea: {
+      id: 'tnea',
+      name: 'TNEA',
+      minScore: 0,
+      maxScore: 200,
+      mode: 'range-table',
+      data: tneaPredictedRanks2025,
+      metricLabel: 'Predicted Rank',
+    },
+    tseamcet: {
+      id: 'tseamcet',
+      name: 'TS EAMCET',
+      minScore: 0,
+      maxScore: 160,
+      mode: 'range-table',
+      data: tsEamcet2025PredictedRanks,
+      metricLabel: 'Predicted Rank',
+    },
+    wbjee: {
+      id: 'wbjee',
+      name: 'WBJEE',
+      minScore: 0,
+      maxScore: 200,
+      mode: 'range-table',
+      data: wbJeeRankPredictorRanks2025,
+      metricLabel: 'Predicted Rank',
+    },
+  };
+
+  return examsCache;
+}
 
 function predictorError(status, code, message, details = null) {
   const err = new Error(message);
@@ -145,6 +153,7 @@ function predictFromRangeTable(data, score) {
 }
 
 function predictRank({ examId, score, options = {} }) {
+  const EXAMS = getExams();
   const exam = EXAMS[examId];
   if (!exam) {
     throw predictorError(400, 'INVALID_EXAM_ID', 'Unsupported exam selected.');
@@ -205,6 +214,7 @@ function predictRank({ examId, score, options = {} }) {
 }
 
 function listExams() {
+  const EXAMS = getExams();
   return Object.values(EXAMS).map((exam) => ({
     id: exam.id,
     name: exam.name,
