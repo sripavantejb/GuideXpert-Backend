@@ -179,7 +179,9 @@ const startServer = async () => {
   }
 };
 
-if (process.env.VERCEL !== '1') {
+// Start HTTP listener only when this file is executed directly (local/dev).
+// In serverless runtimes (e.g., Vercel), the platform imports this module.
+if (require.main === module) {
   startServer();
 }
 
