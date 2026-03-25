@@ -47,6 +47,18 @@ npm run dev
 
 Backend optional env: `REGISTRATION_BASE_URL` — base URL for generated UTM links (default: `https://guidexpert.co.in/register`).
 
+### Blogs (public read; admin write requires `Authorization: Bearer <admin token>`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/blogs | List blogs (newest first). Optional query: `limit`. |
+| GET | /api/blogs/:id | Single blog by MongoDB id. |
+| POST | /api/admin/blogs | Create blog (body: title, subtitle, category, coverImage, content, author?). |
+| PUT | /api/admin/blogs/:id | Update blog. |
+| DELETE | /api/admin/blogs/:id | Delete blog. |
+
+Seed sample articles (only if collection is empty): `npm run seed:blogs`
+
 ## Security
 
 - OTP hashed with HMAC-SHA256 (`OTP_SECRET`), never stored in plain text.

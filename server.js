@@ -24,6 +24,7 @@ const posterRoutes = require('./routes/posterRoutes');
 const studentRoutes = require('./routes/studentRoutes');
 const collegePredictorRoutes = require('./routes/collegePredictorRoutes');
 const collegePredictorPublicRoutes = require('./routes/collegePredictorPublicRoutes');
+const rankPredictorPublicRoutes = require('./routes/rankPredictorPublicRoutes');
 const counsellorAssessmentRoutes = require('./routes/counsellorAssessmentRoutes');
 const assessmentCareerDnaRoutes = require('./routes/assessmentCareerDnaRoutes');
 const assessmentCourseFitRoutes = require('./routes/assessmentCourseFitRoutes');
@@ -31,6 +32,7 @@ const announcementRoutes = require('./routes/announcementRoutes');
 const certificateRoutes = require('./routes/certificateRoutes');
 const webinarAssessmentRoutes = require('./routes/webinarAssessmentRoutes');
 const webinarProgressRoutes = require('./routes/webinarProgressRoutes');
+const blogRoutes = require('./routes/blogRoutes');
 const { configStatus: counsellorConfigStatus } = require('./controllers/counsellorAuthController');
 
 const app = express();
@@ -110,6 +112,8 @@ app.use(async (req, res, next) => {
 
 // Public college predictor (no auth) — mount before counsellor routes
 app.use('/api/college-predictor', collegePredictorPublicRoutes);
+// Public rank predictor (strict dataset lookup)
+app.use('/api/rank-predictor', rankPredictorPublicRoutes);
 // Mount more specific paths first so /api/counsellor/students is never handled by generic /api
 app.use('/api/counsellor/students', studentRoutes);
 app.use('/api/counsellor/announcements', announcementRoutes);
@@ -128,6 +132,10 @@ app.use('/api/assessment-5', assessment5Routes);
 app.use('/api/assessment-career-dna', assessmentCareerDnaRoutes);
 app.use('/api/assessment-course-fit', assessmentCourseFitRoutes);
 app.use('/api', influencerRoutes);
+// Blogs API (public read, admin-protected writes)
+app.use('/blogs', blogRoutes);
+// Backward compatible alias (can be removed once all clients migrate)
+app.use('/api/blogs', blogRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/meeting', meetingRoutes);
 app.use('/api/training', trainingRoutes);

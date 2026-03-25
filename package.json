@@ -9,6 +9,7 @@
     "seed": "node scripts/seed.js",
     "seed:admin": "node scripts/seedAdmin.js",
     "seed:training-form": "node scripts/seedTrainingFormResponses.js",
+    "seed:blogs": "node scripts/seedBlogs.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
