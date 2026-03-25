@@ -100,8 +100,14 @@ app.use(express.urlencoded({ extended: true }));
 
 // Ensure MongoDB is connected before handling requests (Vercel serverless cold start)
 let dbConnectPromise = null;
+function shouldBypassDbGate(req) {
+  if (req.path === '/api/health') return true;
+  if (req.method !== 'GET') return false;
+  return /^\/(?:api\/)?blogs(?:\/[^/]+)?\/?$/.test(req.path);
+}
+
 app.use(async (req, res, next) => {
-  if (req.path === '/api/health') return next();
+  if (shouldBypassDbGate(req)) return next();
   if (mongoose.connection.readyState === 1) return next();
   if (!dbConnectPromise) dbConnectPromise = connectDB();
   try {

@@ -9,6 +9,17 @@ function hasContentJson(doc) {
   return doc && typeof doc === 'object' && doc.type === 'doc' && Array.isArray(doc.content);
 }
 
+function isDbUnavailable(err) {
+  const msg = String(err?.message || '').toLowerCase();
+  return (
+    err?.name === 'MongooseServerSelectionError' ||
+    msg.includes('buffering timed out') ||
+    msg.includes('client must be connected') ||
+    msg.includes('not connected') ||
+    msg.includes('connection')
+  );
+}
+
 function normalizeIncomingContent(body = {}) {
   const contentJson = body.contentJson ?? null;
   const contentHtml = body.contentHtml != null ? String(body.contentHtml) : '';
@@ -34,6 +45,13 @@ async function listBlogs(req, res) {
     const blogs = await query.exec();
     res.json({ success: true, data: blogs });
   } catch (err) {
+    if (isDbUnavailable(err)) {
+      return res.json({
+        success: true,
+        data: [],
+        message: 'Blogs are temporarily unavailable. Please try again shortly.',
+      });
+    }
     console.error('[listBlogs]', err);
     res.status(500).json({ success: false, message: 'Failed to load blogs' });
   }
@@ -54,6 +72,12 @@ async function getBlogById(req, res) {
     }
     res.json({ success: true, data: blog });
   } catch (err) {
+    if (isDbUnavailable(err)) {
+      return res.status(503).json({
+        success: false,
+        message: 'Blog service is temporarily unavailable. Please try again shortly.',
+      });
+    }
     console.error('[getBlogById]', err);
     res.status(500).json({ success: false, message: 'Failed to load blog' });
   }
