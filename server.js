@@ -72,9 +72,16 @@ const allowedOrigins = [
 if (allowedOrigins.length === 0) allowedOrigins.push('https://guidexpert.co.in');
 // Allow any Vercel preview/production frontend (*.vercel.app)
 const vercelOriginRegex = /^https:\/\/[a-z0-9-]+(-[a-z0-9-]+)*\.vercel\.app$/;
+// Any localhost / 127.0.0.1 port (Vite may use 5173, 5174, etc.)
+const localhostDevOriginRegex = /^http:\/\/(localhost|127\.0\.0\.1):\d+$/;
 app.use(cors({
   origin: function(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin) || vercelOriginRegex.test(origin)) {
+    if (
+      !origin ||
+      allowedOrigins.includes(origin) ||
+      vercelOriginRegex.test(origin) ||
+      localhostDevOriginRegex.test(origin)
+    ) {
       return callback(null, origin || allowedOrigins[0]);
     }
     return callback(null, false);
