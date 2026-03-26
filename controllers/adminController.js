@@ -509,6 +509,8 @@ exports.getAdminLeads = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(5000, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const fromStr = (req.query.from || '').trim();
+    const toStr = (req.query.to || '').trim();
     const applicationStatus = req.query.applicationStatus; // in_progress | registered | completed
     const otpVerified = req.query.otpVerified; // true | false (string)
     const slotBooked = req.query.slotBooked; // true | false (string)
@@ -517,6 +519,26 @@ exports.getAdminLeads = async (req, res) => {
     const utm_content = (req.query.utm_content || '').trim();
 
     const andConditions = [];
+    const fromDate = fromStr ? new Date(`${fromStr}T00:00:00.000Z`) : null;
+    const toDate = toStr ? new Date(`${toStr}T23:59:59.999Z`) : null;
+    const fromValid = !fromStr || !Number.isNaN(fromDate?.getTime());
+    const toValid = !toStr || !Number.isNaN(toDate?.getTime());
+
+    if (!fromValid) {
+      return res.status(400).json({ success: false, message: 'Invalid from date. Expected YYYY-MM-DD.' });
+    }
+    if (!toValid) {
+      return res.status(400).json({ success: false, message: 'Invalid to date. Expected YYYY-MM-DD.' });
+    }
+    if (fromDate && toDate && fromDate > toDate) {
+      return res.status(400).json({ success: false, message: 'from date must be before or equal to to date.' });
+    }
+    if (fromDate || toDate) {
+      const createdAt = {};
+      if (fromDate) createdAt.$gte = fromDate;
+      if (toDate) createdAt.$lte = toDate;
+      andConditions.push({ createdAt });
+    }
 
     if (utm_content) {
       andConditions.push({ utm_content });
