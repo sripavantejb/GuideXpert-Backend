@@ -485,7 +485,7 @@ exports.exportLeads = async (req, res) => {
     }
 
     const andConditions = [];
-    if (from || to) {
+    if ((from || to) && !slotDateStr) {
       const createdAt = {};
       if (from) createdAt.$gte = from;
       if (to) createdAt.$lte = to;
@@ -575,6 +575,7 @@ exports.getAdminLeads = async (req, res) => {
     const otpVerified = req.query.otpVerified; // true | false (string)
     const slotBooked = req.query.slotBooked; // true | false (string)
     const selectedSlot = (req.query.selectedSlot || '').trim();
+    const slotDateRaw = (req.query.slotDate || '').trim();
     const q = (req.query.q || '').trim();
     const utm_content = (req.query.utm_content || '').trim();
 
@@ -593,7 +594,8 @@ exports.getAdminLeads = async (req, res) => {
     if (fromDate && toDate && fromDate > toDate) {
       return res.status(400).json({ success: false, message: 'from date must be before or equal to to date.' });
     }
-    if (fromDate || toDate) {
+    // Slot-date lists match /admin/slots/booking-counts: use IST slot day only, not lead createdAt range.
+    if ((fromDate || toDate) && !slotDateRaw) {
       const createdAt = {};
       if (fromDate) createdAt.$gte = fromDate;
       if (toDate) createdAt.$lte = toDate;
@@ -629,7 +631,6 @@ exports.getAdminLeads = async (req, res) => {
         $or: [{ 'step3Data.selectedSlot': selectedSlot }, { selectedSlot: selectedSlot }]
       });
     }
-    const slotDateRaw = (req.query.slotDate || '').trim();
     if (slotDateRaw) {
       const istDayRange = getISTDayRangeFromString(slotDateRaw);
       if (!istDayRange) {
@@ -683,7 +684,7 @@ exports.getAdminLeads = async (req, res) => {
 
     const filter = andConditions.length > 0 ? { $and: andConditions } : {};
 
-    console.log('[getAdminLeads] Query params:', { page, limit, slotDate, slotBooked, selectedSlot });
+    console.log('[getAdminLeads] Query params:', { page, limit, slotDate: slotDateRaw, slotBooked, selectedSlot });
     console.log('[getAdminLeads] Filter:', JSON.stringify(filter, null, 2));
 
     const skip = (page - 1) * limit;
