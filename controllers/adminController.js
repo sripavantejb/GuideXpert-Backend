@@ -469,23 +469,54 @@ function escapeCsvCell(val) {
 
 exports.exportLeads = async (req, res) => {
   try {
-    const from = req.query.from ? new Date(req.query.from) : null;
-    const to = req.query.to ? new Date(req.query.to) : null;
-    const selectedSlot = (req.query.selectedSlot || '').trim();
-    const utm_content = (req.query.utm_content || '').trim();
+    const fromStr = (req.query.from || '').trim();
+    const toStr = (req.query.to || '').trim();
+    const from = fromStr ? new Date(`${fromStr}T00:00:00.000Z`) : null;
+    const to = toStr ? new Date(`${toStr}T23:59:59.999Z`) : null;
+    const selectedSlot = (req.query.selectedSlot || req.query.slot || '').trim();
+    const utm_content = (req.query.utm_content || req.query.utm || '').trim();
+    const slotDateStr = (req.query.slotDate || '').trim();
 
-    const filter = {};
+    if (fromStr && Number.isNaN(from?.getTime())) {
+      return res.status(400).json({ success: false, message: 'Invalid from date. Expected YYYY-MM-DD.' });
+    }
+    if (toStr && Number.isNaN(to?.getTime())) {
+      return res.status(400).json({ success: false, message: 'Invalid to date. Expected YYYY-MM-DD.' });
+    }
+
+    const andConditions = [];
     if (from || to) {
-      filter.createdAt = {};
-      if (from) filter.createdAt.$gte = from;
-      if (to) filter.createdAt.$lte = to;
+      const createdAt = {};
+      if (from) createdAt.$gte = from;
+      if (to) createdAt.$lte = to;
+      andConditions.push({ createdAt });
     }
     if (selectedSlot && ALL_SLOT_IDS.includes(selectedSlot)) {
-      filter.$or = [{ 'step3Data.selectedSlot': selectedSlot }, { selectedSlot: selectedSlot }];
+      andConditions.push({
+        $or: [{ 'step3Data.selectedSlot': selectedSlot }, { selectedSlot: selectedSlot }]
+      });
     }
     if (utm_content) {
-      filter.utm_content = utm_content;
+      andConditions.push({ utm_content });
     }
+    if (slotDateStr) {
+      const istDayRange = getISTDayRangeFromString(slotDateStr);
+      if (!istDayRange) {
+        return res.status(400).json({ success: false, message: 'Invalid slotDate. Expected YYYY-MM-DD.' });
+      }
+      const { start, end } = istDayRange;
+      andConditions.push({
+        'step3Data.slotDate': { $gte: start, $lt: end }
+      });
+      andConditions.push({
+        $or: [
+          { 'step3Data.selectedSlot': { $exists: true, $nin: [null, ''] } },
+          { selectedSlot: { $exists: true, $nin: [null, ''] } }
+        ]
+      });
+    }
+
+    const filter = andConditions.length > 0 ? { $and: andConditions } : {};
 
     const submissions = await FormSubmission.find(filter).sort({ createdAt: -1 }).lean();
     const rows = submissions.map((sub) => {
@@ -598,11 +629,14 @@ exports.getAdminLeads = async (req, res) => {
         $or: [{ 'step3Data.selectedSlot': selectedSlot }, { selectedSlot: selectedSlot }]
       });
     }
-    const slotDate = (req.query.slotDate || '').trim();
-    const istDayRange = getISTDayRangeFromString(slotDate);
-    if (istDayRange) {
+    const slotDateRaw = (req.query.slotDate || '').trim();
+    if (slotDateRaw) {
+      const istDayRange = getISTDayRangeFromString(slotDateRaw);
+      if (!istDayRange) {
+        return res.status(400).json({ success: false, message: 'Invalid slotDate. Expected YYYY-MM-DD.' });
+      }
       const { start, end } = istDayRange;
-      console.log('[getAdminLeads] Date filter:', { slotDate, start: start.toISOString(), end: end.toISOString() });
+      console.log('[getAdminLeads] Date filter:', { slotDate: slotDateRaw, start: start.toISOString(), end: end.toISOString() });
       // Only show leads with a slot booked on this specific date (IST calendar day)
       andConditions.push({
         'step3Data.slotDate': { $gte: start, $lt: end }
