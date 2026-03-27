@@ -309,14 +309,12 @@ function buildStatsDateFilter(fromStr, toStr) {
   const toDate = toStr ? new Date(toStr + 'T23:59:59.999Z') : null;
   const fromValid = fromDate && !Number.isNaN(fromDate.getTime());
   const toValid = toDate && !Number.isNaN(toDate.getTime());
-  if (fromValid && toValid) {
-    return { createdAt: { $gte: fromDate, $lte: toDate } };
-  }
-  const defaultTo = new Date();
-  defaultTo.setUTCHours(23, 59, 59, 999);
-  const defaultFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  defaultFrom.setUTCHours(0, 0, 0, 0);
-  return { createdAt: { $gte: defaultFrom, $lte: defaultTo } };
+  if (!fromValid && !toValid) return {};
+
+  const createdAt = {};
+  if (fromValid) createdAt.$gte = fromDate;
+  if (toValid) createdAt.$lte = toDate;
+  return { createdAt };
 }
 
 exports.getAdminStats = async (req, res) => {
