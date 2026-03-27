@@ -37,6 +37,125 @@ const STATUS_RANK = { locked: 0, unlocked: 1, in_progress: 2, completed: 3 };
 const ALL_MODULE_IDS = ['intro', 's2', 'a1', 's3', 'a2', 's4', 'a3', 's5', 'a4', 's6', 'a5'];
 const TOTAL_MODULES = ALL_MODULE_IDS.length;
 
+/** Display titles aligned with frontend mockWebinarData (for lastActivityEvent.moduleTitle). */
+const MODULE_TITLES = {
+  intro: 'Introduction to GuideXpert Counsellor training program',
+  s2: 'Introduction to GuideXpert Counselling & Core Principles',
+  a1: 'Assessment 1',
+  s3: 'Mastering Counselling: Objection Handling & Communication Skills',
+  a2: 'Assessment 2',
+  s4: 'Lead Generation Methods & Strategies for Career Counsellors',
+  a3: 'Assessment 3',
+  s5: 'How to Position Yourself as a Trusted Career Counsellor',
+  a4: 'Assessment 4',
+  s6: 'GuideXpert Portal, Tools & Referral Process',
+  a5: 'Assessment 5',
+};
+
+function isAssessmentModuleId(id) {
+  return typeof id === 'string' && /^a\d+$/.test(id);
+}
+
+function pickPreferredModuleId(candidates, lastActiveModule) {
+  if (!candidates.length) return null;
+  if (typeof lastActiveModule === 'string' && candidates.includes(lastActiveModule)) return lastActiveModule;
+  let best = candidates[0];
+  let bestIdx = ALL_MODULE_IDS.indexOf(best);
+  for (let i = 1; i < candidates.length; i += 1) {
+    const id = candidates[i];
+    const idx = ALL_MODULE_IDS.indexOf(id);
+    if (idx > bestIdx) {
+      best = id;
+      bestIdx = idx;
+    }
+  }
+  return best;
+}
+
+/**
+ * Infer a compact last activity snapshot from the sync body.
+ * Priority: assessment completed → session/video completed → in-progress video → active module focus → generic.
+ */
+function deriveLastActivityEvent({ completedModules, modules, lastActiveModule, now }) {
+  const at = now;
+  const title = (id) => (id && MODULE_TITLES[id]) || id || 'Module';
+
+  if (modules && typeof modules === 'object') {
+    const completedIds = Object.entries(modules)
+      .filter(([, mod]) => mod && mod.status === 'completed')
+      .map(([id]) => id);
+
+    const assessmentDone = completedIds.filter(isAssessmentModuleId);
+    const sessionDone = completedIds.filter((id) => !isAssessmentModuleId(id));
+
+    if (assessmentDone.length) {
+      const id = pickPreferredModuleId(assessmentDone, lastActiveModule);
+      return {
+        type: 'assessment_completed',
+        moduleId: id,
+        moduleTitle: title(id),
+        progressPercent: 100,
+        watchedSeconds: null,
+        at,
+      };
+    }
+    if (sessionDone.length) {
+      const id = pickPreferredModuleId(sessionDone, lastActiveModule);
+      return {
+        type: 'video_completed',
+        moduleId: id,
+        moduleTitle: title(id),
+        progressPercent: 100,
+        watchedSeconds: null,
+        at,
+      };
+    }
+
+    for (const id of ALL_MODULE_IDS) {
+      const mod = modules[id];
+      if (!mod || mod.status !== 'in_progress') continue;
+      if (isAssessmentModuleId(id)) continue;
+      const ws = typeof mod.watchedSeconds === 'number' ? mod.watchedSeconds : 0;
+      const pp = typeof mod.progressPercent === 'number' ? mod.progressPercent : 0;
+      if (ws > 0 || pp > 0) {
+        return {
+          type: 'video_progress',
+          moduleId: id,
+          moduleTitle: title(id),
+          watchedSeconds: ws,
+          progressPercent: Math.round(pp),
+          at,
+        };
+      }
+    }
+  }
+
+  if (typeof lastActiveModule === 'string' && ALL_MODULE_IDS.includes(lastActiveModule)) {
+    return {
+      type: 'module_unlocked',
+      moduleId: lastActiveModule,
+      moduleTitle: title(lastActiveModule),
+      watchedSeconds: null,
+      progressPercent: null,
+      at,
+    };
+  }
+
+  const fallbackId =
+    Array.isArray(completedModules) && completedModules.length
+      ? pickPreferredModuleId(completedModules.filter((id) => ALL_MODULE_IDS.includes(id)), lastActiveModule)
+      : null;
+
+  return {
+    type: 'resume_seek',
+    moduleId: fallbackId,
+    moduleTitle: fallbackId ? title(fallbackId) : 'Training',
+    watchedSeconds: null,
+    progressPercent: null,
+    at,
+  };
+}
+
 function statusRankExpr(fieldPath) {
   return {
     $switch: {
@@ -62,10 +181,17 @@ async function syncProgress(req, res) {
 
     const { completedModules, modules, lastActiveModule } = req.body || {};
     const now = new Date();
+    const lastActivityEvent = deriveLastActivityEvent({
+      completedModules,
+      modules,
+      lastActiveModule,
+      now,
+    });
 
     const stage1 = {
       fullName: user.fullName || '',
       lastActivityAt: now,
+      lastActivityEvent,
     };
 
     if (Array.isArray(completedModules)) {

@@ -18,6 +18,23 @@ const moduleProgressSchema = new mongoose.Schema(
   { _id: false }
 );
 
+/** Compact snapshot for Last Activity UI (overwrite-only). */
+const lastActivityEventSchema = new mongoose.Schema(
+  {
+    type: {
+      type: String,
+      enum: ['video_progress', 'video_completed', 'assessment_completed', 'module_unlocked', 'resume_seek'],
+      default: 'resume_seek',
+    },
+    moduleId: { type: String, default: null },
+    moduleTitle: { type: String, default: '' },
+    watchedSeconds: { type: Number, default: null },
+    progressPercent: { type: Number, default: null },
+    at: { type: Date, default: Date.now },
+  },
+  { _id: false }
+);
+
 const webinarProgressSchema = new mongoose.Schema(
   {
     phone: {
@@ -36,6 +53,7 @@ const webinarProgressSchema = new mongoose.Schema(
     },
     lastActiveModule: { type: String, default: null },
     lastActivityAt: { type: Date, default: Date.now },
+    lastActivityEvent: { type: lastActivityEventSchema, default: null },
     certificateDownloadedAt: { type: Date, default: null },
   },
   { timestamps: true }
