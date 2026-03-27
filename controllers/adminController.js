@@ -44,6 +44,35 @@ const SLOT_BOOKED_CONDITION = {
   ]
 };
 
+/** Normalized 10-digit phones from meeting attendance (aligns with getAdminStats demo attended). */
+async function getMeetingAttendeePhones10() {
+  const raw = await MeetingAttendance.distinct('mobileNumber');
+  return [...new Set((raw || []).map(normalizePhoneTo10).filter(Boolean))];
+}
+
+/** Union of phones with any assessment 1–3 submission (aligns with getAdminStats assessment written). */
+async function getAssessmentPhones10() {
+  const [a1, a2, a3] = await Promise.all([
+    AssessmentSubmission.distinct('phone'),
+    AssessmentSubmission2.distinct('phone'),
+    AssessmentSubmission3.distinct('phone'),
+  ]);
+  return [...new Set([...(a1 || []), ...(a2 || []), ...(a3 || [])].map(normalizePhoneTo10).filter(Boolean))];
+}
+
+/** Union of TrainingFeedback mobile + whatsapp (aligns with getAdminStats activation form completed). */
+async function getActivationPhones10() {
+  const [m, w] = await Promise.all([
+    TrainingFeedback.distinct('mobileNumber'),
+    TrainingFeedback.distinct('whatsappNumber'),
+  ]);
+  return [...new Set([...(m || []), ...(w || [])].map(normalizePhoneTo10).filter(Boolean))];
+}
+
+function intersectSortedPhones(attendeePhones, allowedSet) {
+  return attendeePhones.filter((p) => allowedSet.has(p));
+}
+
 const DAY_NAMES = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 
 function formatSlotLabelForDisplay(slotId) {
@@ -595,6 +624,27 @@ exports.getAdminLeads = async (req, res) => {
           { email: { $regex: safe, $options: 'i' } }
         ]
       });
+    }
+
+    const demoAttendedFlag = req.query.demoAttended === 'true';
+    const assessmentWrittenFlag = req.query.assessmentWritten === 'true';
+    const activationCompletedFlag = req.query.activationCompleted === 'true';
+
+    if (activationCompletedFlag || assessmentWrittenFlag || demoAttendedFlag) {
+      andConditions.push(SLOT_BOOKED_CONDITION);
+      const attendeePhones = await getMeetingAttendeePhones10();
+      let phones = attendeePhones;
+      if (assessmentWrittenFlag || activationCompletedFlag) {
+        const assessmentList = await getAssessmentPhones10();
+        const assessmentSet = new Set(assessmentList);
+        phones = intersectSortedPhones(attendeePhones, assessmentSet);
+      }
+      if (activationCompletedFlag) {
+        const activationList = await getActivationPhones10();
+        const activationSet = new Set(activationList);
+        phones = phones.filter((p) => activationSet.has(p));
+      }
+      andConditions.push(phones.length === 0 ? { phone: { $in: [] } } : { phone: { $in: phones } });
     }
 
     const filter = andConditions.length > 0 ? { $and: andConditions } : {};
