@@ -1,5 +1,4 @@
 const TrainingFeedback = require('../models/TrainingFeedback');
-const AssessmentSubmission3 = require('../models/AssessmentSubmission3');
 const otpRepository = require('../utils/otpRepository');
 
 function to10Digits(val) {
@@ -65,19 +64,13 @@ exports.submitTrainingFeedback = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Years of experience must be 0–50.' });
     }
 
-    // Only allow submission if user completed training (phone in AssessmentSubmission3)
-    const inAssessment3 = await AssessmentSubmission3.findOne({ phone: mobileNumber }).lean();
-    if (!inAssessment3) {
-      return res.status(403).json({
-        success: false,
-        code: 'NOT_COMPLETED_TRAINING',
-        message: 'You have not yet completed the assessments. Please complete the training first.'
-      });
-    }
-
-    // Prevent duplicate activation feedback
+    // One submission per phone number (mobile or WhatsApp), across both stored fields
+    const submittedPhones = [...new Set([mobileNumber, whatsappNumber])];
     const existingFeedback = await TrainingFeedback.findOne({
-      $or: [{ mobileNumber }, { whatsappNumber }]
+      $or: [
+        { mobileNumber: { $in: submittedPhones } },
+        { whatsappNumber: { $in: submittedPhones } },
+      ],
     }).lean();
     if (existingFeedback) {
       return res.status(409).json({
@@ -114,6 +107,13 @@ exports.submitTrainingFeedback = async (req, res) => {
       }
     });
   } catch (err) {
+    if (err.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        code: 'ALREADY_SUBMITTED',
+        message: 'You have already completed the feedback.',
+      });
+    }
     if (err.name === 'ValidationError') {
       const msg = Object.values(err.errors).map((e) => e.message).join('; ');
       return res.status(400).json({ success: false, message: msg || 'Validation failed.' });

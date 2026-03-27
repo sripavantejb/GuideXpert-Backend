@@ -18,5 +18,7 @@ const schema = new mongoose.Schema(
 );
 
 schema.index({ createdAt: -1 });
+schema.index({ mobileNumber: 1 }, { unique: true });
+schema.index({ whatsappNumber: 1 }, { unique: true });
 
 module.exports = mongoose.model('TrainingFeedback', schema);
