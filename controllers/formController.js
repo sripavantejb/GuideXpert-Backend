@@ -318,7 +318,7 @@ exports.verifyOtp = async (req, res) => {
           });
         }
         otpStore.removeVerified(p);
-        const webinarExpiresIn = process.env.WEBINAR_JWT_EXPIRES_IN || '24h';
+        const webinarExpiresIn = process.env.WEBINAR_JWT_EXPIRES_IN || '7d';
         const token = jwt.sign(
           { webinarPhone: p, trainingFormId: record._id.toString(), role: 'webinar' },
           webinarSecret.trim(),

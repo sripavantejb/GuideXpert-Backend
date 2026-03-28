@@ -1,43 +1,8 @@
-const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 const WebinarAssessmentSubmission = require('../models/WebinarAssessmentSubmission');
-const TrainingFormSubmission = require('../models/TrainingFormSubmission');
-const TrainingFormResponse = require('../models/TrainingFormResponse');
+const { getWebinarUserFromToken } = require('../utils/webinarJwtAuth');
 
 const VALID_IDS = ['a1', 'a2', 'a3', 'a4', 'a5'];
-
-function getWebinarSecret() {
-  return process.env.WEBINAR_JWT_SECRET || process.env.COUNSELLOR_JWT_SECRET || process.env.JWT_SECRET || '';
-}
-
-/**
- * Optionally decode webinar JWT from Authorization: Bearer <token>.
- * Returns { phone, fullName } or { phone: null, fullName: null }.
- */
-async function getWebinarUserFromToken(req) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || typeof authHeader !== 'string' || !authHeader.startsWith('Bearer ')) {
-    return { phone: null, fullName: null };
-  }
-  const token = authHeader.slice(7).trim();
-  const secret = getWebinarSecret();
-  if (!secret || !token) return { phone: null, fullName: null };
-  try {
-    const decoded = jwt.verify(token, secret);
-    const phone = decoded?.webinarPhone && /^\d{10}$/.test(String(decoded.webinarPhone))
-      ? String(decoded.webinarPhone)
-      : null;
-    let fullName = null;
-    if (phone) {
-      let record = await TrainingFormSubmission.findOne({ mobileNumber: phone }).sort({ createdAt: -1 }).lean();
-      if (!record) record = await TrainingFormResponse.findOne({ mobileNumber: phone }).sort({ createdAt: -1 }).lean();
-      if (record && record.fullName) fullName = String(record.fullName).trim();
-    }
-    return { phone, fullName };
-  } catch (e) {
-    return { phone: null, fullName: null };
-  }
-}
 
 function parseHistoryLimit(raw) {
   const n = Number(raw);

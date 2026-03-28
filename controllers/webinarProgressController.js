@@ -1,37 +1,6 @@
-const jwt = require('jsonwebtoken');
 const WebinarProgress = require('../models/WebinarProgress');
 const WebinarAssessmentSubmission = require('../models/WebinarAssessmentSubmission');
-const TrainingFormSubmission = require('../models/TrainingFormSubmission');
-const TrainingFormResponse = require('../models/TrainingFormResponse');
-
-function getWebinarSecret() {
-  return process.env.WEBINAR_JWT_SECRET || process.env.COUNSELLOR_JWT_SECRET || process.env.JWT_SECRET || '';
-}
-
-async function getWebinarUserFromToken(req) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || typeof authHeader !== 'string' || !authHeader.startsWith('Bearer ')) {
-    return { phone: null, fullName: null };
-  }
-  const token = authHeader.slice(7).trim();
-  const secret = getWebinarSecret();
-  if (!secret || !token) return { phone: null, fullName: null };
-  try {
-    const decoded = jwt.verify(token, secret);
-    const phone = decoded?.webinarPhone && /^\d{10}$/.test(String(decoded.webinarPhone))
-      ? String(decoded.webinarPhone)
-      : null;
-    let fullName = null;
-    if (phone) {
-      let record = await TrainingFormSubmission.findOne({ mobileNumber: phone }).sort({ createdAt: -1 }).lean();
-      if (!record) record = await TrainingFormResponse.findOne({ mobileNumber: phone }).sort({ createdAt: -1 }).lean();
-      if (record && record.fullName) fullName = String(record.fullName).trim();
-    }
-    return { phone, fullName };
-  } catch {
-    return { phone: null, fullName: null };
-  }
-}
+const { getWebinarUserFromToken, webinarAuthErrorResponse } = require('../utils/webinarJwtAuth');
 
 const STATUS_RANK = { locked: 0, unlocked: 1, in_progress: 2, completed: 3 };
 const ALL_MODULE_IDS = ['intro', 's2', 'a1', 's3', 'a2', 's4', 'a3', 's5', 'a4', 's6', 'a5'];
@@ -176,7 +145,8 @@ async function syncProgress(req, res) {
   try {
     const user = await getWebinarUserFromToken(req);
     if (!user.phone) {
-      return res.status(401).json({ success: false, message: 'Authentication required.' });
+      const { status, body } = webinarAuthErrorResponse(user);
+      return res.status(status).json(body);
     }
 
     const { completedModules, modules, lastActiveModule } = req.body || {};
@@ -283,7 +253,8 @@ async function getProgress(req, res) {
   try {
     const user = await getWebinarUserFromToken(req);
     if (!user.phone) {
-      return res.status(401).json({ success: false, message: 'Authentication required.' });
+      const { status, body } = webinarAuthErrorResponse(user);
+      return res.status(status).json(body);
     }
 
     const doc = await WebinarProgress.findOne({ phone: user.phone }).lean();
@@ -305,7 +276,8 @@ async function recordCertificateDownload(req, res) {
   try {
     const user = await getWebinarUserFromToken(req);
     if (!user.phone) {
-      return res.status(401).json({ success: false, message: 'Authentication required.' });
+      const { status, body } = webinarAuthErrorResponse(user);
+      return res.status(status).json(body);
     }
 
     await WebinarProgress.findOneAndUpdate(
