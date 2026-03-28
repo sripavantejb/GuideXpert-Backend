@@ -3,6 +3,7 @@ const SlotDateOverride = require('../models/SlotDateOverride');
 const { getISTCalendarDateUTC } = require('./dateHelpers');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+const ONE_HOUR_MS = 60 * 60 * 1000;
 
 const DAY_NAMES = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 
@@ -63,6 +64,16 @@ function createSlot(dayName, timeKey, hour, minute, ref) {
   const id = `${dayName}_${timeKey}`;
   const label = formatSlotLabel(date);
   return { id, label, date: date.toISOString() };
+}
+
+/**
+ * Slot is visible only until one hour before its start time.
+ * Example: 3:00 PM slot is hidden from 2:00 PM onward.
+ */
+function isVisibleBeforeOneHourCutoff(slotDateISO, now = new Date()) {
+  const slotStart = new Date(slotDateISO);
+  if (Number.isNaN(slotStart.getTime())) return false;
+  return now.getTime() < (slotStart.getTime() - ONE_HOUR_MS);
 }
 
 async function getDemoSlots() {
@@ -166,7 +177,10 @@ async function getDemoSlots() {
     return { ...s, enabled };
   });
 
-  const slotsFiltered = slotsWithOverrides.filter((s) => s.enabled);
+  const now = new Date();
+  const slotsFiltered = slotsWithOverrides.filter(
+    (s) => s.enabled && isVisibleBeforeOneHourCutoff(s.date, now)
+  );
   return { slots: slotsFiltered };
 }
 
