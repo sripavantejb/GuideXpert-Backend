@@ -30,6 +30,33 @@ function buildDateRange(from, to) {
   return Object.keys(range).length ? range : null;
 }
 
+/** True if this mobile already has a training form in live submissions or legacy responses. */
+async function hasTrainingFormForMobile(mobile10) {
+  if (!mobile10 || mobile10.length !== 10) return false;
+  const [sub, resp] = await Promise.all([
+    TrainingFormSubmission.findOne({ mobileNumber: mobile10 }).select('_id').lean(),
+    TrainingFormResponse.findOne({ mobileNumber: mobile10 }).select('_id').lean(),
+  ]);
+  return !!(sub || resp);
+}
+
+/**
+ * GET /api/training-form/check/:phone — public; returns whether this mobile already submitted.
+ */
+exports.getTrainingFormStatus = async (req, res) => {
+  try {
+    const mobileNumber = to10Digits(req.params.phone);
+    if (mobileNumber.length !== 10) {
+      return res.status(400).json({ success: false, message: 'Valid 10-digit mobile number required.' });
+    }
+    const submitted = await hasTrainingFormForMobile(mobileNumber);
+    return res.status(200).json({ success: true, submitted });
+  } catch (err) {
+    console.error('[getTrainingFormStatus]', err);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
 function buildSearchQuery(q) {
   if (!q) return null;
   const term = String(q).trim();
@@ -75,6 +102,14 @@ exports.submitTrainingForm = async (req, res) => {
     }
     if (sessionRating == null || sessionRating < 1 || sessionRating > 5) {
       return res.status(400).json({ success: false, message: 'Session rating must be 1–5.' });
+    }
+
+    if (await hasTrainingFormForMobile(mobileNumber)) {
+      return res.status(409).json({
+        success: false,
+        code: 'ALREADY_SUBMITTED',
+        message: 'You have already submitted this form.',
+      });
     }
 
     const doc = await TrainingFormSubmission.create({
