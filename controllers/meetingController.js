@@ -1,4 +1,6 @@
 const MeetingAttendance = require('../models/MeetingAttendance');
+const otpRepository = require('../utils/otpRepository');
+const { getDemoMeetEligibility } = require('../utils/demoMeetEligibility');
 
 exports.meetingHealth = async (req, res) => {
   try {
@@ -13,9 +15,22 @@ exports.meetingHealth = async (req, res) => {
 };
 
 function normalizeMobile(value) {
-  if (typeof value !== 'string') return '';
-  return value.replace(/\D/g, '').trim();
+  return otpRepository.normalize(value || '');
 }
+
+exports.demoMeetEligibility = async (req, res) => {
+  try {
+    const { mobileNumber } = req.body || {};
+    const eligibility = await getDemoMeetEligibility(mobileNumber);
+    return res.status(200).json({
+      success: true,
+      data: eligibility
+    });
+  } catch (error) {
+    console.error('[demoMeetEligibility] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  }
+};
 
 exports.registerForMeeting = async (req, res) => {
   try {
@@ -31,6 +46,19 @@ exports.registerForMeeting = async (req, res) => {
     }
     if (!mobile || mobile.length !== 10) {
       return res.status(400).json({ success: false, message: 'Valid 10-digit mobile number is required' });
+    }
+
+    const eligibility = await getDemoMeetEligibility(mobile);
+    if (eligibility.status !== 'allowed') {
+      return res.status(403).json({
+        success: false,
+        message: eligibility.message || 'You are not allowed to register for the meet at this time.',
+        data: {
+          status: eligibility.status,
+          slotStartLabel: eligibility.slotStartLabel,
+          joinOpensAtLabel: eligibility.joinOpensAtLabel
+        }
+      });
     }
 
     const record = await MeetingAttendance.create({
