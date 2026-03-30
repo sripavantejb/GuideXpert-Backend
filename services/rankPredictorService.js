@@ -1,46 +1,18 @@
-const fs = require('fs');
-const path = require('path');
-const vm = require('vm');
-
-const dataDir = path.join(__dirname, '..', 'data', 'rankPredictor');
-
-const tsExportCache = new Map();
-
-function loadTsExports(relativeFile) {
-  const absolutePath = path.join(dataDir, relativeFile);
-  if (tsExportCache.has(absolutePath)) return tsExportCache.get(absolutePath);
-
-  const source = fs.readFileSync(absolutePath, 'utf8');
-  const exportNames = [];
-  const transformed = source.replace(/export const\s+([A-Za-z0-9_]+)\s*=/g, (_, name) => {
-    exportNames.push(name);
-    return `const ${name} =`;
-  });
-
-  const wrapped = `${transformed}\nmodule.exports = { ${exportNames.join(', ')} };`;
-  const sandbox = { module: { exports: {} }, exports: {} };
-  vm.createContext(sandbox);
-  vm.runInContext(wrapped, sandbox, { timeout: 10000 });
-
-  tsExportCache.set(absolutePath, sandbox.module.exports);
-  return sandbox.module.exports;
-}
+const { apEamcetPredictedRanks2025 } = require('../data/rankPredictor/apEamcetPrecitedRanks.json');
+const { jeeAdvancePredictedRanks2025 } = require('../data/rankPredictor/jeeAdvanceRankPredictorRanks.json');
+const { jeeMainPercentilePredictedRanks } = require('../data/rankPredictor/jeeMainPercentilePredictorRanks.json');
+const { jeeMainPredictedRanks } = require('../data/rankPredictor/jeeMainRankPredictorRanks.json');
+const { kcet2025PredictedRanks } = require('../data/rankPredictor/kcetPredictedRanks.json');
+const { keam2025PredictedRank } = require('../data/rankPredictor/keamPredictedRank.json');
+const { mhtcetPredictedRanks2025 } = require('../data/rankPredictor/mhtcetPredictedRanks.json');
+const { tneaPredictedRanks2025 } = require('../data/rankPredictor/tneaPredictedRanks.json');
+const { tsEamcet2025PredictedRanks } = require('../data/rankPredictor/tsEamcet2023PredictedRanks.json');
+const { wbJeeRankPredictorRanks2025 } = require('../data/rankPredictor/wbJeeRankPredictorRanks.json');
 
 let examsCache = null;
 
 function getExams() {
   if (examsCache) return examsCache;
-
-  const { apEamcetPredictedRanks2025 } = loadTsExports('apEamcetPrecitedRanks.ts');
-  const { jeeAdvancePredictedRanks2025 } = loadTsExports('jeeAdvanceRankPredictorRanks.ts');
-  const { jeeMainPercentilePredictedRanks } = loadTsExports('jeeMainPercentilePredictorRanks.ts');
-  const { jeeMainPredictedRanks } = loadTsExports('jeeMainRankPredictorRanks.ts');
-  const { kcet2025PredictedRanks } = loadTsExports('kcetPredictedRanks.ts');
-  const { keam2025PredictedRank } = loadTsExports('keamPredictedRank.ts');
-  const { mhtcetPredictedRanks2025 } = loadTsExports('mhtcetPredictedRanks.ts');
-  const { tneaPredictedRanks2025 } = loadTsExports('tneaPredictedRanks.ts');
-  const { tsEamcet2025PredictedRanks } = loadTsExports('tsEamcet2023PredictedRanks.ts');
-  const { wbJeeRankPredictorRanks2025 } = loadTsExports('wbJeeRankPredictorRanks.ts');
 
   examsCache = {
     apeamcet: {
