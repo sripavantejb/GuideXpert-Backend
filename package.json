@@ -10,7 +10,6 @@
     "seed:admin": "node scripts/seedAdmin.js",
     "seed:training-form": "node scripts/seedTrainingFormResponses.js",
     "seed:training-meet-attendance": "node scripts/seedTrainingMeetingAttendance.js",
-    "training-attendance:yesterday": "node scripts/setTrainingAttendanceYesterday.js",
     "seed:blogs": "node scripts/seedBlogs.js",
     "backfill:webinar-feedback": "node scripts/backfillWebinarCompletionFromFeedback.js",
     "test": "echo \"Error: no test specified\" && exit 1"
