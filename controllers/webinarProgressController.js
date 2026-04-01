@@ -523,6 +523,19 @@ async function recordCertificateDownload(req, res) {
   }
 }
 
+const LIST_PROJECTION = {
+  phone: 1,
+  fullName: 1,
+  overallPercent: 1,
+  completedModules: 1,
+  lastActiveModule: 1,
+  firstJoinedAt: 1,
+  isLegacyUser: 1,
+  lastActivityAt: 1,
+  lastActivityEvent: 1,
+  certificateDownloadedAt: 1,
+};
+
 // GET /api/admin/webinar-progress
 async function adminListProgress(req, res) {
   try {
@@ -533,25 +546,16 @@ async function adminListProgress(req, res) {
     const match = buildWebinarAdminMatch(req.query);
     const sortSpec = parseSortParam(sort);
 
-    const pipeline = [
-      { $match: match },
-      {
-        $addFields: {
-          modulesDone: { $size: { $ifNull: ['$completedModules', []] } },
-        },
-      },
-      {
-        $facet: {
-          data: [{ $sort: sortSpec }, { $skip: skip }, { $limit: limit }],
-          total: [{ $count: 'count' }],
-        },
-      },
-    ];
-
-    const agg = await WebinarProgress.aggregate(pipeline);
-    const facet = agg[0] || { data: [], total: [] };
-    const users = facet.data || [];
-    const total = facet.total?.[0]?.count ?? 0;
+    const [users, total] = await Promise.all([
+      WebinarProgress.aggregate([
+        { $match: match },
+        { $sort: sortSpec },
+        { $skip: skip },
+        { $limit: limit },
+        { $project: { ...LIST_PROJECTION, modulesDone: { $size: { $ifNull: ['$completedModules', []] } } } },
+      ]),
+      WebinarProgress.countDocuments(match),
+    ]);
 
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.setHeader('Pragma', 'no-cache');

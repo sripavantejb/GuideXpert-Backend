@@ -61,4 +61,8 @@ const webinarProgressSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+webinarProgressSchema.index({ lastActivityAt: -1 });
+webinarProgressSchema.index({ overallPercent: -1, lastActivityAt: -1 });
+webinarProgressSchema.index({ isLegacyUser: 1, firstJoinedAt: -1 });
+
 module.exports = mongoose.model('WebinarProgress', webinarProgressSchema);
