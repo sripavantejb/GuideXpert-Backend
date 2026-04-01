@@ -54,6 +54,8 @@ function parseDateEnd(input) {
 function buildWebinarAdminMatch(query) {
   const q = query || {};
   const and = [];
+  const filterModeRaw = String(q.filterMode || 'first_join').trim().toLowerCase();
+  const filterMode = filterModeRaw === 'last_activity' ? 'last_activity' : 'first_join';
 
   const search = (q.search || '').trim();
   if (search) {
@@ -79,12 +81,12 @@ function buildWebinarAdminMatch(query) {
     if (Object.keys(r).length) and.push({ overallPercent: r });
   }
 
-  let minFj = null;
-  let maxFj = null;
+  let minDate = null;
+  let maxDate = null;
   const activeOn = (q.activeOn || '').trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(activeOn)) {
-    minFj = new Date(`${activeOn}T00:00:00.000Z`);
-    maxFj = new Date(`${activeOn}T23:59:59.999Z`);
+    minDate = new Date(`${activeOn}T00:00:00.000Z`);
+    maxDate = new Date(`${activeOn}T23:59:59.999Z`);
   }
   const firstJoinedFrom = (q.firstJoinedFrom || '').trim();
   const firstJoinedTo = (q.firstJoinedTo || '').trim();
@@ -93,18 +95,24 @@ function buildWebinarAdminMatch(query) {
   const fromD = fromRaw ? parseDateStart(fromRaw) : null;
   const toD = toRaw ? parseDateEnd(toRaw) : null;
   if (fromD) {
-    minFj = minFj ? new Date(Math.max(minFj.getTime(), fromD.getTime())) : fromD;
+    minDate = minDate ? new Date(Math.max(minDate.getTime(), fromD.getTime())) : fromD;
   }
   if (toD) {
-    maxFj = maxFj ? new Date(Math.min(maxFj.getTime(), toD.getTime())) : toD;
+    maxDate = maxDate ? new Date(Math.min(maxDate.getTime(), toD.getTime())) : toD;
   }
-  if (minFj && maxFj && minFj.getTime() > maxFj.getTime()) {
+  if (filterMode === 'first_join' && (minDate || maxDate)) {
+    and.push({ isLegacyUser: false });
+  }
+  if (minDate && maxDate && minDate.getTime() > maxDate.getTime()) {
     and.push({ _id: { $exists: false } });
   } else {
-    const fj = {};
-    if (minFj) fj.$gte = minFj;
-    if (maxFj) fj.$lte = maxFj;
-    if (Object.keys(fj).length) and.push({ firstJoinedAt: fj });
+    const dr = {};
+    if (minDate) dr.$gte = minDate;
+    if (maxDate) dr.$lte = maxDate;
+    if (Object.keys(dr).length) {
+      const dateField = filterMode === 'last_activity' ? 'lastActivityAt' : 'firstJoinedAt';
+      and.push({ [dateField]: dr });
+    }
   }
 
   const activity = (q.activity || '').trim();
@@ -358,9 +366,30 @@ async function syncProgress(req, res) {
       now,
     });
 
+    const existingFirstJoinedAt = { $ifNull: ['$firstJoinedAt', null] };
+    const existingCreatedAt = { $ifNull: ['$createdAt', null] };
     const stage1 = {
       fullName: user.fullName || '',
-      firstJoinedAt: { $ifNull: ['$firstJoinedAt', now] },
+      firstJoinedAt: {
+        $cond: {
+          if: { $eq: [existingCreatedAt, null] },
+          then: now,
+          else: '$firstJoinedAt',
+        },
+      },
+      isLegacyUser: {
+        $cond: {
+          if: { $ne: [existingFirstJoinedAt, null] },
+          then: false,
+          else: {
+            $cond: {
+              if: { $eq: [existingCreatedAt, null] },
+              then: false,
+              else: true,
+            },
+          },
+        },
+      },
       lastActivityAt: now,
       lastActivityEvent,
     };
@@ -821,7 +850,7 @@ async function adminProgressExport(req, res) {
     }
 
     const header =
-      'Name,Phone,Overall %,Status,Modules Done,First Joined,Completed Modules,Last Active Module,Last Activity\n';
+      'Name,Phone,Overall %,Status,Join Type,Modules Done,First Joined,Completed Modules,Last Active Module,Last Activity\n';
     const rows = docs.map((d) => {
       const name = (d.fullName || '').replace(/,/g, ' ');
       const completed = (d.completedModules || []).join('; ');
@@ -830,8 +859,9 @@ async function adminProgressExport(req, res) {
       const pct = d.overallPercent ?? 0;
       const status =
         pct >= 100 ? 'completed' : pct > 0 ? 'in_progress' : 'not_started';
+      const joinType = d.isLegacyUser ? 'legacy' : 'new';
       const modDone = d.modulesDone != null ? d.modulesDone : (d.completedModules || []).length;
-      return `${name},${d.phone},${pct},"${status}",${modDone},${firstJoined},"${completed}",${d.lastActiveModule || ''},${lastActive}`;
+      return `${name},${d.phone},${pct},"${status}",${joinType},${modDone},${firstJoined},"${completed}",${d.lastActiveModule || ''},${lastActive}`;
     });
 
     const csv = header + rows.join('\n');

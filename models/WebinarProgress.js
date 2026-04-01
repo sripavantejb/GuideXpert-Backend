@@ -53,6 +53,7 @@ const webinarProgressSchema = new mongoose.Schema(
     },
     lastActiveModule: { type: String, default: null },
     firstJoinedAt: { type: Date, default: null, index: true },
+    isLegacyUser: { type: Boolean, default: false, index: true },
     lastActivityAt: { type: Date, default: Date.now },
     lastActivityEvent: { type: lastActivityEventSchema, default: null },
     certificateDownloadedAt: { type: Date, default: null },
