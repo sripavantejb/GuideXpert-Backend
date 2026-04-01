@@ -79,28 +79,32 @@ function buildWebinarAdminMatch(query) {
     if (Object.keys(r).length) and.push({ overallPercent: r });
   }
 
-  let minLa = null;
-  let maxLa = null;
+  let minFj = null;
+  let maxFj = null;
   const activeOn = (q.activeOn || '').trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(activeOn)) {
-    minLa = new Date(`${activeOn}T00:00:00.000Z`);
-    maxLa = new Date(`${activeOn}T23:59:59.999Z`);
+    minFj = new Date(`${activeOn}T00:00:00.000Z`);
+    maxFj = new Date(`${activeOn}T23:59:59.999Z`);
   }
-  const fromD = (q.from || '').trim() ? parseDateStart(q.from) : null;
-  const toD = (q.to || '').trim() ? parseDateEnd(q.to) : null;
+  const firstJoinedFrom = (q.firstJoinedFrom || '').trim();
+  const firstJoinedTo = (q.firstJoinedTo || '').trim();
+  const fromRaw = firstJoinedFrom || (q.from || '').trim();
+  const toRaw = firstJoinedTo || (q.to || '').trim();
+  const fromD = fromRaw ? parseDateStart(fromRaw) : null;
+  const toD = toRaw ? parseDateEnd(toRaw) : null;
   if (fromD) {
-    minLa = minLa ? new Date(Math.max(minLa.getTime(), fromD.getTime())) : fromD;
+    minFj = minFj ? new Date(Math.max(minFj.getTime(), fromD.getTime())) : fromD;
   }
   if (toD) {
-    maxLa = maxLa ? new Date(Math.min(maxLa.getTime(), toD.getTime())) : toD;
+    maxFj = maxFj ? new Date(Math.min(maxFj.getTime(), toD.getTime())) : toD;
   }
-  if (minLa && maxLa && minLa.getTime() > maxLa.getTime()) {
+  if (minFj && maxFj && minFj.getTime() > maxFj.getTime()) {
     and.push({ _id: { $exists: false } });
   } else {
-    const la = {};
-    if (minLa) la.$gte = minLa;
-    if (maxLa) la.$lte = maxLa;
-    if (Object.keys(la).length) and.push({ lastActivityAt: la });
+    const fj = {};
+    if (minFj) fj.$gte = minFj;
+    if (maxFj) fj.$lte = maxFj;
+    if (Object.keys(fj).length) and.push({ firstJoinedAt: fj });
   }
 
   const activity = (q.activity || '').trim();
@@ -356,6 +360,7 @@ async function syncProgress(req, res) {
 
     const stage1 = {
       fullName: user.fullName || '',
+      firstJoinedAt: { $ifNull: ['$firstJoinedAt', now] },
       lastActivityAt: now,
       lastActivityEvent,
     };
@@ -816,16 +821,17 @@ async function adminProgressExport(req, res) {
     }
 
     const header =
-      'Name,Phone,Overall %,Status,Modules Done,Last Active Module,Last Activity\n';
+      'Name,Phone,Overall %,Status,Modules Done,First Joined,Completed Modules,Last Active Module,Last Activity\n';
     const rows = docs.map((d) => {
       const name = (d.fullName || '').replace(/,/g, ' ');
       const completed = (d.completedModules || []).join('; ');
+      const firstJoined = d.firstJoinedAt ? new Date(d.firstJoinedAt).toISOString() : '';
       const lastActive = d.lastActivityAt ? new Date(d.lastActivityAt).toISOString() : '';
       const pct = d.overallPercent ?? 0;
       const status =
         pct >= 100 ? 'completed' : pct > 0 ? 'in_progress' : 'not_started';
       const modDone = d.modulesDone != null ? d.modulesDone : (d.completedModules || []).length;
-      return `${name},${d.phone},${pct},"${status}",${modDone},"${completed}",${d.lastActiveModule || ''},${lastActive}`;
+      return `${name},${d.phone},${pct},"${status}",${modDone},${firstJoined},"${completed}",${d.lastActiveModule || ''},${lastActive}`;
     });
 
     const csv = header + rows.join('\n');
