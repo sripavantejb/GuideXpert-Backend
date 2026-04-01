@@ -6,6 +6,202 @@ const STATUS_RANK = { locked: 0, unlocked: 1, in_progress: 2, completed: 3 };
 const ALL_MODULE_IDS = ['intro', 's2', 'a1', 's3', 'a2', 's4', 'a3', 's5', 'a4', 's6', 'a5'];
 const TOTAL_MODULES = ALL_MODULE_IDS.length;
 
+const MODULE_BUCKET_RANGES = {
+  '0-3': [0, 3],
+  '4-7': [4, 7],
+  '8-10': [8, 10],
+  '11': [11, 11],
+};
+
+const EXPORT_MAX_ROWS = 10000;
+
+function parseStatusParam(raw) {
+  if (raw == null || raw === '') return [];
+  const parts = Array.isArray(raw) ? raw : [raw];
+  return parts
+    .flatMap((p) => String(p).split(','))
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function statusToOverallPercentCondition(status) {
+  if (status === 'completed') return { overallPercent: 100 };
+  if (status === 'in_progress') return { overallPercent: { $gt: 0, $lt: 100 } };
+  if (status === 'not_started') return { overallPercent: 0 };
+  return null;
+}
+
+function parseDateStart(input) {
+  const s = String(input).trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(`${s}T00:00:00.000Z`);
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function parseDateEnd(input) {
+  const s = String(input).trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(`${s}T23:59:59.999Z`);
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Builds MongoDB match for admin list/export. All conditions are ANDed.
+ * Date boundaries use UTC for YYYY-MM-DD inputs (consistent with ISO storage).
+ */
+function buildWebinarAdminMatch(query) {
+  const q = query || {};
+  const and = [];
+
+  const search = (q.search || '').trim();
+  if (search) {
+    const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    and.push({ $or: [{ fullName: regex }, { phone: regex }] });
+  }
+
+  const statuses = parseStatusParam(q.status);
+  if (statuses.length === 1) {
+    const c = statusToOverallPercentCondition(statuses[0]);
+    if (c) and.push(c);
+  } else if (statuses.length > 1) {
+    const parts = statuses.map(statusToOverallPercentCondition).filter(Boolean);
+    if (parts.length) and.push({ $or: parts });
+  }
+
+  const progressMin = q.progressMin !== undefined && q.progressMin !== '' ? Number(q.progressMin) : NaN;
+  const progressMax = q.progressMax !== undefined && q.progressMax !== '' ? Number(q.progressMax) : NaN;
+  if (Number.isFinite(progressMin) || Number.isFinite(progressMax)) {
+    const r = {};
+    if (Number.isFinite(progressMin)) r.$gte = progressMin;
+    if (Number.isFinite(progressMax)) r.$lte = progressMax;
+    if (Object.keys(r).length) and.push({ overallPercent: r });
+  }
+
+  let minLa = null;
+  let maxLa = null;
+  const activeOn = (q.activeOn || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(activeOn)) {
+    minLa = new Date(`${activeOn}T00:00:00.000Z`);
+    maxLa = new Date(`${activeOn}T23:59:59.999Z`);
+  }
+  const fromD = (q.from || '').trim() ? parseDateStart(q.from) : null;
+  const toD = (q.to || '').trim() ? parseDateEnd(q.to) : null;
+  if (fromD) {
+    minLa = minLa ? new Date(Math.max(minLa.getTime(), fromD.getTime())) : fromD;
+  }
+  if (toD) {
+    maxLa = maxLa ? new Date(Math.min(maxLa.getTime(), toD.getTime())) : toD;
+  }
+  if (minLa && maxLa && minLa.getTime() > maxLa.getTime()) {
+    and.push({ _id: { $exists: false } });
+  } else {
+    const la = {};
+    if (minLa) la.$gte = minLa;
+    if (maxLa) la.$lte = maxLa;
+    if (Object.keys(la).length) and.push({ lastActivityAt: la });
+  }
+
+  const activity = (q.activity || '').trim();
+  if (activity === 'active_5m') {
+    and.push({ lastActivityAt: { $gte: new Date(Date.now() - 5 * 60 * 1000) } });
+  } else if (activity === 'active_today') {
+    const now = new Date();
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+    and.push({ lastActivityAt: { $gte: start, $lte: end } });
+  } else if (activity === 'inactive_24h') {
+    and.push({ lastActivityAt: { $lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } });
+  }
+
+  const bucket = (q.modulesBucket || '').trim();
+  let modMin = NaN;
+  let modMax = NaN;
+  if (bucket && MODULE_BUCKET_RANGES[bucket]) {
+    [modMin, modMax] = MODULE_BUCKET_RANGES[bucket];
+  } else {
+    if (q.modulesMin !== undefined && q.modulesMin !== '') modMin = Number(q.modulesMin);
+    if (q.modulesMax !== undefined && q.modulesMax !== '') modMax = Number(q.modulesMax);
+  }
+  if (Number.isFinite(modMin) || Number.isFinite(modMax)) {
+    const mm = Number.isFinite(modMin) ? modMin : 0;
+    const mx = Number.isFinite(modMax) ? modMax : TOTAL_MODULES;
+    and.push({
+      $expr: {
+        $and: [
+          { $gte: [{ $size: { $ifNull: ['$completedModules', []] } }, mm] },
+          { $lte: [{ $size: { $ifNull: ['$completedModules', []] } }, mx] },
+        ],
+      },
+    });
+  }
+
+  const lam = (q.lastActiveModule || '').trim();
+  if (lam && ALL_MODULE_IDS.includes(lam)) {
+    and.push({ lastActiveModule: lam });
+  }
+
+  if (and.length === 0) return {};
+  if (and.length === 1) return and[0];
+  return { $and: and };
+}
+
+function parseSortParam(sortStr) {
+  const raw = (sortStr || '-lastActivityAt').trim();
+  const dir = raw.startsWith('-') ? -1 : 1;
+  const field = raw.startsWith('-') ? raw.slice(1) : raw;
+  const allowed = ['lastActivityAt', 'overallPercent', 'modulesDone'];
+  if (!allowed.includes(field)) return { lastActivityAt: -1 };
+  return { [field]: dir };
+}
+
+/**
+ * Applies complete_all or reset bulk action. Shared by PATCH single-user and POST bulk.
+ */
+async function applyBulkProgressToPhone(phone, bulkAction) {
+  const now = new Date();
+  const existing = await WebinarProgress.findOne({ phone }).lean();
+  const completed = new Set(existing?.completedModules || []);
+  const $set = { lastActivityAt: now };
+
+  if (bulkAction === 'complete_all') {
+    for (const id of ALL_MODULE_IDS) {
+      completed.add(id);
+      $set[`modules.${id}.status`] = 'completed';
+      $set[`modules.${id}.progressPercent`] = 100;
+      $set[`modules.${id}.completedAt`] = now;
+      $set[`modules.${id}.unlockedAt`] = now;
+    }
+  } else if (bulkAction === 'reset') {
+    completed.clear();
+    for (const id of ALL_MODULE_IDS) {
+      $set[`modules.${id}.status`] = id === 'intro' ? 'unlocked' : 'locked';
+      $set[`modules.${id}.progressPercent`] = 0;
+      $set[`modules.${id}.completedAt`] = null;
+      $set[`modules.${id}.unlockedAt`] = id === 'intro' ? now : null;
+      $set[`modules.${id}.watchedSeconds`] = 0;
+      $set[`modules.${id}.maxWatchedSeconds`] = 0;
+      $set[`modules.${id}.score`] = null;
+      $set[`modules.${id}.totalScore`] = null;
+    }
+  } else {
+    return { error: 'Invalid bulk action.' };
+  }
+
+  const completedArr = Array.from(completed);
+  $set.completedModules = completedArr;
+  $set.overallPercent = Math.round((completedArr.length / ALL_MODULE_IDS.length) * 100);
+
+  const updated = await WebinarProgress.findOneAndUpdate(
+    { phone },
+    { $set },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  ).lean();
+
+  return { data: updated };
+}
+
 /** Display titles aligned with frontend mockWebinarData (for lastActivityEvent.moduleTitle). */
 const MODULE_TITLES = {
   intro: 'Introduction to GuideXpert Counsellor training program',
@@ -296,37 +492,32 @@ async function recordCertificateDownload(req, res) {
 // GET /api/admin/webinar-progress
 async function adminListProgress(req, res) {
   try {
-    const page = Math.max(1, parseInt(req.query.page) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 25));
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 25));
     const skip = (page - 1) * limit;
-    const search = (req.query.search || '').trim();
-    const status = (req.query.status || '').trim();
     const sort = (req.query.sort || '-lastActivityAt').trim();
+    const match = buildWebinarAdminMatch(req.query);
+    const sortSpec = parseSortParam(sort);
 
-    const filter = {};
-    if (search) {
-      const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      filter.$or = [{ fullName: regex }, { phone: regex }];
-    }
-    if (status === 'completed') {
-      filter.overallPercent = 100;
-    } else if (status === 'in_progress') {
-      filter.overallPercent = { $gt: 0, $lt: 100 };
-    } else if (status === 'not_started') {
-      filter.overallPercent = 0;
-    }
+    const pipeline = [
+      { $match: match },
+      {
+        $addFields: {
+          modulesDone: { $size: { $ifNull: ['$completedModules', []] } },
+        },
+      },
+      {
+        $facet: {
+          data: [{ $sort: sortSpec }, { $skip: skip }, { $limit: limit }],
+          total: [{ $count: 'count' }],
+        },
+      },
+    ];
 
-    const sortObj = {};
-    if (sort.startsWith('-')) {
-      sortObj[sort.slice(1)] = -1;
-    } else {
-      sortObj[sort] = 1;
-    }
-
-    const [users, total] = await Promise.all([
-      WebinarProgress.find(filter).sort(sortObj).skip(skip).limit(limit).lean(),
-      WebinarProgress.countDocuments(filter),
-    ]);
+    const agg = await WebinarProgress.aggregate(pipeline);
+    const facet = agg[0] || { data: [], total: [] };
+    const users = facet.data || [];
+    const total = facet.total?.[0]?.count ?? 0;
 
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
@@ -504,6 +695,39 @@ async function adminAssessmentDetail(req, res) {
   }
 }
 
+// POST /api/admin/webinar-progress/bulk
+async function adminBulkProgress(req, res) {
+  try {
+    const { phones, action } = req.body || {};
+    if (!Array.isArray(phones) || phones.length === 0) {
+      return res.status(400).json({ success: false, message: 'Provide a non-empty phones array.' });
+    }
+    if (!['reset', 'complete_all'].includes(action)) {
+      return res.status(400).json({ success: false, message: 'Invalid action.' });
+    }
+    if (phones.length > 100) {
+      return res.status(400).json({ success: false, message: 'Maximum 100 phones per request.' });
+    }
+
+    const results = [];
+    for (const raw of phones) {
+      const phone = String(raw || '').replace(/\D/g, '').slice(-10);
+      if (!/^\d{10}$/.test(phone)) continue;
+      const out = await applyBulkProgressToPhone(phone, action);
+      if (out.error) {
+        return res.status(400).json({ success: false, message: out.error });
+      }
+      results.push(out.data);
+    }
+
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).json({ success: true, data: { updated: results.length, users: results } });
+  } catch (err) {
+    console.error('[adminBulkProgress]', err);
+    return res.status(500).json({ success: false, message: 'Failed bulk update.' });
+  }
+}
+
 // PATCH /api/admin/webinar-progress/:phone
 async function adminUpdateProgress(req, res) {
   try {
@@ -515,31 +739,20 @@ async function adminUpdateProgress(req, res) {
     const { moduleUpdates, bulkAction } = req.body || {};
     const now = new Date();
 
+    if (bulkAction === 'complete_all' || bulkAction === 'reset') {
+      const out = await applyBulkProgressToPhone(phone, bulkAction);
+      if (out.error) {
+        return res.status(400).json({ success: false, message: out.error });
+      }
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(200).json({ success: true, data: out.data });
+    }
+
     const existing = await WebinarProgress.findOne({ phone }).lean();
     const completed = new Set(existing?.completedModules || []);
     const $set = { lastActivityAt: now };
 
-    if (bulkAction === 'complete_all') {
-      for (const id of ALL_MODULE_IDS) {
-        completed.add(id);
-        $set[`modules.${id}.status`] = 'completed';
-        $set[`modules.${id}.progressPercent`] = 100;
-        $set[`modules.${id}.completedAt`] = now;
-        $set[`modules.${id}.unlockedAt`] = now;
-      }
-    } else if (bulkAction === 'reset') {
-      completed.clear();
-      for (const id of ALL_MODULE_IDS) {
-        $set[`modules.${id}.status`] = id === 'intro' ? 'unlocked' : 'locked';
-        $set[`modules.${id}.progressPercent`] = 0;
-        $set[`modules.${id}.completedAt`] = null;
-        $set[`modules.${id}.unlockedAt`] = id === 'intro' ? now : null;
-        $set[`modules.${id}.watchedSeconds`] = 0;
-        $set[`modules.${id}.maxWatchedSeconds`] = 0;
-        $set[`modules.${id}.score`] = null;
-        $set[`modules.${id}.totalScore`] = null;
-      }
-    } else if (moduleUpdates && typeof moduleUpdates === 'object') {
+    if (moduleUpdates && typeof moduleUpdates === 'object') {
       for (const [moduleId, action] of Object.entries(moduleUpdates)) {
         if (!ALL_MODULE_IDS.includes(moduleId)) continue;
 
@@ -582,14 +795,37 @@ async function adminUpdateProgress(req, res) {
 // GET /api/admin/webinar-progress/export
 async function adminProgressExport(req, res) {
   try {
-    const docs = await WebinarProgress.find().sort({ lastActivityAt: -1 }).lean();
+    const match = buildWebinarAdminMatch(req.query);
+    const pipeline = [
+      { $match: match },
+      {
+        $addFields: {
+          modulesDone: { $size: { $ifNull: ['$completedModules', []] } },
+        },
+      },
+      { $sort: { lastActivityAt: -1 } },
+      { $limit: EXPORT_MAX_ROWS + 1 },
+    ];
 
-    const header = 'Name,Phone,Overall %,Completed Modules,Last Active Module,Last Activity\n';
+    const docs = await WebinarProgress.aggregate(pipeline);
+    if (docs.length > EXPORT_MAX_ROWS) {
+      return res.status(413).json({
+        success: false,
+        message: `Export limited to ${EXPORT_MAX_ROWS} rows. Narrow your filters.`,
+      });
+    }
+
+    const header =
+      'Name,Phone,Overall %,Status,Modules Done,Last Active Module,Last Activity\n';
     const rows = docs.map((d) => {
       const name = (d.fullName || '').replace(/,/g, ' ');
       const completed = (d.completedModules || []).join('; ');
       const lastActive = d.lastActivityAt ? new Date(d.lastActivityAt).toISOString() : '';
-      return `${name},${d.phone},${d.overallPercent || 0},"${completed}",${d.lastActiveModule || ''},${lastActive}`;
+      const pct = d.overallPercent ?? 0;
+      const status =
+        pct >= 100 ? 'completed' : pct > 0 ? 'in_progress' : 'not_started';
+      const modDone = d.modulesDone != null ? d.modulesDone : (d.completedModules || []).length;
+      return `${name},${d.phone},${pct},"${status}",${modDone},"${completed}",${d.lastActiveModule || ''},${lastActive}`;
     });
 
     const csv = header + rows.join('\n');
@@ -613,5 +849,6 @@ module.exports = {
   adminProgressDetail,
   adminAssessmentDetail,
   adminUpdateProgress,
+  adminBulkProgress,
   adminProgressExport,
 };

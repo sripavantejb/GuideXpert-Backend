@@ -18,7 +18,7 @@ const {
 const requireAdmin = require('../middleware/requireAdmin');
 const requireSuperAdmin = require('../middleware/requireSuperAdmin');
 const { listAdmins, createAdmin, deleteAdmin, resetAdminPassword, changeMyPassword } = require('../controllers/adminUserController');
-const { adminListProgress, adminProgressStats, adminProgressDetail, adminAssessmentDetail, adminUpdateProgress, adminProgressExport } = require('../controllers/webinarProgressController');
+const { adminListProgress, adminProgressStats, adminProgressDetail, adminAssessmentDetail, adminUpdateProgress, adminBulkProgress, adminProgressExport } = require('../controllers/webinarProgressController');
 
 router.post('/login', login);
 router.get('/admins', requireAdmin, requireSuperAdmin, listAdmins);
@@ -64,6 +64,7 @@ router.post('/announcements/:id/unpublish', requireAdmin, adminUnpublish);
 // Webinar Progress
 router.get('/webinar-progress/stats', requireAdmin, adminProgressStats);
 router.get('/webinar-progress/export', requireAdmin, adminProgressExport);
+router.post('/webinar-progress/bulk', requireAdmin, adminBulkProgress);
 router.patch('/webinar-progress/:phone', requireAdmin, adminUpdateProgress);
 router.get('/webinar-progress/:phone/assessments', requireAdmin, adminAssessmentDetail);
 router.get('/webinar-progress/:phone', requireAdmin, adminProgressDetail);
