@@ -303,6 +303,94 @@ exports.updateLeadNotes = async (req, res) => {
   }
 };
 
+function getIstDayOfWeekFromDateRangeStart(start) {
+  const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+  return new Date(start.getTime() + IST_OFFSET_MS).getUTCDay();
+}
+
+async function isSlotEnabledForDate(slotId, dateStartUtc) {
+  const [config, override] = await Promise.all([
+    SlotConfig.findOne({ slotId }).lean(),
+    SlotDateOverride.findOne({ slotId, date: dateStartUtc }).lean(),
+  ]);
+  if (override && typeof override.enabled === 'boolean') return override.enabled;
+  if (config && typeof config.enabled === 'boolean') return config.enabled;
+  return true;
+}
+
+exports.updateLeadSlotBooking = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { slotDate, selectedSlot } = req.body || {};
+
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'Lead ID is required' });
+    }
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ success: false, message: 'Lead not found' });
+    }
+    if (!slotDate || typeof slotDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(slotDate.trim())) {
+      return res.status(400).json({ success: false, message: 'slotDate is required in YYYY-MM-DD format' });
+    }
+    if (!selectedSlot || typeof selectedSlot !== 'string' || !ALL_SLOT_IDS.includes(selectedSlot.trim())) {
+      return res.status(400).json({ success: false, message: 'selectedSlot is invalid' });
+    }
+
+    const normalizedSlotId = selectedSlot.trim();
+    const istDayRange = getISTDayRangeFromString(slotDate.trim());
+    if (!istDayRange) {
+      return res.status(400).json({ success: false, message: 'Invalid slotDate. Expected YYYY-MM-DD.' });
+    }
+    const { start } = istDayRange;
+
+    const slotDayName = normalizedSlotId.split('_')[0];
+    const requiredDow = DAY_NAMES.indexOf(slotDayName);
+    const istDow = getIstDayOfWeekFromDateRangeStart(start);
+    if (requiredDow === -1 || requiredDow !== istDow) {
+      return res.status(400).json({
+        success: false,
+        message: 'selectedSlot day does not match slotDate day'
+      });
+    }
+
+    const enabled = await isSlotEnabledForDate(normalizedSlotId, start);
+    if (!enabled) {
+      return res.status(400).json({
+        success: false,
+        message: 'selectedSlot is not available on the requested date'
+      });
+    }
+
+    const updated = await FormSubmission.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          selectedSlot: normalizedSlotId,
+          'step3Data.selectedSlot': normalizedSlotId,
+          'step3Data.slotDate': start,
+          reminderSent: false,
+          reminderSentAt: null,
+          meetLinkSent: false,
+          meetLinkSentAt: null,
+          reminder30MinSent: false,
+          reminder30MinSentAt: null,
+        }
+      },
+      { new: true }
+    ).lean();
+
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Lead not found' });
+    }
+
+    return res.status(200).json({ success: true, data: mapLeadToDTO(updated) });
+  } catch (error) {
+    console.error('[updateLeadSlotBooking] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
 // Stats are scoped to the selected date range (from/to query). All FormSubmission counts use this filter.
 function buildStatsDateFilter(fromStr, toStr) {
   const fromDate = fromStr ? new Date(fromStr + 'T00:00:00.000Z') : null;
