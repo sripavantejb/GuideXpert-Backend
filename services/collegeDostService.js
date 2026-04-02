@@ -3,9 +3,22 @@ const axios = require('axios');
 const BASE_URL = process.env.NW_PREDICTORS_BASE_URL || 'https://nw-predictors-backend-beta.earlywave.in';
 const V1_PATH = '/api/nw_college_predictor/colleges/get/v1/';
 
-const SUPPORTED_EXAMS = [
-  'KCET', 'MHT_CET', 'KEAM', 'AP_EAMCET', 'TS_EAMCET', 'TNEA', 'JEE',
-];
+/**
+ * Maps frontend exam keys to the API enum values the earlywave backend accepts.
+ * Some frontend keys differ from the API enum (e.g. MHT_CET -> MHTCET).
+ */
+const EXAM_API_MAP = {
+  KCET: 'KCET',
+  MHT_CET: 'MHTCET',
+  MHTCET: 'MHTCET',
+  KEAM: 'KEAM',
+  AP_EAMCET: 'AP_EAMCET',
+  TS_EAMCET: 'TS_EAMCET',
+  TNEA: 'TNEA',
+  JEE: 'JEE',
+};
+
+const SUPPORTED_EXAMS = Object.keys(EXAM_API_MAP);
 
 /**
  * Call the earlywave v1 college predictor API.
@@ -39,9 +52,10 @@ async function getPredictedColleges(exam, offset, limit, body) {
     throw err;
   }
 
+  const apiExamEnum = EXAM_API_MAP[exam] || exam;
+
   const url = `${BASE_URL}${V1_PATH}?offset=${encodeURIComponent(offset)}&limit=${encodeURIComponent(limit)}`;
 
-  // v1 uses a single reservation_category_code string
   let reservationCode = '';
   if (Array.isArray(body.reservation_category_codes) && body.reservation_category_codes.length > 0) {
     reservationCode = body.reservation_category_codes[0];
@@ -53,7 +67,7 @@ async function getPredictedColleges(exam, offset, limit, body) {
   }
 
   const innerBody = {
-    entrance_exam_name_enum: body.entrance_exam_name_enum || exam,
+    entrance_exam_name_enum: apiExamEnum,
     admission_category_name_enum: body.admission_category_name_enum || 'GENERAL',
     cutoff_from: body.cutoff_from,
     cutoff_to: body.cutoff_to,
@@ -63,7 +77,6 @@ async function getPredictedColleges(exam, offset, limit, body) {
     sort_order: body.sort_order || 'ASC',
   };
 
-  // v1 format: data is JSON wrapped in single-quote delimiters
   const dataValue = "'" + JSON.stringify(innerBody) + "'";
   const requestPayload = {
     clientKeyDetailsId: 1,
@@ -71,7 +84,7 @@ async function getPredictedColleges(exam, offset, limit, body) {
   };
 
   if (process.env.NODE_ENV !== 'production') {
-    console.log('[collegeDost] exam:', exam, '| url:', url);
+    console.log('[collegeDost] exam:', exam, '-> apiEnum:', apiExamEnum, '| url:', url);
   }
 
   try {
@@ -109,4 +122,4 @@ async function getPredictedColleges(exam, offset, limit, body) {
   }
 }
 
-module.exports = { getPredictedColleges, SUPPORTED_EXAMS };
+module.exports = { getPredictedColleges, SUPPORTED_EXAMS, EXAM_API_MAP };
