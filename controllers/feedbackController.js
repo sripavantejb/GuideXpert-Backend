@@ -170,7 +170,7 @@ function buildSearchQuery(q) {
 exports.getTrainingFeedback = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const limit = Math.min(5000, Math.max(1, parseInt(req.query.limit, 10) || 50));
     const skip = (page - 1) * limit;
     const dateRange = buildDateRange(req.query.from, req.query.to);
     const searchQuery = buildSearchQuery(req.query.q);
