@@ -1,3 +1,4 @@
+const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 const WebinarProgress = require('../models/WebinarProgress');
 const WebinarAssessmentSubmission = require('../models/WebinarAssessmentSubmission');
 const { getWebinarUserFromToken, webinarAuthErrorResponse } = require('../utils/webinarJwtAuth');
@@ -540,7 +541,7 @@ const LIST_PROJECTION = {
 async function adminListProgress(req, res) {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 25));
+    const limit = Math.min(ADMIN_LIST_MAX_LIMIT, Math.max(1, parseInt(req.query.limit, 10) || 25));
     const skip = (page - 1) * limit;
     const sort = (req.query.sort || '-lastActivityAt').trim();
     const match = buildWebinarAdminMatch(req.query);
