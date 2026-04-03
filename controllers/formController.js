@@ -17,6 +17,7 @@ const SlotDateOverride = require('../models/SlotDateOverride');
 const { getISTCalendarDateUTC } = require('../utils/dateHelpers');
 const { appendRow, updateRow, markRowDeleted } = require('../utils/googleSheetsService');
 const { findOrCreateCounsellorAndGetToken } = require('./counsellorAuthController');
+const { initiateOutboundCall } = require('../utils/osviService');
 
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const GOOGLE_SHEET_RANGE = process.env.GOOGLE_SHEET_RANGE || 'Sheet1';
@@ -172,6 +173,27 @@ exports.sendOtp = async (req, res) => {
     if (process.env.NODE_ENV !== 'production') {
       console.log('[sendOtp] OTP saved for phone ending', p.slice(-4));
     }
+
+    if (
+      req.body?.osviOutboundCall === true &&
+      process.env.OSVI_API_TOKEN &&
+      process.env.OSVI_AGENT_UUID
+    ) {
+      const nameTrim = fullName.trim();
+      const occTrim = occupation.trim();
+      void initiateOutboundCall({
+        phone_number: p,
+        person_name: nameTrim,
+        occupation: occTrim,
+      }).then((r) => {
+        if (r.success) {
+          console.log('[OSVI] Outbound call initiated', r.data?.data?.call_id || r.data);
+        } else {
+          console.warn('[OSVI] Outbound call failed', r.error);
+        }
+      });
+    }
+
     return res.status(200).json({ success: true, message: 'OTP sent successfully' });
   } catch (err) {
     console.error('[sendOtp] Unexpected error:', err?.message || err);
