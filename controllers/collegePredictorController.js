@@ -1,5 +1,26 @@
 const { getPredictedColleges: getNwPredictedColleges } = require('../services/nwCollegePredictorService');
-const { getPredictedColleges: getCollegeDostPredicted, SUPPORTED_EXAMS } = require('../services/collegeDostService');
+const {
+  getPredictedColleges: getCollegeDostPredicted,
+  canonicalExamKey,
+  isSupportedExamInput,
+} = require('../services/collegeDostService');
+
+/** Normalize Swagger/OpenAPI field names onto fields the UI expects. */
+function normalizePredictorResponse(data) {
+  if (!data || !Array.isArray(data.colleges)) return data;
+  for (const c of data.colleges) {
+    if (!Array.isArray(c.branches)) continue;
+    for (const b of c.branches) {
+      if (!Array.isArray(b.reservation_categories)) continue;
+      b.reservation_categories = b.reservation_categories.map((rc) => ({
+        ...rc,
+        category_name: rc.category_name ?? rc.name,
+        reservation_category_code: rc.reservation_category_code ?? rc.category_code,
+      }));
+    }
+  }
+  return data;
+}
 
 /**
  * POST /college-predictor/colleges?offset=0&limit=10
@@ -30,8 +51,8 @@ async function getPredictedCollegesHandler(req, res) {
       : '';
   const resolvedExam = examFromBody || examFromEnum;
 
-  if (resolvedExam && SUPPORTED_EXAMS.includes(resolvedExam)) {
-    body.exam = resolvedExam;
+  if (resolvedExam && isSupportedExamInput(resolvedExam)) {
+    body.exam = canonicalExamKey(resolvedExam);
     return handleCollegeDost(req, res, offset, limit, body);
   }
 
@@ -92,7 +113,7 @@ async function handleCollegeDost(req, res, offset, limit, body) {
   }
 
   try {
-    const data = await getCollegeDostPredicted(exam, offset, limit, payload);
+    const data = normalizePredictorResponse(await getCollegeDostPredicted(exam, offset, limit, payload));
     return res.status(200).json(data);
   } catch (err) {
     const status = err.http_status_code || 502;
@@ -165,7 +186,7 @@ async function handleNwPredictor(req, res, offset, limit, body) {
   }
 
   try {
-    const data = await getNwPredictedColleges(offset, limit, normalizedBody);
+    const data = normalizePredictorResponse(await getNwPredictedColleges(offset, limit, normalizedBody));
     return res.status(200).json(data);
   } catch (err) {
     const status = err.http_status_code || 502;

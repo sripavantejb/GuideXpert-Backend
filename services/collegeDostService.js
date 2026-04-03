@@ -2,6 +2,7 @@ const axios = require('axios');
 
 const BASE_URL = process.env.NW_PREDICTORS_BASE_URL || 'https://nw-predictors-backend-beta.earlywave.in';
 const V1_PATH = '/api/nw_college_predictor/colleges/get/v1/';
+const V2_PATH = '/api/nw_college_predictor/colleges/get/v2/';
 
 /**
  * Maps frontend exam keys to the API enum values the earlywave backend accepts.
@@ -20,8 +21,91 @@ const EXAM_API_MAP = {
 
 const SUPPORTED_EXAMS = Object.keys(EXAM_API_MAP);
 
+/** Default reservation when none sent — AP EAMCET uses EAPCET category strings (e.g. OC GIRLS), not KCET 1G. */
+const DEFAULT_RESERVATION_BY_API_EXAM = {
+  KCET: '1G',
+  AP_EAMCET: 'OC GIRLS',
+};
+
 /**
- * Call the earlywave v1 college predictor API.
+ * @param {string} raw
+ * @returns {string} First matching key in EXAM_API_MAP (e.g. MHT_CET before MHTCET when both map to MHTCET)
+ */
+function canonicalExamKey(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s) return s;
+  if (SUPPORTED_EXAMS.includes(s)) return s;
+  for (const [k, v] of Object.entries(EXAM_API_MAP)) {
+    if (v === s) return k;
+  }
+  return s;
+}
+
+/**
+ * True if `raw` is a known frontend key or a known API enum value.
+ */
+function isSupportedExamInput(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s) return false;
+  if (SUPPORTED_EXAMS.includes(s)) return true;
+  return Object.values(EXAM_API_MAP).includes(s);
+}
+
+function pickDefaultReservation(apiExamEnum) {
+  return DEFAULT_RESERVATION_BY_API_EXAM[apiExamEnum] || '1G';
+}
+
+function buildReservationCodeFromBody(body, apiExamEnum) {
+  let reservationCode = '';
+  if (Array.isArray(body.reservation_category_codes) && body.reservation_category_codes.length > 0) {
+    reservationCode = String(body.reservation_category_codes[0]).trim();
+  } else if (body.reservation_category_code) {
+    reservationCode = String(body.reservation_category_code).trim();
+  }
+  if (!reservationCode) {
+    reservationCode = pickDefaultReservation(apiExamEnum);
+  }
+  return reservationCode;
+}
+
+function buildInnerBodyV1(body, apiExamEnum) {
+  const reservationCode = buildReservationCodeFromBody(body, apiExamEnum);
+  return {
+    entrance_exam_name_enum: apiExamEnum,
+    admission_category_name_enum: body.admission_category_name_enum || 'GENERAL',
+    cutoff_from: body.cutoff_from,
+    cutoff_to: body.cutoff_to,
+    reservation_category_code: reservationCode,
+    branch_codes: Array.isArray(body.branch_codes) ? body.branch_codes : [],
+    districts: Array.isArray(body.districts) ? body.districts : [],
+    sort_order: body.sort_order || 'ASC',
+  };
+}
+
+function buildInnerBodyV2(body, apiExamEnum) {
+  let codes = [];
+  if (Array.isArray(body.reservation_category_codes) && body.reservation_category_codes.length > 0) {
+    codes = body.reservation_category_codes.map((c) => String(c).trim()).filter(Boolean);
+  } else if (body.reservation_category_code) {
+    codes = [String(body.reservation_category_code).trim()];
+  }
+  if (codes.length === 0) {
+    codes = [pickDefaultReservation(apiExamEnum)];
+  }
+  return {
+    entrance_exam_name_enum: apiExamEnum,
+    admission_category_name_enum: body.admission_category_name_enum || 'GENERAL',
+    cutoff_from: body.cutoff_from,
+    cutoff_to: body.cutoff_to,
+    reservation_category_codes: codes,
+    branch_codes: Array.isArray(body.branch_codes) ? body.branch_codes : [],
+    districts: Array.isArray(body.districts) ? body.districts : [],
+    sort_order: body.sort_order || 'ASC',
+  };
+}
+
+/**
+ * Call the earlywave v1 college predictor API (optionally v2 on reservation validation failure).
  *
  * v1 payload rules:
  *   - `data` is a JSON string wrapped in single quotes: "'{...}'"
@@ -44,7 +128,7 @@ async function getPredictedColleges(exam, offset, limit, body) {
     throw err;
   }
 
-  if (!SUPPORTED_EXAMS.includes(exam)) {
+  if (!isSupportedExamInput(exam)) {
     const err = new Error(`Unsupported exam: ${exam}`);
     err.http_status_code = 400;
     err.res_status = 'INVALID_ENTRANCE_EXAM';
@@ -52,43 +136,20 @@ async function getPredictedColleges(exam, offset, limit, body) {
     throw err;
   }
 
-  const apiExamEnum = EXAM_API_MAP[exam] || exam;
+  const examKey = canonicalExamKey(exam);
+  const apiExamEnum = EXAM_API_MAP[examKey] || examKey;
 
-  const url = `${BASE_URL}${V1_PATH}?offset=${encodeURIComponent(offset)}&limit=${encodeURIComponent(limit)}`;
-
-  let reservationCode = '';
-  if (Array.isArray(body.reservation_category_codes) && body.reservation_category_codes.length > 0) {
-    reservationCode = body.reservation_category_codes[0];
-  } else if (body.reservation_category_code) {
-    reservationCode = String(body.reservation_category_code).trim();
-  }
-  if (!reservationCode) {
-    reservationCode = '1G';
-  }
-
-  const innerBody = {
-    entrance_exam_name_enum: apiExamEnum,
-    admission_category_name_enum: body.admission_category_name_enum || 'GENERAL',
-    cutoff_from: body.cutoff_from,
-    cutoff_to: body.cutoff_to,
-    reservation_category_code: reservationCode,
-    branch_codes: Array.isArray(body.branch_codes) ? body.branch_codes : [],
-    districts: Array.isArray(body.districts) ? body.districts : [],
-    sort_order: body.sort_order || 'ASC',
-  };
-
-  const dataValue = "'" + JSON.stringify(innerBody) + "'";
-  const requestPayload = {
-    clientKeyDetailsId: 1,
-    data: dataValue,
-  };
+  const urlV1 = `${BASE_URL}${V1_PATH}?offset=${encodeURIComponent(offset)}&limit=${encodeURIComponent(limit)}`;
+  const innerV1 = buildInnerBodyV1(body, apiExamEnum);
+  const dataValueV1 = "'" + JSON.stringify(innerV1) + "'";
+  const requestPayloadV1 = { clientKeyDetailsId: 1, data: dataValueV1 };
 
   if (process.env.NODE_ENV !== 'production') {
-    console.log('[collegeDost] exam:', exam, '-> apiEnum:', apiExamEnum, '| url:', url);
+    console.log('[collegeDost] exam:', exam, '-> key:', examKey, 'apiEnum:', apiExamEnum, '| url:', urlV1);
   }
 
   try {
-    const res = await axios.post(url, requestPayload, {
+    const res = await axios.post(urlV1, requestPayloadV1, {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
@@ -102,6 +163,40 @@ async function getPredictedColleges(exam, offset, limit, body) {
     }
 
     const errBody = res.data || {};
+    const shouldTryV2 =
+      res.status === 400 &&
+      errBody.res_status === 'INVALID_RESERVATION_CATEGORY_CODE' &&
+      Array.isArray(body.reservation_category_codes) &&
+      body.reservation_category_codes.length > 1;
+
+    if (shouldTryV2) {
+      const urlV2 = `${BASE_URL}${V2_PATH}?offset=${encodeURIComponent(offset)}&limit=${encodeURIComponent(limit)}`;
+      const innerV2 = buildInnerBodyV2(body, apiExamEnum);
+      const dataValueV2 = "'" + JSON.stringify(innerV2) + "'";
+      const res2 = await axios.post(
+        urlV2,
+        { clientKeyDetailsId: 1, data: dataValueV2 },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          timeout: 30000,
+          validateStatus: () => true,
+        }
+      );
+      if (res2.status >= 200 && res2.status < 300) {
+        return res2.data;
+      }
+      const err2 = res2.data || {};
+      const err = new Error(err2.response || `Predictor API v2 returned ${res2.status}`);
+      err.http_status_code = err2.http_status_code ?? res2.status;
+      err.res_status = err2.res_status || 'UPSTREAM_ERROR';
+      err.response = err2.response || err.message;
+      err.upstreamBody = err2;
+      throw err;
+    }
+
     const err = new Error(errBody.response || `Predictor API returned ${res.status}`);
     err.http_status_code = errBody.http_status_code ?? res.status;
     err.res_status = errBody.res_status || 'UPSTREAM_ERROR';
@@ -122,4 +217,10 @@ async function getPredictedColleges(exam, offset, limit, body) {
   }
 }
 
-module.exports = { getPredictedColleges, SUPPORTED_EXAMS, EXAM_API_MAP };
+module.exports = {
+  getPredictedColleges,
+  SUPPORTED_EXAMS,
+  EXAM_API_MAP,
+  canonicalExamKey,
+  isSupportedExamInput,
+};
