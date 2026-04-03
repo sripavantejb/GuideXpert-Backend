@@ -19,26 +19,30 @@ async function initiateOutboundCall({ phone_number, person_name, occupation }) {
   const url = process.env.OSVI_CALL_URL || DEFAULT_CALL_URL;
   const countryCode = (process.env.OSVI_COUNTRY_CODE || 'IN').trim() || 'IN';
 
+  const systemPromptEnv = process.env.OSVI_SYSTEM_PROMPT;
+  const system_prompt =
+    typeof systemPromptEnv === 'string' && systemPromptEnv.trim()
+      ? systemPromptEnv.trim()
+      : '';
+
+  const webhookUrlEnv = process.env.OSVI_WEBHOOK_URL;
+  const webhook_url =
+    typeof webhookUrlEnv === 'string' && webhookUrlEnv.trim()
+      ? webhookUrlEnv.trim()
+      : '';
+
   const body = {
     agent_uuid: agentUuid,
     phone_number,
     country_code: countryCode,
     person_name,
+    system_prompt,
+    webhook_url,
     additional_data: {
       occupation,
       source: 'counselor_landing',
     },
   };
-
-  const systemPrompt = process.env.OSVI_SYSTEM_PROMPT;
-  if (typeof systemPrompt === 'string' && systemPrompt.trim()) {
-    body.system_prompt = systemPrompt.trim();
-  }
-
-  const webhookUrl = process.env.OSVI_WEBHOOK_URL;
-  if (typeof webhookUrl === 'string' && webhookUrl.trim()) {
-    body.webhook_url = webhookUrl.trim();
-  }
 
   try {
     const res = await fetch(url, {
@@ -60,9 +64,13 @@ async function initiateOutboundCall({ phone_number, person_name, occupation }) {
 
     if (!res.ok) {
       console.error('[OSVI] Call failed', res.status, data);
+      const errMsg =
+        (typeof data?.error === 'string' && data.error) ||
+        (typeof data?.message === 'string' && data.message) ||
+        `HTTP ${res.status}`;
       return {
         success: false,
-        error: typeof data?.message === 'string' ? data.message : `HTTP ${res.status}`,
+        error: errMsg,
         data,
       };
     }

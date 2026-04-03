@@ -187,7 +187,12 @@ exports.sendOtp = async (req, res) => {
         occupation: occTrim,
       }).then((r) => {
         if (r.success) {
-          console.log('[OSVI] Outbound call initiated', r.data?.data?.call_id || r.data);
+          const inner = r.data?.data;
+          console.log('[OSVI] Outbound call initiated', {
+            message: inner?.message,
+            status: inner?.status,
+            call_id: inner?.call_id,
+          });
         } else {
           console.warn('[OSVI] Outbound call failed', r.error);
         }
