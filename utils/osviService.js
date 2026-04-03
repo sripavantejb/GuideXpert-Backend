@@ -5,13 +5,26 @@
 
 const DEFAULT_CALL_URL = 'https://api.osvi.ai/call';
 
+function getOsviCredentials() {
+  const rawToken = process.env.OSVI_API_TOKEN;
+  const rawAgent = process.env.OSVI_AGENT_UUID;
+  const token = typeof rawToken === 'string' ? rawToken.trim() : '';
+  const agentUuid = typeof rawAgent === 'string' ? rawAgent.trim() : '';
+  return { token, agentUuid };
+}
+
+/** True when both token and agent UUID are non-empty (after trim). */
+function isOsviConfigured() {
+  const { token, agentUuid } = getOsviCredentials();
+  return Boolean(token && agentUuid);
+}
+
 /**
  * @param {{ phone_number: string, person_name: string, occupation: string }} params
  * @returns {Promise<{ success: boolean, error?: string, data?: unknown }>}
  */
 async function initiateOutboundCall({ phone_number, person_name, occupation }) {
-  const token = process.env.OSVI_API_TOKEN;
-  const agentUuid = process.env.OSVI_AGENT_UUID;
+  const { token, agentUuid } = getOsviCredentials();
   if (!token || !agentUuid) {
     return { success: false, error: 'OSVI not configured' };
   }
@@ -85,4 +98,5 @@ async function initiateOutboundCall({ phone_number, person_name, occupation }) {
 
 module.exports = {
   initiateOutboundCall,
+  isOsviConfigured,
 };

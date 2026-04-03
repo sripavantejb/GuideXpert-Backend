@@ -17,7 +17,7 @@ const SlotDateOverride = require('../models/SlotDateOverride');
 const { getISTCalendarDateUTC } = require('../utils/dateHelpers');
 const { appendRow, updateRow, markRowDeleted } = require('../utils/googleSheetsService');
 const { findOrCreateCounsellorAndGetToken } = require('./counsellorAuthController');
-const { initiateOutboundCall } = require('../utils/osviService');
+const { initiateOutboundCall, isOsviConfigured } = require('../utils/osviService');
 
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const GOOGLE_SHEET_RANGE = process.env.GOOGLE_SHEET_RANGE || 'Sheet1';
@@ -174,29 +174,31 @@ exports.sendOtp = async (req, res) => {
       console.log('[sendOtp] OTP saved for phone ending', p.slice(-4));
     }
 
-    if (
-      req.body?.osviOutboundCall === true &&
-      process.env.OSVI_API_TOKEN &&
-      process.env.OSVI_AGENT_UUID
-    ) {
-      const nameTrim = fullName.trim();
-      const occTrim = occupation.trim();
-      void initiateOutboundCall({
-        phone_number: p,
-        person_name: nameTrim,
-        occupation: occTrim,
-      }).then((r) => {
-        if (r.success) {
-          const inner = r.data?.data;
-          console.log('[OSVI] Outbound call initiated', {
-            message: inner?.message,
-            status: inner?.status,
-            call_id: inner?.call_id,
-          });
-        } else {
-          console.warn('[OSVI] Outbound call failed', r.error);
-        }
-      });
+    if (req.body?.osviOutboundCall === true) {
+      if (isOsviConfigured()) {
+        const nameTrim = fullName.trim();
+        const occTrim = occupation.trim();
+        void initiateOutboundCall({
+          phone_number: p,
+          person_name: nameTrim,
+          occupation: occTrim,
+        }).then((r) => {
+          if (r.success) {
+            const inner = r.data?.data;
+            console.log('[OSVI] Outbound call initiated', {
+              message: inner?.message,
+              status: inner?.status,
+              call_id: inner?.call_id,
+            });
+          } else {
+            console.warn('[OSVI] Outbound call failed', r.error, r.data?.data ?? r.data);
+          }
+        });
+      } else {
+        console.warn(
+          '[OSVI] Skipped: set OSVI_API_TOKEN and OSVI_AGENT_UUID on this deployment (trimmed empty)'
+        );
+      }
     }
 
     return res.status(200).json({ success: true, message: 'OTP sent successfully' });
