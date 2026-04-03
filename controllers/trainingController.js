@@ -1,4 +1,5 @@
 const TrainingAttendance = require('../models/TrainingAttendance');
+const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 
 function normalizeMobile(value) {
   if (typeof value !== 'string') return '';
@@ -81,7 +82,7 @@ function buildSearchQuery(q) {
 exports.getTrainingAttendance = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(5000, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const limit = Math.min(ADMIN_LIST_MAX_LIMIT, Math.max(1, parseInt(req.query.limit, 10) || 50));
     const skip = (page - 1) * limit;
     const uniqueByMobile = String(req.query.uniqueByMobile || '').toLowerCase() === 'true';
     const dedupeMode = String(req.query.dedupeMode || 'latest').toLowerCase();

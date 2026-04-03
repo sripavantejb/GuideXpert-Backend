@@ -13,6 +13,7 @@ const MeetingAttendance = require('../models/MeetingAttendance');
 const TrainingFeedback = require('../models/TrainingFeedback');
 const Counsellor = require('../models/Counsellor');
 const { getISTCalendarDateUTC, getISTDayRangeFromString } = require('../utils/dateHelpers');
+const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 
 function normalizePhoneTo10(value) {
   if (value == null) return '';
@@ -654,7 +655,7 @@ exports.exportLeads = async (req, res) => {
 exports.getAdminLeads = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(5000, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const limit = Math.min(ADMIN_LIST_MAX_LIMIT, Math.max(1, parseInt(req.query.limit, 10) || 50));
     const fromStr = (req.query.from || '').trim();
     const toStr = (req.query.to || '').trim();
     const applicationStatus = req.query.applicationStatus; // in_progress | registered | completed
@@ -1118,7 +1119,7 @@ function buildAssessmentSearchQuery(q) {
 exports.getAssessmentSubmissions = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(5000, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const limit = Math.min(ADMIN_LIST_MAX_LIMIT, Math.max(1, parseInt(req.query.limit, 10) || 50));
     const skip = (page - 1) * limit;
     const dateRange = buildAssessmentDateRange(req.query.from, req.query.to);
     const searchQuery = buildAssessmentSearchQuery(req.query.q);
@@ -1156,7 +1157,7 @@ exports.getAssessmentSubmissions = async (req, res) => {
 exports.getAssessment2Submissions = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(5000, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const limit = Math.min(ADMIN_LIST_MAX_LIMIT, Math.max(1, parseInt(req.query.limit, 10) || 50));
     const skip = (page - 1) * limit;
     const dateRange = buildAssessmentDateRange(req.query.from, req.query.to);
     const searchQuery = buildAssessmentSearchQuery(req.query.q);
@@ -1248,7 +1249,7 @@ exports.getAssessment2SubmissionById = async (req, res) => {
 exports.getAssessment3Submissions = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(5000, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const limit = Math.min(ADMIN_LIST_MAX_LIMIT, Math.max(1, parseInt(req.query.limit, 10) || 50));
     const skip = (page - 1) * limit;
     const dateRange = buildAssessmentDateRange(req.query.from, req.query.to);
     const searchQuery = buildAssessmentSearchQuery(req.query.q);
@@ -1312,7 +1313,7 @@ exports.getAssessment3SubmissionById = async (req, res) => {
 exports.getAssessment4Submissions = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(5000, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const limit = Math.min(ADMIN_LIST_MAX_LIMIT, Math.max(1, parseInt(req.query.limit, 10) || 50));
     const skip = (page - 1) * limit;
     const dateRange = buildAssessmentDateRange(req.query.from, req.query.to);
     const searchQuery = buildAssessmentSearchQuery(req.query.q);
@@ -1375,7 +1376,7 @@ exports.getAssessment4SubmissionById = async (req, res) => {
 exports.getAssessment5Submissions = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(5000, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const limit = Math.min(ADMIN_LIST_MAX_LIMIT, Math.max(1, parseInt(req.query.limit, 10) || 50));
     const skip = (page - 1) * limit;
     const dateRange = buildAssessmentDateRange(req.query.from, req.query.to);
     const searchQuery = buildAssessmentSearchQuery(req.query.q);
@@ -1440,7 +1441,7 @@ exports.getAssessment5SubmissionById = async (req, res) => {
 exports.getMissingLeads = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(5000, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const limit = Math.min(ADMIN_LIST_MAX_LIMIT, Math.max(1, parseInt(req.query.limit, 10) || 50));
     const skip = (page - 1) * limit;
 
     const dateRange = buildAssessmentDateRange(req.query.from, req.query.to);

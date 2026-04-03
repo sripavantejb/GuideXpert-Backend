@@ -1,3 +1,4 @@
+const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 const TrainingFormSubmission = require('../models/TrainingFormSubmission');
 const TrainingFormResponse = require('../models/TrainingFormResponse');
 
@@ -169,7 +170,7 @@ function toResponseRow(r) {
 exports.getTrainingFormResponses = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(5000, Math.max(1, parseInt(req.query.limit, 10) || 25));
+    const limit = Math.min(ADMIN_LIST_MAX_LIMIT, Math.max(1, parseInt(req.query.limit, 10) || 25));
     const skip = (page - 1) * limit;
     const dateRange = buildDateRange(req.query.from, req.query.to);
     const searchQuery = buildSearchQuery(req.query.q);

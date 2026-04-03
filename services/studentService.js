@@ -1,9 +1,10 @@
+const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 const Student = require('../models/Student');
 const { STATUS_ENUM } = require('../models/Student');
 
 const DEFAULT_LIMIT = 20;
-const MAX_LIMIT = 100;
-const EXPORT_LIMIT = 5000;
+const MAX_LIMIT = ADMIN_LIST_MAX_LIMIT;
+const EXPORT_LIMIT = ADMIN_LIST_MAX_LIMIT;
 
 function buildListQuery(counsellorId, filters = {}) {
   const query = { counsellorId };
