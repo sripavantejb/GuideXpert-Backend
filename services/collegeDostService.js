@@ -25,6 +25,7 @@ const SUPPORTED_EXAMS = Object.keys(EXAM_API_MAP);
 const DEFAULT_RESERVATION_BY_API_EXAM = {
   KCET: '1G',
   AP_EAMCET: 'OC GIRLS',
+  TS_EAMCET: 'OC BOYS',
 };
 
 /**
