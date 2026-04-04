@@ -17,5 +17,11 @@
   ],
   "env": {
     "NODE_ENV": "production"
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/osvi-outbound-due",
+      "schedule": "* * * * *"
+    }
+  ]
 }

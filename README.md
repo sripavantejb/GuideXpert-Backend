@@ -70,7 +70,11 @@ Set `CRON_SECRET` in the environment. Schedule HTTP calls (e.g. Vercel Cron or e
 | | `/api/cron/send-reminders` | Reminder SMS (existing) |
 | | `/api/cron/osvi-outbound-due` | OSVI outbound calls due after counselor Apply slot booking (`?key=` or `x-cron-key` header) |
 
-Use the same `key` query param or `x-cron-key` header as other cron routes in this project. Without `/api/cron/osvi-outbound-due`, delayed OSVI calls will not run on serverless hosts.
+Use the same `key` query param, `x-cron-key` header, or `Authorization: Bearer <CRON_SECRET>` (Vercel Cron uses the Bearer form when `CRON_SECRET` is set in the project). [`vercel.json`](vercel.json) schedules `/api/cron/osvi-outbound-due` every minute; redeploy after changing it.
+
+**OSVI:** Set `OSVI_API_TOKEN` and `OSVI_AGENT_UUID` on the deployment (e.g. Vercel Environment Variables). If `OSVI_AGENT_UUID` is missing, slot booking will not schedule outbound calls (`isOsviConfigured()` is false).
+
+Without `/api/cron/osvi-outbound-due` running on a schedule, delayed OSVI calls will not execute on serverless hosts.
 
 Optional: `OSVI_OUTBOUND_DELAY_MS` (default `120000`) — delay from successful save-step3 until the call is eligible for processing.
 

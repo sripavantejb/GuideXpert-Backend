@@ -8,13 +8,22 @@ const { initiateOutboundCall, isOsviConfigured } = require('../utils/osviService
  * Middleware to verify cron secret key
  */
 function verifyCronSecret(req, res, next) {
-  const providedKey = req.query.key || req.headers['x-cron-key'];
   const expectedKey = process.env.CRON_SECRET;
 
   if (!expectedKey) {
     console.error('[Cron] CRON_SECRET not configured');
     return res.status(500).json({ success: false, message: 'Cron not configured' });
   }
+
+  const queryKey = req.query.key;
+  const headerKey = req.headers['x-cron-key'];
+  const authHeader = req.headers.authorization || req.headers.Authorization;
+  let bearerKey;
+  if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+    bearerKey = authHeader.slice(7).trim();
+  }
+
+  const providedKey = queryKey || headerKey || bearerKey;
 
   if (providedKey !== expectedKey) {
     console.warn('[Cron] Invalid cron key attempt');
