@@ -5,6 +5,37 @@ const V1_PATH = '/api/nw_college_predictor/colleges/get/v1/';
 const V2_PATH = '/api/nw_college_predictor/colleges/get/v2/';
 
 /**
+ * nw-predictors-backend-beta expects { clientKeyDetailsId, data, branch_codes } (legacy).
+ * Local/OpenAPI hosts (Swagger `api_spec 69.json`) expect flat JSON — set NW_PREDICTORS_USE_OPENAPI_FLAT_BODY=true.
+ */
+function useLegacyWrappedPayload() {
+  if (String(process.env.NW_PREDICTORS_USE_OPENAPI_FLAT_BODY || '').trim() === 'true') {
+    return false;
+  }
+  const leg = String(process.env.NW_PREDICTORS_LEGACY_WRAPPED_PAYLOAD || '').trim().toLowerCase();
+  if (leg === 'false') return false;
+  return true;
+}
+
+/**
+ * OpenAPI (Swagger) body: flat JSON matching PredictedCollegeDetailsParameter / V2.
+ * Legacy gateway: { clientKeyDetailsId, data: "'{...}'", branch_codes }.
+ */
+function buildOutboundBody(inner) {
+  if (!useLegacyWrappedPayload()) {
+    return inner;
+  }
+  const dataJson = JSON.stringify(inner);
+  const usePlainData = process.env.NW_PREDICTORS_DATA_PLAIN === 'true';
+  const dataValue = usePlainData ? dataJson : "'" + dataJson + "'";
+  return {
+    clientKeyDetailsId: 1,
+    data: dataValue,
+    branch_codes: Array.isArray(inner.branch_codes) ? inner.branch_codes : [],
+  };
+}
+
+/**
  * Maps frontend exam keys to the API enum values the earlywave backend accepts.
  * Some frontend keys differ from the API enum (e.g. MHT_CET -> MHTCET).
  */
@@ -17,6 +48,9 @@ const EXAM_API_MAP = {
   TS_EAMCET: 'TS_EAMCET',
   TNEA: 'TNEA',
   JEE: 'JEE',
+  /** Combined predictor UI uses these for parallel Main vs Advanced calls (beta may return INVALID_ENTRANCE_EXAM until upstream enables). */
+  JEE_MAIN: 'JEE_MAIN',
+  JEE_ADVANCED: 'JEE_ADVANCED',
 };
 
 const SUPPORTED_EXAMS = Object.keys(EXAM_API_MAP);
@@ -26,6 +60,10 @@ const DEFAULT_RESERVATION_BY_API_EXAM = {
   KCET: '1G',
   AP_EAMCET: 'OC GIRLS',
   TS_EAMCET: 'OC BOYS',
+  MHTCET: 'GOPENS',
+  JEE: 'OPEN',
+  JEE_MAIN: 'OPEN',
+  JEE_ADVANCED: 'OPEN',
 };
 
 /**
@@ -74,8 +112,8 @@ function buildInnerBodyV1(body, apiExamEnum) {
   return {
     entrance_exam_name_enum: apiExamEnum,
     admission_category_name_enum: body.admission_category_name_enum || 'GENERAL',
-    cutoff_from: body.cutoff_from,
-    cutoff_to: body.cutoff_to,
+    cutoff_from: Number(body.cutoff_from),
+    cutoff_to: Number(body.cutoff_to),
     reservation_category_code: reservationCode,
     branch_codes: Array.isArray(body.branch_codes) ? body.branch_codes : [],
     districts: Array.isArray(body.districts) ? body.districts : [],
@@ -96,8 +134,8 @@ function buildInnerBodyV2(body, apiExamEnum) {
   return {
     entrance_exam_name_enum: apiExamEnum,
     admission_category_name_enum: body.admission_category_name_enum || 'GENERAL',
-    cutoff_from: body.cutoff_from,
-    cutoff_to: body.cutoff_to,
+    cutoff_from: Number(body.cutoff_from),
+    cutoff_to: Number(body.cutoff_to),
     reservation_category_codes: codes,
     branch_codes: Array.isArray(body.branch_codes) ? body.branch_codes : [],
     districts: Array.isArray(body.districts) ? body.districts : [],
@@ -108,10 +146,8 @@ function buildInnerBodyV2(body, apiExamEnum) {
 /**
  * Call the earlywave v1 college predictor API (optionally v2 on reservation validation failure).
  *
- * v1 payload rules:
- *   - `data` is a JSON string wrapped in single quotes: "'{...}'"
- *   - `reservation_category_code` is a single string, not an array
- *   - `branch_codes` must be present (array, can be empty)
+ * Default POST matches deployed beta: legacy `{ clientKeyDetailsId, data, branch_codes }`.
+ * OpenAPI flat JSON: set NW_PREDICTORS_USE_OPENAPI_FLAT_BODY=true (e.g. local Swagger host).
  *
  * @param {string} exam
  * @param {number} offset
@@ -142,11 +178,12 @@ async function getPredictedColleges(exam, offset, limit, body) {
 
   const urlV1 = `${BASE_URL}${V1_PATH}?offset=${encodeURIComponent(offset)}&limit=${encodeURIComponent(limit)}`;
   const innerV1 = buildInnerBodyV1(body, apiExamEnum);
-  const dataValueV1 = "'" + JSON.stringify(innerV1) + "'";
-  const requestPayloadV1 = { clientKeyDetailsId: 1, data: dataValueV1 };
+  const requestPayloadV1 = buildOutboundBody(innerV1);
 
   if (process.env.NODE_ENV !== 'production') {
     console.log('[collegeDost] exam:', exam, '-> key:', examKey, 'apiEnum:', apiExamEnum, '| url:', urlV1);
+    console.log('[collegeDost] legacyWrapped:', useLegacyWrappedPayload());
+    console.log('[collegeDost] outbound v1 body:', JSON.stringify(requestPayloadV1));
   }
 
   try {
@@ -173,10 +210,13 @@ async function getPredictedColleges(exam, offset, limit, body) {
     if (shouldTryV2) {
       const urlV2 = `${BASE_URL}${V2_PATH}?offset=${encodeURIComponent(offset)}&limit=${encodeURIComponent(limit)}`;
       const innerV2 = buildInnerBodyV2(body, apiExamEnum);
-      const dataValueV2 = "'" + JSON.stringify(innerV2) + "'";
+      const payloadV2 = buildOutboundBody(innerV2);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[collegeDost] outbound v2 body:', JSON.stringify(payloadV2));
+      }
       const res2 = await axios.post(
         urlV2,
-        { clientKeyDetailsId: 1, data: dataValueV2 },
+        payloadV2,
         {
           headers: {
             'Content-Type': 'application/json',

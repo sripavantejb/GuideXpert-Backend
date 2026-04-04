@@ -3,6 +3,15 @@ const axios = require('axios');
 const BASE_URL = process.env.NW_PREDICTORS_BASE_URL || 'https://nw-predictors-backend-beta.earlywave.in';
 const PATH = '/api/nw_college_predictor/colleges/get/v1/';
 
+function useLegacyWrappedPayload() {
+  if (String(process.env.NW_PREDICTORS_USE_OPENAPI_FLAT_BODY || '').trim() === 'true') {
+    return false;
+  }
+  const leg = String(process.env.NW_PREDICTORS_LEGACY_WRAPPED_PAYLOAD || '').trim().toLowerCase();
+  if (leg === 'false') return false;
+  return true;
+}
+
 /**
  * Call NW College Predictor API v1 (earlywave).
  * @param {number} offset - Pagination offset (required)
@@ -46,25 +55,31 @@ async function getPredictedColleges(offset, limit, body) {
   const innerBody = {
     entrance_exam_name_enum: entranceExam,
     admission_category_name_enum: (body.admission_category_name_enum != null && String(body.admission_category_name_enum).trim() !== '') ? String(body.admission_category_name_enum).trim() : 'GENERAL',
-    cutoff_from: Number.isInteger(cutoffFromInt) ? cutoffFromInt : 0,
-    cutoff_to: Number.isInteger(cutoffToInt) ? cutoffToInt : 0,
+    cutoff_from: Number(Number.isInteger(cutoffFromInt) ? cutoffFromInt : 0),
+    cutoff_to: Number(Number.isInteger(cutoffToInt) ? cutoffToInt : 0),
     reservation_category_code: (body.reservation_category_code != null && String(body.reservation_category_code).trim() !== '') ? String(body.reservation_category_code).trim() : 'GNT2S',
+    branch_codes: Array.isArray(body.branch_codes) ? body.branch_codes : [],
   };
-  if (Array.isArray(body.branch_codes) && body.branch_codes.length > 0) innerBody.branch_codes = body.branch_codes;
-  innerBody.districts = Array.isArray(body.districts) ? body.districts : (body.districts != null ? body.districts || [] : []);
+  innerBody.districts = Array.isArray(body.districts) ? body.districts : [];
   innerBody.sort_order = (body.sort_order != null && body.sort_order !== '') ? String(body.sort_order).toUpperCase() : 'ASC';
 
-  const dataJson = JSON.stringify(innerBody);
-  // API doc: data must be JSON string wrapped in single quotes: "'{...}'"
-  const usePlainData = process.env.NW_PREDICTORS_DATA_PLAIN === 'true';
-  const dataValue = usePlainData ? dataJson : "'" + dataJson + "'";
-  const payload = {
-    clientKeyDetailsId: 1,
-    data: dataValue,
-  };
+  let payload;
+  if (useLegacyWrappedPayload()) {
+    const dataJson = JSON.stringify(innerBody);
+    const usePlainData = process.env.NW_PREDICTORS_DATA_PLAIN === 'true';
+    const dataValue = usePlainData ? dataJson : "'" + dataJson + "'";
+    payload = {
+      clientKeyDetailsId: 1,
+      data: dataValue,
+      branch_codes: Array.isArray(innerBody.branch_codes) ? innerBody.branch_codes : [],
+    };
+  } else {
+    payload = innerBody;
+  }
 
   if (process.env.NODE_ENV !== 'production') {
-    console.log('[nwCollegePredictor] entrance_exam_name_enum:', entranceExam, '| data format:', usePlainData ? 'plain' : 'quoted');
+    console.log('[nwCollegePredictor] entrance_exam_name_enum:', entranceExam, '| legacyWrapped:', useLegacyWrappedPayload());
+    console.log('[nwCollegePredictor] outbound body:', JSON.stringify(payload));
   }
 
   try {

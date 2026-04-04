@@ -5,6 +5,20 @@ const {
   isSupportedExamInput,
 } = require('../services/collegeDostService');
 
+/**
+ * Coerce branch_codes / districts to string arrays so upstream always receives arrays (never null / wrong type).
+ * Mutates `body` in place.
+ * @param {Record<string, unknown>} body
+ */
+function normalizeCollegePredictorBody(body) {
+  const toStrArray = (v) => {
+    if (!Array.isArray(v)) return [];
+    return v.map((x) => String(x).trim()).filter(Boolean);
+  };
+  body.branch_codes = toStrArray(body.branch_codes);
+  body.districts = toStrArray(body.districts);
+}
+
 /** Normalize Swagger/OpenAPI field names onto fields the UI expects. */
 function normalizePredictorResponse(data) {
   if (!data || !Array.isArray(data.colleges)) return data;
@@ -42,6 +56,7 @@ async function getPredictedCollegesHandler(req, res) {
   }
 
   const body = req.body || {};
+  normalizeCollegePredictorBody(body);
 
   // --- CollegeDost path: route supported exams to v2 service ---
   const examFromBody = body.exam != null && String(body.exam).trim() !== '' ? String(body.exam).trim() : '';
