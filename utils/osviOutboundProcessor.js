@@ -5,6 +5,7 @@
 
 const FormSubmission = require('../models/FormSubmission');
 const { initiateOutboundCall, isOsviConfigured } = require('./osviService');
+const { getCronSecretForOutboundPing } = require('./cronSecret');
 
 /**
  * Process one pending OSVI job for a phone when scheduled time has passed.
@@ -107,7 +108,7 @@ function scheduleDelayedOsviOutbound(phone, delayMs) {
       console.log(`[OSVI] Delay elapsed for ***${sfx} — triggering OSVI pipeline`);
 
       const vercelHost = process.env.VERCEL_URL;
-      const cronSecret = process.env.CRON_SECRET;
+      const cronSecret = getCronSecretForOutboundPing();
 
       // On Vercel, hit the cron URL from this runtime so a follow-up request processes pending rows.
       // (Express often has no @vercel/functions request context, so waitUntil is a no-op — this keeps OSVI working.)
@@ -146,7 +147,35 @@ function scheduleDelayedOsviOutbound(phone, delayMs) {
   void run();
 }
 
+/**
+ * Fire a GET to /api/cron/osvi-outbound-due in a *new* serverless invocation.
+ * The current request's Lambda often freezes right after res.json, so any work
+ * scheduled with setTimeout in the same invocation may never run on Vercel.
+ * Call this after persisting a row with osviOutboundScheduledAt <= now.
+ */
+async function pingCronForOsviJobs() {
+  const host = process.env.VERCEL_URL;
+  const key = getCronSecretForOutboundPing();
+  if (!host || !key) {
+    console.warn('[OSVI] pingCronForOsviJobs skipped: VERCEL_URL or GUIDEXPERT_CRON_SECRET/CRON_SECRET missing');
+    return;
+  }
+  const cronUrl = `https://${host}/api/cron/osvi-outbound-due?key=${encodeURIComponent(key)}`;
+  console.log(
+    '[OSVI] Pinging cron endpoint (new invocation) →',
+    cronUrl.replace(/key=[^&]+/, 'key=***')
+  );
+  try {
+    const res = await fetch(cronUrl, { method: 'GET' });
+    const text = await res.text();
+    console.log(`[OSVI] Cron ping HTTP ${res.status}:`, text.slice(0, 500));
+  } catch (err) {
+    console.error('[OSVI] Cron ping failed:', err);
+  }
+}
+
 module.exports = {
   processOsviOutboundForPhone,
   scheduleDelayedOsviOutbound,
+  pingCronForOsviJobs,
 };

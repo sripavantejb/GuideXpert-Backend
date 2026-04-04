@@ -18,7 +18,8 @@ const { getISTCalendarDateUTC } = require('../utils/dateHelpers');
 const { appendRow, updateRow, markRowDeleted } = require('../utils/googleSheetsService');
 const { findOrCreateCounsellorAndGetToken } = require('./counsellorAuthController');
 const { isOsviConfigured } = require('../utils/osviService');
-const { scheduleDelayedOsviOutbound } = require('../utils/osviOutboundProcessor');
+const { scheduleDelayedOsviOutbound, pingCronForOsviJobs } = require('../utils/osviOutboundProcessor');
+const { hasCronSecretConfigured } = require('../utils/cronSecret');
 
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const GOOGLE_SHEET_RANGE = process.env.GOOGLE_SHEET_RANGE || 'Sheet1';
@@ -558,6 +559,8 @@ exports.saveStep3 = async (req, res) => {
     const { phone, selectedSlot, slotDate } = req.body || {};
     const scheduleOsviOutbound = req.body?.scheduleOsviOutbound === true;
     const osviDelayMs = Math.max(0, Number(process.env.OSVI_OUTBOUND_DELAY_MS) || 10000);
+    /** On Vercel, delayed timers in this invocation often never run; use a follow-up GET + immediate scheduledAt. */
+    const useVercelCronPing = Boolean(process.env.VERCEL_URL && hasCronSecretConfigured());
 
     if (!phone || typeof phone !== 'string') {
       return res.status(400).json({ success: false, message: 'phone is required' });
@@ -635,7 +638,9 @@ exports.saveStep3 = async (req, res) => {
     };
     if (scheduleOsviOutbound && isOsviConfigured()) {
       Object.assign(setPayload, {
-        osviOutboundScheduledAt: new Date(Date.now() + osviDelayMs),
+        osviOutboundScheduledAt: useVercelCronPing
+          ? new Date()
+          : new Date(Date.now() + osviDelayMs),
         osviOutboundCallStatus: 'pending',
         osviOutboundLastError: null,
         osviOutboundCompletedAt: null,
@@ -764,9 +769,17 @@ exports.saveStep3 = async (req, res) => {
 
     otpStore.removeVerified(p);
 
-    // Vercel: waitUntil keeps delayed OSVI work alive after response (see vercel.json maxDuration).
     if (scheduleOsviOutbound && isOsviConfigured()) {
-      scheduleDelayedOsviOutbound(p, osviDelayMs);
+      if (useVercelCronPing) {
+        await pingCronForOsviJobs();
+      } else {
+        if (process.env.VERCEL === '1') {
+          console.warn(
+            '[saveStep3] [OSVI] Running on Vercel but no cron secret or VERCEL_URL — set GUIDEXPERT_CRON_SECRET or CRON_SECRET (and rely on system VERCEL_URL) or OSVI may not run after save.'
+          );
+        }
+        scheduleDelayedOsviOutbound(p, osviDelayMs);
+      }
     }
 
     return res.status(200).json({

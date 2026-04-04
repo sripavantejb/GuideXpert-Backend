@@ -4,15 +4,14 @@ const FormSubmission = require('../models/FormSubmission');
 const { sendBulkReminderSms, sendBulkMeetLinkSms, sendBulkReminder30MinSms } = require('../utils/msg91Service');
 const { isOsviConfigured } = require('../utils/osviService');
 const { processOsviOutboundForPhone } = require('../utils/osviOutboundProcessor');
+const { hasCronSecretConfigured, isValidCronSecret } = require('../utils/cronSecret');
 
 /**
  * Middleware to verify cron secret key
  */
 function verifyCronSecret(req, res, next) {
-  const expectedKey = process.env.CRON_SECRET;
-
-  if (!expectedKey) {
-    console.error('[Cron] CRON_SECRET not configured');
+  if (!hasCronSecretConfigured()) {
+    console.error('[Cron] No cron secret — set GUIDEXPERT_CRON_SECRET or CRON_SECRET');
     return res.status(500).json({ success: false, message: 'Cron not configured' });
   }
 
@@ -26,7 +25,7 @@ function verifyCronSecret(req, res, next) {
 
   const providedKey = queryKey || headerKey || bearerKey;
 
-  if (providedKey !== expectedKey) {
+  if (!isValidCronSecret(providedKey)) {
     console.warn('[Cron] Invalid cron key attempt');
     return res.status(401).json({ success: false, message: 'Unauthorized' });
   }
