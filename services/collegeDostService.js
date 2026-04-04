@@ -94,6 +94,17 @@ function pickDefaultReservation(apiExamEnum) {
   return DEFAULT_RESERVATION_BY_API_EXAM[apiExamEnum] || '1G';
 }
 
+/**
+ * Earlywave MHTCET dataset does not accept PWDSEBCS / PWDSEBCO (INVALID_RESERVATION_CATEGORY_CODE on SL/HU/OHU).
+ * CAP PWD SEBC–style selections map to PWDROBCS, which validates upstream.
+ */
+function normalizeMhtCetReservationCodeForUpstream(apiExamEnum, code) {
+  if (apiExamEnum !== 'MHTCET') return String(code ?? '').trim();
+  const c = String(code ?? '').trim();
+  if (c === 'PWDSEBCS' || c === 'PWDSEBCO' || c === 'PWDSEBCH') return 'PWDROBCS';
+  return c;
+}
+
 function buildReservationCodeFromBody(body, apiExamEnum) {
   let reservationCode = '';
   if (Array.isArray(body.reservation_category_codes) && body.reservation_category_codes.length > 0) {
@@ -104,7 +115,7 @@ function buildReservationCodeFromBody(body, apiExamEnum) {
   if (!reservationCode) {
     reservationCode = pickDefaultReservation(apiExamEnum);
   }
-  return reservationCode;
+  return normalizeMhtCetReservationCodeForUpstream(apiExamEnum, reservationCode);
 }
 
 function buildInnerBodyV1(body, apiExamEnum) {
@@ -131,6 +142,7 @@ function buildInnerBodyV2(body, apiExamEnum) {
   if (codes.length === 0) {
     codes = [pickDefaultReservation(apiExamEnum)];
   }
+  codes = codes.map((c) => normalizeMhtCetReservationCodeForUpstream(apiExamEnum, c));
   return {
     entrance_exam_name_enum: apiExamEnum,
     admission_category_name_enum: body.admission_category_name_enum || 'GENERAL',
