@@ -67,6 +67,8 @@ const studentSchema = new mongoose.Schema(
 
 studentSchema.index({ counsellorId: 1, deletedAt: 1 });
 studentSchema.index({ counsellorId: 1, fullName: 1, email: 1, phone: 1 });
+/** Owner-scoped list: logged-in counsellor sees only rows they created (createdBy). */
+studentSchema.index({ counsellorId: 1, createdBy: 1, deletedAt: 1 });
 
 const Student = mongoose.model('Student', studentSchema);
 module.exports = Student;

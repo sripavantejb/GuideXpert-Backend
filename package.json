@@ -12,6 +12,7 @@
     "seed:training-meet-attendance": "node scripts/seedTrainingMeetingAttendance.js",
     "seed:blogs": "node scripts/seedBlogs.js",
     "backfill:webinar-feedback": "node scripts/backfillWebinarCompletionFromFeedback.js",
+    "backfill:student-createdby": "node scripts/backfillStudentCreatedBy.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

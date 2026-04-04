@@ -6,8 +6,13 @@ const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = ADMIN_LIST_MAX_LIMIT;
 const EXPORT_LIMIT = ADMIN_LIST_MAX_LIMIT;
 
+/** Students are visible only when both counsellorId and createdBy match the logged-in counsellor. */
+function buildOwnerMatch(counsellorId) {
+  return { counsellorId, createdBy: counsellorId };
+}
+
 function buildListQuery(counsellorId, filters = {}) {
-  const query = { counsellorId };
+  const query = { ...buildOwnerMatch(counsellorId) };
 
   if (filters.deleted !== true) {
     query.deletedAt = null;
@@ -69,7 +74,7 @@ async function list(counsellorId, params = {}) {
 async function getOne(counsellorId, studentId) {
   const student = await Student.findOne({
     _id: studentId,
-    counsellorId,
+    ...buildOwnerMatch(counsellorId),
   }).lean();
   return student;
 }
@@ -106,7 +111,7 @@ function validateUpdate(body) {
 }
 
 async function update(counsellorId, studentId, body) {
-  const student = await Student.findOne({ _id: studentId, counsellorId });
+  const student = await Student.findOne({ _id: studentId, ...buildOwnerMatch(counsellorId) });
   if (!student) return null;
 
   const allowed = ['fullName', 'email', 'phone', 'course', 'status', 'notes', 'joinedAt'];
@@ -125,7 +130,7 @@ async function update(counsellorId, studentId, body) {
 
 async function softDelete(counsellorId, studentId) {
   const student = await Student.findOneAndUpdate(
-    { _id: studentId, counsellorId, deletedAt: null },
+    { _id: studentId, ...buildOwnerMatch(counsellorId), deletedAt: null },
     { $set: { deletedAt: new Date() } },
     { new: true }
   );
@@ -134,7 +139,7 @@ async function softDelete(counsellorId, studentId) {
 
 async function restore(counsellorId, studentId) {
   const student = await Student.findOneAndUpdate(
-    { _id: studentId, counsellorId, deletedAt: { $ne: null } },
+    { _id: studentId, ...buildOwnerMatch(counsellorId), deletedAt: { $ne: null } },
     { $set: { deletedAt: null } },
     { new: true }
   );
@@ -146,7 +151,7 @@ async function bulkUpdateStatus(counsellorId, ids, status) {
     return { modifiedCount: 0 };
   }
   const result = await Student.updateMany(
-    { _id: { $in: ids }, counsellorId, deletedAt: null },
+    { _id: { $in: ids }, ...buildOwnerMatch(counsellorId), deletedAt: null },
     { $set: { status, updatedAt: new Date() } }
   );
   return { modifiedCount: result.modifiedCount };
@@ -157,7 +162,7 @@ async function bulkSoftDelete(counsellorId, ids) {
     return { modifiedCount: 0 };
   }
   const result = await Student.updateMany(
-    { _id: { $in: ids }, counsellorId, deletedAt: null },
+    { _id: { $in: ids }, ...buildOwnerMatch(counsellorId), deletedAt: null },
     { $set: { deletedAt: new Date() } }
   );
   return { modifiedCount: result.modifiedCount };
