@@ -76,7 +76,9 @@ Use the same `key` query param, `x-cron-key` header, or `Authorization: Bearer <
 
 Without `/api/cron/osvi-outbound-due` running on a schedule, delayed OSVI calls will not execute on serverless hosts.
 
-Optional: `OSVI_OUTBOUND_DELAY_MS` (default `120000`) — delay from successful save-step3 until the call is eligible for processing.
+Optional: `OSVI_OUTBOUND_DELAY_MS` (default `120000`) — delay from successful save-step3 until the outbound call runs.
+
+**Vercel:** Slot booking uses `@vercel/functions` `waitUntil` so the OSVI request runs after the delay without relying only on cron. [`vercel.json`](vercel.json) sets `functions.server.js.maxDuration` to **300** seconds so a 2-minute wait plus the OSVI HTTP call can finish (raise this in the dashboard if your plan allows). Hobby plans may cap duration at 10s — if calls still never fire, upgrade or rely on `/api/cron/osvi-outbound-due` every minute.
 
 ## Security
 

@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const FormSubmission = require('../models/FormSubmission');
 const { sendBulkReminderSms, sendBulkMeetLinkSms, sendBulkReminder30MinSms } = require('../utils/msg91Service');
-const { initiateOutboundCall, isOsviConfigured } = require('../utils/osviService');
+const { isOsviConfigured } = require('../utils/osviService');
+const { processOsviOutboundForPhone } = require('../utils/osviOutboundProcessor');
 
 /**
  * Middleware to verify cron secret key
@@ -331,42 +332,11 @@ router.get('/osvi-outbound-due', verifyCronSecret, async (req, res) => {
     const results = [];
 
     for (const doc of due) {
-      const phone = doc.phone;
-      const person_name = (doc.step1Data && doc.step1Data.fullName) || doc.fullName || 'Counsellor';
-      const occupation =
-        (doc.step1Data && doc.step1Data.occupation) || doc.occupation || 'Applicant';
-
-      const r = await initiateOutboundCall({
-        phone_number: phone,
-        person_name: String(person_name).trim(),
-        occupation: String(occupation).trim() || 'Applicant',
+      const r = await processOsviOutboundForPhone(doc.phone);
+      results.push({
+        phoneSuffix: doc.phone.slice(-4),
+        ...r,
       });
-
-      if (r.success) {
-        await FormSubmission.updateOne(
-          { phone },
-          {
-            $set: {
-              osviOutboundCallStatus: 'completed',
-              osviOutboundCompletedAt: new Date(),
-              osviOutboundLastError: null,
-            },
-          }
-        );
-        results.push({ phoneSuffix: phone.slice(-4), status: 'completed' });
-      } else {
-        const errMsg = (r.error && String(r.error).slice(0, 500)) || 'Unknown error';
-        await FormSubmission.updateOne(
-          { phone },
-          {
-            $set: {
-              osviOutboundCallStatus: 'failed',
-              osviOutboundLastError: errMsg,
-            },
-          }
-        );
-        results.push({ phoneSuffix: phone.slice(-4), status: 'failed', error: errMsg });
-      }
     }
 
     return res.status(200).json({

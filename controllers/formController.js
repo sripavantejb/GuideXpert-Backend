@@ -18,6 +18,7 @@ const { getISTCalendarDateUTC } = require('../utils/dateHelpers');
 const { appendRow, updateRow, markRowDeleted } = require('../utils/googleSheetsService');
 const { findOrCreateCounsellorAndGetToken } = require('./counsellorAuthController');
 const { isOsviConfigured } = require('../utils/osviService');
+const { scheduleDelayedOsviOutbound } = require('../utils/osviOutboundProcessor');
 
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const GOOGLE_SHEET_RANGE = process.env.GOOGLE_SHEET_RANGE || 'Sheet1';
@@ -762,6 +763,11 @@ exports.saveStep3 = async (req, res) => {
     }
 
     otpStore.removeVerified(p);
+
+    // Vercel: waitUntil keeps delayed OSVI work alive after response (see vercel.json maxDuration).
+    if (scheduleOsviOutbound && isOsviConfigured()) {
+      scheduleDelayedOsviOutbound(p, osviDelayMs);
+    }
 
     return res.status(200).json({
       success: true,

@@ -28,6 +28,7 @@
   },
   "homepage": "https://github.com/sripavantejb/GuideXpert-Backend#readme",
   "dependencies": {
+    "@vercel/functions": "^3.4.3",
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
