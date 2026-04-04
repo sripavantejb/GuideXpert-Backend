@@ -98,33 +98,52 @@ async function processOsviOutboundForPhone(phone) {
 function scheduleDelayedOsviOutbound(phone, delayMs) {
   const sfx = phone.slice(-4);
   console.log(
-    `[OSVI] Delayed outbound: waiting ${delayMs}ms then processing ***${sfx} (waitUntil on Vercel, or local timer)`
+    `[OSVI] Delayed outbound: waiting ${delayMs}ms then processing ***${sfx} (waitUntil + local timer; Vercel may also ping cron)`
   );
 
   const run = async () => {
     try {
       await new Promise((resolve) => setTimeout(resolve, delayMs));
-      console.log(`[OSVI] Delay elapsed for ***${sfx} — running processor (OSVI hit or skip logged below)`);
-      const result = await processOsviOutboundForPhone(phone);
-      console.log(`[OSVI] Delayed job summary ***${sfx}:`, result);
+      console.log(`[OSVI] Delay elapsed for ***${sfx} — triggering OSVI pipeline`);
+
+      const vercelHost = process.env.VERCEL_URL;
+      const cronSecret = process.env.CRON_SECRET;
+
+      // On Vercel, hit the cron URL from this runtime so a follow-up request processes pending rows.
+      // (Express often has no @vercel/functions request context, so waitUntil is a no-op — this keeps OSVI working.)
+      if (vercelHost && cronSecret) {
+        const cronUrl = `https://${vercelHost}/api/cron/osvi-outbound-due?key=${encodeURIComponent(cronSecret)}`;
+        try {
+          console.log(`[OSVI] GET cron processor (pending OSVI jobs) — host ${vercelHost}`);
+          const res = await fetch(cronUrl, { method: 'GET' });
+          const text = await res.text();
+          console.log(`[OSVI] Cron GET ${res.status}:`, text.slice(0, 400));
+        } catch (fetchErr) {
+          console.error('[OSVI] Cron GET failed; falling back to in-process processor', fetchErr);
+          const result = await processOsviOutboundForPhone(phone);
+          console.log(`[OSVI] In-process fallback summary ***${sfx}:`, result);
+        }
+      } else {
+        const result = await processOsviOutboundForPhone(phone);
+        console.log(`[OSVI] Delayed job summary ***${sfx}:`, result);
+      }
     } catch (e) {
       console.error(`[OSVI] scheduleDelayedOsviOutbound failed ***${sfx}`, e);
     }
   };
 
-  let usedWaitUntil = false;
   try {
     const { waitUntil } = require('@vercel/functions');
     if (typeof waitUntil === 'function') {
       waitUntil(run());
-      usedWaitUntil = true;
     }
   } catch (_) {
-    /* optional dependency path */
+    /* @vercel/functions optional */
   }
-  if (!usedWaitUntil) {
-    void run();
-  }
+
+  // Always schedule on the Node event loop. On Vercel, waitUntil often does nothing for Express;
+  // without this, the delayed job never ran (only waitUntil was used and context was empty).
+  void run();
 }
 
 module.exports = {
