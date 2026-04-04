@@ -57,7 +57,13 @@ async function initiateOutboundCall({ phone_number, person_name, occupation }) {
     },
   };
 
+  const last4 = String(phone_number || '')
+    .replace(/\D/g, '')
+    .slice(-4) || '????';
+
   try {
+    console.log(`[OSVI] HTTP POST ${url} (outbound /call) for ***${last4}`);
+
     const res = await fetch(url, {
       method: 'POST',
       headers: {
@@ -76,7 +82,7 @@ async function initiateOutboundCall({ phone_number, person_name, occupation }) {
     }
 
     if (!res.ok) {
-      console.error('[OSVI] Call failed', res.status, data);
+      console.error(`[OSVI] HTTP ${res.status} outbound /call failed for ***${last4}`, data);
       const errMsg =
         (typeof data?.error === 'string' && data.error) ||
         (typeof data?.message === 'string' && data.message) ||
@@ -88,10 +94,11 @@ async function initiateOutboundCall({ phone_number, person_name, occupation }) {
       };
     }
 
+    console.log(`[OSVI] HTTP ${res.status} outbound /call OK for ***${last4}`);
     return { success: true, data };
   } catch (err) {
     const msg = err && typeof err.message === 'string' ? err.message : String(err);
-    console.error('[OSVI] Call error', msg);
+    console.error(`[OSVI] outbound /call network error for ***${last4}`, msg);
     return { success: false, error: msg };
   }
 }

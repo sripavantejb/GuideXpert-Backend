@@ -12,8 +12,10 @@ const { initiateOutboundCall, isOsviConfigured } = require('./osviService');
  * @returns {Promise<{ ok: boolean, status?: string, reason?: string, error?: string }>}
  */
 async function processOsviOutboundForPhone(phone) {
+  const sfx = phone.slice(-4);
+
   if (!isOsviConfigured()) {
-    console.warn('[OSVI] processOsviOutboundForPhone: not configured');
+    console.warn(`[OSVI] Skipped ***${sfx}: OSVI not configured (token/agent env)`);
     return { ok: false, reason: 'not_configured' };
   }
 
@@ -28,8 +30,13 @@ async function processOsviOutboundForPhone(phone) {
   );
 
   if (!claimed) {
+    console.log(
+      `[OSVI] Skipped ***${sfx}: no claimable pending job (not due yet, already processing, or already done)`
+    );
     return { ok: false, reason: 'not_due_or_already_claimed' };
   }
+
+  console.log(`[OSVI] Claimed pending job for ***${sfx} — OSVI /call will run next`);
 
   const person_name =
     (claimed.step1Data && claimed.step1Data.fullName) || claimed.fullName || 'Counsellor';
@@ -54,7 +61,7 @@ async function processOsviOutboundForPhone(phone) {
           },
         }
       );
-      console.log('[OSVI] Outbound call completed for phone ending', phone.slice(-4));
+      console.log(`[OSVI] Job ***${sfx}: OSVI API reported success (status completed)`);
       return { ok: true, status: 'completed' };
     }
 
@@ -68,7 +75,7 @@ async function processOsviOutboundForPhone(phone) {
         },
       }
     );
-    console.warn('[OSVI] Outbound call failed', errMsg);
+    console.warn(`[OSVI] Job ***${sfx}: OSVI API reported failure —`, errMsg);
     return { ok: false, status: 'failed', error: errMsg };
   } catch (err) {
     const msg = err && err.message ? String(err.message).slice(0, 500) : 'Exception';
@@ -76,7 +83,7 @@ async function processOsviOutboundForPhone(phone) {
       { phone },
       { $set: { osviOutboundCallStatus: 'failed', osviOutboundLastError: msg } }
     );
-    console.error('[OSVI] processOsviOutboundForPhone exception', err);
+    console.error(`[OSVI] Job ***${sfx}: exception before/after OSVI call`, err);
     return { ok: false, status: 'exception', error: msg };
   }
 }
@@ -89,15 +96,19 @@ async function processOsviOutboundForPhone(phone) {
  * @param {number} delayMs
  */
 function scheduleDelayedOsviOutbound(phone, delayMs) {
+  const sfx = phone.slice(-4);
+  console.log(
+    `[OSVI] Delayed outbound: waiting ${delayMs}ms then processing ***${sfx} (waitUntil on Vercel, or local timer)`
+  );
+
   const run = async () => {
     try {
       await new Promise((resolve) => setTimeout(resolve, delayMs));
+      console.log(`[OSVI] Delay elapsed for ***${sfx} — running processor (OSVI hit or skip logged below)`);
       const result = await processOsviOutboundForPhone(phone);
-      if (!result.ok && result.reason !== 'not_due_or_already_claimed') {
-        console.log('[OSVI] Delayed job result', phone.slice(-4), result);
-      }
+      console.log(`[OSVI] Delayed job summary ***${sfx}:`, result);
     } catch (e) {
-      console.error('[OSVI] scheduleDelayedOsviOutbound failed', e);
+      console.error(`[OSVI] scheduleDelayedOsviOutbound failed ***${sfx}`, e);
     }
   };
 
