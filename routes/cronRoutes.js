@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const FormSubmission = require('../models/FormSubmission');
 const { sendBulkReminderSms, sendBulkMeetLinkSms, sendBulkReminder30MinSms } = require('../utils/msg91Service');
+const { initiateOutboundCall, isOsviConfigured } = require('../utils/osviService');
 
 /**
  * Middleware to verify cron secret key
@@ -291,6 +292,85 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
       success: false,
       message: 'Internal server error',
       error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/cron/osvi-outbound-due
+ * Process counselor Apply flow: OSVI outbound calls scheduled ~2 min after slot booking (save-step3).
+ * Schedule with CRON_SECRET every 1 minute in production (Vercel Cron or external scheduler).
+ */
+router.get('/osvi-outbound-due', verifyCronSecret, async (req, res) => {
+  try {
+    if (!isOsviConfigured()) {
+      return res.status(200).json({
+        success: true,
+        message: 'OSVI not configured',
+        processed: 0,
+      });
+    }
+
+    const now = new Date();
+    const due = await FormSubmission.find({
+      osviOutboundCallStatus: 'pending',
+      osviOutboundScheduledAt: { $lte: now },
+    })
+      .limit(50)
+      .lean();
+
+    const results = [];
+
+    for (const doc of due) {
+      const phone = doc.phone;
+      const person_name = (doc.step1Data && doc.step1Data.fullName) || doc.fullName || 'Counsellor';
+      const occupation =
+        (doc.step1Data && doc.step1Data.occupation) || doc.occupation || 'Applicant';
+
+      const r = await initiateOutboundCall({
+        phone_number: phone,
+        person_name: String(person_name).trim(),
+        occupation: String(occupation).trim() || 'Applicant',
+      });
+
+      if (r.success) {
+        await FormSubmission.updateOne(
+          { phone },
+          {
+            $set: {
+              osviOutboundCallStatus: 'completed',
+              osviOutboundCompletedAt: new Date(),
+              osviOutboundLastError: null,
+            },
+          }
+        );
+        results.push({ phoneSuffix: phone.slice(-4), status: 'completed' });
+      } else {
+        const errMsg = (r.error && String(r.error).slice(0, 500)) || 'Unknown error';
+        await FormSubmission.updateOne(
+          { phone },
+          {
+            $set: {
+              osviOutboundCallStatus: 'failed',
+              osviOutboundLastError: errMsg,
+            },
+          }
+        );
+        results.push({ phoneSuffix: phone.slice(-4), status: 'failed', error: errMsg });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Processed ${due.length} OSVI outbound job(s)`,
+      processed: due.length,
+      results,
+    });
+  } catch (error) {
+    console.error('[Cron] osvi-outbound-due:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Internal server error',
     });
   }
 });

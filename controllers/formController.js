@@ -17,7 +17,7 @@ const SlotDateOverride = require('../models/SlotDateOverride');
 const { getISTCalendarDateUTC } = require('../utils/dateHelpers');
 const { appendRow, updateRow, markRowDeleted } = require('../utils/googleSheetsService');
 const { findOrCreateCounsellorAndGetToken } = require('./counsellorAuthController');
-const { initiateOutboundCall, isOsviConfigured } = require('../utils/osviService');
+const { isOsviConfigured } = require('../utils/osviService');
 
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const GOOGLE_SHEET_RANGE = process.env.GOOGLE_SHEET_RANGE || 'Sheet1';
@@ -174,32 +174,7 @@ exports.sendOtp = async (req, res) => {
       console.log('[sendOtp] OTP saved for phone ending', p.slice(-4));
     }
 
-    if (req.body?.osviOutboundCall === true) {
-      if (isOsviConfigured()) {
-        const nameTrim = fullName.trim();
-        const occTrim = occupation.trim();
-        void initiateOutboundCall({
-          phone_number: p,
-          person_name: nameTrim,
-          occupation: occTrim,
-        }).then((r) => {
-          if (r.success) {
-            const inner = r.data?.data;
-            console.log('[OSVI] Outbound call initiated', {
-              message: inner?.message,
-              status: inner?.status,
-              call_id: inner?.call_id,
-            });
-          } else {
-            console.warn('[OSVI] Outbound call failed', r.error, r.data?.data ?? r.data);
-          }
-        });
-      } else {
-        console.warn(
-          '[OSVI] Skipped: set OSVI_API_TOKEN and OSVI_AGENT_UUID on this deployment (trimmed empty)'
-        );
-      }
-    }
+    // OSVI outbound call is scheduled after slot booking (save-step3), not on OTP — see scheduleOsviOutbound + cron.
 
     return res.status(200).json({ success: true, message: 'OTP sent successfully' });
   } catch (err) {
@@ -580,6 +555,8 @@ exports.saveStep2 = async (req, res) => {
 exports.saveStep3 = async (req, res) => {
   try {
     const { phone, selectedSlot, slotDate } = req.body || {};
+    const scheduleOsviOutbound = req.body?.scheduleOsviOutbound === true;
+    const osviDelayMs = Math.max(0, Number(process.env.OSVI_OUTBOUND_DELAY_MS) || 120000);
 
     if (!phone || typeof phone !== 'string') {
       return res.status(400).json({ success: false, message: 'phone is required' });
@@ -655,6 +632,16 @@ exports.saveStep3 = async (req, res) => {
       reminder30MinSent: shouldSendReminder30MinImmediately,
       reminder30MinSentAt: shouldSendReminder30MinImmediately ? new Date() : null
     };
+    if (scheduleOsviOutbound && isOsviConfigured()) {
+      Object.assign(setPayload, {
+        osviOutboundScheduledAt: new Date(Date.now() + osviDelayMs),
+        osviOutboundCallStatus: 'pending',
+        osviOutboundLastError: null,
+        osviOutboundCompletedAt: null,
+      });
+    } else if (scheduleOsviOutbound && !isOsviConfigured()) {
+      console.warn('[saveStep3] scheduleOsviOutbound requested but OSVI not configured (OSVI_API_TOKEN / OSVI_AGENT_UUID)');
+    }
     const existingStep3 = await FormSubmission.findOne({ phone: p }).lean();
     mergeUtmIfFirstTouch(setPayload, req.body, existingStep3);
 

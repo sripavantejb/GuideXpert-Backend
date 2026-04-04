@@ -148,6 +148,23 @@ const formSubmissionSchema = new mongoose.Schema({
   // Admin-only notes (internal follow-up, not shown to applicant)
   adminNotes: { type: String, trim: true, maxlength: 2000 },
   adminNotesUpdatedAt: { type: Date },
+  // OSVI outbound call: scheduled after slot booking (counselor Apply), processed by cron
+  osviOutboundScheduledAt: {
+    type: Date,
+    default: null,
+  },
+  osviOutboundCallStatus: {
+    type: String,
+    enum: ['pending', 'completed', 'failed'],
+  },
+  osviOutboundLastError: {
+    type: String,
+    trim: true,
+    maxlength: 500,
+  },
+  osviOutboundCompletedAt: {
+    type: Date,
+  },
   // Lead follow-up status and description (admin panel)
   leadStatus: {
     type: String,
@@ -175,6 +192,8 @@ formSubmissionSchema.index({ isRegistered: 1, meetLinkSent: 1, 'step3Data.slotDa
 // Index for 30-min reminder cron job queries
 formSubmissionSchema.index({ isRegistered: 1, reminder30MinSent: 1, 'step3Data.slotDate': 1 });
 formSubmissionSchema.index({ utm_content: 1 });
+// OSVI delayed outbound cron
+formSubmissionSchema.index({ osviOutboundCallStatus: 1, osviOutboundScheduledAt: 1 });
 
 // Update updatedAt before saving
 formSubmissionSchema.pre('save', function() {
