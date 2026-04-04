@@ -557,7 +557,7 @@ exports.saveStep3 = async (req, res) => {
   try {
     const { phone, selectedSlot, slotDate } = req.body || {};
     const scheduleOsviOutbound = req.body?.scheduleOsviOutbound === true;
-    const osviDelayMs = Math.max(0, Number(process.env.OSVI_OUTBOUND_DELAY_MS) || 120000);
+    const osviDelayMs = Math.max(0, Number(process.env.OSVI_OUTBOUND_DELAY_MS) || 10000);
 
     if (!phone || typeof phone !== 'string') {
       return res.status(400).json({ success: false, message: 'phone is required' });

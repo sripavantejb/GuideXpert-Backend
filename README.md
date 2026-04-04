@@ -14,7 +14,7 @@ Copy `.env.example` to `.env` and set:
 - `OTP_SECRET` – strong random string for HMAC-SHA256 OTP hashing
 - `FRONTEND_URL` – allowed CORS origin (e.g. `http://localhost:5173`)
 - `CRON_SECRET` – required for `/api/cron/*` routes (query `key` or header `x-cron-key`)
-- `OSVI_OUTBOUND_DELAY_MS` – optional; milliseconds after slot save before OSVI call is due (default `120000`)
+- `OSVI_OUTBOUND_DELAY_MS` – optional; milliseconds after slot save before OSVI call is due (default `10000`)
 
 ## Run locally
 
@@ -35,7 +35,7 @@ npm run dev
 | POST | /api/submit-application | Submit form (body: fullName, phone, occupation, demoInterest, selectedSlot). Optional: utm_source, utm_medium, utm_campaign, utm_content. Requires prior verification. |
 | POST | /api/save-step1 | Save step 1 (body: fullName, phone, occupation). Optional UTM fields. |
 | POST | /api/save-step2 | Save OTP verification (body: phone). Optional UTM fields. |
-| POST | /api/save-step3 | Save slot booking (body: phone, selectedSlot, slotDate). Optional UTM fields. Optional `scheduleOsviOutbound: true` (counselor Apply) to queue OSVI call after `OSVI_OUTBOUND_DELAY_MS` (default 120000). |
+| POST | /api/save-step3 | Save slot booking (body: phone, selectedSlot, slotDate). Optional UTM fields. Optional `scheduleOsviOutbound: true` (counselor Apply) to queue OSVI call after `OSVI_OUTBOUND_DELAY_MS` (default 10000). |
 | POST | /api/save-post-registration | Save post-registration data (body: phone, interestLevel, email). Optional UTM fields. |
 | GET | /api/health | Health check. |
 
@@ -76,9 +76,9 @@ Use the same `key` query param, `x-cron-key` header, or `Authorization: Bearer <
 
 Without `/api/cron/osvi-outbound-due` running on a schedule, delayed OSVI calls will not execute on serverless hosts.
 
-Optional: `OSVI_OUTBOUND_DELAY_MS` (default `120000`) — delay from successful save-step3 until the outbound call runs.
+Optional: `OSVI_OUTBOUND_DELAY_MS` (default `10000`) — delay from successful save-step3 until the outbound call runs.
 
-**Vercel:** Slot booking uses `@vercel/functions` `waitUntil` so the OSVI request runs after the delay without relying only on cron. [`vercel.json`](vercel.json) sets `functions.server.js.maxDuration` to **300** seconds so a 2-minute wait plus the OSVI HTTP call can finish (raise this in the dashboard if your plan allows). Hobby plans may cap duration at 10s — if calls still never fire, upgrade or rely on `/api/cron/osvi-outbound-due` every minute.
+**Vercel:** Slot booking uses `@vercel/functions` `waitUntil` so the OSVI request runs after the delay without relying only on cron. [`vercel.json`](vercel.json) sets `functions.server.js.maxDuration` to **300** seconds so the configured wait (default 10s) plus the OSVI HTTP call can finish (raise this in the dashboard if your plan allows). Hobby plans may cap duration at 10s — if calls still never fire, upgrade or rely on `/api/cron/osvi-outbound-due` every minute.
 
 ## Security
 
