@@ -18,8 +18,7 @@ const { getISTCalendarDateUTC } = require('../utils/dateHelpers');
 const { appendRow, updateRow, markRowDeleted } = require('../utils/googleSheetsService');
 const { findOrCreateCounsellorAndGetToken } = require('./counsellorAuthController');
 const { isOsviConfigured } = require('../utils/osviService');
-const { scheduleDelayedOsviOutbound, pingCronForOsviJobs } = require('../utils/osviOutboundProcessor');
-const { hasCronSecretConfigured } = require('../utils/cronSecret');
+const { processOsviOutboundForPhone } = require('../utils/osviOutboundProcessor');
 
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const GOOGLE_SHEET_RANGE = process.env.GOOGLE_SHEET_RANGE || 'Sheet1';
@@ -559,8 +558,6 @@ exports.saveStep3 = async (req, res) => {
     const { phone, selectedSlot, slotDate } = req.body || {};
     const scheduleOsviOutbound = req.body?.scheduleOsviOutbound === true;
     const osviDelayMs = Math.max(0, Number(process.env.OSVI_OUTBOUND_DELAY_MS) || 10000);
-    /** On Vercel, delayed timers in this invocation often never run; use a follow-up GET + immediate scheduledAt. */
-    const useVercelCronPing = Boolean(process.env.VERCEL_URL && hasCronSecretConfigured());
 
     if (!phone || typeof phone !== 'string') {
       return res.status(400).json({ success: false, message: 'phone is required' });
@@ -638,9 +635,8 @@ exports.saveStep3 = async (req, res) => {
     };
     if (scheduleOsviOutbound && isOsviConfigured()) {
       Object.assign(setPayload, {
-        osviOutboundScheduledAt: useVercelCronPing
-          ? new Date()
-          : new Date(Date.now() + osviDelayMs),
+        osviOutboundScheduledAt:
+          osviDelayMs > 0 ? new Date(Date.now() + osviDelayMs) : new Date(),
         osviOutboundCallStatus: 'pending',
         osviOutboundLastError: null,
         osviOutboundCompletedAt: null,
@@ -769,17 +765,15 @@ exports.saveStep3 = async (req, res) => {
 
     otpStore.removeVerified(p);
 
+    /** OSVI runs in-process before res.json so the Lambda stays alive (post-response timers / self-fetch to cron are unreliable on Vercel). */
+    let osviOutboundResult = null;
     if (scheduleOsviOutbound && isOsviConfigured()) {
-      if (useVercelCronPing) {
-        await pingCronForOsviJobs();
-      } else {
-        if (process.env.VERCEL === '1') {
-          console.warn(
-            '[saveStep3] [OSVI] Running on Vercel but no cron secret or VERCEL_URL — set GUIDEXPERT_CRON_SECRET or CRON_SECRET (and rely on system VERCEL_URL) or OSVI may not run after save.'
-          );
-        }
-        scheduleDelayedOsviOutbound(p, osviDelayMs);
+      console.log(`[saveStep3] [OSVI] Waiting ${osviDelayMs}ms then outbound call in this request`);
+      if (osviDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, osviDelayMs));
       }
+      osviOutboundResult = await processOsviOutboundForPhone(p);
+      console.log('[saveStep3] [OSVI] Result:', osviOutboundResult);
     }
 
     return res.status(200).json({
@@ -787,7 +781,10 @@ exports.saveStep3 = async (req, res) => {
       message: 'Step 3 data saved successfully.',
       data: {
         selectedSlot,
-        slotDate: step3Data.slotDate
+        slotDate: step3Data.slotDate,
+        ...(scheduleOsviOutbound && osviOutboundResult != null
+          ? { osviOutboundResult }
+          : {})
       },
       smsStatus, // Slot confirmation SMS status
       reminderStatus, // Immediate reminder SMS status (only if slot within 4 hours)
