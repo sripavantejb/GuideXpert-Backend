@@ -15,6 +15,7 @@ Copy `.env.example` to `.env` and set:
 - `FRONTEND_URL` – allowed CORS origin (e.g. `http://localhost:5173`)
 - `CRON_SECRET` – required for `/api/cron/*` routes (query `key` or header `x-cron-key`)
 - `OSVI_ABANDONED_DELAY_MS` – optional fallback delay in ms after OTP before abandoned-flow OSVI call is due (default `600000`)
+- `OSVI_WEBHOOK_TOKEN` – permanent static bearer token for `POST /api/osvi/call-session`
 - `OSVI_ADMIN_API_TOKEN` – permanent static bearer token for OSVI/admin patch APIs
 
 ## Run locally
@@ -38,6 +39,9 @@ npm run dev
 | POST | /api/save-step2 | Save OTP verification (body: phone). Optional UTM fields. |
 | POST | /api/save-step3 | Save slot booking (body: phone, selectedSlot, slotDate). Optional UTM fields. Cancels pending abandoned-flow OSVI call for that phone. |
 | POST | /api/save-post-registration | Save post-registration data (body: phone, interestLevel, email). Optional UTM fields. |
+| POST | /api/osvi/call-session | Store OSVI call session in CRM DB. Requires `Authorization: Bearer <OSVI_WEBHOOK_TOKEN>`. |
+| GET | /api/osvi/test | OSVI route test endpoint. |
+| GET | /api/osvi/call-sessions | List stored OSVI call sessions for admin panel (admin JWT required). |
 | GET | /api/health | Health check. |
 | PATCH | /api/admin/leads/slot-by-phone | Update lead slot by phone (body: phone, slotDate, selectedSlot). Uses permanent bearer token `OSVI_ADMIN_API_TOKEN`. |
 
@@ -102,6 +106,49 @@ Body:
 ```
 
 **Vercel:** Slot booking uses `@vercel/functions` `waitUntil` so the OSVI request runs after the delay without relying only on cron. [`vercel.json`](vercel.json) sets `functions.server.js.maxDuration` to **300** seconds so the configured wait (default 10s) plus the OSVI HTTP call can finish (raise this in the dashboard if your plan allows). Hobby plans may cap duration at 10s — if calls still never fire, upgrade or rely on `/api/cron/osvi-outbound-due` every minute.
+
+### OSVI call-session webhook
+
+Generate a permanent webhook token once:
+
+```bash
+node utils/generateToken.js
+```
+
+Add the printed value to `.env`:
+
+```bash
+OSVI_WEBHOOK_TOKEN=your_generated_token
+```
+
+Test route:
+
+```bash
+curl -X GET http://localhost:5000/api/osvi/test
+```
+
+Webhook ingest test:
+
+```bash
+curl -X POST http://localhost:5000/api/osvi/call-session \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "callId": "call_123",
+    "phone": "+916300203798",
+    "agentName": "Demo Invitation Agent",
+    "callType": "outbound",
+    "duration": 28,
+    "status": "picked",
+    "recordingUrl": "https://recording-url",
+    "summary": "User interested in demo",
+    "transcript": "Assistant spoke with user",
+    "tag": "interesting lead",
+    "endReason": "silence-timed-out",
+    "endedBy": "agent",
+    "callTime": "2026-04-06T12:01:49Z"
+  }'
+```
 
 ## Security
 

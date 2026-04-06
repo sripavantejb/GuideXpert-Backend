@@ -33,6 +33,7 @@ const certificateRoutes = require('./routes/certificateRoutes');
 const webinarAssessmentRoutes = require('./routes/webinarAssessmentRoutes');
 const webinarProgressRoutes = require('./routes/webinarProgressRoutes');
 const blogRoutes = require('./routes/blogRoutes');
+const osviRoutes = require('./routes/osviRoutes');
 const { configStatus: counsellorConfigStatus } = require('./controllers/counsellorAuthController');
 
 const app = express();
@@ -158,6 +159,7 @@ app.use('/api/cron', cronRoutes);
 app.use('/api/certificate', certificateRoutes);
 app.use('/api/webinar-assessment', webinarAssessmentRoutes);
 app.use('/api/webinar-progress', webinarProgressRoutes);
+app.use('/api/osvi', osviRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'GuideXpert API is running' });
