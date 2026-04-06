@@ -43,12 +43,19 @@ async function processOsviOutboundForPhone(phone) {
     (claimed.step1Data && claimed.step1Data.fullName) || claimed.fullName || 'Counsellor';
   const occupation =
     (claimed.step1Data && claimed.step1Data.occupation) || claimed.occupation || 'Applicant';
+  const slot =
+    (claimed.step3Data && claimed.step3Data.selectedSlot) || claimed.selectedSlot || '';
+  const rawSlotDate =
+    (claimed.step3Data && claimed.step3Data.slotDate) || null;
+  const slotDate = rawSlotDate ? new Date(rawSlotDate).toISOString() : '';
 
   try {
     const r = await initiateOutboundCall({
       phone_number: phone,
       person_name: String(person_name).trim(),
       occupation: String(occupation).trim() || 'Applicant',
+      slot: String(slot).trim(),
+      slotDate,
     });
 
     if (r.success) {

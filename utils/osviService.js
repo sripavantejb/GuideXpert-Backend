@@ -20,10 +20,10 @@ function isOsviConfigured() {
 }
 
 /**
- * @param {{ phone_number: string, person_name: string, occupation: string }} params
+ * @param {{ phone_number: string, person_name: string, occupation: string, slot?: string, slotDate?: string }} params
  * @returns {Promise<{ success: boolean, error?: string, data?: unknown }>}
  */
-async function initiateOutboundCall({ phone_number, person_name, occupation }) {
+async function initiateOutboundCall({ phone_number, person_name, occupation, slot, slotDate }) {
   const { token, agentUuid } = getOsviCredentials();
   if (!token || !agentUuid) {
     return { success: false, error: 'OSVI not configured' };
@@ -44,6 +44,9 @@ async function initiateOutboundCall({ phone_number, person_name, occupation }) {
       ? webhookUrlEnv.trim()
       : '';
 
+  const normalizedSlot = typeof slot === 'string' ? slot.trim() : '';
+  const normalizedSlotDate = typeof slotDate === 'string' ? slotDate.trim() : '';
+
   const body = {
     agent_uuid: agentUuid,
     phone_number,
@@ -53,6 +56,8 @@ async function initiateOutboundCall({ phone_number, person_name, occupation }) {
     webhook_url,
     additional_data: {
       occupation,
+      slot: normalizedSlot,
+      slotDate: normalizedSlotDate,
       source: 'counselor_landing',
     },
   };
