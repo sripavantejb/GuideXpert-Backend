@@ -19,6 +19,7 @@ const { appendRow, updateRow, markRowDeleted } = require('../utils/googleSheetsS
 const { findOrCreateCounsellorAndGetToken } = require('./counsellorAuthController');
 const { isOsviConfigured } = require('../utils/osviService');
 const { processOsviOutboundForPhone } = require('../utils/osviOutboundProcessor');
+const { getOsviEnabled } = require('../utils/appSettings');
 
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const GOOGLE_SHEET_RANGE = process.env.GOOGLE_SHEET_RANGE || 'Sheet1';
@@ -768,12 +769,18 @@ exports.saveStep3 = async (req, res) => {
     /** OSVI runs in-process before res.json so the Lambda stays alive (post-response timers / self-fetch to cron are unreliable on Vercel). */
     let osviOutboundResult = null;
     if (scheduleOsviOutbound && isOsviConfigured()) {
-      console.log(`[saveStep3] [OSVI] Waiting ${osviDelayMs}ms then outbound call in this request`);
-      if (osviDelayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, osviDelayMs));
+      const osviEnabled = await getOsviEnabled();
+      if (!osviEnabled) {
+        console.log('[saveStep3] [OSVI] Disabled via admin toggle — skipping outbound call');
+        osviOutboundResult = { ok: false, reason: 'disabled_by_admin' };
+      } else {
+        console.log(`[saveStep3] [OSVI] Waiting ${osviDelayMs}ms then outbound call in this request`);
+        if (osviDelayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, osviDelayMs));
+        }
+        osviOutboundResult = await processOsviOutboundForPhone(p);
+        console.log('[saveStep3] [OSVI] Result:', osviOutboundResult);
       }
-      osviOutboundResult = await processOsviOutboundForPhone(p);
-      console.log('[saveStep3] [OSVI] Result:', osviOutboundResult);
     }
 
     return res.status(200).json({

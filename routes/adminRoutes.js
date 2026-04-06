@@ -19,6 +19,7 @@ const requireAdmin = require('../middleware/requireAdmin');
 const requireSuperAdmin = require('../middleware/requireSuperAdmin');
 const { listAdmins, createAdmin, deleteAdmin, resetAdminPassword, changeMyPassword } = require('../controllers/adminUserController');
 const { adminListProgress, adminProgressStats, adminProgressDetail, adminAssessmentDetail, adminUpdateProgress, adminBulkProgress, adminProgressExport } = require('../controllers/webinarProgressController');
+const { getOsviEnabled, setOsviEnabled } = require('../utils/appSettings');
 
 router.post('/login', login);
 router.get('/admins', requireAdmin, requireSuperAdmin, listAdmins);
@@ -61,6 +62,32 @@ router.patch('/announcements/:id', requireAdmin, adminUpdate);
 router.delete('/announcements/:id', requireAdmin, adminDelete);
 router.post('/announcements/:id/publish', requireAdmin, adminPublish);
 router.post('/announcements/:id/unpublish', requireAdmin, adminUnpublish);
+
+// App-wide feature toggles
+router.get('/app-settings/osvi', requireAdmin, async (req, res) => {
+  try {
+    const osviEnabled = await getOsviEnabled();
+    return res.json({ success: true, osviEnabled });
+  } catch (err) {
+    console.error('[AppSettings] GET osvi error:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+router.patch('/app-settings/osvi', requireAdmin, requireSuperAdmin, async (req, res) => {
+  try {
+    const { enabled } = req.body || {};
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ success: false, message: '`enabled` must be a boolean' });
+    }
+    const value = await setOsviEnabled(enabled);
+    console.log(`[AppSettings] OSVI outbound calls set to: ${value} by admin`);
+    return res.json({ success: true, osviEnabled: value });
+  } catch (err) {
+    console.error('[AppSettings] PATCH osvi error:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
 
 // Webinar Progress
 router.get('/webinar-progress/stats', requireAdmin, adminProgressStats);
