@@ -307,7 +307,8 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
 
 /**
  * GET /api/cron/osvi-outbound-due
- * Process counselor Apply flow: OSVI outbound calls scheduled ~2 min after slot booking (save-step3).
+ * Process counselor Apply abandoned-flow: OSVI outbound calls scheduled after OTP (+delay),
+ * and cancelled if slot is booked before due time.
  * Schedule with CRON_SECRET every 1 minute in production (Vercel Cron or external scheduler).
  */
 router.get('/osvi-outbound-due', verifyCronSecret, async (req, res) => {

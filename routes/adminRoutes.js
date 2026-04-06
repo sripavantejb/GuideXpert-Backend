@@ -19,7 +19,12 @@ const requireAdmin = require('../middleware/requireAdmin');
 const requireSuperAdmin = require('../middleware/requireSuperAdmin');
 const { listAdmins, createAdmin, deleteAdmin, resetAdminPassword, changeMyPassword } = require('../controllers/adminUserController');
 const { adminListProgress, adminProgressStats, adminProgressDetail, adminAssessmentDetail, adminUpdateProgress, adminBulkProgress, adminProgressExport } = require('../controllers/webinarProgressController');
-const { getOsviEnabled, setOsviEnabled } = require('../utils/appSettings');
+const {
+  getOsviEnabled,
+  setOsviEnabled,
+  getOsviAbandonedDelayMs,
+  setOsviAbandonedDelayMs,
+} = require('../utils/appSettings');
 
 router.post('/login', login);
 router.get('/admins', requireAdmin, requireSuperAdmin, listAdmins);
@@ -73,7 +78,7 @@ router.get('/osvi-calls', requireAdmin, async (req, res) => {
     const statusFilter = req.query.status;
 
     const query = { osviOutboundCallStatus: { $exists: true } };
-    if (statusFilter && ['pending', 'processing', 'completed', 'failed'].includes(statusFilter)) {
+    if (statusFilter && ['pending', 'processing', 'completed', 'failed', 'cancelled'].includes(statusFilter)) {
       query.osviOutboundCallStatus = statusFilter;
     }
 
@@ -109,8 +114,11 @@ router.get('/osvi-calls', requireAdmin, async (req, res) => {
 // App-wide feature toggles
 router.get('/app-settings/osvi', requireAdmin, async (req, res) => {
   try {
-    const osviEnabled = await getOsviEnabled();
-    return res.json({ success: true, osviEnabled });
+    const [osviEnabled, osviAbandonedDelayMs] = await Promise.all([
+      getOsviEnabled(),
+      getOsviAbandonedDelayMs(),
+    ]);
+    return res.json({ success: true, osviEnabled, osviAbandonedDelayMs });
   } catch (err) {
     console.error('[AppSettings] GET osvi error:', err);
     return res.status(500).json({ success: false, message: 'Internal server error' });
@@ -119,13 +127,47 @@ router.get('/app-settings/osvi', requireAdmin, async (req, res) => {
 
 router.patch('/app-settings/osvi', requireAdmin, requireSuperAdmin, async (req, res) => {
   try {
-    const { enabled } = req.body || {};
-    if (typeof enabled !== 'boolean') {
-      return res.status(400).json({ success: false, message: '`enabled` must be a boolean' });
+    const { enabled, osviAbandonedDelayMs } = req.body || {};
+    const hasEnabled = typeof enabled === 'boolean';
+    const hasDelay = osviAbandonedDelayMs != null;
+
+    if (!hasEnabled && !hasDelay) {
+      return res.status(400).json({
+        success: false,
+        message: 'Provide `enabled` (boolean) and/or `osviAbandonedDelayMs` (non-negative number)',
+      });
     }
-    const value = await setOsviEnabled(enabled);
-    console.log(`[AppSettings] OSVI outbound calls set to: ${value} by admin`);
-    return res.json({ success: true, osviEnabled: value });
+    if (hasDelay) {
+      const delay = Number(osviAbandonedDelayMs);
+      if (!Number.isFinite(delay) || delay < 0) {
+        return res.status(400).json({
+          success: false,
+          message: '`osviAbandonedDelayMs` must be a non-negative number',
+        });
+      }
+    }
+    let nextEnabled;
+    let nextDelayMs;
+
+    if (hasEnabled) {
+      nextEnabled = await setOsviEnabled(enabled);
+      console.log(`[AppSettings] OSVI outbound calls set to: ${nextEnabled} by admin`);
+    } else {
+      nextEnabled = await getOsviEnabled();
+    }
+
+    if (hasDelay) {
+      nextDelayMs = await setOsviAbandonedDelayMs(osviAbandonedDelayMs);
+      console.log(`[AppSettings] OSVI abandoned delay set to ${nextDelayMs}ms by admin`);
+    } else {
+      nextDelayMs = await getOsviAbandonedDelayMs();
+    }
+
+    return res.json({
+      success: true,
+      osviEnabled: nextEnabled,
+      osviAbandonedDelayMs: nextDelayMs,
+    });
   } catch (err) {
     console.error('[AppSettings] PATCH osvi error:', err);
     return res.status(500).json({ success: false, message: 'Internal server error' });

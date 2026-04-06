@@ -18,8 +18,7 @@ const { getISTCalendarDateUTC } = require('../utils/dateHelpers');
 const { appendRow, updateRow, markRowDeleted } = require('../utils/googleSheetsService');
 const { findOrCreateCounsellorAndGetToken } = require('./counsellorAuthController');
 const { isOsviConfigured } = require('../utils/osviService');
-const { processOsviOutboundForPhone } = require('../utils/osviOutboundProcessor');
-const { getOsviEnabled } = require('../utils/appSettings');
+const { getOsviEnabled, getOsviAbandonedDelayMs } = require('../utils/appSettings');
 
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const GOOGLE_SHEET_RANGE = process.env.GOOGLE_SHEET_RANGE || 'Sheet1';
@@ -176,7 +175,49 @@ exports.sendOtp = async (req, res) => {
       console.log('[sendOtp] OTP saved for phone ending', p.slice(-4));
     }
 
-    // OSVI outbound call is scheduled after slot booking (save-step3), not on OTP — see scheduleOsviOutbound + cron.
+    // Apply abandonment flow: schedule OSVI for +10 minutes after OTP if enabled.
+    const scheduleOsviForAbandonment = req.body?.scheduleOsviForAbandonment === true;
+    const abandonedDelayMs = await getOsviAbandonedDelayMs();
+    if (scheduleOsviForAbandonment) {
+      if (!isOsviConfigured()) {
+        console.warn('[sendOtp] [OSVI] Abandonment scheduling requested but OSVI not configured');
+      } else {
+        const osviEnabled = await getOsviEnabled();
+        if (!osviEnabled) {
+          console.log('[sendOtp] [OSVI] Abandonment scheduling skipped: disabled via admin toggle');
+        } else {
+          const dueAt = new Date(Date.now() + abandonedDelayMs);
+          await FormSubmission.findOneAndUpdate(
+            { phone: p },
+            {
+              $setOnInsert: {
+                fullName: String(fullName).trim(),
+                phone: p,
+                occupation: String(occupation).trim(),
+                createdAt: new Date(),
+              },
+              $set: {
+                step1Data: {
+                  fullName: String(fullName).trim(),
+                  whatsappNumber: p,
+                  occupation: String(occupation).trim(),
+                  step1CompletedAt: new Date(),
+                },
+                osviOutboundScheduledAt: dueAt,
+                osviOutboundCallStatus: 'pending',
+                osviOutboundLastError: null,
+                osviOutboundCompletedAt: null,
+                updatedAt: new Date(),
+              },
+            },
+            { upsert: true, new: true, runValidators: true }
+          );
+          console.log(
+            `[sendOtp] [OSVI] Abandonment call scheduled for ***${p.slice(-4)} at ${dueAt.toISOString()}`
+          );
+        }
+      }
+    }
 
     return res.status(200).json({ success: true, message: 'OTP sent successfully' });
   } catch (err) {
@@ -557,8 +598,6 @@ exports.saveStep2 = async (req, res) => {
 exports.saveStep3 = async (req, res) => {
   try {
     const { phone, selectedSlot, slotDate } = req.body || {};
-    const scheduleOsviOutbound = req.body?.scheduleOsviOutbound === true;
-    const osviDelayMs = Math.max(0, Number(process.env.OSVI_OUTBOUND_DELAY_MS) || 10000);
 
     if (!phone || typeof phone !== 'string') {
       return res.status(400).json({ success: false, message: 'phone is required' });
@@ -634,17 +673,13 @@ exports.saveStep3 = async (req, res) => {
       reminder30MinSent: shouldSendReminder30MinImmediately,
       reminder30MinSentAt: shouldSendReminder30MinImmediately ? new Date() : null
     };
-    if (scheduleOsviOutbound && isOsviConfigured()) {
-      Object.assign(setPayload, {
-        osviOutboundScheduledAt:
-          osviDelayMs > 0 ? new Date(Date.now() + osviDelayMs) : new Date(),
-        osviOutboundCallStatus: 'pending',
-        osviOutboundLastError: null,
-        osviOutboundCompletedAt: null,
-      });
-    } else if (scheduleOsviOutbound && !isOsviConfigured()) {
-      console.warn('[saveStep3] scheduleOsviOutbound requested but OSVI not configured (OSVI_API_TOKEN / OSVI_AGENT_UUID)');
-    }
+    // Slot booked: cancel any pending abandoned-apply OSVI call for this phone.
+    Object.assign(setPayload, {
+      osviOutboundCallStatus: 'cancelled',
+      osviOutboundLastError: 'cancelled_due_to_slot_booking',
+      osviOutboundScheduledAt: null,
+      osviOutboundCompletedAt: null,
+    });
     const existingStep3 = await FormSubmission.findOne({ phone: p }).lean();
     mergeUtmIfFirstTouch(setPayload, req.body, existingStep3);
 
@@ -766,32 +801,12 @@ exports.saveStep3 = async (req, res) => {
 
     otpStore.removeVerified(p);
 
-    /** OSVI runs in-process before res.json so the Lambda stays alive (post-response timers / self-fetch to cron are unreliable on Vercel). */
-    let osviOutboundResult = null;
-    if (scheduleOsviOutbound && isOsviConfigured()) {
-      const osviEnabled = await getOsviEnabled();
-      if (!osviEnabled) {
-        console.log('[saveStep3] [OSVI] Disabled via admin toggle — skipping outbound call');
-        osviOutboundResult = { ok: false, reason: 'disabled_by_admin' };
-      } else {
-        console.log(`[saveStep3] [OSVI] Waiting ${osviDelayMs}ms then outbound call in this request`);
-        if (osviDelayMs > 0) {
-          await new Promise((resolve) => setTimeout(resolve, osviDelayMs));
-        }
-        osviOutboundResult = await processOsviOutboundForPhone(p);
-        console.log('[saveStep3] [OSVI] Result:', osviOutboundResult);
-      }
-    }
-
     return res.status(200).json({
       success: true,
       message: 'Step 3 data saved successfully.',
       data: {
         selectedSlot,
-        slotDate: step3Data.slotDate,
-        ...(scheduleOsviOutbound && osviOutboundResult != null
-          ? { osviOutboundResult }
-          : {})
+        slotDate: step3Data.slotDate
       },
       smsStatus, // Slot confirmation SMS status
       reminderStatus, // Immediate reminder SMS status (only if slot within 4 hours)

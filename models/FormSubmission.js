@@ -155,7 +155,7 @@ const formSubmissionSchema = new mongoose.Schema({
   },
   osviOutboundCallStatus: {
     type: String,
-    enum: ['pending', 'processing', 'completed', 'failed'],
+    enum: ['pending', 'processing', 'completed', 'failed', 'cancelled'],
   },
   osviOutboundLastError: {
     type: String,
