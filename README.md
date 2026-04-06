@@ -14,7 +14,8 @@ Copy `.env.example` to `.env` and set:
 - `OTP_SECRET` – strong random string for HMAC-SHA256 OTP hashing
 - `FRONTEND_URL` – allowed CORS origin (e.g. `http://localhost:5173`)
 - `CRON_SECRET` – required for `/api/cron/*` routes (query `key` or header `x-cron-key`)
-- `OSVI_OUTBOUND_DELAY_MS` – optional; milliseconds after slot save before OSVI call is due (default `10000`)
+- `OSVI_ABANDONED_DELAY_MS` – optional fallback delay in ms after OTP before abandoned-flow OSVI call is due (default `600000`)
+- `OSVI_ADMIN_API_TOKEN` – permanent static bearer token for OSVI/admin patch APIs
 
 ## Run locally
 
@@ -35,9 +36,10 @@ npm run dev
 | POST | /api/submit-application | Submit form (body: fullName, phone, occupation, demoInterest, selectedSlot). Optional: utm_source, utm_medium, utm_campaign, utm_content. Requires prior verification. |
 | POST | /api/save-step1 | Save step 1 (body: fullName, phone, occupation). Optional UTM fields. |
 | POST | /api/save-step2 | Save OTP verification (body: phone). Optional UTM fields. |
-| POST | /api/save-step3 | Save slot booking (body: phone, selectedSlot, slotDate). Optional UTM fields. Optional `scheduleOsviOutbound: true` (counselor Apply) to queue OSVI call after `OSVI_OUTBOUND_DELAY_MS` (default 10000). |
+| POST | /api/save-step3 | Save slot booking (body: phone, selectedSlot, slotDate). Optional UTM fields. Cancels pending abandoned-flow OSVI call for that phone. |
 | POST | /api/save-post-registration | Save post-registration data (body: phone, interestLevel, email). Optional UTM fields. |
 | GET | /api/health | Health check. |
+| PATCH | /api/admin/leads/slot-by-phone | Update lead slot by phone (body: phone, slotDate, selectedSlot). Uses permanent bearer token `OSVI_ADMIN_API_TOKEN`. |
 
 ### Influencer tracking (admin only; require `Authorization: Bearer <token>`)
 
@@ -68,15 +70,36 @@ Set `CRON_SECRET` in the environment. Schedule HTTP calls (e.g. Vercel Cron or e
 | GET | Path | Purpose |
 |-----|------|---------|
 | | `/api/cron/send-reminders` | Reminder SMS (existing) |
-| | `/api/cron/osvi-outbound-due` | OSVI outbound calls due after counselor Apply slot booking (`?key=` or `x-cron-key` header) |
+| | `/api/cron/osvi-outbound-due` | OSVI outbound calls due for abandoned Apply flows (`?key=` or `x-cron-key` header) |
 
 Use the same `key` query param, `x-cron-key` header, or `Authorization: Bearer <CRON_SECRET>` (Vercel Cron uses the Bearer form when `CRON_SECRET` is set in the project). [`vercel.json`](vercel.json) schedules `/api/cron/osvi-outbound-due` every minute; redeploy after changing it.
 
-**OSVI:** Set `OSVI_API_TOKEN` and `OSVI_AGENT_UUID` on the deployment (e.g. Vercel Environment Variables). If `OSVI_AGENT_UUID` is missing, slot booking will not schedule outbound calls (`isOsviConfigured()` is false).
+**OSVI:** Set `OSVI_API_TOKEN` and `OSVI_AGENT_UUID` on the deployment (e.g. Vercel Environment Variables). If `OSVI_AGENT_UUID` is missing, abandoned-flow calls will not be scheduled (`isOsviConfigured()` is false).
 
 Without `/api/cron/osvi-outbound-due` running on a schedule, delayed OSVI calls will not execute on serverless hosts.
 
-Optional: `OSVI_OUTBOUND_DELAY_MS` (default `10000`) — delay from successful save-step3 until the outbound call runs.
+Optional fallback: `OSVI_ABANDONED_DELAY_MS` (default `600000`) — delay from OTP until abandoned-flow outbound call runs. Admin panel OSVI settings can override this delay at runtime.
+
+### OSVI slot update integration
+
+Use this endpoint from OSVI tool/action when the caller confirms a booked slot:
+
+`PATCH /api/admin/leads/slot-by-phone`
+
+Headers:
+
+- `Authorization: Bearer <OSVI_ADMIN_API_TOKEN>`
+- `Content-Type: application/json`
+
+Body:
+
+```json
+{
+  "phone": "9876543210",
+  "slotDate": "2026-04-08",
+  "selectedSlot": "TUESDAY_6PM"
+}
+```
 
 **Vercel:** Slot booking uses `@vercel/functions` `waitUntil` so the OSVI request runs after the delay without relying only on cron. [`vercel.json`](vercel.json) sets `functions.server.js.maxDuration` to **300** seconds so the configured wait (default 10s) plus the OSVI HTTP call can finish (raise this in the dashboard if your plan allows). Hobby plans may cap duration at 10s — if calls still never fire, upgrade or rely on `/api/cron/osvi-outbound-due` every minute.
 

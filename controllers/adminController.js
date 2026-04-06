@@ -14,6 +14,7 @@ const TrainingFeedback = require('../models/TrainingFeedback');
 const Counsellor = require('../models/Counsellor');
 const { getISTCalendarDateUTC, getISTDayRangeFromString } = require('../utils/dateHelpers');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
+const { updateLeadSlotByQuery } = require('../services/leadSlotUpdateService');
 
 function normalizePhoneTo10(value) {
   if (value == null) return '';
@@ -35,6 +36,7 @@ const ALL_SLOT_IDS = [
   'MONDAY_6PM', 'TUESDAY_6PM', 'WEDNESDAY_6PM', 'THURSDAY_6PM',
   'FRIDAY_6PM', 'SATURDAY_6PM', 'SUNDAY_6PM'
 ];
+
 
 /** Lead is "slot booked" if any of: isRegistered, step3Data.selectedSlot, or root selectedSlot is set. */
 const SLOT_BOOKED_CONDITION = {
@@ -74,7 +76,6 @@ function intersectSortedPhones(attendeePhones, allowedSet) {
   return attendeePhones.filter((p) => allowedSet.has(p));
 }
 
-const DAY_NAMES = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 
 function formatSlotLabelForDisplay(slotId) {
   if (!slotId || typeof slotId !== 'string') return slotId || '';
@@ -304,21 +305,6 @@ exports.updateLeadNotes = async (req, res) => {
   }
 };
 
-function getIstDayOfWeekFromDateRangeStart(start) {
-  const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
-  return new Date(start.getTime() + IST_OFFSET_MS).getUTCDay();
-}
-
-async function isSlotEnabledForDate(slotId, dateStartUtc) {
-  const [config, override] = await Promise.all([
-    SlotConfig.findOne({ slotId }).lean(),
-    SlotDateOverride.findOne({ slotId, date: dateStartUtc }).lean(),
-  ]);
-  if (override && typeof override.enabled === 'boolean') return override.enabled;
-  if (config && typeof config.enabled === 'boolean') return config.enabled;
-  return true;
-}
-
 exports.updateLeadSlotBooking = async (req, res) => {
   try {
     const { id } = req.params;
@@ -331,63 +317,45 @@ exports.updateLeadSlotBooking = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(404).json({ success: false, message: 'Lead not found' });
     }
-    if (!slotDate || typeof slotDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(slotDate.trim())) {
-      return res.status(400).json({ success: false, message: 'slotDate is required in YYYY-MM-DD format' });
-    }
-    if (!selectedSlot || typeof selectedSlot !== 'string' || !ALL_SLOT_IDS.includes(selectedSlot.trim())) {
-      return res.status(400).json({ success: false, message: 'selectedSlot is invalid' });
-    }
-
-    const normalizedSlotId = selectedSlot.trim();
-    const istDayRange = getISTDayRangeFromString(slotDate.trim());
-    if (!istDayRange) {
-      return res.status(400).json({ success: false, message: 'Invalid slotDate. Expected YYYY-MM-DD.' });
-    }
-    const { start } = istDayRange;
-
-    const slotDayName = normalizedSlotId.split('_')[0];
-    const requiredDow = DAY_NAMES.indexOf(slotDayName);
-    const istDow = getIstDayOfWeekFromDateRangeStart(start);
-    if (requiredDow === -1 || requiredDow !== istDow) {
-      return res.status(400).json({
-        success: false,
-        message: 'selectedSlot day does not match slotDate day'
-      });
+    const result = await updateLeadSlotByQuery({
+      query: { _id: id },
+      slotDate,
+      selectedSlot,
+    });
+    if (!result.ok) {
+      return res.status(result.status).json({ success: false, message: result.message });
     }
 
-    const enabled = await isSlotEnabledForDate(normalizedSlotId, start);
-    if (!enabled) {
-      return res.status(400).json({
-        success: false,
-        message: 'selectedSlot is not available on the requested date'
-      });
-    }
-
-    const updated = await FormSubmission.findByIdAndUpdate(
-      id,
-      {
-        $set: {
-          selectedSlot: normalizedSlotId,
-          'step3Data.selectedSlot': normalizedSlotId,
-          'step3Data.slotDate': start,
-          reminderSent: false,
-          reminderSentAt: null,
-          meetLinkSent: false,
-          meetLinkSentAt: null,
-          reminder30MinSent: false,
-          reminder30MinSentAt: null,
-        }
-      },
-      { new: true }
-    ).lean();
-
-    if (!updated) {
-      return res.status(404).json({ success: false, message: 'Lead not found' });
-    }
-
-    return res.status(200).json({ success: true, data: mapLeadToDTO(updated) });
+    return res.status(200).json({ success: true, data: mapLeadToDTO(result.updated) });
   } catch (error) {
     console.error('[updateLeadSlotBooking] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.updateLeadSlotByPhone = async (req, res) => {
+  try {
+    const { phone, slotDate, selectedSlot } = req.body || {};
+    if (!phone || typeof phone !== 'string') {
+      return res.status(400).json({ success: false, message: 'phone is required' });
+    }
+    const normalizedPhone = normalizePhoneTo10(phone);
+    if (!/^\d{10}$/.test(normalizedPhone)) {
+      return res.status(400).json({ success: false, message: 'Valid 10-digit phone required' });
+    }
+
+    const result = await updateLeadSlotByQuery({
+      query: { phone: normalizedPhone },
+      slotDate,
+      selectedSlot,
+    });
+    if (!result.ok) {
+      return res.status(result.status).json({ success: false, message: result.message });
+    }
+
+    return res.status(200).json({ success: true, data: mapLeadToDTO(result.updated) });
+  } catch (error) {
+    console.error('[updateLeadSlotByPhone] Error:', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };

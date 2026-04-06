@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { login, getAdminLeads, getLeadById, updateLeadNotes, updateLeadSlotBooking, getAdminStats, exportLeads, getSlotConfigs, getSlotsForDate, updateSlotConfig, getSlotBookingCounts, getSlotOverrides, setSlotOverride, getAssessmentSubmissions, getAssessment2Submissions, getAssessment3Submissions, getAssessmentSubmissionById, getAssessment2SubmissionById, getAssessment3SubmissionById, getAssessment4Submissions, getAssessment4SubmissionById, getAssessment5Submissions, getAssessment5SubmissionById, getMissingLeads } = require('../controllers/adminController');
+const { login, getAdminLeads, getLeadById, updateLeadNotes, updateLeadSlotBooking, updateLeadSlotByPhone, getAdminStats, exportLeads, getSlotConfigs, getSlotsForDate, updateSlotConfig, getSlotBookingCounts, getSlotOverrides, setSlotOverride, getAssessmentSubmissions, getAssessment2Submissions, getAssessment3Submissions, getAssessmentSubmissionById, getAssessment2SubmissionById, getAssessment3SubmissionById, getAssessment4Submissions, getAssessment4SubmissionById, getAssessment5Submissions, getAssessment5SubmissionById, getMissingLeads } = require('../controllers/adminController');
 const { getMeetingAttendance } = require('../controllers/meetingController');
 const { getTrainingAttendance } = require('../controllers/trainingController');
 const { getTrainingFeedback } = require('../controllers/feedbackController');
@@ -17,6 +17,7 @@ const {
 } = require('../controllers/announcementController');
 const requireAdmin = require('../middleware/requireAdmin');
 const requireSuperAdmin = require('../middleware/requireSuperAdmin');
+const requireOsviAdminToken = require('../middleware/requireOsviAdminToken');
 const { listAdmins, createAdmin, deleteAdmin, resetAdminPassword, changeMyPassword } = require('../controllers/adminUserController');
 const { adminListProgress, adminProgressStats, adminProgressDetail, adminAssessmentDetail, adminUpdateProgress, adminBulkProgress, adminProgressExport } = require('../controllers/webinarProgressController');
 const {
@@ -36,6 +37,7 @@ router.get('/leads', requireAdmin, getAdminLeads);
 router.get('/leads/:id', requireAdmin, getLeadById);
 router.patch('/leads/:id', requireAdmin, updateLeadNotes);
 router.patch('/leads/:id/slot', requireAdmin, updateLeadSlotBooking);
+router.patch('/leads/slot-by-phone', requireOsviAdminToken, updateLeadSlotByPhone);
 router.get('/stats', requireAdmin, getAdminStats);
 router.get('/leads/export', requireAdmin, exportLeads);
 router.get('/slots', requireAdmin, getSlotConfigs);
