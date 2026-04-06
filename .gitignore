@@ -4,3 +4,4 @@ node_modules/
 # Google Cloud service account key — never commit
 config/sheets-service-account.json
 **/sheets-service-account*.json
+.vercel
