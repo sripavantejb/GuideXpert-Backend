@@ -63,6 +63,49 @@ router.delete('/announcements/:id', requireAdmin, adminDelete);
 router.post('/announcements/:id/publish', requireAdmin, adminPublish);
 router.post('/announcements/:id/unpublish', requireAdmin, adminUnpublish);
 
+// OSVI outbound call history
+router.get('/osvi-calls', requireAdmin, async (req, res) => {
+  try {
+    const FormSubmission = require('../models/FormSubmission');
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+    const skip = (page - 1) * limit;
+    const statusFilter = req.query.status;
+
+    const query = { osviOutboundCallStatus: { $exists: true } };
+    if (statusFilter && ['pending', 'processing', 'completed', 'failed'].includes(statusFilter)) {
+      query.osviOutboundCallStatus = statusFilter;
+    }
+
+    const [docs, total] = await Promise.all([
+      FormSubmission.find(query)
+        .sort({ osviOutboundScheduledAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select('phone fullName step1Data osviOutboundCallStatus osviOutboundScheduledAt osviOutboundCompletedAt osviOutboundLastError selectedSlot registeredAt')
+        .lean(),
+      FormSubmission.countDocuments(query),
+    ]);
+
+    const rows = docs.map((d) => ({
+      id: d._id,
+      phone: d.phone ? `***${String(d.phone).slice(-4)}` : '—',
+      name: d.step1Data?.fullName || d.fullName || '—',
+      slot: d.selectedSlot || '—',
+      status: d.osviOutboundCallStatus,
+      scheduledAt: d.osviOutboundScheduledAt,
+      completedAt: d.osviOutboundCompletedAt,
+      lastError: d.osviOutboundLastError || null,
+      registeredAt: d.registeredAt,
+    }));
+
+    return res.json({ success: true, rows, total, page, limit });
+  } catch (err) {
+    console.error('[Admin] osvi-calls error:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
 // App-wide feature toggles
 router.get('/app-settings/osvi', requireAdmin, async (req, res) => {
   try {
