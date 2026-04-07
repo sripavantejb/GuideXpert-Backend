@@ -35,6 +35,8 @@ const webinarProgressRoutes = require('./routes/webinarProgressRoutes');
 const blogRoutes = require('./routes/blogRoutes');
 const osviRoutes = require('./routes/osviRoutes');
 const { configStatus: counsellorConfigStatus } = require('./controllers/counsellorAuthController');
+const { getPosterDownloads, getPosterDownloadStats } = require('./controllers/posterDownloadController');
+const requireAdmin = require('./middleware/requireAdmin');
 
 const app = express();
 
@@ -121,6 +123,17 @@ app.use(async (req, res, next) => {
   }
 });
 
+// Register specific /api routes before any broad `app.use('/api', router)` mounts.
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    message: 'GuideXpert API is running',
+    features: { posterDownloadAdmin: true },
+  });
+});
+app.get('/api/admin/poster-downloads/stats', requireAdmin, getPosterDownloadStats);
+app.get('/api/admin/poster-downloads', requireAdmin, getPosterDownloads);
+
 // Public college predictor (no auth) — mount before counsellor routes
 app.use('/api/college-predictor', collegePredictorPublicRoutes);
 // Public rank predictor (strict dataset lookup)
@@ -160,10 +173,6 @@ app.use('/api/certificate', certificateRoutes);
 app.use('/api/webinar-assessment', webinarAssessmentRoutes);
 app.use('/api/webinar-progress', webinarProgressRoutes);
 app.use('/api/osvi', osviRoutes);
-
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'GuideXpert API is running' });
-});
 
 app.use((req, res) => {
   res.status(404).json({ success: false, message: 'Not found' });
