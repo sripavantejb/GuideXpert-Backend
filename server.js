@@ -36,6 +36,7 @@ const blogRoutes = require('./routes/blogRoutes');
 const osviRoutes = require('./routes/osviRoutes');
 const { configStatus: counsellorConfigStatus } = require('./controllers/counsellorAuthController');
 const { getPosterDownloads, getPosterDownloadStats } = require('./controllers/posterDownloadController');
+const { checkPosterEligibility, trackPosterDownload } = require('./controllers/posterController');
 const requireAdmin = require('./middleware/requireAdmin');
 
 const app = express();
@@ -133,6 +134,10 @@ app.get('/api/health', (req, res) => {
 });
 app.get('/api/admin/poster-downloads/stats', requireAdmin, getPosterDownloadStats);
 app.get('/api/admin/poster-downloads', requireAdmin, getPosterDownloads);
+// Public poster endpoints — registered before counsellor routers whose
+// router.use(requireCounsellor) would otherwise block unauthenticated requests.
+app.post('/api/counsellor/poster-eligibility', checkPosterEligibility);
+app.post('/api/counsellor/poster-downloads/track', trackPosterDownload);
 
 // Public college predictor (no auth) — mount before counsellor routes
 app.use('/api/college-predictor', collegePredictorPublicRoutes);
