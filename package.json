@@ -14,7 +14,9 @@
     "backfill:webinar-feedback": "node scripts/backfillWebinarCompletionFromFeedback.js",
     "backfill:student-createdby": "node scripts/backfillStudentCreatedBy.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "test:poster-track": "node scripts/testPosterTrackKeys.js"
+    "test:poster-track": "node scripts/testPosterTrackKeys.js",
+    "clean:poster-download-smoke": "node scripts/deletePosterDownloadSmokeTestData.js",
+    "clean:poster-download-smoke:dry-run": "node scripts/deletePosterDownloadSmokeTestData.js --dry-run"
   },
   "repository": {
     "type": "git",
