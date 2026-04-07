@@ -1,7 +1,5 @@
 const mongoose = require('mongoose');
-
-const POSTER_KEYS = ['holi', 'inter', 'gx', 'sid', 'certified'];
-const FORMATS = ['png', 'pdf'];
+const { POSTER_KEYS, FORMATS } = require('../utils/posterDownloadConstants');
 const IDENTITY_METHODS = ['jwt', 'phone_match', 'anonymous'];
 const ROUTE_CONTEXTS = ['public', 'portal'];
 

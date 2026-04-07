@@ -2,7 +2,7 @@ const jwt = require('jsonwebtoken');
 const TrainingFeedback = require('../models/TrainingFeedback');
 const Counsellor = require('../models/Counsellor');
 const PosterDownload = require('../models/PosterDownload');
-const { POSTER_KEYS, FORMATS } = require('../models/PosterDownload');
+const { POSTER_KEYS, FORMATS } = require('../utils/posterDownloadConstants');
 
 function to10Digits(val) {
   if (val == null) return '';
@@ -63,16 +63,31 @@ async function tryCounsellorIdFromOptionalBearer(authHeader) {
  * POST /api/counsellor/poster-downloads/track
  * Fire-and-forget from client; optional Bearer counsellor JWT; never 401 for bad token.
  */
+function normalizeTrackString(val) {
+  if (val == null) return '';
+  return String(val).trim().toLowerCase();
+}
+
+const TRACK_INVALID_DETAIL = `posterKey must be one of: ${POSTER_KEYS.join(', ')}; format must be one of: ${FORMATS.join(', ')}`;
+
 exports.trackPosterDownload = async (req, res) => {
   try {
-    const posterKey = req.body?.posterKey;
-    const format = req.body?.format;
+    const raw = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    let posterKey = normalizeTrackString(raw.posterKey ?? raw.poster_key);
+    let format = normalizeTrackString(raw.format ?? raw.fileFormat);
+    if (format === 'image/png') format = 'png';
+    if (format === 'application/pdf') format = 'pdf';
     if (!POSTER_KEYS.includes(posterKey) || !FORMATS.includes(format)) {
-      return res.status(400).json({ success: false, message: 'Invalid posterKey or format.' });
+      return res.status(400).json({
+        success: false,
+        message: `Invalid posterKey or format. ${TRACK_INVALID_DETAIL}`,
+        received: { posterKey: posterKey || null, format: format || null },
+      });
     }
 
-    let routeContext = req.body?.routeContext;
+    let routeContext = raw.routeContext ?? raw.route_context;
     if (routeContext != null && routeContext !== '') {
+      routeContext = String(routeContext).trim().toLowerCase();
       if (!['public', 'portal'].includes(routeContext)) {
         return res.status(400).json({ success: false, message: 'Invalid routeContext.' });
       }
@@ -80,8 +95,8 @@ exports.trackPosterDownload = async (req, res) => {
       routeContext = undefined;
     }
 
-    const displayNameSnapshot = String(req.body?.displayName ?? '').trim().slice(0, 100);
-    const mobileSnapshot = to10Digits(req.body?.mobileNumber ?? '');
+    const displayNameSnapshot = String(raw.displayName ?? raw.display_name ?? '').trim().slice(0, 100);
+    const mobileSnapshot = to10Digits(raw.mobileNumber ?? raw.mobile_number ?? raw.mobile ?? '');
 
     let counsellorId = await tryCounsellorIdFromOptionalBearer(req.headers.authorization);
     let identityMethod = 'anonymous';

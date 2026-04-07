@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const PosterDownload = require('../models/PosterDownload');
-const { POSTER_KEYS } = PosterDownload;
+const { POSTER_KEYS } = require('../utils/posterDownloadConstants');
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -71,7 +71,7 @@ exports.getPosterDownloads = async (req, res) => {
     }
 
     if (req.query.posterKey && String(req.query.posterKey).trim()) {
-      const key = String(req.query.posterKey).trim();
+      const key = String(req.query.posterKey).trim().toLowerCase();
       if (POSTER_KEYS.includes(key)) filter.posterKey = key;
     }
 
