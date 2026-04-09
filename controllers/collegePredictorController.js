@@ -36,6 +36,11 @@ function normalizePredictorResponse(data) {
   return data;
 }
 
+function isJeeExamEnum(value) {
+  const v = String(value || '').trim();
+  return v === 'JEE_MAINS_2024' || v === 'JEE_ADVANCE_2024' || v === 'JEE_MAIN' || v === 'JEE_ADVANCED';
+}
+
 /**
  * POST /college-predictor/colleges?offset=0&limit=10
  *
@@ -122,6 +127,11 @@ async function handleCollegeDost(req, res, offset, limit, body) {
     districts: Array.isArray(body.districts) ? body.districts : [],
     sort_order: sortOrder,
   };
+
+  // Upstream JEE datasets currently accept admission enum DEFAULT only.
+  if (isJeeExamEnum(payload.entrance_exam_name_enum) || isJeeExamEnum(exam)) {
+    payload.admission_category_name_enum = 'DEFAULT';
+  }
 
   if (process.env.NODE_ENV !== 'production') {
     console.log('[college-predictor:collegeDost] exam:', exam, '| payload:', JSON.stringify(payload));
