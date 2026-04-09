@@ -41,6 +41,15 @@ function isJeeExamEnum(value) {
   return v === 'JEE_MAINS_2024' || v === 'JEE_ADVANCE_2024' || v === 'JEE_MAIN' || v === 'JEE_ADVANCED';
 }
 
+function isWbjeeExamEnum(value) {
+  const v = String(value || '').trim();
+  return v === 'WBJEE_2024' || v === 'WBJEE' || v === 'WBJEE_JEE_MAINS_2024';
+}
+
+function needsDefaultAdmissionEnum(value) {
+  return isJeeExamEnum(value) || isWbjeeExamEnum(value);
+}
+
 /**
  * POST /college-predictor/colleges?offset=0&limit=10
  *
@@ -128,8 +137,12 @@ async function handleCollegeDost(req, res, offset, limit, body) {
     sort_order: sortOrder,
   };
 
-  // Upstream JEE datasets currently accept admission enum DEFAULT only.
-  if (isJeeExamEnum(payload.entrance_exam_name_enum) || isJeeExamEnum(exam)) {
+  // Upstream JEE & WBJEE datasets accept admission enum DEFAULT only.
+  if (
+    needsDefaultAdmissionEnum(payload.entrance_exam_name_enum) ||
+    needsDefaultAdmissionEnum(exam) ||
+    needsDefaultAdmissionEnum(body.entrance_exam_name_enum)
+  ) {
     payload.admission_category_name_enum = 'DEFAULT';
   }
 

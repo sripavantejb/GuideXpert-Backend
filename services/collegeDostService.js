@@ -51,6 +51,9 @@ const EXAM_API_MAP = {
   /** Frontend keeps generic keys; upstream currently accepts year-scoped enums. */
   JEE_MAIN: 'JEE_MAINS_2024',
   JEE_ADVANCED: 'JEE_ADVANCE_2024',
+  /** Earlywave accepts year-scoped enum; CollegeDost UI may reference WBJEE_JEE_MAINS_2024 — nw-predictors uses WBJEE_2024. */
+  WBJEE: 'WBJEE_2024',
+  WBJEE_JEE_MAINS_2024: 'WBJEE_2024',
 };
 
 const SUPPORTED_EXAMS = Object.keys(EXAM_API_MAP);
@@ -66,6 +69,7 @@ const DEFAULT_RESERVATION_BY_API_EXAM = {
   JEE: 'OPEN_AI',
   JEE_MAINS_2024: 'OPEN_AI',
   JEE_ADVANCE_2024: 'OPEN_AI',
+  WBJEE_2024: 'OPEN_AI',
 };
 
 /**
@@ -97,14 +101,22 @@ function pickDefaultReservation(apiExamEnum) {
 }
 
 function pickDefaultAdmissionCategory(apiExamEnum) {
-  if (apiExamEnum === 'JEE_MAINS_2024' || apiExamEnum === 'JEE_ADVANCE_2024') {
+  if (
+    apiExamEnum === 'JEE_MAINS_2024' ||
+    apiExamEnum === 'JEE_ADVANCE_2024' ||
+    apiExamEnum === 'WBJEE_2024'
+  ) {
     return 'DEFAULT';
   }
   return 'GENERAL';
 }
 
 function normalizeAdmissionCategoryForUpstream(apiExamEnum, admission) {
-  if (apiExamEnum === 'JEE_MAINS_2024' || apiExamEnum === 'JEE_ADVANCE_2024') {
+  if (
+    apiExamEnum === 'JEE_MAINS_2024' ||
+    apiExamEnum === 'JEE_ADVANCE_2024' ||
+    apiExamEnum === 'WBJEE_2024'
+  ) {
     return 'DEFAULT';
   }
   const a = String(admission ?? '').trim();
