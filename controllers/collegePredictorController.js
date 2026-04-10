@@ -50,6 +50,57 @@ function needsDefaultAdmissionEnum(value) {
   return isJeeExamEnum(value) || isWbjeeExamEnum(value);
 }
 
+const CUTOFF_UPPER_BOUND = 500000;
+
+/**
+ * Convert a student rank into [cutoff_from, cutoff_to] for the upstream API.
+ * Ported from frontend collegePredictorOptions.js.
+ */
+function rankToCutoff(rank) {
+  const r = Number(rank);
+  if (!Number.isFinite(r) || r <= 0) return null;
+  let buffer;
+  if (r <= 50) buffer = 3;
+  else if (r <= 100) buffer = 10;
+  else if (r <= 1000) buffer = 30;
+  else if (r <= 5000) buffer = 50;
+  else if (r <= 10000) buffer = 100;
+  else if (r <= 16000) buffer = 500;
+  else if (r <= 30000) buffer = 800;
+  else if (r <= 50000) buffer = 1000;
+  else if (r <= 100000) buffer = 1200;
+  else buffer = 2000;
+  return [Math.max(1, r - buffer), CUTOFF_UPPER_BOUND];
+}
+
+/**
+ * If cutoff_from / cutoff_to are missing, try to derive them from rank fields.
+ * For WBJEE: prefer wbjee_rank > jee_main_rank > rank.
+ * For other exams: use rank field.
+ * Mutates `body` in place. Returns true if cutoffs were set.
+ */
+function tryDeriveRankCutoffs(body, exam) {
+  const hasFrom = body.cutoff_from !== undefined && body.cutoff_from !== null && body.cutoff_from !== '';
+  const hasTo = body.cutoff_to !== undefined && body.cutoff_to !== null && body.cutoff_to !== '';
+  if (hasFrom && hasTo) return false;
+
+  let rankValue = null;
+  if (isWbjeeExamEnum(exam)) {
+    rankValue = body.wbjee_rank ?? body.jee_main_rank ?? body.rank ?? null;
+  } else {
+    rankValue = body.rank ?? null;
+  }
+
+  if (rankValue === null || rankValue === '' || rankValue === undefined) return false;
+
+  const result = rankToCutoff(rankValue);
+  if (!result) return false;
+
+  body.cutoff_from = result[0];
+  body.cutoff_to = result[1];
+  return true;
+}
+
 /**
  * POST /college-predictor/colleges?offset=0&limit=10
  *
@@ -92,16 +143,19 @@ async function getPredictedCollegesHandler(req, res) {
 async function handleCollegeDost(req, res, offset, limit, body) {
   const exam = String(body.exam).trim();
 
+  // Auto-derive cutoffs from rank when cutoff fields are absent.
+  tryDeriveRankCutoffs(body, exam);
+
   const rawFrom = body.cutoff_from;
   const rawTo = body.cutoff_to;
   const cutoffFrom = rawFrom != null && rawFrom !== '' ? parseInt(Number(rawFrom), 10) : NaN;
   const cutoffTo = rawTo != null && rawTo !== '' ? parseInt(Number(rawTo), 10) : NaN;
 
   if (rawFrom === undefined || rawFrom === null || rawFrom === '') {
-    return res.status(400).json({ response: 'cutoff_from is required', res_status: 'INVALID_INPUT_FORMAT', http_status_code: 400 });
+    return res.status(400).json({ response: 'cutoff_from is required (or provide rank / wbjee_rank / jee_main_rank)', res_status: 'INVALID_INPUT_FORMAT', http_status_code: 400 });
   }
   if (rawTo === undefined || rawTo === null || rawTo === '') {
-    return res.status(400).json({ response: 'cutoff_to is required', res_status: 'INVALID_INPUT_FORMAT', http_status_code: 400 });
+    return res.status(400).json({ response: 'cutoff_to is required (or provide rank / wbjee_rank / jee_main_rank)', res_status: 'INVALID_INPUT_FORMAT', http_status_code: 400 });
   }
   if (!Number.isInteger(cutoffFrom) || cutoffFrom < 0) {
     return res.status(400).json({ response: 'cutoff_from must be a non-negative integer', res_status: 'INVALID_INPUT_FORMAT', http_status_code: 400 });
@@ -126,6 +180,8 @@ async function handleCollegeDost(req, res, offset, limit, body) {
     reservationCodes = [String(body.reservation_category_code).trim()];
   }
 
+  const quota = body.quota != null && String(body.quota).trim() !== '' ? String(body.quota).trim() : undefined;
+
   const payload = {
     entrance_exam_name_enum: body.entrance_exam_name_enum || exam,
     admission_category_name_enum: body.admission_category_name_enum || 'GENERAL',
@@ -135,6 +191,7 @@ async function handleCollegeDost(req, res, offset, limit, body) {
     branch_codes: Array.isArray(body.branch_codes) ? body.branch_codes : [],
     districts: Array.isArray(body.districts) ? body.districts : [],
     sort_order: sortOrder,
+    quota,
   };
 
   // Upstream JEE & WBJEE datasets accept admission enum DEFAULT only.

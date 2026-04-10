@@ -134,8 +134,50 @@ function normalizeMhtCetReservationCodeForUpstream(apiExamEnum, code) {
   return c;
 }
 
-function normalizeReservationCodeForUpstream(apiExamEnum, code) {
-  return normalizeMhtCetReservationCodeForUpstream(apiExamEnum, code);
+function normalizeReservationCodeForUpstream(apiExamEnum, code, quota) {
+  let c = normalizeMhtCetReservationCodeForUpstream(apiExamEnum, code);
+  if (apiExamEnum === 'WBJEE_2024') {
+    c = normalizeWbjeeReservationCode(c, quota);
+  }
+  return c;
+}
+
+/** Verified reservation_category_code values for WBJEE_2024 on earlywave beta. */
+const WBJEE_RESERVATION_WHITELIST = new Set([
+  'TUITION_FEE_WAIVER_HS',
+  'OPEN_AI', 'OBC_B_HS', 'OBC_A_HS', 'OPEN_HS',
+  'SC_HS', 'ST_HS', 'OPEN_PWD_HS', 'SC_PWD_HS',
+  'OBC_B_PWD_HS', 'OBC_A_PWD_HS', 'ST_AI',
+]);
+
+/** Categories that only exist with Home State quota (no _AI variant upstream). */
+const WBJEE_HOME_STATE_ONLY_BASES = new Set([
+  'TUITION_FEE_WAIVER', 'OPEN_PWD', 'OBC_A_PWD', 'OBC_B_PWD', 'SC_PWD',
+]);
+
+/**
+ * Resolve a WBJEE reservation code for upstream.
+ * Accepts suffixed codes (OPEN_HS) or base codes (OBC_A) — base codes get
+ * _AI or _HS appended based on `quota`.  Falls back to OPEN_AI when invalid.
+ */
+function normalizeWbjeeReservationCode(code, quota) {
+  const c = String(code ?? '').trim();
+  if (!c) return 'OPEN_AI';
+
+  if (WBJEE_RESERVATION_WHITELIST.has(c)) return c;
+
+  const isAllIndia = String(quota ?? '').toLowerCase().includes('all_india') ||
+    String(quota ?? '').toLowerCase().includes('all india');
+  const suffix = isAllIndia ? 'AI' : 'HS';
+
+  if (WBJEE_HOME_STATE_ONLY_BASES.has(c) && isAllIndia) {
+    return 'OPEN_AI';
+  }
+
+  const suffixed = `${c}_${suffix}`;
+  if (WBJEE_RESERVATION_WHITELIST.has(suffixed)) return suffixed;
+
+  return 'OPEN_AI';
 }
 
 function buildReservationCodeFromBody(body, apiExamEnum) {
@@ -148,7 +190,7 @@ function buildReservationCodeFromBody(body, apiExamEnum) {
   if (!reservationCode) {
     reservationCode = pickDefaultReservation(apiExamEnum);
   }
-  return normalizeReservationCodeForUpstream(apiExamEnum, reservationCode);
+  return normalizeReservationCodeForUpstream(apiExamEnum, reservationCode, body.quota);
 }
 
 function buildInnerBodyV1(body, apiExamEnum) {
@@ -175,7 +217,7 @@ function buildInnerBodyV2(body, apiExamEnum) {
   if (codes.length === 0) {
     codes = [pickDefaultReservation(apiExamEnum)];
   }
-  codes = codes.map((c) => normalizeReservationCodeForUpstream(apiExamEnum, c));
+  codes = codes.map((c) => normalizeReservationCodeForUpstream(apiExamEnum, c, body.quota));
   return {
     entrance_exam_name_enum: apiExamEnum,
     admission_category_name_enum: normalizeAdmissionCategoryForUpstream(apiExamEnum, body.admission_category_name_enum),
