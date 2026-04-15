@@ -716,25 +716,31 @@ exports.getAdminLeads = async (req, res) => {
       });
     }
 
-    const demoAttendedFlag = req.query.demoAttended === 'true';
+    const demoAttendedQuery = (req.query.demoAttended || '').trim();
+    const demoAttendedFlag = demoAttendedQuery === 'true';
+    const demoNotAttendedFlag = demoAttendedQuery === 'false';
     const assessmentWrittenFlag = req.query.assessmentWritten === 'true';
     const activationCompletedFlag = req.query.activationCompleted === 'true';
 
-    if (activationCompletedFlag || assessmentWrittenFlag || demoAttendedFlag) {
-      andConditions.push(SLOT_BOOKED_CONDITION);
+    if (activationCompletedFlag || assessmentWrittenFlag || demoAttendedFlag || demoNotAttendedFlag) {
       const attendeePhones = await getMeetingAttendeePhones10();
-      let phones = attendeePhones;
-      if (assessmentWrittenFlag || activationCompletedFlag) {
-        const assessmentList = await getAssessmentPhones10();
-        const assessmentSet = new Set(assessmentList);
-        phones = intersectSortedPhones(attendeePhones, assessmentSet);
+      andConditions.push(SLOT_BOOKED_CONDITION);
+      if (demoNotAttendedFlag) {
+        andConditions.push({ phone: { $nin: attendeePhones } });
+      } else {
+        let phones = attendeePhones;
+        if (assessmentWrittenFlag || activationCompletedFlag) {
+          const assessmentList = await getAssessmentPhones10();
+          const assessmentSet = new Set(assessmentList);
+          phones = intersectSortedPhones(attendeePhones, assessmentSet);
+        }
+        if (activationCompletedFlag) {
+          const activationList = await getActivationPhones10();
+          const activationSet = new Set(activationList);
+          phones = phones.filter((p) => activationSet.has(p));
+        }
+        andConditions.push(phones.length === 0 ? { phone: { $in: [] } } : { phone: { $in: phones } });
       }
-      if (activationCompletedFlag) {
-        const activationList = await getActivationPhones10();
-        const activationSet = new Set(activationList);
-        phones = phones.filter((p) => activationSet.has(p));
-      }
-      andConditions.push(phones.length === 0 ? { phone: { $in: [] } } : { phone: { $in: phones } });
     }
 
     const filter = andConditions.length > 0 ? { $and: andConditions } : {};
@@ -743,10 +749,22 @@ exports.getAdminLeads = async (req, res) => {
     console.log('[getAdminLeads] Filter:', JSON.stringify(filter, null, 2));
 
     const skip = (page - 1) * limit;
-    const [submissions, total] = await Promise.all([
-      FormSubmission.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
-      FormSubmission.countDocuments(filter)
+    const dedupedLeads = await FormSubmission.aggregate([
+      { $match: filter },
+      { $sort: { createdAt: -1, _id: -1 } },
+      { $group: { _id: '$phone', doc: { $first: '$$ROOT' } } },
+      { $replaceRoot: { newRoot: '$doc' } },
+      { $sort: { createdAt: -1, _id: -1 } },
+      {
+        $facet: {
+          rows: [{ $skip: skip }, { $limit: limit }],
+          totals: [{ $count: 'total' }]
+        }
+      }
     ]);
+    const firstBucket = Array.isArray(dedupedLeads) ? dedupedLeads[0] : null;
+    const submissions = firstBucket?.rows || [];
+    const total = firstBucket?.totals?.[0]?.total || 0;
     
     console.log('[getAdminLeads] Found', total, 'leads');
     // Debug: log first few slotDates to verify filtering
