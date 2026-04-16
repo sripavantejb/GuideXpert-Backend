@@ -13,6 +13,7 @@ const ALLOWED_SECTION_KEYS = [
   'influencer-tracking',
   'assessment-results',
   'settings',
+  'poster-automation',
 ];
 
 function toAdminDTO(admin) {

@@ -21,6 +21,15 @@ const requireOsviAdminToken = require('../middleware/requireOsviAdminToken');
 const { listAdmins, createAdmin, deleteAdmin, resetAdminPassword, changeMyPassword } = require('../controllers/adminUserController');
 const { adminListProgress, adminProgressStats, adminProgressDetail, adminAssessmentDetail, adminUpdateProgress, adminBulkProgress, adminProgressExport } = require('../controllers/webinarProgressController');
 const {
+  listPosters,
+  getPoster,
+  createPoster,
+  updatePoster,
+  deletePoster,
+  publishPoster,
+  unpublishPoster,
+} = require('../controllers/posterTemplateController');
+const {
   getOsviEnabled,
   setOsviEnabled,
   getOsviAbandonedDelayMs,
@@ -69,6 +78,14 @@ router.patch('/announcements/:id', requireAdmin, adminUpdate);
 router.delete('/announcements/:id', requireAdmin, adminDelete);
 router.post('/announcements/:id/publish', requireAdmin, adminPublish);
 router.post('/announcements/:id/unpublish', requireAdmin, adminUnpublish);
+
+router.get('/posters', requireAdmin, listPosters);
+router.post('/posters', requireAdmin, createPoster);
+router.get('/posters/:id', requireAdmin, getPoster);
+router.put('/posters/:id', requireAdmin, updatePoster);
+router.delete('/posters/:id', requireAdmin, deletePoster);
+router.post('/posters/:id/publish', requireAdmin, publishPoster);
+router.post('/posters/:id/unpublish', requireAdmin, unpublishPoster);
 
 // OSVI outbound call history
 router.get('/osvi-calls', requireAdmin, async (req, res) => {

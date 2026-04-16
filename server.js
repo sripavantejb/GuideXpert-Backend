@@ -33,6 +33,7 @@ const certificateRoutes = require('./routes/certificateRoutes');
 const webinarAssessmentRoutes = require('./routes/webinarAssessmentRoutes');
 const webinarProgressRoutes = require('./routes/webinarProgressRoutes');
 const blogRoutes = require('./routes/blogRoutes');
+const posterTemplatePublicRoutes = require('./routes/posterTemplatePublicRoutes');
 const osviRoutes = require('./routes/osviRoutes');
 const { configStatus: counsellorConfigStatus } = require('./controllers/counsellorAuthController');
 const { getPosterDownloads, getPosterDownloadStats } = require('./controllers/posterDownloadController');
@@ -167,6 +168,7 @@ app.use('/blogs', blogRoutes);
 app.use('/api/blogs', blogRoutes);
 // Compatibility alias for misconfigured clients sending /api/api/blogs
 app.use('/api/api/blogs', blogRoutes);
+app.use('/api/posters', posterTemplatePublicRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/meeting', meetingRoutes);
 app.use('/api/training', trainingRoutes);
