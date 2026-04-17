@@ -3,6 +3,7 @@ const Admin = require('../models/Admin');
 /** Section keys allowed for sectionAccess. Must match frontend nav. */
 const ALLOWED_SECTION_KEYS = [
   'dashboard',
+  'certified-counsellors',
   'leads',
   'analytics',
   'meeting-attendance',
