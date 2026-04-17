@@ -35,6 +35,7 @@ const {
   getOsviAbandonedDelayMs,
   setOsviAbandonedDelayMs,
 } = require('../utils/appSettings');
+const { getCertifiedCounsellors } = require('../controllers/certifiedCounsellorsController');
 
 router.post('/login', login);
 router.get('/admins', requireAdmin, requireSuperAdmin, listAdmins);
@@ -70,6 +71,7 @@ router.get('/assessment-4-submissions/:id', requireAdmin, getAssessment4Submissi
 router.get('/assessment-5-submissions', requireAdmin, getAssessment5Submissions);
 router.get('/assessment-5-submissions/:id', requireAdmin, getAssessment5SubmissionById);
 router.get('/missing-leads', requireAdmin, getMissingLeads);
+router.get('/certified-counsellors', requireAdmin, getCertifiedCounsellors);
 router.get('/announcements', requireAdmin, adminList);
 router.post('/announcements', requireAdmin, adminCreate);
 router.get('/announcements/:id/analytics', requireAdmin, adminAnalytics);
