@@ -88,6 +88,7 @@ exports.getCertifiedCounsellors = async (req, res) => {
       {
         $project: {
           _id: 1,
+          id: { $toString: '$_id' },
           name: '$displayName',
           email: '$displayEmail',
           phone: 1,
