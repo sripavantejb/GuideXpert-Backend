@@ -145,6 +145,13 @@ const formSubmissionSchema = new mongoose.Schema({
   utm_medium: { type: String, trim: true },
   utm_campaign: { type: String, trim: true },
   utm_content: { type: String, trim: true },
+  // Organic lead from rank predictor (optional)
+  rankPredictorLead: {
+    examId: { type: String, trim: true, maxlength: 64 },
+    score: { type: Number },
+    difficulty: { type: String, trim: true, maxlength: 64 },
+    capturedAt: { type: Date },
+  },
   // Admin-only notes (internal follow-up, not shown to applicant)
   adminNotes: { type: String, trim: true, maxlength: 2000 },
   adminNotesUpdatedAt: { type: Date },

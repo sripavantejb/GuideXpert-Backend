@@ -19,6 +19,29 @@ const { appendRow, updateRow, markRowDeleted } = require('../utils/googleSheetsS
 const { findOrCreateCounsellorAndGetToken } = require('./counsellorAuthController');
 const { isOsviConfigured } = require('../utils/osviService');
 const { getOsviEnabled, getOsviAbandonedDelayMs } = require('../utils/appSettings');
+const { listExams } = require('../services/rankPredictorService');
+
+/** Optional body.rankPredictorLead — validated snapshot for admin follow-up. */
+function parseRankPredictorLeadFromBody(body) {
+  const raw = body?.rankPredictorLead;
+  if (!raw || typeof raw !== 'object') return null;
+  const examId = typeof raw.examId === 'string' ? raw.examId.trim() : '';
+  const allowedIds = new Set(listExams().map((e) => e.id));
+  if (!examId || !allowedIds.has(examId)) return null;
+  const score = Number(raw.score);
+  if (!Number.isFinite(score)) return null;
+  let difficulty;
+  if (raw.difficulty != null && typeof raw.difficulty === 'string') {
+    const d = raw.difficulty.trim();
+    if (d) difficulty = d.slice(0, 64);
+  }
+  return {
+    examId,
+    score,
+    ...(difficulty ? { difficulty } : {}),
+    capturedAt: new Date(),
+  };
+}
 
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const GOOGLE_SHEET_RANGE = process.env.GOOGLE_SHEET_RANGE || 'Sheet1';
@@ -474,6 +497,11 @@ exports.saveStep1 = async (req, res) => {
     };
     const utm = getUtmFromBody(req.body);
     if (utm) Object.assign(setPayload, utm);
+
+    const rankPredictorLead = parseRankPredictorLeadFromBody(req.body);
+    if (rankPredictorLead) {
+      setPayload.rankPredictorLead = rankPredictorLead;
+    }
 
     console.log('[saveStep1] Attempting to save:', { phone: p, fullName: fullName.trim(), occupation: occupation.trim() });
 

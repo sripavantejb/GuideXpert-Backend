@@ -232,7 +232,15 @@ function mapLeadToDTO(sub) {
     adminNotes: sub.adminNotes || null,
     adminNotesUpdatedAt: sub.adminNotesUpdatedAt || null,
     leadStatus: sub.leadStatus || null,
-    leadDescription: sub.leadDescription || null
+    leadDescription: sub.leadDescription || null,
+    rankPredictorLead: sub.rankPredictorLead && typeof sub.rankPredictorLead === 'object'
+      ? {
+          examId: sub.rankPredictorLead.examId || null,
+          score: sub.rankPredictorLead.score != null ? sub.rankPredictorLead.score : null,
+          difficulty: sub.rankPredictorLead.difficulty || null,
+          capturedAt: sub.rankPredictorLead.capturedAt || null,
+        }
+      : null,
   };
 }
 
@@ -596,6 +604,13 @@ exports.exportLeads = async (req, res) => {
         dto.adminNotes || '',
         dto.leadStatus || '',
         dto.leadDescription || '',
+        dto.rankPredictorLead
+          ? [
+              dto.rankPredictorLead.examId,
+              dto.rankPredictorLead.score != null ? String(dto.rankPredictorLead.score) : '',
+              dto.rankPredictorLead.difficulty || '',
+            ].filter(Boolean).join(' | ')
+          : '',
         dto.createdAt ? dto.createdAt.toISOString() : '',
         dto.updatedAt ? dto.updatedAt.toISOString() : ''
       ];
@@ -605,7 +620,8 @@ exports.exportLeads = async (req, res) => {
       'ID', 'Full Name', 'Phone', 'Occupation', 'OTP Verified', 'Slot Booked',
       'Selected Slot', 'Slot Date', 'Status', 'Step', 'Email', 'Interest',
       'UTM Source', 'UTM Medium', 'UTM Campaign', 'UTM Content (Influencer)',
-      'Admin Notes', 'Lead Status', 'Lead Description', 'Created', 'Updated'
+      'Admin Notes', 'Lead Status', 'Lead Description', 'Rank predictor',
+      'Created', 'Updated'
     ];
     const csvLines = [header.map(escapeCsvCell).join(','), ...rows.map((r) => r.map(escapeCsvCell).join(','))];
     const csv = csvLines.join('\r\n');
