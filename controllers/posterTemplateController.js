@@ -184,8 +184,22 @@ exports.createPoster = async (req, res) => {
     if (err && err.code === 11000) {
       return res.status(409).json({ success: false, message: 'A poster for this route already exists.' });
     }
+    if (err.name === 'ValidationError') {
+      const first =
+        err.errors && typeof err.errors === 'object'
+          ? Object.values(err.errors).map((e) => e?.message).filter(Boolean)[0]
+          : null;
+      return res.status(400).json({
+        success: false,
+        message: first || err.message || 'Invalid poster data.',
+      });
+    }
     console.error('[createPoster]', err);
-    return res.status(500).json({ success: false, message: 'Failed to create poster.' });
+    const dev = process.env.NODE_ENV !== 'production';
+    return res.status(500).json({
+      success: false,
+      message: dev ? err.message || 'Failed to create poster.' : 'Failed to create poster.',
+    });
   }
 };
 

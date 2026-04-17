@@ -100,7 +100,8 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
-app.use(express.json());
+// Poster templates store full SVG text (up to ~2MB); default 100kb JSON limit causes POST /api/admin/posters to fail
+app.use(express.json({ limit: '3mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Ensure MongoDB is connected before handling requests (Vercel serverless cold start)
