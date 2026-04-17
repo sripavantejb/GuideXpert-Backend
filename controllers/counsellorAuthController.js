@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 const Counsellor = require('../models/Counsellor');
+const TrainingFeedback = require('../models/TrainingFeedback');
 const otpStore = require('../utils/otpStore');
 const VerifiedPhoneSession = require('../models/VerifiedPhoneSession');
 
@@ -62,9 +63,26 @@ async function findOrCreateCounsellorAndGetToken(normalized) {
   try {
     counsellor = await Counsellor.findOne({ phone: normalized });
     if (!counsellor) {
-      const defaultName = process.env.COUNSELLOR_DEFAULT_NAME || 'Counsellor';
+      const activation = await TrainingFeedback.findOne({
+        $or: [{ mobileNumber: normalized }, { whatsappNumber: normalized }],
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+      const activationName =
+        activation?.name && String(activation.name).trim() ? String(activation.name).trim() : '';
+      const activationEmail =
+        activation?.email && String(activation.email).trim()
+          ? String(activation.email).trim().toLowerCase()
+          : '';
+      const defaultName = activationName || process.env.COUNSELLOR_DEFAULT_NAME || 'Counsellor';
       const uniqueSuffix = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
-      const placeholderEmail = `counsellor-${normalized}-${uniqueSuffix}@guidexpert.phone`;
+      let placeholderEmail = `counsellor-${normalized}-${uniqueSuffix}@guidexpert.phone`;
+      if (activationEmail) {
+        const existingByEmail = await Counsellor.findOne({ email: activationEmail }).select('_id phone').lean();
+        if (!existingByEmail || String(existingByEmail.phone || '') === normalized) {
+          placeholderEmail = activationEmail;
+        }
+      }
       const randomPassword = crypto.randomBytes(12).toString('hex');
       try {
         counsellor = await Counsellor.create({
