@@ -96,6 +96,8 @@ function toDto(doc) {
     mobileField,
     published: !!o.published,
     publishedAt: o.publishedAt || null,
+    marketingFeatured: !!o.marketingFeatured,
+    marketingFeaturedAt: o.marketingFeaturedAt || null,
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
   };
@@ -325,6 +327,8 @@ exports.unpublishPoster = async (req, res) => {
     if (!doc) return res.status(404).json({ success: false, message: 'Poster not found.' });
     doc.published = false;
     doc.publishedAt = null;
+    doc.marketingFeatured = false;
+    doc.marketingFeaturedAt = null;
     await doc.save();
     return res.json({ success: true, poster: toDto(doc) });
   } catch (err) {
@@ -336,6 +340,66 @@ exports.unpublishPoster = async (req, res) => {
 /**
  * POST /api/posters/verify-activation — public; mobile must match TrainingFeedback for this published route.
  */
+/**
+ * POST /api/admin/posters/:id/marketing-featured — body: { featured: boolean }
+ */
+exports.setPosterMarketingFeatured = async (req, res) => {
+  try {
+    const raw = req.body?.featured;
+    const featured = raw === true || raw === 'true';
+    const doc = await PosterTemplate.findById(req.params.id);
+    if (!doc) return res.status(404).json({ success: false, message: 'Poster not found.' });
+    if (featured) {
+      if (!doc.published) {
+        return res.status(400).json({
+          success: false,
+          message: 'Only published posters can be featured in counsellor Marketing.',
+        });
+      }
+      await PosterTemplate.updateMany(
+        { _id: { $ne: doc._id } },
+        { $set: { marketingFeatured: false, marketingFeaturedAt: null } }
+      );
+      doc.marketingFeatured = true;
+      doc.marketingFeaturedAt = new Date();
+      await doc.save();
+    } else {
+      doc.marketingFeatured = false;
+      doc.marketingFeaturedAt = null;
+      await doc.save();
+    }
+    return res.json({ success: true, poster: toDto(doc) });
+  } catch (err) {
+    console.error('[setPosterMarketingFeatured]', err);
+    return res.status(500).json({ success: false, message: 'Failed to update marketing feature.' });
+  }
+};
+
+/**
+ * GET /api/posters/marketing-featured — public; no auth.
+ */
+exports.getMarketingFeaturedPoster = async (req, res) => {
+  try {
+    const doc = await PosterTemplate.findOne({ published: true, marketingFeatured: true })
+      .select('name route marketingFeaturedAt')
+      .lean();
+    if (!doc) {
+      return res.json({ success: true, poster: null });
+    }
+    return res.json({
+      success: true,
+      poster: {
+        name: doc.name,
+        route: doc.route,
+        marketingFeaturedAt: doc.marketingFeaturedAt || null,
+      },
+    });
+  } catch (err) {
+    console.error('[getMarketingFeaturedPoster]', err);
+    return res.status(500).json({ success: false, message: 'Failed to load featured poster.' });
+  }
+};
+
 exports.verifyPosterActivation = async (req, res) => {
   try {
     const routeNorm = normalizeRoute(req.body?.route ?? req.query?.route);

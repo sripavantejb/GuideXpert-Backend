@@ -70,6 +70,45 @@ function normalizeTrackString(val) {
 
 const TRACK_INVALID_DETAIL = `posterKey must be one of: ${POSTER_KEYS.join(', ')}; format must be one of: ${FORMATS.join(', ')}`;
 
+/**
+ * Normalizes public path or slug to the segment after /p/ (e.g. /p/wrong-career → wrong-career).
+ * Mirrors frontend `normalizeAutomatedPosterSlug` (also handles absolute URLs).
+ */
+function normalizeAutomatedRouteSlug(raw) {
+  if (raw == null || raw === '') return '';
+  let s = String(raw).trim();
+  if (!s) return '';
+  try {
+    if (/^https?:\/\//i.test(s)) {
+      const u = new URL(s);
+      s = u.pathname || '';
+    }
+  } catch {
+    /* ignore */
+  }
+  s = s.toLowerCase();
+  s = s.split('?')[0].split('#')[0];
+  const idx = s.indexOf('/p/');
+  if (idx !== -1) {
+    s = s.slice(idx + 3);
+  } else if (s.startsWith('p/')) {
+    s = s.slice(2);
+  } else {
+    s = s.replace(/^\/+/, '');
+  }
+  s = s.replace(/^\/+/, '').replace(/\/+$/, '');
+  return s.slice(0, 200);
+}
+
+/** Trust client-precomputed slug when it looks like a safe path segment. */
+function sanitizeClientAutomatedSlug(val) {
+  if (val == null || val === '') return '';
+  const s = String(val).trim().toLowerCase().slice(0, 200);
+  if (!s) return '';
+  if (!/^[a-z0-9][a-z0-9\-_/]*$/.test(s)) return '';
+  return s;
+}
+
 exports.trackPosterDownload = async (req, res) => {
   try {
     const raw = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
@@ -88,7 +127,7 @@ exports.trackPosterDownload = async (req, res) => {
     let routeContext = raw.routeContext ?? raw.route_context;
     if (routeContext != null && routeContext !== '') {
       routeContext = String(routeContext).trim().toLowerCase();
-      if (!['public', 'portal'].includes(routeContext)) {
+      if (!['public', 'portal', 'admin'].includes(routeContext)) {
         return res.status(400).json({ success: false, message: 'Invalid routeContext.' });
       }
     } else {
@@ -97,6 +136,24 @@ exports.trackPosterDownload = async (req, res) => {
 
     const displayNameSnapshot = String(raw.displayName ?? raw.display_name ?? '').trim().slice(0, 100);
     const mobileSnapshot = to10Digits(raw.mobileNumber ?? raw.mobile_number ?? raw.mobile ?? '');
+
+    let automatedRouteSlug = '';
+    if (posterKey === 'automated') {
+      const fromClient = sanitizeClientAutomatedSlug(
+        raw.automatedRouteSlug ?? raw.automated_route_slug
+      );
+      if (fromClient) {
+        automatedRouteSlug = fromClient;
+      } else {
+        const routeRaw =
+          raw.posterRoute ??
+          raw.poster_route ??
+          raw.route ??
+          raw.path ??
+          raw.pathname;
+        automatedRouteSlug = normalizeAutomatedRouteSlug(routeRaw);
+      }
+    }
 
     let counsellorId = await tryCounsellorIdFromOptionalBearer(req.headers.authorization);
     let identityMethod = 'anonymous';
@@ -122,6 +179,7 @@ exports.trackPosterDownload = async (req, res) => {
       displayNameSnapshot,
       mobileSnapshot,
       userAgent,
+      automatedRouteSlug,
     });
 
     return res.json({ success: true });

@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const { POSTER_KEYS, FORMATS } = require('../utils/posterDownloadConstants');
 const IDENTITY_METHODS = ['jwt', 'phone_match', 'anonymous'];
-const ROUTE_CONTEXTS = ['public', 'portal'];
+const ROUTE_CONTEXTS = ['public', 'portal', 'admin'];
 
 const posterDownloadSchema = new mongoose.Schema(
   {
@@ -28,6 +28,13 @@ const posterDownloadSchema = new mongoose.Schema(
     routeContext: {
       type: String,
       enum: ROUTE_CONTEXTS,
+    },
+    /** When posterKey is `automated`: path segment after /p/ (e.g. wrong-career). Empty for legacy rows. */
+    automatedRouteSlug: {
+      type: String,
+      trim: true,
+      maxlength: 200,
+      default: '',
     },
     displayNameSnapshot: {
       type: String,
@@ -57,6 +64,7 @@ const posterDownloadSchema = new mongoose.Schema(
 
 posterDownloadSchema.index({ downloadedAt: -1 });
 posterDownloadSchema.index({ posterKey: 1, downloadedAt: -1 });
+posterDownloadSchema.index({ posterKey: 1, automatedRouteSlug: 1, downloadedAt: -1 });
 posterDownloadSchema.index({ counsellorId: 1, downloadedAt: -1 });
 
 const PosterDownload = mongoose.model('PosterDownload', posterDownloadSchema);

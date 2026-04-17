@@ -20,6 +20,9 @@ const posterTemplateSchema = new mongoose.Schema(
     svgTemplate: { type: String, required: true },
     published: { type: Boolean, default: false },
     publishedAt: { type: Date, default: null },
+    /** At most one published template should be true; shown as "Latest" on counsellor Marketing. */
+    marketingFeatured: { type: Boolean, default: false },
+    marketingFeaturedAt: { type: Date, default: null },
     nameField: { type: overlayFieldSchema, default: () => ({}) },
     mobileField: { type: overlayFieldSchema, default: () => ({}) },
     /** @deprecated Legacy only; API migrates to nameField / mobileField in responses */

@@ -5,11 +5,41 @@ const { POSTER_KEYS } = require('../utils/posterDownloadConstants');
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
+function mapByPosterAggregate(doc) {
+  const id = doc._id;
+  if (typeof id === 'string' && id.startsWith('automated|')) {
+    const slug = id.slice('automated|'.length);
+    return {
+      posterKey: 'automated',
+      automatedRouteSlug: slug === '' ? null : slug,
+      count: doc.count,
+    };
+  }
+  return {
+    posterKey: id,
+    automatedRouteSlug: null,
+    count: doc.count,
+  };
+}
+
 async function aggregatePosterDownloadStats(match) {
-  const [byPoster, byDay] = await Promise.all([
+  const [byPosterRaw, byDay] = await Promise.all([
     PosterDownload.aggregate([
       { $match: match },
-      { $group: { _id: '$posterKey', count: { $sum: 1 } } },
+      {
+        $group: {
+          _id: {
+            $cond: [
+              { $eq: ['$posterKey', 'automated'] },
+              {
+                $concat: ['automated|', { $ifNull: ['$automatedRouteSlug', ''] }],
+              },
+              '$posterKey',
+            ],
+          },
+          count: { $sum: 1 },
+        },
+      },
       { $sort: { count: -1 } },
     ]),
     PosterDownload.aggregate([
@@ -26,8 +56,9 @@ async function aggregatePosterDownloadStats(match) {
       { $limit: 90 },
     ]),
   ]);
+  const byPoster = byPosterRaw.map(mapByPosterAggregate);
   return {
-    byPoster: byPoster.map((x) => ({ posterKey: x._id, count: x.count })),
+    byPoster,
     byDay: byDay.map((x) => ({ date: x._id, count: x.count })),
   };
 }
@@ -86,6 +117,7 @@ exports.getPosterDownloads = async (req, res) => {
       filter.$or = [
         { displayNameSnapshot: regex },
         { mobileSnapshot: regex },
+        { automatedRouteSlug: regex },
       ];
     }
 
@@ -121,6 +153,7 @@ exports.getPosterDownloads = async (req, res) => {
         format: doc.format,
         identityMethod: doc.identityMethod,
         routeContext: doc.routeContext,
+        automatedRouteSlug: doc.automatedRouteSlug || '',
         displayNameSnapshot: doc.displayNameSnapshot,
         mobileSnapshot: doc.mobileSnapshot,
         userAgent: doc.userAgent,

@@ -28,6 +28,7 @@ const {
   deletePoster,
   publishPoster,
   unpublishPoster,
+  setPosterMarketingFeatured,
 } = require('../controllers/posterTemplateController');
 const {
   getOsviEnabled,
@@ -92,6 +93,7 @@ router.put('/posters/:id', requireAdmin, updatePoster);
 router.delete('/posters/:id', requireAdmin, deletePoster);
 router.post('/posters/:id/publish', requireAdmin, publishPoster);
 router.post('/posters/:id/unpublish', requireAdmin, unpublishPoster);
+router.post('/posters/:id/marketing-featured', requireAdmin, setPosterMarketingFeatured);
 
 // OSVI outbound call history
 router.get('/osvi-calls', requireAdmin, async (req, res) => {
