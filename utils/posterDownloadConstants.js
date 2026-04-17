@@ -2,7 +2,18 @@
  * Single source of truth for poster download analytics (track + Mongoose enum).
  * Keep in sync with frontend trackPosterDownloadBeacon posterKey values.
  */
-const POSTER_KEYS = ['holi', 'inter', 'interresults', 'gx', 'sid', 'btechcse', 'jee', 'certified', 'wrongcareerchoice'];
+const POSTER_KEYS = [
+  'holi',
+  'inter',
+  'interresults',
+  'gx',
+  'sid',
+  'btechcse',
+  'jee',
+  'certified',
+  'wrongcareerchoice',
+  'automated',
+];
 const FORMATS = ['png', 'pdf'];
 
 module.exports = { POSTER_KEYS, FORMATS };
