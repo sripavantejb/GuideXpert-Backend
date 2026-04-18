@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { sendOtp, verifyOtp, logPhone, getDemoSlots, submitApplication, saveStep1, saveStep2, saveStep3, checkRegistrationStatus, savePostRegistrationData, getAllSubmissions } = require('../controllers/formController');
+const { sendOtp, verifyOtp, logPhone, getDemoSlots, submitApplication, saveStep1, saveStep2, saveStep3, checkRegistrationStatus, savePostRegistrationData, saveRankPredictorPrediction, getAllSubmissions } = require('../controllers/formController');
 const { submitTrainingForm } = require('../controllers/trainingFormController');
 
 router.post('/send-otp', sendOtp);
@@ -14,6 +14,7 @@ router.post('/save-step2', saveStep2);
 router.post('/save-step3', saveStep3);
 router.get('/check-registration/:phone', checkRegistrationStatus);
 router.post('/save-post-registration', savePostRegistrationData);
+router.post('/save-rank-predictor-prediction', saveRankPredictorPrediction);
 router.get('/submissions', getAllSubmissions); // Diagnostic endpoint
 
 module.exports = router;

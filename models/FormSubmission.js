@@ -151,6 +151,13 @@ const formSubmissionSchema = new mongoose.Schema({
     score: { type: Number },
     difficulty: { type: String, trim: true, maxlength: 64 },
     capturedAt: { type: Date },
+    /** Model output after predict API (student organic flow) — shown in admin */
+    predictedValue: { type: mongoose.Schema.Types.Mixed },
+    rangeLow: { type: Number },
+    rangeHigh: { type: Number },
+    metricLabel: { type: String, trim: true, maxlength: 120 },
+    predictionMessage: { type: String, trim: true, maxlength: 500 },
+    predictedAt: { type: Date },
   },
   // Admin-only notes (internal follow-up, not shown to applicant)
   adminNotes: { type: String, trim: true, maxlength: 2000 },

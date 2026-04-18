@@ -983,6 +983,86 @@ exports.savePostRegistrationData = async (req, res) => {
   }
 };
 
+/**
+ * POST body: { phone, examId, predictedValue?, range?: { low, high }, metricLabel?, message? }
+ * Merges prediction output into rankPredictorLead for organic student rank predictor leads only.
+ */
+exports.saveRankPredictorPrediction = async (req, res) => {
+  try {
+    const phoneRaw = req.body?.phone || req.body?.whatsappNumber;
+    const { examId, predictedValue, range, metricLabel, message } = req.body || {};
+    if (!phoneRaw || typeof phoneRaw !== 'string') {
+      return res.status(400).json({ success: false, message: 'phone is required' });
+    }
+    const p = normalizePhone(phoneRaw);
+    if (!/^\d{10}$/.test(p)) {
+      return res.status(400).json({ success: false, message: 'Valid 10-digit Indian phone required' });
+    }
+    const examIdStr = typeof examId === 'string' ? examId.trim() : '';
+    const allowedIds = new Set(listExams().map((e) => e.id));
+    if (!examIdStr || !allowedIds.has(examIdStr)) {
+      return res.status(400).json({ success: false, message: 'Invalid examId' });
+    }
+
+    const sub = await FormSubmission.findOne({ phone: p }).lean();
+    if (!sub) {
+      return res.status(404).json({ success: false, message: 'Submission not found' });
+    }
+
+    const utm = sub.utm_content || '';
+    const occ = sub.occupation || '';
+    const isOrganicRank =
+      utm === 'organic_rank_predictor' ||
+      (typeof occ === 'string' && occ.includes('Rank predictor'));
+    if (!isOrganicRank) {
+      return res.status(403).json({ success: false, message: 'Not an organic rank predictor lead' });
+    }
+
+    const existing =
+      sub.rankPredictorLead && typeof sub.rankPredictorLead === 'object' ? { ...sub.rankPredictorLead } : {};
+    if (existing.examId && String(existing.examId) !== examIdStr) {
+      return res.status(400).json({ success: false, message: 'examId does not match stored lead' });
+    }
+
+    const next = {
+      ...existing,
+      examId: examIdStr,
+      predictedAt: new Date(),
+    };
+
+    if (predictedValue !== undefined && predictedValue !== null) {
+      if (typeof predictedValue === 'string') {
+        next.predictedValue = predictedValue.trim().slice(0, 200);
+      } else if (typeof predictedValue === 'number' && Number.isFinite(predictedValue)) {
+        next.predictedValue = predictedValue;
+      } else {
+        next.predictedValue = String(predictedValue).slice(0, 200);
+      }
+    }
+    if (range && typeof range === 'object') {
+      const low = Number(range.low);
+      const high = Number(range.high);
+      if (Number.isFinite(low)) next.rangeLow = low;
+      if (Number.isFinite(high)) next.rangeHigh = high;
+    }
+    if (typeof metricLabel === 'string' && metricLabel.trim()) {
+      next.metricLabel = metricLabel.trim().slice(0, 120);
+    }
+    if (typeof message === 'string' && message.trim()) {
+      next.predictionMessage = message.trim().slice(0, 500);
+    }
+
+    await FormSubmission.updateOne(
+      { phone: p },
+      { $set: { rankPredictorLead: next, updatedAt: new Date() } }
+    );
+    return res.status(200).json({ success: true, message: 'Prediction saved' });
+  } catch (err) {
+    console.error('[saveRankPredictorPrediction]', err);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
 exports.getAllSubmissions = async (req, res) => {
   try {
     const submissions = await FormSubmission.find({}).sort({ createdAt: -1 }).limit(100);

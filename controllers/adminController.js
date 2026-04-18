@@ -239,6 +239,12 @@ function mapLeadToDTO(sub) {
           score: sub.rankPredictorLead.score != null ? sub.rankPredictorLead.score : null,
           difficulty: sub.rankPredictorLead.difficulty || null,
           capturedAt: sub.rankPredictorLead.capturedAt || null,
+          predictedValue: sub.rankPredictorLead.predictedValue ?? null,
+          rangeLow: sub.rankPredictorLead.rangeLow != null ? sub.rankPredictorLead.rangeLow : null,
+          rangeHigh: sub.rankPredictorLead.rangeHigh != null ? sub.rankPredictorLead.rangeHigh : null,
+          metricLabel: sub.rankPredictorLead.metricLabel || null,
+          predictionMessage: sub.rankPredictorLead.predictionMessage || null,
+          predictedAt: sub.rankPredictorLead.predictedAt || null,
         }
       : null,
   };
@@ -609,6 +615,18 @@ exports.exportLeads = async (req, res) => {
               dto.rankPredictorLead.examId,
               dto.rankPredictorLead.score != null ? String(dto.rankPredictorLead.score) : '',
               dto.rankPredictorLead.difficulty || '',
+              dto.rankPredictorLead.predictedValue != null && dto.rankPredictorLead.predictedValue !== ''
+                ? `out:${typeof dto.rankPredictorLead.predictedValue === 'number'
+                  ? String(dto.rankPredictorLead.predictedValue)
+                  : String(dto.rankPredictorLead.predictedValue)}`
+                : '',
+              dto.rankPredictorLead.rangeLow != null &&
+              dto.rankPredictorLead.rangeHigh != null &&
+              Number.isFinite(dto.rankPredictorLead.rangeLow) &&
+              Number.isFinite(dto.rankPredictorLead.rangeHigh)
+                ? `range:${dto.rankPredictorLead.rangeLow}-${dto.rankPredictorLead.rangeHigh}`
+                : '',
+              dto.rankPredictorLead.metricLabel || '',
             ].filter(Boolean).join(' | ')
           : '',
         dto.createdAt ? dto.createdAt.toISOString() : '',
