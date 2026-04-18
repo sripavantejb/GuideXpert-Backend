@@ -29,10 +29,23 @@ function isLikelySvg(s) {
   return /<svg[\s>/]/i.test(s.trim());
 }
 
-function sanitizeOverlayField(raw) {
+/** Strip BOM and outer whitespace; keeps markup valid for length / SVG checks. */
+function normalizeIncomingSvgTemplate(raw) {
+  if (raw == null) return '';
+  let s = String(raw);
+  if (s.charCodeAt(0) === 0xfeff) s = s.slice(1);
+  return s.trim();
+}
+
+/**
+ * @param {object} raw
+ * @param {{ allowXEnd?: boolean }} [opts] - When false (mobile), xEnd is never stored.
+ */
+function sanitizeOverlayField(raw, opts = {}) {
+  const { allowXEnd = false } = opts;
   const x = Number(raw?.x);
   const y = Number(raw?.y);
-  return {
+  const base = {
     x: Number.isFinite(x) ? Math.min(100, Math.max(0, x)) : 12,
     y: Number.isFinite(y) ? Math.min(100, Math.max(0, y)) : 12,
     fontSize: Number.isFinite(Number(raw?.fontSize)) ? Math.min(400, Math.max(4, Number(raw.fontSize))) : 20,
@@ -40,14 +53,37 @@ function sanitizeOverlayField(raw) {
     fontWeight: raw?.fontWeight != null ? String(raw.fontWeight).slice(0, 32) : '600',
     textAlign: ['left', 'center', 'right', 'justify'].includes(raw?.textAlign) ? raw.textAlign : 'left',
   };
+  if (!allowXEnd) return base;
+  const xe = Number(raw?.xEnd);
+  if (!Number.isFinite(xe)) return base;
+  const xEnd = Math.min(100, Math.max(0, xe));
+  if (xEnd <= base.x) return base;
+  return { ...base, xEnd };
+}
+
+/** Plain object with only schema keys — avoids stray client fields on create/update. */
+function toPlainOverlayField(raw, allowXEnd) {
+  const s = sanitizeOverlayField(raw, { allowXEnd });
+  const out = {
+    x: s.x,
+    y: s.y,
+    fontSize: s.fontSize,
+    color: s.color,
+    fontWeight: s.fontWeight,
+    textAlign: s.textAlign,
+  };
+  if (allowXEnd && typeof s.xEnd === 'number' && Number.isFinite(s.xEnd)) {
+    out.xEnd = s.xEnd;
+  }
+  return out;
 }
 
 function defaultNameField() {
-  return sanitizeOverlayField({ x: 12, y: 12, fontSize: 22, fontWeight: '600' });
+  return sanitizeOverlayField({ x: 12, y: 12, fontSize: 22, fontWeight: '600' }, { allowXEnd: true });
 }
 
 function defaultMobileField() {
-  return sanitizeOverlayField({ x: 12, y: 24, fontSize: 18, fontWeight: '500' });
+  return sanitizeOverlayField({ x: 12, y: 24, fontSize: 18, fontWeight: '500' }, { allowXEnd: false });
 }
 
 /** Map old `elements[]` documents to nameField / mobileField */
@@ -60,8 +96,8 @@ function migrateLegacyElements(elements) {
   const mobileSrc =
     byId('mobile') || byId('phone') || (elements.length > 1 ? elements[1] : null);
   return {
-    nameField: sanitizeOverlayField(nameSrc || defaultNameField()),
-    mobileField: sanitizeOverlayField(mobileSrc || defaultMobileField()),
+    nameField: sanitizeOverlayField(nameSrc || defaultNameField(), { allowXEnd: true }),
+    mobileField: sanitizeOverlayField(mobileSrc || defaultMobileField(), { allowXEnd: false }),
   };
 }
 
@@ -73,8 +109,8 @@ function resolveFieldsFromDoc(o) {
     typeof o.mobileField === 'object';
   if (hasNew) {
     return {
-      nameField: sanitizeOverlayField(o.nameField),
-      mobileField: sanitizeOverlayField(o.mobileField),
+      nameField: sanitizeOverlayField(o.nameField, { allowXEnd: true }),
+      mobileField: sanitizeOverlayField(o.mobileField, { allowXEnd: false }),
     };
   }
   if (Array.isArray(o.elements) && o.elements.length > 0) {
@@ -137,35 +173,62 @@ exports.getPoster = async (req, res) => {
 
 exports.createPoster = async (req, res) => {
   try {
-    const body = req.body || {};
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     const name = body.name != null ? String(body.name).trim() : '';
-    const svgTemplate = body.svgTemplate != null ? String(body.svgTemplate) : '';
+    const svgRaw = body.svgTemplate ?? body.svg_template;
+    const hasSvgKey =
+      Object.prototype.hasOwnProperty.call(body, 'svgTemplate') ||
+      Object.prototype.hasOwnProperty.call(body, 'svg_template');
+    const svgTemplate = normalizeIncomingSvgTemplate(svgRaw);
     const routeNorm = normalizeRoute(body.route);
 
+    const bad = (code, message, extra = {}) => {
+      console.warn('[createPoster] 400', code, {
+        nameLen: name.length,
+        route: routeNorm || '(empty)',
+        svgLen: svgTemplate.length,
+        bodyKeys: Object.keys(body),
+        ...extra,
+      });
+      return res.status(400).json({ success: false, message, code, ...extra });
+    };
+
     if (!name || name.length > 200) {
-      return res.status(400).json({ success: false, message: 'name is required (max 200 chars).' });
+      return bad('POSTER_NAME', 'name is required (max 200 chars).');
     }
     if (!routeNorm) {
-      return res.status(400).json({ success: false, message: 'route is required.' });
+      return bad('POSTER_ROUTE', 'route is required.');
     }
     if (!isPosterPublicPath(routeNorm)) {
-      return res.status(400).json({
-        success: false,
-        message: 'route must start with /p/ (e.g. /p/my-campaign) so the public app can serve this poster.',
-      });
+      return bad(
+        'POSTER_ROUTE_PUBLIC',
+        'route must start with /p/ (e.g. /p/my-campaign) so the public app can serve this poster.'
+      );
     }
-    if (!svgTemplate.length || svgTemplate.length > MAX_SVG_CHARS) {
-      return res.status(400).json({
-        success: false,
-        message: `svgTemplate must be non-empty SVG and under ${MAX_SVG_CHARS} characters.`,
-      });
+    if (!svgTemplate.length) {
+      return bad(
+        'POSTER_SVG_EMPTY',
+        !hasSvgKey
+          ? 'svgTemplate is missing from the JSON body. Use Content-Type: application/json and include svgTemplate with the full <svg>… markup (field name must be svgTemplate).'
+          : 'svgTemplate was present but empty after trim. Re-upload the .svg file or paste the markup again.',
+        { hasSvgKey, bodyKeys: Object.keys(body) }
+      );
+    }
+    if (svgTemplate.length > MAX_SVG_CHARS) {
+      return bad(
+        'POSTER_SVG_TOO_LARGE',
+        `svgTemplate exceeds ${MAX_SVG_CHARS} characters (this file has ${svgTemplate.length}). Simplify the SVG or reduce embedded data.`
+      );
     }
     if (!isLikelySvg(svgTemplate)) {
-      return res.status(400).json({ success: false, message: 'svgTemplate must look like SVG markup.' });
+      return bad(
+        'POSTER_SVG_MARKUP',
+        'svgTemplate must look like SVG markup (expect a root <svg> element).'
+      );
     }
 
-    const nameField = body.nameField != null ? sanitizeOverlayField(body.nameField) : defaultNameField();
-    const mobileField = body.mobileField != null ? sanitizeOverlayField(body.mobileField) : defaultMobileField();
+    const nameField = toPlainOverlayField(body.nameField ?? defaultNameField(), true);
+    const mobileField = toPlainOverlayField(body.mobileField ?? defaultMobileField(), false);
 
     const exists = await PosterTemplate.findOne({ route: routeNorm }).lean();
     if (exists) {
@@ -191,8 +254,10 @@ exports.createPoster = async (req, res) => {
         err.errors && typeof err.errors === 'object'
           ? Object.values(err.errors).map((e) => e?.message).filter(Boolean)[0]
           : null;
+      console.error('[createPoster] ValidationError', err.message, err.errors);
       return res.status(400).json({
         success: false,
+        code: 'POSTER_VALIDATION',
         message: first || err.message || 'Invalid poster data.',
       });
     }
@@ -237,21 +302,32 @@ exports.updatePoster = async (req, res) => {
         doc.route = routeNorm;
       }
     }
-    if (body.svgTemplate != null) {
-      const svgTemplate = String(body.svgTemplate);
-      if (!svgTemplate.length || svgTemplate.length > MAX_SVG_CHARS) {
-        return res.status(400).json({ success: false, message: 'Invalid svgTemplate.' });
+    if (body.svgTemplate != null || body.svg_template != null) {
+      const svgTemplate = normalizeIncomingSvgTemplate(body.svgTemplate ?? body.svg_template);
+      if (!svgTemplate.length) {
+        return res.status(400).json({ success: false, message: 'Invalid svgTemplate (empty).', code: 'POSTER_SVG_EMPTY' });
+      }
+      if (svgTemplate.length > MAX_SVG_CHARS) {
+        return res.status(400).json({
+          success: false,
+          message: `svgTemplate exceeds ${MAX_SVG_CHARS} characters.`,
+          code: 'POSTER_SVG_TOO_LARGE',
+        });
       }
       if (!isLikelySvg(svgTemplate)) {
-        return res.status(400).json({ success: false, message: 'svgTemplate must look like SVG markup.' });
+        return res.status(400).json({
+          success: false,
+          message: 'svgTemplate must look like SVG markup.',
+          code: 'POSTER_SVG_MARKUP',
+        });
       }
       doc.svgTemplate = svgTemplate;
     }
     if (body.nameField != null) {
-      doc.nameField = sanitizeOverlayField(body.nameField);
+      doc.nameField = toPlainOverlayField(body.nameField, true);
     }
     if (body.mobileField != null) {
-      doc.mobileField = sanitizeOverlayField(body.mobileField);
+      doc.mobileField = toPlainOverlayField(body.mobileField, false);
     }
     doc.markModified('nameField');
     doc.markModified('mobileField');

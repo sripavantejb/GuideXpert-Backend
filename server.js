@@ -100,8 +100,19 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
-// Poster templates store full SVG text (up to ~2MB); default 100kb JSON limit causes POST /api/admin/posters to fail
-app.use(express.json({ limit: '3mb' }));
+// Poster templates: large SVG + JSON overhead; keep above MAX_SVG_CHARS in posterTemplateController (~2MB markup alone)
+function logAdminPosterJsonBody(req, res, buf) {
+  try {
+    if (req.method !== 'POST') return;
+    const pathOnly = (req.originalUrl || req.url || '').split('?')[0];
+    if (!/\/api\/admin\/posters\/?$/.test(pathOnly)) return;
+    const hasKey = /"svgTemplate"\s*:|"svg_template"\s*:/.test(buf.toString('utf8', 0, Math.min(buf.length, 65536)));
+    console.log('[json body] POST /api/admin/posters', 'bytes=', buf.length, 'svg key in first 64k=', hasKey);
+  } catch {
+    /* ignore */
+  }
+}
+app.use(express.json({ limit: '15mb', verify: logAdminPosterJsonBody }));
 app.use(express.urlencoded({ extended: true }));
 
 // Ensure MongoDB is connected before handling requests (Vercel serverless cold start)

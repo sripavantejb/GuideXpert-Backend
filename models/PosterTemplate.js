@@ -1,10 +1,12 @@
 const mongoose = require('mongoose');
 
-/** Position & style for name or mobile text; x/y are % of poster container (0–100). */
+/** Position & style for name or mobile text; x/y are % of poster container (0–100). xEnd is name-only (right edge cap). */
 const overlayFieldSchema = new mongoose.Schema(
   {
     x: { type: Number, default: 12, min: 0, max: 100 },
     y: { type: Number, default: 12, min: 0, max: 100 },
+    /** Name field only: right bound (%); mobile documents should omit this (stripped on save). */
+    xEnd: { type: Number, required: false, min: 0, max: 100 },
     fontSize: { type: Number, default: 20, min: 4, max: 400 },
     color: { type: String, default: '#111827' },
     fontWeight: { type: String, default: '600' },
