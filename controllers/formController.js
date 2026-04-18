@@ -983,8 +983,31 @@ exports.savePostRegistrationData = async (req, res) => {
   }
 };
 
+/** Parse rank API range strings like "1 - 5", "150000+", "1" into numeric bounds for admin. */
+function parseRankRangeBoundsFromString(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  const s = raw.replace(/,/g, '').trim();
+  const plus = /^(\d+)\+$/.exec(s);
+  if (plus) {
+    const n = Number(plus[1]);
+    return Number.isFinite(n) ? { low: n, high: n } : null;
+  }
+  const dash = /(\d+)\s*[-–]\s*(\d+)/.exec(s);
+  if (dash) {
+    const low = Number(dash[1]);
+    const high = Number(dash[2]);
+    return Number.isFinite(low) && Number.isFinite(high) ? { low, high } : null;
+  }
+  const single = /^(\d+)$/.exec(s);
+  if (single) {
+    const n = Number(single[1]);
+    return Number.isFinite(n) ? { low: n, high: n } : null;
+  }
+  return null;
+}
+
 /**
- * POST body: { phone, examId, predictedValue?, range?: { low, high }, metricLabel?, message? }
+ * POST body: { phone, examId, predictedValue?, range?: { low, high } | string, metricLabel?, message? }
  * Merges prediction output into rankPredictorLead for organic student rank predictor leads only.
  */
 exports.saveRankPredictorPrediction = async (req, res) => {
@@ -1039,11 +1062,17 @@ exports.saveRankPredictorPrediction = async (req, res) => {
         next.predictedValue = String(predictedValue).slice(0, 200);
       }
     }
-    if (range && typeof range === 'object') {
+    if (range && typeof range === 'object' && !Array.isArray(range)) {
       const low = Number(range.low);
       const high = Number(range.high);
       if (Number.isFinite(low)) next.rangeLow = low;
       if (Number.isFinite(high)) next.rangeHigh = high;
+    } else if (typeof range === 'string' && range.trim()) {
+      const parsed = parseRankRangeBoundsFromString(range.trim());
+      if (parsed) {
+        next.rangeLow = parsed.low;
+        next.rangeHigh = parsed.high;
+      }
     }
     if (typeof metricLabel === 'string' && metricLabel.trim()) {
       next.metricLabel = metricLabel.trim().slice(0, 120);
