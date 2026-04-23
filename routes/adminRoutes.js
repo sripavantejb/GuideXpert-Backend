@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { login, getAdminLeads, getLeadById, updateLeadNotes, updateLeadSlotBooking, updateLeadSlotByPhone, getAdminStats, exportLeads, getSlotConfigs, getSlotsForDate, updateSlotConfig, getSlotBookingCounts, getSlotOverrides, setSlotOverride, getAssessmentSubmissions, getAssessment2Submissions, getAssessment3Submissions, getAssessmentSubmissionById, getAssessment2SubmissionById, getAssessment3SubmissionById, getAssessment4Submissions, getAssessment4SubmissionById, getAssessment5Submissions, getAssessment5SubmissionById, getMissingLeads, getIitCounsellingSubmissions, getIitCounsellingSubmissionById, getIitCounsellingVisitAnalytics } = require('../controllers/adminController');
+const { login, getAdminLeads, getLeadById, updateLeadNotes, updateLeadSlotBooking, updateLeadSlotByPhone, getAdminStats, exportLeads, getSlotConfigs, getSlotsForDate, updateSlotConfig, getSlotBookingCounts, getSlotOverrides, setSlotOverride, getAssessmentSubmissions, getAssessment2Submissions, getAssessment3Submissions, getAssessmentSubmissionById, getAssessment2SubmissionById, getAssessment3SubmissionById, getAssessment4Submissions, getAssessment4SubmissionById, getAssessment5Submissions, getAssessment5SubmissionById, getMissingLeads, getIitCounsellingSubmissions, getIitCounsellingSubmissionById, getIitCounsellingVisitAnalytics, getIitCounsellingUtmAnalytics } = require('../controllers/adminController');
 const { getMeetingAttendance } = require('../controllers/meetingController');
 const { getTrainingAttendance } = require('../controllers/trainingController');
 const { getTrainingFeedback } = require('../controllers/feedbackController');
@@ -77,6 +77,7 @@ router.get('/assessment-5-submissions/:id', requireAdmin, getAssessment5Submissi
 router.get('/missing-leads', requireAdmin, getMissingLeads);
 router.get('/iit-counselling', requireAdmin, getIitCounsellingSubmissions);
 router.get('/iit-counselling/visits', requireAdmin, getIitCounsellingVisitAnalytics);
+router.get('/iit-counselling/utm-analytics', requireAdmin, getIitCounsellingUtmAnalytics);
 router.get('/iit-counselling/:id', requireAdmin, getIitCounsellingSubmissionById);
 router.get('/certified-counsellors', requireAdmin, getCertifiedCounsellors);
 router.get('/certified-counsellors/:id', requireAdmin, getCertifiedCounsellorDetail);

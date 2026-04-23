@@ -304,6 +304,60 @@ function parseIitDateTimeFilter(query = {}) {
   };
 }
 
+/** Mongo aggregation expression: true if any standard UTM field is non-empty after trim. */
+function iitCounsellingVisitHasAnyUtmExpression() {
+  return {
+    $or: [
+      { $gt: [{ $strLenCP: { $trim: { input: { $ifNull: ['$utm_source', ''] } } } }, 0] },
+      { $gt: [{ $strLenCP: { $trim: { input: { $ifNull: ['$utm_medium', ''] } } } }, 0] },
+      { $gt: [{ $strLenCP: { $trim: { input: { $ifNull: ['$utm_campaign', ''] } } } }, 0] },
+      { $gt: [{ $strLenCP: { $trim: { input: { $ifNull: ['$utm_content', ''] } } } }, 0] },
+    ],
+  };
+}
+
+/** Normalize one UTM field to '(none)' when empty (for grouping). */
+function iitCounsellingUtmNormExpr(field) {
+  return {
+    $let: {
+      vars: { raw: { $trim: { input: { $ifNull: [`$${field}`, ''] } } } },
+      in: {
+        $cond: [{ $eq: [{ $strLenCP: '$$raw' }, 0] }, '(none)', '$$raw'],
+      },
+    },
+  };
+}
+
+function buildIitUtmDimensionPipeline(match, field, labelKey) {
+  return [
+    { $match: match },
+    { $addFields: { _dimNorm: iitCounsellingUtmNormExpr(field) } },
+    {
+      $group: {
+        _id: '$_dimNorm',
+        visits: { $sum: 1 },
+        uniqueVisitorSet: { $addToSet: '$visitorFingerprint' },
+        linkedSubmissions: {
+          $sum: {
+            $cond: [{ $ne: ['$submissionId', null] }, 1, 0],
+          },
+        },
+      },
+    },
+    { $sort: { visits: -1 } },
+    { $limit: 15 },
+    {
+      $project: {
+        _id: 0,
+        [labelKey]: '$_id',
+        visits: 1,
+        uniqueVisitors: { $size: { $ifNull: ['$uniqueVisitorSet', []] } },
+        linkedSubmissions: 1,
+      },
+    },
+  ];
+}
+
 exports.getIitCounsellingSubmissions = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -456,6 +510,151 @@ exports.getIitCounsellingVisitAnalytics = async (req, res) => {
     });
   } catch (error) {
     console.error('[getIitCounsellingVisitAnalytics] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.getIitCounsellingUtmAnalytics = async (req, res) => {
+  try {
+    const dateTime = parseIitDateTimeFilter(req.query);
+    const match = { pageKey: 'iitCounselling' };
+    if (dateTime.hasRange) {
+      match.visitedAt = dateTime.visitedAt;
+    }
+
+    const hasAny = iitCounsellingVisitHasAnyUtmExpression();
+
+    const [
+      summaryRows,
+      bySource,
+      byMedium,
+      byCampaign,
+      byContent,
+      byCombo,
+    ] = await Promise.all([
+      IitCounsellingVisit.aggregate([
+        { $match: match },
+        {
+          $group: {
+            _id: null,
+            totalVisits: { $sum: 1 },
+            visitsWithAnyUtm: { $sum: { $cond: [hasAny, 1, 0] } },
+            uniqueFingerprints: { $addToSet: '$visitorFingerprint' },
+            uniqueFpWithUtm: {
+              $addToSet: {
+                $cond: {
+                  if: hasAny,
+                  then: '$visitorFingerprint',
+                  else: '$$REMOVE',
+                },
+              },
+            },
+            uniqueFpWithoutUtm: {
+              $addToSet: {
+                $cond: {
+                  if: { $not: [hasAny] },
+                  then: '$visitorFingerprint',
+                  else: '$$REMOVE',
+                },
+              },
+            },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            totalVisits: 1,
+            visitsWithAnyUtm: 1,
+            visitsWithoutUtm: { $subtract: ['$totalVisits', '$visitsWithAnyUtm'] },
+            uniqueVisitors: { $size: { $ifNull: ['$uniqueFingerprints', []] } },
+            uniqueVisitorsWithUtm: { $size: { $ifNull: ['$uniqueFpWithUtm', []] } },
+            uniqueVisitorsWithoutUtm: { $size: { $ifNull: ['$uniqueFpWithoutUtm', []] } },
+          },
+        },
+      ]),
+      IitCounsellingVisit.aggregate(buildIitUtmDimensionPipeline(match, 'utm_source', 'utm_source')),
+      IitCounsellingVisit.aggregate(buildIitUtmDimensionPipeline(match, 'utm_medium', 'utm_medium')),
+      IitCounsellingVisit.aggregate(buildIitUtmDimensionPipeline(match, 'utm_campaign', 'utm_campaign')),
+      IitCounsellingVisit.aggregate(buildIitUtmDimensionPipeline(match, 'utm_content', 'utm_content')),
+      IitCounsellingVisit.aggregate([
+        { $match: match },
+        {
+          $addFields: {
+            utm_source_n: iitCounsellingUtmNormExpr('utm_source'),
+            utm_medium_n: iitCounsellingUtmNormExpr('utm_medium'),
+            utm_campaign_n: iitCounsellingUtmNormExpr('utm_campaign'),
+            utm_content_n: iitCounsellingUtmNormExpr('utm_content'),
+          },
+        },
+        {
+          $group: {
+            _id: {
+              utm_source: '$utm_source_n',
+              utm_medium: '$utm_medium_n',
+              utm_campaign: '$utm_campaign_n',
+              utm_content: '$utm_content_n',
+            },
+            visits: { $sum: 1 },
+            uniqueVisitorSet: { $addToSet: '$visitorFingerprint' },
+            linkedSubmissions: {
+              $sum: {
+                $cond: [{ $ne: ['$submissionId', null] }, 1, 0],
+              },
+            },
+          },
+        },
+        { $sort: { visits: -1 } },
+        { $limit: 50 },
+        {
+          $project: {
+            _id: 0,
+            utm_source: '$_id.utm_source',
+            utm_medium: '$_id.utm_medium',
+            utm_campaign: '$_id.utm_campaign',
+            utm_content: '$_id.utm_content',
+            visits: 1,
+            uniqueVisitors: { $size: { $ifNull: ['$uniqueVisitorSet', []] } },
+            linkedSubmissions: 1,
+          },
+        },
+      ]),
+    ]);
+
+    const summary = summaryRows[0] || {
+      totalVisits: 0,
+      visitsWithAnyUtm: 0,
+      visitsWithoutUtm: 0,
+      uniqueVisitors: 0,
+      uniqueVisitorsWithUtm: 0,
+      uniqueVisitorsWithoutUtm: 0,
+    };
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        summary: {
+          totalVisits: summary.totalVisits || 0,
+          visitsWithAnyUtm: summary.visitsWithAnyUtm || 0,
+          visitsWithoutUtm: summary.visitsWithoutUtm || 0,
+          uniqueVisitors: summary.uniqueVisitors || 0,
+          uniqueVisitorsWithUtm: summary.uniqueVisitorsWithUtm || 0,
+          uniqueVisitorsWithoutUtm: summary.uniqueVisitorsWithoutUtm || 0,
+        },
+        bySource,
+        byMedium,
+        byCampaign,
+        byContent,
+        byCombo,
+        filters: {
+          fromDate: dateTime.fromDate,
+          toDate: dateTime.toDate,
+          fromTime: dateTime.fromTime,
+          toTime: dateTime.toTime,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('[getIitCounsellingUtmAnalytics] Error:', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
