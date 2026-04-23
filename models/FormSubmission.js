@@ -1,6 +1,12 @@
 const mongoose = require('mongoose');
 
 const formSubmissionSchema = new mongoose.Schema({
+  submissionType: {
+    type: String,
+    enum: ['general', 'iitCounselling'],
+    default: 'general',
+    index: true
+  },
   fullName: {
     type: String,
     required: true,
@@ -113,6 +119,43 @@ const formSubmissionSchema = new mongoose.Schema({
       type: Date
     }
   },
+  iitCounselling: {
+    currentStep: {
+      type: Number,
+      default: 1,
+      min: 1,
+      max: 3
+    },
+    isCompleted: {
+      type: Boolean,
+      default: false
+    },
+    section1Data: {
+      fullName: { type: String, trim: true },
+      mobileNumber: { type: String, trim: true },
+      studentOrParent: { type: String, enum: ['Student', 'Parent'] },
+      classStatus: { type: String, enum: ['12th Appearing', '12th Passed'] },
+      stream: { type: String, enum: ['MPC', 'BiPC', 'Commerce', 'Others'] },
+      city: { type: String, trim: true },
+      slotBooking: { type: String, enum: ['Yes', 'No', 'Need another time'] },
+      top5Colleges: [{ type: String, trim: true }],
+      submittedAt: { type: Date },
+    },
+    section2Data: {
+      careerDecisionClarity: { type: String, enum: ['Very clear', 'Somewhat clear', 'Completely confused'] },
+      collegeDecisionStakeholder: { type: String, enum: ['Self', 'Parents', 'Both'] },
+      expectedBudget: { type: String, enum: ['<1L', '1-3L', '3-6L', '6L+'] },
+      topCollegePriority: { type: String, enum: ['Placements', 'Brand', 'Fees', 'Skills', 'Abroad opportunities', 'All the above'] },
+      submittedAt: { type: Date },
+    },
+    section3Data: {
+      helpNeeded: { type: String, enum: ['Scholarship Test', 'Career Counseling with IITian', 'How to choose the right college', 'Not sure'] },
+      wantsOneToOneSession: { type: String, enum: ['Yes', 'Maybe', 'No'] },
+      biggestConfusion: { type: String, enum: ['Course', 'College', 'Placements', 'Parent pressure', 'Not sure'] },
+      submittedAt: { type: Date },
+    },
+    lastUpdatedAt: { type: Date }
+  },
   // Reminder SMS tracking (sent 4 hours before slot)
   reminderSent: {
     type: Boolean,
@@ -199,6 +242,7 @@ const formSubmissionSchema = new mongoose.Schema({
 // phone already has unique: true → index created automatically
 formSubmissionSchema.index({ createdAt: -1 });
 formSubmissionSchema.index({ applicationStatus: 1 });
+formSubmissionSchema.index({ submissionType: 1, createdAt: -1 });
 // Index for reminder cron job queries
 formSubmissionSchema.index({ isRegistered: 1, reminderSent: 1, 'step3Data.slotDate': 1 });
 // Index for meet link cron job queries

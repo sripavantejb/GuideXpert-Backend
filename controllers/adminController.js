@@ -12,6 +12,7 @@ const SlotDateOverride = require('../models/SlotDateOverride');
 const MeetingAttendance = require('../models/MeetingAttendance');
 const TrainingFeedback = require('../models/TrainingFeedback');
 const Counsellor = require('../models/Counsellor');
+const IitCounsellingVisit = require('../models/IitCounsellingVisit');
 const { getISTCalendarDateUTC, getISTDayRangeFromString } = require('../utils/dateHelpers');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 const { updateLeadSlotByQuery } = require('../services/leadSlotUpdateService');
@@ -250,7 +251,214 @@ function mapLeadToDTO(sub) {
   };
 }
 
+function mapIitCounsellingToDTO(sub) {
+  const iit = sub.iitCounselling || {};
+  return {
+    id: sub._id,
+    submissionType: sub.submissionType || 'general',
+    fullName: sub.fullName || iit.section1Data?.fullName || '',
+    phone: sub.phone || iit.section1Data?.mobileNumber || '',
+    currentStep: iit.currentStep || 1,
+    isCompleted: !!iit.isCompleted,
+    createdAt: sub.createdAt,
+    updatedAt: sub.updatedAt,
+    section1Data: iit.section1Data || null,
+    section2Data: iit.section2Data || null,
+    section3Data: iit.section3Data || null,
+  };
+}
+
 const LEAD_STATUS_VALUES = ['Connected', 'Not Connected', 'Call Back Later', 'Not Interested', 'Interested'];
+
+function parseIitDateTimeFilter(query = {}) {
+  const fromDate = typeof query.fromDate === 'string' ? query.fromDate.trim() : '';
+  const toDate = typeof query.toDate === 'string' ? query.toDate.trim() : '';
+  const fromTime = typeof query.fromTime === 'string' && /^\d{2}:\d{2}$/.test(query.fromTime.trim())
+    ? query.fromTime.trim()
+    : '00:00';
+  const toTime = typeof query.toTime === 'string' && /^\d{2}:\d{2}$/.test(query.toTime.trim())
+    ? query.toTime.trim()
+    : '23:59';
+  const granularity = query.granularity === 'hourly' ? 'hourly' : 'daily';
+
+  const visitedAt = {};
+  let hasRange = false;
+  if (fromDate && /^\d{4}-\d{2}-\d{2}$/.test(fromDate)) {
+    visitedAt.$gte = new Date(`${fromDate}T${fromTime}:00+05:30`);
+    hasRange = true;
+  }
+  if (toDate && /^\d{4}-\d{2}-\d{2}$/.test(toDate)) {
+    visitedAt.$lte = new Date(`${toDate}T${toTime}:59+05:30`);
+    hasRange = true;
+  }
+
+  return {
+    hasRange,
+    visitedAt: hasRange ? visitedAt : null,
+    createdAt: hasRange ? visitedAt : null,
+    granularity,
+    fromDate,
+    toDate,
+    fromTime,
+    toTime,
+  };
+}
+
+exports.getIitCounsellingSubmissions = async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 25));
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const skip = (page - 1) * limit;
+
+    const dateTime = parseIitDateTimeFilter(req.query);
+    const filter = { submissionType: 'iitCounselling' };
+    if (dateTime.hasRange) {
+      filter.createdAt = dateTime.createdAt;
+    }
+    if (q) {
+      const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.$or = [
+        { fullName: { $regex: escaped, $options: 'i' } },
+        { phone: { $regex: escaped } },
+      ];
+    }
+
+    const [rows, total] = await Promise.all([
+      FormSubmission.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      FormSubmission.countDocuments(filter),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: rows.map(mapIitCounsellingToDTO),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+    });
+  } catch (error) {
+    console.error('[getIitCounsellingSubmissions] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.getIitCounsellingSubmissionById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || !require('mongoose').Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ success: false, message: 'Submission not found' });
+    }
+
+    const sub = await FormSubmission.findOne({ _id: id, submissionType: 'iitCounselling' }).lean();
+    if (!sub) {
+      return res.status(404).json({ success: false, message: 'Submission not found' });
+    }
+
+    return res.status(200).json({ success: true, data: mapIitCounsellingToDTO(sub) });
+  } catch (error) {
+    console.error('[getIitCounsellingSubmissionById] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.getIitCounsellingVisitAnalytics = async (req, res) => {
+  try {
+    const dateTime = parseIitDateTimeFilter(req.query);
+    const match = { pageKey: 'iitCounselling' };
+    if (dateTime.hasRange) {
+      match.visitedAt = dateTime.visitedAt;
+    }
+
+    const trendDateFormat = dateTime.granularity === 'hourly' ? '%Y-%m-%d %H:00' : '%Y-%m-%d';
+    const [base, trend, topReferrers, topUtmSources, topCampaigns, totalSubmissions] = await Promise.all([
+      IitCounsellingVisit.aggregate([
+        { $match: match },
+        {
+          $group: {
+            _id: null,
+            totalVisits: { $sum: 1 },
+            uniqueVisitors: { $addToSet: '$visitorFingerprint' },
+          },
+        },
+      ]),
+      IitCounsellingVisit.aggregate([
+        { $match: match },
+        {
+          $group: {
+            _id: {
+              $dateToString: {
+                format: trendDateFormat,
+                date: '$visitedAt',
+                timezone: 'Asia/Kolkata'
+              }
+            },
+            totalVisits: { $sum: 1 },
+            uniqueVisitorSet: { $addToSet: '$visitorFingerprint' },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]),
+      IitCounsellingVisit.aggregate([
+        { $match: { ...match, referrer: { $exists: true, $nin: ['', null] } } },
+        { $group: { _id: '$referrer', visits: { $sum: 1 } } },
+        { $sort: { visits: -1 } },
+        { $limit: 8 },
+      ]),
+      IitCounsellingVisit.aggregate([
+        { $match: { ...match, utm_source: { $exists: true, $nin: ['', null] } } },
+        { $group: { _id: '$utm_source', visits: { $sum: 1 } } },
+        { $sort: { visits: -1 } },
+        { $limit: 8 },
+      ]),
+      IitCounsellingVisit.aggregate([
+        { $match: { ...match, utm_campaign: { $exists: true, $nin: ['', null] } } },
+        { $group: { _id: '$utm_campaign', visits: { $sum: 1 } } },
+        { $sort: { visits: -1 } },
+        { $limit: 8 },
+      ]),
+      FormSubmission.countDocuments({
+        submissionType: 'iitCounselling',
+        ...(dateTime.hasRange ? { createdAt: dateTime.createdAt } : {}),
+      }),
+    ]);
+
+    const totals = base[0] || { totalVisits: 0, uniqueVisitors: [] };
+    const totalVisits = totals.totalVisits || 0;
+    const uniqueVisitors = Array.isArray(totals.uniqueVisitors) ? totals.uniqueVisitors.length : 0;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalVisits,
+        uniqueVisitors,
+        totalSubmissions,
+        conversionRate: totalVisits > 0 ? Number(((totalSubmissions / totalVisits) * 100).toFixed(2)) : 0,
+        granularity: dateTime.granularity,
+        trend: trend.map((row) => ({
+          bucket: row._id,
+          totalVisits: row.totalVisits,
+          uniqueVisitors: Array.isArray(row.uniqueVisitorSet) ? row.uniqueVisitorSet.length : 0,
+        })),
+        filters: {
+          fromDate: dateTime.fromDate,
+          toDate: dateTime.toDate,
+          fromTime: dateTime.fromTime,
+          toTime: dateTime.toTime,
+          granularity: dateTime.granularity,
+        },
+        topReferrers: topReferrers.map((row) => ({ referrer: row._id, visits: row.visits })),
+        topUtmSources: topUtmSources.map((row) => ({ source: row._id, visits: row.visits })),
+        topCampaigns: topCampaigns.map((row) => ({ campaign: row._id, visits: row.visits })),
+      },
+    });
+  } catch (error) {
+    console.error('[getIitCounsellingVisitAnalytics] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
 
 exports.getLeadById = async (req, res) => {
   try {

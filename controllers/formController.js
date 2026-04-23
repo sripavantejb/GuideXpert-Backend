@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 const { generateOTP, hashOTP, verifyOTP } = require('../utils/otpUtil');
 const otpStore = require('../utils/otpStore');
 const otpRepository = require('../utils/otpRepository');
@@ -12,6 +13,7 @@ const TrainingFormSubmission = require('../models/TrainingFormSubmission');
 const TrainingFormResponse = require('../models/TrainingFormResponse');
 const VerifiedPhoneSession = require('../models/VerifiedPhoneSession');
 const WebsiteLogin = require('../models/WebsiteLogin');
+const IitCounsellingVisit = require('../models/IitCounsellingVisit');
 const SlotConfig = require('../models/SlotConfig');
 const SlotDateOverride = require('../models/SlotDateOverride');
 const { getISTCalendarDateUTC } = require('../utils/dateHelpers');
@@ -114,9 +116,60 @@ async function appendToSheetIfConfigured(submission) {
 const OTP_EXPIRY_MINUTES = Number(process.env.OTP_EXPIRY_MINUTES) || 10;
 const OTP_EXPIRY_MS = OTP_EXPIRY_MINUTES * 60 * 1000;
 const MAX_VERIFY_ATTEMPTS = 3;
+const IIT_SUBMISSION_TYPE = 'iitCounselling';
+
+const IIT_ALLOWED_VALUES = {
+  studentOrParent: ['Student', 'Parent'],
+  classStatus: ['12th Appearing', '12th Passed'],
+  stream: ['MPC', 'BiPC', 'Commerce', 'Others'],
+  slotBooking: ['Yes', 'No', 'Need another time'],
+  careerDecisionClarity: ['Very clear', 'Somewhat clear', 'Completely confused'],
+  collegeDecisionStakeholder: ['Self', 'Parents', 'Both'],
+  expectedBudget: ['<1L', '1-3L', '3-6L', '6L+'],
+  topCollegePriority: ['Placements', 'Brand', 'Fees', 'Skills', 'Abroad opportunities', 'All the above'],
+  helpNeeded: ['Scholarship Test', 'Career Counseling with IITian', 'How to choose the right college', 'Not sure'],
+  wantsOneToOneSession: ['Yes', 'Maybe', 'No'],
+  biggestConfusion: ['Course', 'College', 'Placements', 'Parent pressure', 'Not sure'],
+};
 
 function normalizePhone(phone) {
   return otpRepository.normalize(phone);
+}
+
+function requireAllowedValue(value, allowedValues, fieldLabel) {
+  if (typeof value !== 'string' || !allowedValues.includes(value.trim())) {
+    return `${fieldLabel} is invalid`;
+  }
+  return null;
+}
+
+function normalizeTopColleges(raw) {
+  if (Array.isArray(raw)) {
+    return raw.map((entry) => String(entry || '').trim()).filter(Boolean).slice(0, 5);
+  }
+  if (typeof raw === 'string') {
+    return raw
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .slice(0, 5);
+  }
+  return [];
+}
+
+function getClientIp(req) {
+  const xff = req.headers['x-forwarded-for'];
+  const firstForwarded = Array.isArray(xff) ? xff[0] : (typeof xff === 'string' ? xff.split(',')[0] : '');
+  return (firstForwarded || req.ip || req.socket?.remoteAddress || '').trim().slice(0, 120);
+}
+
+function dayKeyFromDate(date = new Date()) {
+  return new Date(date).toISOString().slice(0, 10);
+}
+
+function buildVisitorFingerprint({ ip, userAgent, dayKey }) {
+  const seed = `${ip || 'na'}|${userAgent || 'na'}|${dayKey || dayKeyFromDate()}`;
+  return crypto.createHash('sha256').update(seed).digest('hex');
 }
 
 /** Build UTM fields from request body (only non-empty strings). */
@@ -979,6 +1032,250 @@ exports.savePostRegistrationData = async (req, res) => {
       code: error.code,
       stack: error.stack
     });
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.saveIitSection1 = async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const fullName = typeof payload.fullName === 'string' ? payload.fullName.trim() : '';
+    const mobileRaw = payload.mobileNumber ?? payload.phone ?? payload.whatsappNumber;
+    const mobileString = typeof mobileRaw === 'string' ? mobileRaw.trim() : String(mobileRaw || '');
+    const phone = normalizePhone(mobileString);
+    const city = typeof payload.city === 'string' ? payload.city.trim() : '';
+    const top5Colleges = normalizeTopColleges(payload.top5Colleges);
+
+    if (fullName.length < 2) {
+      return res.status(400).json({ success: false, message: 'fullName is required' });
+    }
+    if (!/^\d{10}$/.test(phone)) {
+      return res.status(400).json({ success: false, message: 'Valid 10-digit mobileNumber is required' });
+    }
+    if (!city) {
+      return res.status(400).json({ success: false, message: 'city is required' });
+    }
+    for (const [key, allowed] of [
+      ['studentOrParent', IIT_ALLOWED_VALUES.studentOrParent],
+      ['classStatus', IIT_ALLOWED_VALUES.classStatus],
+      ['stream', IIT_ALLOWED_VALUES.stream],
+      ['slotBooking', IIT_ALLOWED_VALUES.slotBooking],
+    ]) {
+      const err = requireAllowedValue(payload[key], allowed, key);
+      if (err) return res.status(400).json({ success: false, message: err });
+    }
+    if (top5Colleges.length === 0) {
+      return res.status(400).json({ success: false, message: 'top5Colleges is required' });
+    }
+
+    const now = new Date();
+    const section1Data = {
+      fullName,
+      mobileNumber: phone,
+      studentOrParent: payload.studentOrParent.trim(),
+      classStatus: payload.classStatus.trim(),
+      stream: payload.stream.trim(),
+      city,
+      slotBooking: payload.slotBooking.trim(),
+      top5Colleges,
+      submittedAt: now,
+    };
+
+    const submission = await FormSubmission.findOneAndUpdate(
+      { phone },
+      {
+        $setOnInsert: {
+          createdAt: now,
+        },
+        $set: {
+          submissionType: IIT_SUBMISSION_TYPE,
+          fullName,
+          phone,
+          occupation: payload.studentOrParent.trim(),
+          currentStep: 1,
+          applicationStatus: 'in_progress',
+          'iitCounselling.currentStep': 1,
+          'iitCounselling.isCompleted': false,
+          'iitCounselling.section1Data': section1Data,
+          'iitCounselling.lastUpdatedAt': now,
+          updatedAt: now,
+        },
+      },
+      { upsert: true, new: true, runValidators: true }
+    );
+
+    const visitorFingerprint =
+      (typeof payload.visitorFingerprint === 'string' && payload.visitorFingerprint.trim()) ||
+      null;
+    if (visitorFingerprint) {
+      await IitCounsellingVisit.findOneAndUpdate(
+        { visitorFingerprint, submissionId: null },
+        { $set: { submissionId: submission._id, phone } },
+        { sort: { visitedAt: -1 } }
+      );
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Section 1 saved successfully.',
+      data: { submissionId: submission._id.toString(), currentStep: 1 },
+    });
+  } catch (error) {
+    console.error('[saveIitSection1] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.trackIitCounsellingVisit = async (req, res) => {
+  try {
+    const body = req.body || {};
+    const userAgent = String(req.headers['user-agent'] || '').trim().slice(0, 1000);
+    const referrer = String(body.referrer || req.get('referer') || '').trim().slice(0, 1000);
+    const path = String(body.path || req.originalUrl || '/iit-counselling').trim().slice(0, 500);
+    const query = String(body.query || '').trim().slice(0, 1000);
+    const ip = getClientIp(req);
+    const dayKey = dayKeyFromDate();
+    const visitorFingerprint = buildVisitorFingerprint({ ip, userAgent, dayKey });
+
+    const doc = await IitCounsellingVisit.create({
+      pageKey: 'iitCounselling',
+      visitedAt: new Date(),
+      visitorFingerprint,
+      ip,
+      userAgent,
+      referrer,
+      path,
+      query,
+      utm_source: typeof body.utm_source === 'string' ? body.utm_source.trim().slice(0, 200) : undefined,
+      utm_medium: typeof body.utm_medium === 'string' ? body.utm_medium.trim().slice(0, 200) : undefined,
+      utm_campaign: typeof body.utm_campaign === 'string' ? body.utm_campaign.trim().slice(0, 200) : undefined,
+      utm_content: typeof body.utm_content === 'string' ? body.utm_content.trim().slice(0, 200) : undefined,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Visit tracked',
+      data: {
+        visitId: doc._id.toString(),
+        visitorFingerprint,
+        visitedAt: doc.visitedAt,
+      },
+    });
+  } catch (error) {
+    console.error('[trackIitCounsellingVisit] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.saveIitSection2 = async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const submissionId = typeof payload.submissionId === 'string' ? payload.submissionId.trim() : '';
+    if (!submissionId || !mongoose.Types.ObjectId.isValid(submissionId)) {
+      return res.status(400).json({ success: false, message: 'Valid submissionId is required' });
+    }
+
+    for (const [key, allowed] of [
+      ['careerDecisionClarity', IIT_ALLOWED_VALUES.careerDecisionClarity],
+      ['collegeDecisionStakeholder', IIT_ALLOWED_VALUES.collegeDecisionStakeholder],
+      ['expectedBudget', IIT_ALLOWED_VALUES.expectedBudget],
+      ['topCollegePriority', IIT_ALLOWED_VALUES.topCollegePriority],
+    ]) {
+      const err = requireAllowedValue(payload[key], allowed, key);
+      if (err) return res.status(400).json({ success: false, message: err });
+    }
+
+    const now = new Date();
+    const section2Data = {
+      careerDecisionClarity: payload.careerDecisionClarity.trim(),
+      collegeDecisionStakeholder: payload.collegeDecisionStakeholder.trim(),
+      expectedBudget: payload.expectedBudget.trim(),
+      topCollegePriority: payload.topCollegePriority.trim(),
+      submittedAt: now,
+    };
+
+    const updated = await FormSubmission.findOneAndUpdate(
+      { _id: submissionId, submissionType: IIT_SUBMISSION_TYPE },
+      {
+        $set: {
+          'iitCounselling.section2Data': section2Data,
+          'iitCounselling.currentStep': 2,
+          'iitCounselling.lastUpdatedAt': now,
+          currentStep: 2,
+          applicationStatus: 'in_progress',
+          updatedAt: now,
+        },
+      },
+      { new: true, runValidators: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'IIT counselling submission not found' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Section 2 saved successfully.',
+      data: { submissionId: updated._id.toString(), currentStep: 2 },
+    });
+  } catch (error) {
+    console.error('[saveIitSection2] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.saveIitSection3 = async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const submissionId = typeof payload.submissionId === 'string' ? payload.submissionId.trim() : '';
+    if (!submissionId || !mongoose.Types.ObjectId.isValid(submissionId)) {
+      return res.status(400).json({ success: false, message: 'Valid submissionId is required' });
+    }
+
+    for (const [key, allowed] of [
+      ['helpNeeded', IIT_ALLOWED_VALUES.helpNeeded],
+      ['wantsOneToOneSession', IIT_ALLOWED_VALUES.wantsOneToOneSession],
+      ['biggestConfusion', IIT_ALLOWED_VALUES.biggestConfusion],
+    ]) {
+      const err = requireAllowedValue(payload[key], allowed, key);
+      if (err) return res.status(400).json({ success: false, message: err });
+    }
+
+    const now = new Date();
+    const section3Data = {
+      helpNeeded: payload.helpNeeded.trim(),
+      wantsOneToOneSession: payload.wantsOneToOneSession.trim(),
+      biggestConfusion: payload.biggestConfusion.trim(),
+      submittedAt: now,
+    };
+
+    const updated = await FormSubmission.findOneAndUpdate(
+      { _id: submissionId, submissionType: IIT_SUBMISSION_TYPE },
+      {
+        $set: {
+          'iitCounselling.section3Data': section3Data,
+          'iitCounselling.currentStep': 3,
+          'iitCounselling.isCompleted': true,
+          'iitCounselling.lastUpdatedAt': now,
+          currentStep: 3,
+          applicationStatus: 'completed',
+          updatedAt: now,
+        },
+      },
+      { new: true, runValidators: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'IIT counselling submission not found' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Section 3 saved successfully.',
+      data: { submissionId: updated._id.toString(), currentStep: 3, isCompleted: true },
+    });
+  } catch (error) {
+    console.error('[saveIitSection3] Error:', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
