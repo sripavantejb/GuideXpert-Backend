@@ -251,8 +251,24 @@ function mapLeadToDTO(sub) {
   };
 }
 
-function mapIitCounsellingToDTO(sub) {
+function pickUtmFromSources(sub, visit) {
+  const pick = (a, b) => {
+    const av = typeof a === 'string' ? a.trim() : '';
+    const bv = typeof b === 'string' ? b.trim() : '';
+    return av || bv || '';
+  };
+  return {
+    utm_source: pick(visit?.utm_source, sub?.utm_source),
+    utm_medium: pick(visit?.utm_medium, sub?.utm_medium),
+    utm_campaign: pick(visit?.utm_campaign, sub?.utm_campaign),
+    utm_content: pick(visit?.utm_content, sub?.utm_content),
+    referrer: (typeof visit?.referrer === 'string' ? visit.referrer.trim() : '') || '',
+  };
+}
+
+function mapIitCounsellingToDTO(sub, visit) {
   const iit = sub.iitCounselling || {};
+  const utm = pickUtmFromSources(sub, visit);
   return {
     id: sub._id,
     submissionType: sub.submissionType || 'general',
@@ -265,6 +281,7 @@ function mapIitCounsellingToDTO(sub) {
     section1Data: iit.section1Data || null,
     section2Data: iit.section2Data || null,
     section3Data: iit.section3Data || null,
+    utm,
   };
 }
 
@@ -383,9 +400,25 @@ exports.getIitCounsellingSubmissions = async (req, res) => {
       FormSubmission.countDocuments(filter),
     ]);
 
+    // Attach UTM from the most recent IitCounsellingVisit linked to each submission.
+    const submissionIds = rows.map((r) => r._id).filter(Boolean);
+    const visitsBySubmissionId = new Map();
+    if (submissionIds.length > 0) {
+      const visits = await IitCounsellingVisit.find({ submissionId: { $in: submissionIds } })
+        .select('submissionId utm_source utm_medium utm_campaign utm_content referrer visitedAt')
+        .sort({ visitedAt: -1 })
+        .lean();
+      for (const v of visits) {
+        const key = String(v.submissionId);
+        if (!visitsBySubmissionId.has(key)) {
+          visitsBySubmissionId.set(key, v);
+        }
+      }
+    }
+
     return res.status(200).json({
       success: true,
-      data: rows.map(mapIitCounsellingToDTO),
+      data: rows.map((sub) => mapIitCounsellingToDTO(sub, visitsBySubmissionId.get(String(sub._id)))),
       pagination: {
         page,
         limit,
@@ -411,7 +444,12 @@ exports.getIitCounsellingSubmissionById = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Submission not found' });
     }
 
-    return res.status(200).json({ success: true, data: mapIitCounsellingToDTO(sub) });
+    const latestVisit = await IitCounsellingVisit.findOne({ submissionId: sub._id })
+      .select('utm_source utm_medium utm_campaign utm_content referrer visitedAt')
+      .sort({ visitedAt: -1 })
+      .lean();
+
+    return res.status(200).json({ success: true, data: mapIitCounsellingToDTO(sub, latestVisit) });
   } catch (error) {
     console.error('[getIitCounsellingSubmissionById] Error:', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
