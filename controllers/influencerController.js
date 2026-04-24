@@ -3,6 +3,7 @@ const InfluencerLink = require('../models/InfluencerLink');
 const FormSubmission = require('../models/FormSubmission');
 
 const DEFAULT_BASE_URL = 'https://guidexpert.co.in/register';
+const DEFAULT_IIT_COUNSELLING_PAGE_URL = 'https://guidexpert.co.in/iit-counselling';
 const PLATFORM_TO_SOURCE = {
   Instagram: 'instagram',
   YouTube: 'youtube',
@@ -14,23 +15,52 @@ const PLATFORM_TO_SOURCE = {
   LinkedIn: 'linkedin'
 };
 
-function getBaseUrl() {
-  const base = process.env.REGISTRATION_BASE_URL || DEFAULT_BASE_URL;
+function normalizeBaseUrl(raw, fallback) {
+  const base = (raw && typeof raw === 'string' && raw.trim()) ? raw.trim() : fallback;
   return base.replace(/\/?$/, '');
 }
 
+function getRegistrationBaseUrl() {
+  return normalizeBaseUrl(process.env.REGISTRATION_BASE_URL, DEFAULT_BASE_URL);
+}
+
+function getIitCounsellingBaseUrl() {
+  return normalizeBaseUrl(process.env.IIT_COUNSELLING_PAGE_URL, DEFAULT_IIT_COUNSELLING_PAGE_URL);
+}
+
 /**
- * Build UTM link from influencer name, platform, and campaign.
+ * Build UTM link from influencer name, platform, and campaign on a given site base.
  */
-function buildUtmLink(influencerName, platform, campaign) {
-  const base = getBaseUrl();
+function buildUtmLinkOnBase(baseUrl, influencerName, platform, campaign) {
+  // Let URLSearchParams encode values once (same as browser + IitCounsellingPage queryParams.get).
   const params = new URLSearchParams({
     utm_source: PLATFORM_TO_SOURCE[platform] || platform.toLowerCase(),
     utm_medium: 'influencer',
     utm_campaign: campaign || 'guide_xperts',
-    utm_content: encodeURIComponent(influencerName.trim())
+    utm_content: influencerName.trim(),
   });
-  return `${base}?${params.toString()}`;
+  return `${baseUrl}?${params.toString()}`;
+}
+
+/**
+ * Registration page UTM link (default influencer flow).
+ */
+function buildUtmLink(influencerName, platform, campaign) {
+  return buildUtmLinkOnBase(getRegistrationBaseUrl(), influencerName, platform, campaign);
+}
+
+/**
+ * IIT counselling landing page UTM link (same UTM shape as registration influencer links).
+ */
+function buildIitCounsellingUtmLink(influencerName, platform, campaign) {
+  return buildUtmLinkOnBase(getIitCounsellingBaseUrl(), influencerName, platform, campaign);
+}
+
+function normalizeLinkTarget(value) {
+  if (value == null || value === '') return 'registration';
+  const s = String(value).trim().toLowerCase().replace(/-/g, '_');
+  if (s === 'iitcounselling' || s === 'iit_counselling') return 'iitCounselling';
+  return 'registration';
 }
 
 /**
@@ -45,12 +75,13 @@ function parseCost(value) {
 
 /**
  * POST /api/influencer-links — create and optionally save influencer UTM link.
- * Body: { influencerName, platform, campaign?, cost?, save?: boolean }
+ * Body: { influencerName, platform, campaign?, cost?, save?: boolean, linkTarget?: 'registration' | 'iitCounselling' }
  */
 exports.createInfluencerLink = async (req, res) => {
   try {
     console.log('[createInfluencerLink] Request body:', JSON.stringify(req.body));
     const { influencerName, platform, campaign, cost } = req.body || {};
+    const linkTarget = normalizeLinkTarget(req.body?.linkTarget);
     if (!influencerName || typeof influencerName !== 'string' || !influencerName.trim()) {
       return res.status(400).json({ success: false, message: 'Influencer name is required.' });
     }
@@ -60,16 +91,20 @@ exports.createInfluencerLink = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid platform. Use Instagram, YouTube, Twitter, X, WhatsApp, Telegram, Facebook, or LinkedIn.' });
     }
     const campaignVal = (campaign && typeof campaign === 'string' && campaign.trim()) ? campaign.trim() : 'guide_xperts';
-    const utmLink = buildUtmLink(influencerName.trim(), platformVal, campaignVal);
+    const utmLink = linkTarget === 'iitCounselling'
+      ? buildIitCounsellingUtmLink(influencerName.trim(), platformVal, campaignVal)
+      : buildUtmLink(influencerName.trim(), platformVal, campaignVal);
 
     const payload = {
       influencerName: influencerName.trim(),
       platform: platformVal,
       campaign: campaignVal,
-      utmLink
+      utmLink,
+      linkTarget,
     };
 
-    if (req.body.save === true) {
+    const wantsSave = req.body?.save === true || req.body?.save === 'true' || req.body?.save === 1 || req.body?.save === '1';
+    if (wantsSave) {
       const costVal = parseCost(cost);
       if (costVal === undefined) {
         return res.status(400).json({ success: false, message: 'Cost must be a non-negative number.' });
@@ -87,6 +122,7 @@ exports.createInfluencerLink = async (req, res) => {
           platform: doc.platform,
           campaign: doc.campaign,
           utmLink: doc.utmLink,
+          linkTarget: doc.linkTarget || 'registration',
           cost: doc.cost ?? null,
           createdAt: doc.createdAt
         }
@@ -112,7 +148,31 @@ exports.createInfluencerLink = async (req, res) => {
  */
 exports.listInfluencerLinks = async (req, res) => {
   try {
-    const links = await InfluencerLink.find({}).sort({ createdAt: -1 }).lean();
+    const rawTarget = (req.query?.linkTarget ?? '').toString().trim();
+    let mongoFilter = {};
+    if (rawTarget) {
+      const filterParam = normalizeLinkTarget(rawTarget);
+      if (filterParam === 'iitCounselling') {
+        // Prefer linkTarget; also match stored URL path for legacy rows without the field.
+        mongoFilter = {
+          $or: [
+            { linkTarget: 'iitCounselling' },
+            // Path must be /iit-counselling (not e.g. /register?…=/iit-counselling in query only).
+            { utmLink: { $regex: /^https?:\/\/[^/]+\/iit-counselling(\/|\?|#|$)/i } },
+          ],
+        };
+      } else {
+        mongoFilter = {
+          $or: [
+            { linkTarget: { $exists: false } },
+            { linkTarget: null },
+            { linkTarget: 'registration' },
+          ],
+        };
+      }
+    }
+
+    const links = await InfluencerLink.find(mongoFilter).sort({ createdAt: -1 }).lean();
     console.log('[listInfluencerLinks] Found', links.length, 'links');
 
     const data = await Promise.all(
@@ -165,6 +225,7 @@ exports.listInfluencerLinks = async (req, res) => {
           platform: doc.platform,
           campaign: doc.campaign,
           utmLink: doc.utmLink,
+          linkTarget: doc.linkTarget || 'registration',
           cost: costNum,
           costPerLead,
           createdAt: doc.createdAt,

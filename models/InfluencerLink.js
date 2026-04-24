@@ -26,6 +26,12 @@ const influencerLinkSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  linkTarget: {
+    type: String,
+    trim: true,
+    enum: ['registration', 'iitCounselling'],
+    default: 'registration'
+  },
   cost: {
     type: Number,
     default: null,

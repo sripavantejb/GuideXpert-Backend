@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
+    "dev": "nodemon --config nodemon.json server.js",
+    "dev:node": "node --watch server.js",
     "seed": "node scripts/seed.js",
     "seed:admin": "node scripts/seedAdmin.js",
     "seed:training-form": "node scripts/seedTrainingFormResponses.js",

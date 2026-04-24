@@ -1,6 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const { login, getAdminLeads, getLeadById, updateLeadNotes, updateLeadSlotBooking, updateLeadSlotByPhone, getAdminStats, exportLeads, getSlotConfigs, getSlotsForDate, updateSlotConfig, getSlotBookingCounts, getSlotOverrides, setSlotOverride, getAssessmentSubmissions, getAssessment2Submissions, getAssessment3Submissions, getAssessmentSubmissionById, getAssessment2SubmissionById, getAssessment3SubmissionById, getAssessment4Submissions, getAssessment4SubmissionById, getAssessment5Submissions, getAssessment5SubmissionById, getMissingLeads, getIitCounsellingSubmissions, getIitCounsellingSubmissionById, getIitCounsellingVisitAnalytics, getIitCounsellingUtmAnalytics } = require('../controllers/adminController');
+const {
+  listIitCounsellingSavedUtmLinks,
+  createIitCounsellingSavedUtmLink,
+  deleteIitCounsellingSavedUtmLink,
+} = require('../controllers/iitCounsellingUtmSavedLinkController');
+const {
+  listSalesAnalyticsSavedUtmLinks,
+  createSalesAnalyticsSavedUtmLink,
+  deleteSalesAnalyticsSavedUtmLink,
+} = require('../controllers/salesAnalyticsSavedUtmController');
 const { getMeetingAttendance } = require('../controllers/meetingController');
 const { getTrainingAttendance } = require('../controllers/trainingController');
 const { getTrainingFeedback } = require('../controllers/feedbackController');
@@ -78,6 +88,18 @@ router.get('/missing-leads', requireAdmin, getMissingLeads);
 router.get('/iit-counselling', requireAdmin, getIitCounsellingSubmissions);
 router.get('/iit-counselling/visits', requireAdmin, getIitCounsellingVisitAnalytics);
 router.get('/iit-counselling/utm-analytics', requireAdmin, getIitCounsellingUtmAnalytics);
+// Must be registered before GET /iit-counselling/:id so "saved-utm-links" is never parsed as an ObjectId.
+router.get('/iit-counselling/saved-utm-links', requireAdmin, listIitCounsellingSavedUtmLinks);
+router.post('/iit-counselling/saved-utm-links', requireAdmin, createIitCounsellingSavedUtmLink);
+router.delete('/iit-counselling/saved-utm-links/:id', requireAdmin, deleteIitCounsellingSavedUtmLink);
+// Flat aliases (older clients); keep after the /iit-counselling/* literals above.
+router.get('/iit-utm-saved-links', requireAdmin, listIitCounsellingSavedUtmLinks);
+router.post('/iit-utm-saved-links', requireAdmin, createIitCounsellingSavedUtmLink);
+router.delete('/iit-utm-saved-links/:id', requireAdmin, deleteIitCounsellingSavedUtmLink);
+// Admin → Analytics page only (not InfluencerLink / influencer tracking).
+router.get('/sales-analytics-saved-utm-links', requireAdmin, listSalesAnalyticsSavedUtmLinks);
+router.post('/sales-analytics-saved-utm-links', requireAdmin, createSalesAnalyticsSavedUtmLink);
+router.delete('/sales-analytics-saved-utm-links/:id', requireAdmin, deleteSalesAnalyticsSavedUtmLink);
 router.get('/iit-counselling/:id', requireAdmin, getIitCounsellingSubmissionById);
 router.get('/certified-counsellors', requireAdmin, getCertifiedCounsellors);
 router.get('/certified-counsellors/:id', requireAdmin, getCertifiedCounsellorDetail);
