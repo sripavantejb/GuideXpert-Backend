@@ -14,6 +14,8 @@
     "seed:blogs": "node scripts/seedBlogs.js",
     "backfill:webinar-feedback": "node scripts/backfillWebinarCompletionFromFeedback.js",
     "backfill:student-createdby": "node scripts/backfillStudentCreatedBy.js",
+    "migrate:iit-counselling": "node scripts/migrateIitCounsellingToDedicatedCollection.js",
+    "migrate:iit-counselling:delete-source": "node scripts/migrateIitCounsellingToDedicatedCollection.js --delete-source",
     "test": "echo \"Error: no test specified\" && exit 1",
     "test:poster-track": "node scripts/testPosterTrackKeys.js"
   },

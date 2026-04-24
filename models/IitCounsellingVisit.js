@@ -47,7 +47,7 @@ const iitCounsellingVisitSchema = new mongoose.Schema({
   utm_content: { type: String, trim: true, maxlength: 200 },
   submissionId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'FormSubmission',
+    ref: 'IitCounsellingSubmission',
     default: null,
   },
   phone: {

@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const Admin = require('../models/Admin');
 const FormSubmission = require('../models/FormSubmission');
+const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
 const AssessmentSubmission = require('../models/AssessmentSubmission');
 const AssessmentSubmission2 = require('../models/AssessmentSubmission2');
 const AssessmentSubmission3 = require('../models/AssessmentSubmission3');
@@ -396,8 +397,8 @@ exports.getIitCounsellingSubmissions = async (req, res) => {
     }
 
     const [rows, total] = await Promise.all([
-      FormSubmission.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
-      FormSubmission.countDocuments(filter),
+      IitCounsellingSubmission.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      IitCounsellingSubmission.countDocuments(filter),
     ]);
 
     // Attach UTM from the most recent IitCounsellingVisit linked to each submission.
@@ -439,7 +440,7 @@ exports.getIitCounsellingSubmissionById = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Submission not found' });
     }
 
-    const sub = await FormSubmission.findOne({ _id: id, submissionType: 'iitCounselling' }).lean();
+    const sub = await IitCounsellingSubmission.findOne({ _id: id, submissionType: 'iitCounselling' }).lean();
     if (!sub) {
       return res.status(404).json({ success: false, message: 'Submission not found' });
     }
@@ -511,7 +512,7 @@ exports.getIitCounsellingVisitAnalytics = async (req, res) => {
         { $sort: { visits: -1 } },
         { $limit: 8 },
       ]),
-      FormSubmission.countDocuments({
+      IitCounsellingSubmission.countDocuments({
         submissionType: 'iitCounselling',
         ...(dateTime.hasRange ? { createdAt: dateTime.createdAt } : {}),
       }),

@@ -8,6 +8,7 @@ const { getDemoSlots } = require('../utils/demoSlots');
 const { appendFormSubmission } = require('../utils/sheetsService');
 const jwt = require('jsonwebtoken');
 const FormSubmission = require('../models/FormSubmission');
+const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
 const TrainingFeedback = require('../models/TrainingFeedback');
 const TrainingFormSubmission = require('../models/TrainingFormSubmission');
 const TrainingFormResponse = require('../models/TrainingFormResponse');
@@ -1081,7 +1082,7 @@ exports.saveIitSection1 = async (req, res) => {
       submittedAt: now,
     };
 
-    const submission = await FormSubmission.findOneAndUpdate(
+    const submission = await IitCounsellingSubmission.findOneAndUpdate(
       { phone },
       {
         $setOnInsert: {
@@ -1092,6 +1093,7 @@ exports.saveIitSection1 = async (req, res) => {
           fullName,
           phone,
           occupation: payload.studentOrParent.trim(),
+          isCompleted: false,
           currentStep: 1,
           applicationStatus: 'in_progress',
           'iitCounselling.currentStep': 1,
@@ -1194,7 +1196,7 @@ exports.saveIitSection2 = async (req, res) => {
       submittedAt: now,
     };
 
-    const updated = await FormSubmission.findOneAndUpdate(
+    const updated = await IitCounsellingSubmission.findOneAndUpdate(
       { _id: submissionId, submissionType: IIT_SUBMISSION_TYPE },
       {
         $set: {
@@ -1202,6 +1204,7 @@ exports.saveIitSection2 = async (req, res) => {
           'iitCounselling.currentStep': 2,
           'iitCounselling.lastUpdatedAt': now,
           currentStep: 2,
+          isCompleted: false,
           applicationStatus: 'in_progress',
           updatedAt: now,
         },
@@ -1249,7 +1252,7 @@ exports.saveIitSection3 = async (req, res) => {
       submittedAt: now,
     };
 
-    const updated = await FormSubmission.findOneAndUpdate(
+    const updated = await IitCounsellingSubmission.findOneAndUpdate(
       { _id: submissionId, submissionType: IIT_SUBMISSION_TYPE },
       {
         $set: {
@@ -1258,6 +1261,7 @@ exports.saveIitSection3 = async (req, res) => {
           'iitCounselling.isCompleted': true,
           'iitCounselling.lastUpdatedAt': now,
           currentStep: 3,
+          isCompleted: true,
           applicationStatus: 'completed',
           updatedAt: now,
         },
