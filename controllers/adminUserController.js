@@ -7,6 +7,7 @@ const ALLOWED_SECTION_KEYS = [
   'leads',
   'analytics',
   'meeting-attendance',
+  'iit-meet-attendance',
   'export',
   'slots',
   'training-form-responses',
