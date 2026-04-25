@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { login, getAdminLeads, getLeadById, updateLeadNotes, updateLeadSlotBooking, updateLeadSlotByPhone, getAdminStats, exportLeads, getSlotConfigs, getSlotsForDate, updateSlotConfig, getSlotBookingCounts, getSlotOverrides, setSlotOverride, getAssessmentSubmissions, getAssessment2Submissions, getAssessment3Submissions, getAssessmentSubmissionById, getAssessment2SubmissionById, getAssessment3SubmissionById, getAssessment4Submissions, getAssessment4SubmissionById, getAssessment5Submissions, getAssessment5SubmissionById, getMissingLeads, getIitCounsellingSubmissions, getIitCounsellingSubmissionById, getIitCounsellingVisitAnalytics, getIitCounsellingUtmAnalytics } = require('../controllers/adminController');
+const { login, getAdminLeads, getLeadById, updateLeadNotes, updateLeadSlotBooking, updateLeadSlotByPhone, getAdminStats, exportLeads, getSlotConfigs, getSlotsForDate, updateSlotConfig, getSlotBookingCounts, getSlotOverrides, setSlotOverride, getAssessmentSubmissions, getAssessment2Submissions, getAssessment3Submissions, getAssessmentSubmissionById, getAssessment2SubmissionById, getAssessment3SubmissionById, getAssessment4Submissions, getAssessment4SubmissionById, getAssessment5Submissions, getAssessment5SubmissionById, getMissingLeads, getIitCounsellingSubmissions, getIitCounsellingSubmissionById, getIitCounsellingVisitAnalytics, getIitCounsellingUtmAnalytics, getCounsellorSupportRequests } = require('../controllers/adminController');
 const {
   listIitCounsellingSavedUtmLinks,
   createIitCounsellingSavedUtmLink,
@@ -74,6 +74,7 @@ router.get('/meeting-attendance', requireAdmin, getMeetingAttendance);
 router.get('/training-attendance', requireAdmin, getTrainingAttendance);
 router.get('/training-feedback', requireAdmin, getTrainingFeedback);
 router.get('/training-form-responses', requireAdmin, getTrainingFormResponses);
+router.get('/counsellor-support-requests', requireAdmin, getCounsellorSupportRequests);
 router.get('/assessment-submissions', requireAdmin, getAssessmentSubmissions);
 router.get('/assessment-submissions/:id', requireAdmin, getAssessmentSubmissionById);
 router.get('/assessment-2-submissions', requireAdmin, getAssessment2Submissions);

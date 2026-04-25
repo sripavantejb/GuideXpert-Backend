@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const Admin = require('../models/Admin');
 const FormSubmission = require('../models/FormSubmission');
 const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
+const { CounsellorSupportRequest } = require('../models/CounsellorSupportRequest');
 const AssessmentSubmission = require('../models/AssessmentSubmission');
 const AssessmentSubmission2 = require('../models/AssessmentSubmission2');
 const AssessmentSubmission3 = require('../models/AssessmentSubmission3');
@@ -689,6 +690,77 @@ exports.getIitCounsellingUtmAnalytics = async (req, res) => {
   } catch (error) {
     console.error('[getIitCounsellingUtmAnalytics] Error:', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.getCounsellorSupportRequests = async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const rawLimit = parseInt(req.query.limit, 10) || 25;
+    const limit = Math.min(Math.max(rawLimit, 1), ADMIN_LIST_MAX_LIMIT);
+    const skip = (page - 1) * limit;
+    const q = String(req.query.q || '').trim();
+    const from = String(req.query.from || '').trim();
+    const to = String(req.query.to || '').trim();
+
+    const query = {};
+    if (q) {
+      const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      query.$or = [
+        { name: rx },
+        { registeredMobileNumber: rx },
+        { supportNeeded: rx },
+        { stuckStage: rx },
+      ];
+    }
+
+    if (from || to) {
+      const createdAt = {};
+      if (from) {
+        const fromDate = new Date(`${from}T00:00:00.000Z`);
+        if (!Number.isNaN(fromDate.getTime())) createdAt.$gte = fromDate;
+      }
+      if (to) {
+        const toDate = new Date(`${to}T23:59:59.999Z`);
+        if (!Number.isNaN(toDate.getTime())) createdAt.$lte = toDate;
+      }
+      if (Object.keys(createdAt).length > 0) query.createdAt = createdAt;
+    }
+
+    const [rows, total] = await Promise.all([
+      CounsellorSupportRequest.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      CounsellorSupportRequest.countDocuments(query),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: rows.map((row) => ({
+        id: row._id,
+        name: row.name || '',
+        registeredMobileNumber: row.registeredMobileNumber || '',
+        dashboardLeadBucket: row.dashboardLeadBucket || '',
+        contactedLeadBucket: row.contactedLeadBucket || '',
+        natLeadBucket: row.natLeadBucket || '',
+        stuckStage: row.stuckStage || '',
+        supportNeeded: row.supportNeeded || '',
+        otherQuestions: row.otherQuestions || '',
+        createdAt: row.createdAt || null,
+        updatedAt: row.updatedAt || null,
+      })),
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+    });
+  } catch (error) {
+    console.error('[Admin] getCounsellorSupportRequests error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to load counsellor support requests' });
   }
 };
 
