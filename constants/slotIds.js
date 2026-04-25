@@ -1,0 +1,11 @@
+/** Canonical slot ids (admin, booking, lead updates). */
+const ALL_SLOT_IDS = [
+  'MONDAY_7PM', 'TUESDAY_7PM', 'WEDNESDAY_7PM', 'THURSDAY_7PM',
+  'FRIDAY_7PM', 'SATURDAY_7PM', 'SUNDAY_3PM', 'SUNDAY_11AM',
+  'MONDAY_6PM', 'TUESDAY_6PM', 'WEDNESDAY_6PM', 'THURSDAY_6PM',
+  'FRIDAY_6PM', 'SATURDAY_6PM', 'SUNDAY_6PM'
+];
+
+const DAY_NAMES = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+
+module.exports = { ALL_SLOT_IDS, DAY_NAMES };

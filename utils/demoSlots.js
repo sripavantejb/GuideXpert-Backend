@@ -1,6 +1,13 @@
 const SlotConfig = require('../models/SlotConfig');
 const SlotDateOverride = require('../models/SlotDateOverride');
 const { getISTCalendarDateUTC } = require('./dateHelpers');
+const {
+  getEnabledSlotIdsForISTDate,
+  slotIdToStartOnISTCalendarDate,
+  addISTCalendarDays
+} = require('./slotAvailabilityForDate');
+
+const MAX_FALLBACK_SCAN_DAYS = 90;
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -76,7 +83,60 @@ function isVisibleBeforeOneHourCutoff(slotDateISO, now = new Date()) {
   return now.getTime() < (slotStart.getTime() - ONE_HOUR_MS);
 }
 
+async function getDemoSlotsTwoDateFallback(now) {
+  const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  let scanDate = addISTCalendarDays(todayStr, 2);
+  if (!scanDate) return { slots: [] };
+
+  const foundDates = [];
+  for (let i = 0; i < MAX_FALLBACK_SCAN_DAYS; i++) {
+    const ids = await getEnabledSlotIdsForISTDate(scanDate);
+    if (ids.length > 0) {
+      foundDates.push(scanDate);
+      if (foundDates.length === 2) break;
+    }
+    const next = addISTCalendarDays(scanDate, 1);
+    if (!next) break;
+    scanDate = next;
+  }
+
+  const collected = [];
+  for (const dateStr of foundDates) {
+    const ids = await getEnabledSlotIdsForISTDate(dateStr);
+    for (const slotId of ids) {
+      const startDate = slotIdToStartOnISTCalendarDate(slotId, dateStr);
+      if (!startDate || Number.isNaN(startDate.getTime())) continue;
+      collected.push({
+        id: slotId,
+        label: formatSlotLabel(startDate),
+        date: startDate.toISOString(),
+        enabled: true,
+        selectionId: `${slotId}_${dateStr}`
+      });
+    }
+  }
+
+  const filtered = collected
+    .filter((s) => isVisibleBeforeOneHourCutoff(s.date, now))
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  return { slots: filtered };
+}
+
 async function getDemoSlots() {
+  const now = new Date();
+  const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const tomorrowStr = addISTCalendarDays(todayStr, 1);
+  if (tomorrowStr) {
+    const [enabledToday, enabledTomorrow] = await Promise.all([
+      getEnabledSlotIdsForISTDate(todayStr),
+      getEnabledSlotIdsForISTDate(tomorrowStr)
+    ]);
+    if (enabledToday.length === 0 && enabledTomorrow.length === 0) {
+      return getDemoSlotsTwoDateFallback(now);
+    }
+  }
+
   const ref = getCurrentISTTime();
   const slots = [];
 
@@ -177,7 +237,6 @@ async function getDemoSlots() {
     return { ...s, enabled };
   });
 
-  const now = new Date();
   const slotsFiltered = slotsWithOverrides.filter(
     (s) => s.enabled && isVisibleBeforeOneHourCutoff(s.date, now)
   );

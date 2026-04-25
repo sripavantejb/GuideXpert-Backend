@@ -2,14 +2,7 @@ const FormSubmission = require('../models/FormSubmission');
 const SlotConfig = require('../models/SlotConfig');
 const SlotDateOverride = require('../models/SlotDateOverride');
 const { getISTDayRangeFromString } = require('../utils/dateHelpers');
-
-const ALL_SLOT_IDS = [
-  'MONDAY_7PM', 'TUESDAY_7PM', 'WEDNESDAY_7PM', 'THURSDAY_7PM',
-  'FRIDAY_7PM', 'SATURDAY_7PM', 'SUNDAY_3PM', 'SUNDAY_11AM',
-  'MONDAY_6PM', 'TUESDAY_6PM', 'WEDNESDAY_6PM', 'THURSDAY_6PM',
-  'FRIDAY_6PM', 'SATURDAY_6PM', 'SUNDAY_6PM'
-];
-const DAY_NAMES = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+const { ALL_SLOT_IDS, DAY_NAMES } = require('../constants/slotIds');
 
 function getIstDayOfWeekFromDateRangeStart(start) {
   const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;

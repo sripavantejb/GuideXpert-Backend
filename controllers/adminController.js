@@ -16,6 +16,8 @@ const Counsellor = require('../models/Counsellor');
 const IitCounsellingVisit = require('../models/IitCounsellingVisit');
 const { getISTCalendarDateUTC, getISTDayRangeFromString } = require('../utils/dateHelpers');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
+const { ALL_SLOT_IDS } = require('../constants/slotIds');
+const { getEnabledSlotIdsForISTDate } = require('../utils/slotAvailabilityForDate');
 const { updateLeadSlotByQuery } = require('../services/leadSlotUpdateService');
 
 function normalizePhoneTo10(value) {
@@ -31,14 +33,6 @@ const JWT_EXPIRES_IN = process.env.ADMIN_JWT_EXPIRES_IN || '24h';
 // Sample hardcoded dev credentials (only when NODE_ENV !== 'production' or ALLOW_DEV_ADMIN_LOGIN=true)
 const DEV_SAMPLE_USERNAME = 'admin';
 const DEV_SAMPLE_PASSWORD = 'admin123';
-
-const ALL_SLOT_IDS = [
-  'MONDAY_7PM', 'TUESDAY_7PM', 'WEDNESDAY_7PM', 'THURSDAY_7PM',
-  'FRIDAY_7PM', 'SATURDAY_7PM', 'SUNDAY_3PM', 'SUNDAY_11AM',
-  'MONDAY_6PM', 'TUESDAY_6PM', 'WEDNESDAY_6PM', 'THURSDAY_6PM',
-  'FRIDAY_6PM', 'SATURDAY_6PM', 'SUNDAY_6PM'
-];
-
 
 /** Lead is "slot booked" if any of: isRegistered, step3Data.selectedSlot, or root selectedSlot is set. */
 const SLOT_BOOKED_CONDITION = {
@@ -1322,35 +1316,11 @@ exports.getSlotConfigs = async (req, res) => {
 exports.getSlotsForDate = async (req, res) => {
   try {
     const dateStr = (req.query.date || '').trim();
-    const istDayRange = getISTDayRangeFromString(dateStr);
-    if (!istDayRange) {
+    if (!dateStr) {
       return res.status(200).json({ success: true, data: { slots: [] } });
     }
-    const { start } = istDayRange;
-    const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
-    const istDayOfWeek = new Date(start.getTime() + IST_OFFSET_MS).getUTCDay();
-
-    const candidateSlotIds = ALL_SLOT_IDS.filter((slotId) => {
-      const dayName = slotId.split('_')[0];
-      return DAY_NAMES.indexOf(dayName) === istDayOfWeek;
-    });
-
-    const [configs, overrides] = await Promise.all([
-      SlotConfig.find({ slotId: { $in: candidateSlotIds } }).lean(),
-      SlotDateOverride.find({ date: start, slotId: { $in: candidateSlotIds } }).lean()
-    ]);
-
-    const configMap = Object.fromEntries(configs.map((c) => [c.slotId, c.enabled]));
-    const overrideMap = Object.fromEntries(overrides.map((o) => [o.slotId, o.enabled]));
-
-    const slots = candidateSlotIds
-      .filter((slotId) => {
-        const override = overrideMap[slotId];
-        const config = configMap[slotId];
-        const enabled = override !== undefined ? override : (config !== undefined ? config : true);
-        return enabled;
-      })
-      .map((slotId) => ({ slotId, label: formatSlotLabelForDisplay(slotId) }));
+    const slotIds = await getEnabledSlotIdsForISTDate(dateStr);
+    const slots = slotIds.map((slotId) => ({ slotId, label: formatSlotLabelForDisplay(slotId) }));
 
     return res.status(200).json({ success: true, data: { slots } });
   } catch (error) {
