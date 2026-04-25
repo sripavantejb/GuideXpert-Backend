@@ -35,6 +35,7 @@ const webinarProgressRoutes = require('./routes/webinarProgressRoutes');
 const blogRoutes = require('./routes/blogRoutes');
 const posterTemplatePublicRoutes = require('./routes/posterTemplatePublicRoutes');
 const osviRoutes = require('./routes/osviRoutes');
+const counsellorSupportRoutes = require('./routes/counsellorSupportRoutes');
 const { configStatus: counsellorConfigStatus } = require('./controllers/counsellorAuthController');
 const { getPosterDownloads, getPosterDownloadStats } = require('./controllers/posterDownloadController');
 const { checkPosterEligibility, trackPosterDownload } = require('./controllers/posterController');
@@ -192,6 +193,7 @@ app.use('/api/certificate', certificateRoutes);
 app.use('/api/webinar-assessment', webinarAssessmentRoutes);
 app.use('/api/webinar-progress', webinarProgressRoutes);
 app.use('/api/osvi', osviRoutes);
+app.use('/api/counsellor-support', counsellorSupportRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ success: false, message: 'Not found' });
