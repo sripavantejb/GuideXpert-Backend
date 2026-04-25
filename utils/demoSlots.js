@@ -1,52 +1,11 @@
-const SlotConfig = require('../models/SlotConfig');
-const SlotDateOverride = require('../models/SlotDateOverride');
-const { getISTCalendarDateUTC } = require('./dateHelpers');
 const {
   getEnabledSlotIdsForISTDate,
   slotIdToStartOnISTCalendarDate,
   addISTCalendarDays
 } = require('./slotAvailabilityForDate');
 
-const MAX_FALLBACK_SCAN_DAYS = 90;
-
-const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+const MAX_SCAN_DAYS = 90;
 const ONE_HOUR_MS = 60 * 60 * 1000;
-
-const DAY_NAMES = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
-
-/**
- * Get current date/time components in IST (Asia/Kolkata).
- * Uses UTC + 5:30 so that UTC components of the shifted date equal IST components.
- */
-function getCurrentISTTime() {
-  const d = new Date();
-  const ist = new Date(d.getTime() + IST_OFFSET_MS);
-  return {
-    year: ist.getUTCFullYear(),
-    month: ist.getUTCMonth(),
-    date: ist.getUTCDate(),
-    dayOfWeek: ist.getUTCDay(),
-    hours: ist.getUTCHours(),
-    minutes: ist.getUTCMinutes()
-  };
-}
-
-/**
- * Get the next occurrence of a given weekday at given time in IST.
- * Reference is current IST time components.
- */
-function getNextSlotDate(reference, dayOfWeek, hour, minute) {
-  let daysToAdd = (dayOfWeek - reference.dayOfWeek + 7) % 7;
-  const nowMins = reference.hours * 60 + reference.minutes;
-  const slotMins = hour * 60 + minute;
-  if (daysToAdd === 0 && nowMins >= slotMins) {
-    daysToAdd = 7;
-  }
-  // Midnight IST on reference day, then add days and time
-  const midnightIST = new Date(Date.UTC(reference.year, reference.month, reference.date) - IST_OFFSET_MS);
-  const slotTime = midnightIST.getTime() + daysToAdd * 24 * 60 * 60 * 1000 + (hour * 60 + minute) * 60 * 1000;
-  return new Date(slotTime);
-}
 
 function formatSlotLabel(date) {
   const datePart = date.toLocaleDateString('en-IN', {
@@ -64,15 +23,6 @@ function formatSlotLabel(date) {
   return `${datePart} — ${timePart}`;
 }
 
-function createSlot(dayName, timeKey, hour, minute, ref) {
-  const dayIndex = DAY_NAMES.indexOf(dayName);
-  if (dayIndex === -1) return null;
-  const date = getNextSlotDate(ref, dayIndex, hour, minute);
-  const id = `${dayName}_${timeKey}`;
-  const label = formatSlotLabel(date);
-  return { id, label, date: date.toISOString() };
-}
-
 /**
  * Slot is visible only until one hour before its start time.
  * Example: 3:00 PM slot is hidden from 2:00 PM onward.
@@ -83,164 +33,81 @@ function isVisibleBeforeOneHourCutoff(slotDateISO, now = new Date()) {
   return now.getTime() < (slotStart.getTime() - ONE_HOUR_MS);
 }
 
-async function getDemoSlotsTwoDateFallback(now) {
-  const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-  let scanDate = addISTCalendarDays(todayStr, 2);
-  if (!scanDate) return { slots: [] };
+/**
+ * First `maxDays` IST calendar days starting at `scanStart`, each with ≥1 bookable slot
+ * (admin-enabled + post–1h cutoff). Stops after `targetDayCount` such days.
+ */
+async function collectFirstNBookableDays(now, scanStart, targetDayCount, maxIterations) {
+  let scanDate = scanStart;
+  if (!scanDate) return [];
 
-  const foundDates = [];
-  for (let i = 0; i < MAX_FALLBACK_SCAN_DAYS; i++) {
+  const daysWithVisibleSlots = [];
+
+  for (let i = 0; i < maxIterations && daysWithVisibleSlots.length < targetDayCount; i++) {
     const ids = await getEnabledSlotIdsForISTDate(scanDate);
-    if (ids.length > 0) {
-      foundDates.push(scanDate);
-      if (foundDates.length === 2) break;
+    const daySlots = [];
+    for (const slotId of ids) {
+      const startDate = slotIdToStartOnISTCalendarDate(slotId, scanDate);
+      if (!startDate || Number.isNaN(startDate.getTime())) continue;
+      const dateIso = startDate.toISOString();
+      if (!isVisibleBeforeOneHourCutoff(dateIso, now)) continue;
+      daySlots.push({
+        id: slotId,
+        label: formatSlotLabel(startDate),
+        date: dateIso,
+        enabled: true,
+        selectionId: `${slotId}_${scanDate}`
+      });
+    }
+    if (daySlots.length > 0) {
+      daysWithVisibleSlots.push({ dateStr: scanDate, slots: daySlots });
     }
     const next = addISTCalendarDays(scanDate, 1);
     if (!next) break;
     scanDate = next;
   }
 
-  const collected = [];
-  for (const dateStr of foundDates) {
-    const ids = await getEnabledSlotIdsForISTDate(dateStr);
-    for (const slotId of ids) {
-      const startDate = slotIdToStartOnISTCalendarDate(slotId, dateStr);
-      if (!startDate || Number.isNaN(startDate.getTime())) continue;
-      collected.push({
-        id: slotId,
-        label: formatSlotLabel(startDate),
-        date: startDate.toISOString(),
-        enabled: true,
-        selectionId: `${slotId}_${dateStr}`
-      });
-    }
-  }
-
-  const filtered = collected
-    .filter((s) => isVisibleBeforeOneHourCutoff(s.date, now))
-    .sort((a, b) => new Date(a.date) - new Date(b.date));
-
-  return { slots: filtered };
+  return daysWithVisibleSlots;
 }
 
+/**
+ * Always returns slots from the first two IST calendar days (from scan anchor) that each
+ * have at least one visible bookable slot, using the same enable rules as admin.
+ *
+ * Scan anchor: if yesterday and today have no admin-enabled slot ids, start at tomorrow;
+ * otherwise start at today.
+ */
 async function getDemoSlots() {
   const now = new Date();
   const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-  const tomorrowStr = addISTCalendarDays(todayStr, 1);
-  if (tomorrowStr) {
-    const [enabledToday, enabledTomorrow] = await Promise.all([
-      getEnabledSlotIdsForISTDate(todayStr),
-      getEnabledSlotIdsForISTDate(tomorrowStr)
-    ]);
-    if (enabledToday.length === 0 && enabledTomorrow.length === 0) {
-      return getDemoSlotsTwoDateFallback(now);
-    }
+  const yesterdayStr = addISTCalendarDays(todayStr, -1);
+
+  const [enabledYesterday, enabledToday] = await Promise.all([
+    yesterdayStr ? getEnabledSlotIdsForISTDate(yesterdayStr) : Promise.resolve([]),
+    getEnabledSlotIdsForISTDate(todayStr)
+  ]);
+
+  const yesterdayAndTodayEmpty =
+    enabledYesterday.length === 0 && enabledToday.length === 0;
+
+  const scanStart = yesterdayAndTodayEmpty
+    ? addISTCalendarDays(todayStr, 1)
+    : todayStr;
+
+  if (!scanStart) {
+    return { slots: [] };
   }
 
-  const ref = getCurrentISTTime();
-  const slots = [];
-
-  const add = (dayName, timeKey, hour, minute) => {
-    const slot = createSlot(dayName, timeKey, hour, minute, ref);
-    if (slot) slots.push(slot);
-  };
-
-  switch (ref.dayOfWeek) {
-    case 5: { // Friday — cutoff 6:00 PM
-      if (ref.hours < 18) {
-        add('FRIDAY', '6PM', 18, 0);
-        add('FRIDAY', '7PM', 19, 0);
-        add('SATURDAY', '6PM', 18, 0);
-        add('SATURDAY', '7PM', 19, 0);
-      } else {
-        add('SATURDAY', '6PM', 18, 0);
-        add('SATURDAY', '7PM', 19, 0);
-        add('SUNDAY', '6PM', 18, 0);
-        add('SUNDAY', '11AM', 11, 0);
-        add('SUNDAY', '3PM', 15, 0);
-      }
-      break;
-    }
-    case 6: { // Saturday — cutoff 6:00 PM
-      if (ref.hours < 18) {
-        add('SATURDAY', '6PM', 18, 0);
-        add('SATURDAY', '7PM', 19, 0);
-        add('SUNDAY', '6PM', 18, 0);
-        add('SUNDAY', '11AM', 11, 0);
-        add('SUNDAY', '3PM', 15, 0);
-      } else {
-        add('SUNDAY', '6PM', 18, 0);
-        add('SUNDAY', '11AM', 11, 0);
-        add('SUNDAY', '3PM', 15, 0);
-        add('MONDAY', '6PM', 18, 0);
-        add('MONDAY', '7PM', 19, 0);
-      }
-      break;
-    }
-    case 0: { // Sunday — cutoff 10:00 AM
-      if (ref.hours < 10) {
-        add('SUNDAY', '6PM', 18, 0);
-        add('SUNDAY', '11AM', 11, 0);
-        add('SUNDAY', '3PM', 15, 0);
-        add('MONDAY', '6PM', 18, 0);
-        add('MONDAY', '7PM', 19, 0);
-      } else {
-        add('SUNDAY', '6PM', 18, 0);
-        add('SUNDAY', '3PM', 15, 0);
-        add('MONDAY', '6PM', 18, 0);
-        add('MONDAY', '7PM', 19, 0);
-      }
-      break;
-    }
-    case 1: // Monday
-    case 2: // Tuesday
-    case 3: // Wednesday
-    case 4: { // Thursday — cutoff 6:00 PM for all
-      if (ref.hours < 18) {
-        add(DAY_NAMES[ref.dayOfWeek], '6PM', 18, 0);
-        add(DAY_NAMES[ref.dayOfWeek], '7PM', 19, 0);
-        add(DAY_NAMES[(ref.dayOfWeek + 1) % 7], '6PM', 18, 0);
-        add(DAY_NAMES[(ref.dayOfWeek + 1) % 7], '7PM', 19, 0);
-      } else {
-        add(DAY_NAMES[(ref.dayOfWeek + 1) % 7], '6PM', 18, 0);
-        add(DAY_NAMES[(ref.dayOfWeek + 1) % 7], '7PM', 19, 0);
-        add(DAY_NAMES[(ref.dayOfWeek + 2) % 7], '6PM', 18, 0);
-        add(DAY_NAMES[(ref.dayOfWeek + 2) % 7], '7PM', 19, 0);
-      }
-      break;
-    }
-    default:
-      break;
-  }
-
-  const configs = await SlotConfig.find({ slotId: { $in: slots.map((s) => s.id) } }).lean();
-  const configMap = Object.fromEntries(configs.map((c) => [c.slotId, c.enabled]));
-  const slotsWithEnabled = slots.map((s) => ({
-    ...s,
-    enabled: configMap[s.id] !== undefined ? configMap[s.id] : true
-  }));
-
-  const slotDates = slotsWithEnabled.map((s) => ({
-    date: getISTCalendarDateUTC(new Date(s.date)),
-    slotId: s.id
-  }));
-  const overridePairs = await SlotDateOverride.find({
-    $or: slotDates.map(({ date, slotId }) => ({ date, slotId }))
-  }).lean();
-  const overrideMap = new Map(overridePairs.map((o) => [`${o.date.toISOString().slice(0, 10)}_${o.slotId}`, o.enabled]));
-
-  const slotsWithOverrides = slotsWithEnabled.map((s) => {
-    const calendarDate = getISTCalendarDateUTC(new Date(s.date));
-    const key = `${calendarDate.toISOString().slice(0, 10)}_${s.id}`;
-    const override = overrideMap.get(key);
-    const enabled = override !== undefined ? override : s.enabled;
-    return { ...s, enabled };
-  });
-
-  const slotsFiltered = slotsWithOverrides.filter(
-    (s) => s.enabled && isVisibleBeforeOneHourCutoff(s.date, now)
+  const daysWithVisibleSlots = await collectFirstNBookableDays(
+    now,
+    scanStart,
+    2,
+    MAX_SCAN_DAYS
   );
-  return { slots: slotsFiltered };
+
+  const collected = daysWithVisibleSlots.flatMap((d) => d.slots);
+  collected.sort((a, b) => new Date(a.date) - new Date(b.date));
+  return { slots: collected };
 }
 
 module.exports = { getDemoSlots };
