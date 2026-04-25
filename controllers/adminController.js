@@ -492,19 +492,19 @@ exports.getIitCounsellingVisitAnalytics = async (req, res) => {
         { $match: { ...match, referrer: { $exists: true, $nin: ['', null] } } },
         { $group: { _id: '$referrer', visits: { $sum: 1 } } },
         { $sort: { visits: -1 } },
-        { $limit: 8 },
+        { $limit: 500 },
       ]),
       IitCounsellingVisit.aggregate([
         { $match: { ...match, utm_source: { $exists: true, $nin: ['', null] } } },
         { $group: { _id: '$utm_source', visits: { $sum: 1 } } },
         { $sort: { visits: -1 } },
-        { $limit: 8 },
+        { $limit: 500 },
       ]),
       IitCounsellingVisit.aggregate([
         { $match: { ...match, utm_campaign: { $exists: true, $nin: ['', null] } } },
         { $group: { _id: '$utm_campaign', visits: { $sum: 1 } } },
         { $sort: { visits: -1 } },
-        { $limit: 8 },
+        { $limit: 500 },
       ]),
       IitCounsellingSubmission.countDocuments({
         submissionType: 'iitCounselling',
