@@ -13,6 +13,8 @@ const SlotConfig = require('../models/SlotConfig');
 const SlotDateOverride = require('../models/SlotDateOverride');
 const MeetingAttendance = require('../models/MeetingAttendance');
 const TrainingFeedback = require('../models/TrainingFeedback');
+const TrainingFormSubmission = require('../models/TrainingFormSubmission');
+const TrainingFormResponse = require('../models/TrainingFormResponse');
 const Counsellor = require('../models/Counsellor');
 const IitCounsellingVisit = require('../models/IitCounsellingVisit');
 const { getISTCalendarDateUTC, getISTDayRangeFromString } = require('../utils/dateHelpers');
@@ -67,6 +69,15 @@ async function getActivationPhones10() {
     TrainingFeedback.distinct('whatsappNumber'),
   ]);
   return [...new Set([...(m || []), ...(w || [])].map(normalizePhoneTo10).filter(Boolean))];
+}
+
+/** Union of phones that submitted training form (live + legacy collection). */
+async function getTrainingFormPhones10() {
+  const [submissionPhones, responsePhones] = await Promise.all([
+    TrainingFormSubmission.distinct('mobileNumber'),
+    TrainingFormResponse.distinct('mobileNumber'),
+  ]);
+  return [...new Set([...(submissionPhones || []), ...(responsePhones || [])].map(normalizePhoneTo10).filter(Boolean))];
 }
 
 function intersectSortedPhones(attendeePhones, allowedSet) {
@@ -1179,6 +1190,7 @@ exports.getAdminLeads = async (req, res) => {
     const slotDateRaw = (req.query.slotDate || '').trim();
     const q = (req.query.q || '').trim();
     const utm_content = (req.query.utm_content || '').trim();
+    const trainingFormFilled = (req.query.trainingFormFilled || '').trim();
 
     const andConditions = [];
     const fromDate = fromStr ? new Date(`${fromStr}T00:00:00.000Z`) : null;
@@ -1260,6 +1272,14 @@ exports.getAdminLeads = async (req, res) => {
           { email: { $regex: safe, $options: 'i' } }
         ]
       });
+    }
+    if (trainingFormFilled === 'true' || trainingFormFilled === 'false') {
+      const trainingFormPhones = await getTrainingFormPhones10();
+      if (trainingFormFilled === 'true') {
+        andConditions.push(trainingFormPhones.length === 0 ? { phone: { $in: [] } } : { phone: { $in: trainingFormPhones } });
+      } else {
+        andConditions.push(trainingFormPhones.length === 0 ? {} : { phone: { $nin: trainingFormPhones } });
+      }
     }
 
     const demoAttendedQuery = (req.query.demoAttended || '').trim();
