@@ -152,6 +152,7 @@ function toDto(doc) {
   return {
     id: String(o._id),
     name: o.name,
+    description: o.description != null ? String(o.description) : '',
     route: o.route,
     svgTemplate: o.svgTemplate,
     nameField,
@@ -172,6 +173,25 @@ function toPublicDto(doc) {
   delete base.published;
   delete base.publishedAt;
   return base;
+}
+
+function toMarketingPosterDto(doc) {
+  const base = toDto(doc);
+  if (!base) return null;
+  return {
+    id: base.id,
+    name: base.name,
+    description: base.description,
+    route: base.route,
+    svgTemplate: base.svgTemplate,
+    nameField: base.nameField,
+    mobileField: base.mobileField,
+    publishedAt: base.publishedAt || null,
+    marketingFeatured: !!base.marketingFeatured,
+    marketingFeaturedAt: base.marketingFeaturedAt || null,
+    createdAt: base.createdAt || null,
+    updatedAt: base.updatedAt || null,
+  };
 }
 
 exports.normalizeRoute = normalizeRoute;
@@ -201,6 +221,7 @@ exports.createPoster = async (req, res) => {
   try {
     const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     const name = body.name != null ? String(body.name).trim() : '';
+    const description = body.description != null ? String(body.description).trim().slice(0, 500) : '';
     const svgRaw = body.svgTemplate ?? body.svg_template;
     const hasSvgKey =
       Object.prototype.hasOwnProperty.call(body, 'svgTemplate') ||
@@ -211,6 +232,7 @@ exports.createPoster = async (req, res) => {
     const bad = (code, message, extra = {}) => {
       console.warn('[createPoster] 400', code, {
         nameLen: name.length,
+        descriptionLen: description.length,
         route: routeNorm || '(empty)',
         svgLen: svgTemplate.length,
         bodyKeys: Object.keys(body),
@@ -263,6 +285,7 @@ exports.createPoster = async (req, res) => {
 
     const doc = await PosterTemplate.create({
       name,
+      description,
       route: routeNorm,
       svgTemplate,
       nameField,
@@ -327,6 +350,9 @@ exports.updatePoster = async (req, res) => {
         }
         doc.route = routeNorm;
       }
+    }
+    if (body.description != null) {
+      doc.description = String(body.description).trim().slice(0, 500);
     }
     if (body.svgTemplate != null || body.svg_template != null) {
       const svgTemplate = normalizeIncomingSvgTemplate(body.svgTemplate ?? body.svg_template);
@@ -458,10 +484,6 @@ exports.setPosterMarketingFeatured = async (req, res) => {
           message: 'Only published posters can be featured in counsellor Marketing.',
         });
       }
-      await PosterTemplate.updateMany(
-        { _id: { $ne: doc._id } },
-        { $set: { marketingFeatured: false, marketingFeaturedAt: null } }
-      );
       doc.marketingFeatured = true;
       doc.marketingFeaturedAt = new Date();
       await doc.save();
@@ -478,18 +500,39 @@ exports.setPosterMarketingFeatured = async (req, res) => {
 };
 
 /**
+ * GET /api/posters/marketing — public; no auth. Lists all published automated posters for Marketing.
+ */
+exports.getMarketingPosters = async (req, res) => {
+  try {
+    const docs = await PosterTemplate.find({ published: true })
+      .sort({ marketingFeaturedAt: -1, publishedAt: -1, updatedAt: -1 })
+      .lean();
+    const posters = docs.map((doc) => toMarketingPosterDto(doc)).filter(Boolean);
+    return res.json({ success: true, posters });
+  } catch (err) {
+    console.error('[getMarketingPosters]', err);
+    return res.status(500).json({ success: false, message: 'Failed to load marketing posters.' });
+  }
+};
+
+/**
  * GET /api/posters/marketing-featured — public; no auth.
  */
 exports.getMarketingFeaturedPoster = async (req, res) => {
   try {
+    const docs = await PosterTemplate.find({ published: true })
+      .sort({ marketingFeaturedAt: -1, publishedAt: -1, updatedAt: -1 })
+      .lean();
+    const posters = docs.map((doc) => toMarketingPosterDto(doc)).filter(Boolean);
     const doc = await PosterTemplate.findOne({ published: true, marketingFeatured: true })
       .select('name route marketingFeaturedAt')
       .lean();
     if (!doc) {
-      return res.json({ success: true, poster: null });
+      return res.json({ success: true, poster: null, posters });
     }
     return res.json({
       success: true,
+      posters,
       poster: {
         name: doc.name,
         route: doc.route,

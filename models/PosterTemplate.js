@@ -21,11 +21,12 @@ const overlayFieldSchema = new mongoose.Schema(
 const posterTemplateSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true, maxlength: 200 },
+    description: { type: String, default: '', trim: true, maxlength: 500 },
     route: { type: String, required: true },
     svgTemplate: { type: String, required: true },
     published: { type: Boolean, default: false },
     publishedAt: { type: Date, default: null },
-    /** At most one published template should be true; shown as "Latest" on counsellor Marketing. */
+    /** Optional marketing highlight flag; all published templates can appear on counsellor Marketing. */
     marketingFeatured: { type: Boolean, default: false },
     marketingFeaturedAt: { type: Date, default: null },
     nameField: { type: overlayFieldSchema, default: () => ({}) },
