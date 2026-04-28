@@ -4,7 +4,10 @@ const mongoose = require('mongoose');
 const overlayFieldSchema = new mongoose.Schema(
   {
     x: { type: Number, default: 12, min: 0, max: 100 },
+    anchorX: { type: Number, default: 12, min: 0, max: 100 },
+    anchorType: { type: String, default: 'start', enum: ['start', 'end', 'center'] },
     y: { type: Number, default: 12, min: 0, max: 100 },
+    textValue: { type: String, default: '' },
     /** Name field only: right bound (%); mobile documents should omit this (stripped on save). */
     xEnd: { type: Number, required: false, min: 0, max: 100 },
     fontSize: { type: Number, default: 20, min: 4, max: 400 },

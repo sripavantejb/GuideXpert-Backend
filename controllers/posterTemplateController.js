@@ -43,11 +43,16 @@ function normalizeIncomingSvgTemplate(raw) {
  */
 function sanitizeOverlayField(raw, opts = {}) {
   const { allowXEnd = false } = opts;
-  const x = Number(raw?.x);
+  const xCandidate = raw?.anchorX ?? raw?.x;
+  const x = Number(xCandidate);
   const y = Number(raw?.y);
+  const textValue = raw?.textValue != null ? String(raw.textValue).slice(0, 500) : '';
   const base = {
     x: Number.isFinite(x) ? Math.min(100, Math.max(0, x)) : 12,
+    anchorX: Number.isFinite(x) ? Math.min(100, Math.max(0, x)) : 12,
+    anchorType: ['start', 'end', 'center'].includes(raw?.anchorType) ? raw.anchorType : 'start',
     y: Number.isFinite(y) ? Math.min(100, Math.max(0, y)) : 12,
+    textValue,
     fontSize: Number.isFinite(Number(raw?.fontSize)) ? Math.min(400, Math.max(4, Number(raw.fontSize))) : 20,
     color: raw?.color != null ? String(raw.color).slice(0, 32) : '#111827',
     fontWeight: raw?.fontWeight != null ? String(raw.fontWeight).slice(0, 32) : '600',
@@ -66,7 +71,10 @@ function toPlainOverlayField(raw, allowXEnd) {
   const s = sanitizeOverlayField(raw, { allowXEnd });
   const out = {
     x: s.x,
+    anchorX: s.anchorX,
+    anchorType: s.anchorType,
     y: s.y,
+    textValue: s.textValue,
     fontSize: s.fontSize,
     color: s.color,
     fontWeight: s.fontWeight,
@@ -79,11 +87,23 @@ function toPlainOverlayField(raw, allowXEnd) {
 }
 
 function defaultNameField() {
-  return sanitizeOverlayField({ x: 12, y: 12, fontSize: 22, fontWeight: '600' }, { allowXEnd: true });
+  return sanitizeOverlayField(
+    { x: 12, anchorType: 'start', y: 12, textValue: 'Sample name', fontSize: 22, fontWeight: '600' },
+    { allowXEnd: true }
+  );
 }
 
 function defaultMobileField() {
-  return sanitizeOverlayField({ x: 12, y: 24, fontSize: 18, fontWeight: '500' }, { allowXEnd: false });
+  return sanitizeOverlayField(
+    { x: 12, anchorType: 'start', y: 24, textValue: '98765 43210', fontSize: 18, fontWeight: '500' },
+    { allowXEnd: false }
+  );
+}
+
+function withRoleTextDefault(field, role) {
+  const fallback = role === 'name' ? defaultNameField().textValue : defaultMobileField().textValue;
+  if (field?.textValue != null && String(field.textValue).trim() !== '') return field;
+  return { ...field, textValue: fallback };
 }
 
 /** Map old `elements[]` documents to nameField / mobileField */
@@ -96,8 +116,14 @@ function migrateLegacyElements(elements) {
   const mobileSrc =
     byId('mobile') || byId('phone') || (elements.length > 1 ? elements[1] : null);
   return {
-    nameField: sanitizeOverlayField(nameSrc || defaultNameField(), { allowXEnd: true }),
-    mobileField: sanitizeOverlayField(mobileSrc || defaultMobileField(), { allowXEnd: false }),
+    nameField: withRoleTextDefault(
+      sanitizeOverlayField(nameSrc || defaultNameField(), { allowXEnd: true }),
+      'name'
+    ),
+    mobileField: withRoleTextDefault(
+      sanitizeOverlayField(mobileSrc || defaultMobileField(), { allowXEnd: false }),
+      'mobile'
+    ),
   };
 }
 
@@ -109,8 +135,8 @@ function resolveFieldsFromDoc(o) {
     typeof o.mobileField === 'object';
   if (hasNew) {
     return {
-      nameField: sanitizeOverlayField(o.nameField, { allowXEnd: true }),
-      mobileField: sanitizeOverlayField(o.mobileField, { allowXEnd: false }),
+      nameField: withRoleTextDefault(sanitizeOverlayField(o.nameField, { allowXEnd: true }), 'name'),
+      mobileField: withRoleTextDefault(sanitizeOverlayField(o.mobileField, { allowXEnd: false }), 'mobile'),
     };
   }
   if (Array.isArray(o.elements) && o.elements.length > 0) {
