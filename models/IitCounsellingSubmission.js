@@ -66,7 +66,7 @@ const iitCounsellingSubmissionSchema = new mongoose.Schema({
       classStatus: { type: String, enum: ['12th Appearing', '12th Passed'] },
       stream: { type: String, enum: ['MPC', 'BiPC', 'Commerce', 'Others'] },
       city: { type: String, trim: true },
-      slotBooking: { type: String, enum: ['Yes', 'No', 'Need another time'] },
+      slotBooking: { type: String, enum: ['Saturday 6PM', 'Sunday 11AM'] },
       top5Colleges: [{ type: String, trim: true }],
       submittedAt: { type: Date },
     },
