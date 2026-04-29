@@ -403,7 +403,7 @@ exports.getIitCounsellingSubmissions = async (req, res) => {
     }
 
     const [rows, total] = await Promise.all([
-      IitCounsellingSubmission.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      IitCounsellingSubmission.find(filter).sort({ updatedAt: -1, createdAt: -1, _id: -1 }).skip(skip).limit(limit).lean(),
       IitCounsellingSubmission.countDocuments(filter),
     ]);
 
