@@ -19,7 +19,7 @@ function getExams() {
       id: 'apeamcet',
       name: 'AP EAMCET',
       minScore: 0,
-      maxScore: 100,
+      maxScore: 160,
       mode: 'range-table',
       data: apEamcetPredictedRanks2025,
       metricLabel: 'Predicted Rank',
