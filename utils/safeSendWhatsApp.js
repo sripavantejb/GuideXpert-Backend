@@ -14,8 +14,38 @@ function maskPhone(phone10) {
 function extractMessageId(result) {
   const d = result && result.data;
   if (!d || typeof d !== 'object') return undefined;
-  const id = d.messageId;
+  const candidates = [
+    d.messageId,
+    d.message_id,
+    d.id,
+    d.msgId,
+    d.gsId,
+    d?.data?.messageId,
+    d?.data?.id
+  ];
+  const id = candidates.find((x) => x != null && x !== '');
   return id != null && id !== '' ? String(id) : undefined;
+}
+
+function summarizeVars(vars) {
+  const src = vars && typeof vars === 'object' ? vars : {};
+  const keys = Object.keys(src);
+  const preview = {};
+  keys.forEach((k) => {
+    const v = src[k];
+    preview[k] = v == null ? 0 : String(v).trim().length;
+  });
+  return { keys, lengths: preview };
+}
+
+function providerPayloadSnippet(result, max = 1000) {
+  if (!result || result.data == null) return null;
+  try {
+    const s = typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
+    return s.length > max ? `${s.slice(0, max)}…` : s;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -41,6 +71,7 @@ async function safeSendWhatsApp({
   sendFn
 }) {
   const { templateIdEnvKey, templateId } = getTemplateMetaForKind(retryKind);
+  const varSummary = summarizeVars(vars);
 
   try {
     if (typeof sendFn !== 'function') {
@@ -48,9 +79,26 @@ async function safeSendWhatsApp({
       return { success: false, error: 'sendFn missing' };
     }
 
+    console.log(
+      '[WhatsApp] attempt',
+      maskPhone(phone10),
+      `type=${retryKind}`,
+      `templateKey=${templateIdEnvKey || 'n/a'}`,
+      `templateId=${templateId || 'missing'}`,
+      `vars=${JSON.stringify(varSummary)}`
+    );
+    if (!templateId) {
+      console.warn('[WhatsApp] template missing', maskPhone(phone10), `type=${retryKind}`, templateIdEnvKey || 'unknown');
+    }
+    const emptyKeys = varSummary.keys.filter((k) => (varSummary.lengths[k] || 0) === 0);
+    if (emptyKeys.length > 0) {
+      console.warn('[WhatsApp] empty var values', maskPhone(phone10), `type=${retryKind}`, emptyKeys.join(','));
+    }
+
     const result = await sendFn(phone10, vars);
     const now = new Date();
     const messageId = extractMessageId(result);
+    const payloadSnippet = providerPayloadSnippet(result);
 
     let subId = formSubmissionId;
     if (!subId) {
@@ -85,6 +133,8 @@ async function safeSendWhatsApp({
         templateIdEnvKey,
         templateId,
         gupshupMessageId: messageId || null,
+        providerAcceptedAt: now,
+        providerPayloadSnippet: payloadSnippet,
         status: 'submitted',
         retryCountSnapshot: retrySnapOnSuccess,
         errorMessage: null
@@ -95,6 +145,7 @@ async function safeSendWhatsApp({
     }
 
     const errText = (result && result.error) ? String(result.error) : 'send failed';
+    const providerDebug = providerPayloadSnippet(result, 500) || '';
 
     const subBefore = await FormSubmission.findOneAndUpdate(
       { phone: phone10 },
@@ -128,7 +179,13 @@ async function safeSendWhatsApp({
       errorMessage: errText.slice(0, 2000)
     });
 
-    console.warn('[WhatsApp] failure', maskPhone(phone10), `type=${retryKind}`, errText);
+    console.warn(
+      '[WhatsApp] failure',
+      maskPhone(phone10),
+      `type=${retryKind}`,
+      errText,
+      providerDebug ? `provider=${providerDebug}` : ''
+    );
     return { success: false, error: errText };
   } catch (e) {
     const msg = e && e.message ? String(e.message) : 'unknown error';

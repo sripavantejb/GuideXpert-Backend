@@ -22,6 +22,8 @@ const whatsAppMessageEventSchema = new mongoose.Schema({
   templateIdEnvKey: { type: String, trim: true, maxlength: 64, default: null },
   templateId: { type: String, trim: true, maxlength: 128, default: null },
   gupshupMessageId: { type: String, trim: true, maxlength: 128, default: null, index: true },
+  providerAcceptedAt: { type: Date, default: null },
+  providerPayloadSnippet: { type: String, maxlength: 1200, default: null },
   status: {
     type: String,
     required: true,

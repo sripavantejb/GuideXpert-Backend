@@ -701,6 +701,12 @@ exports.saveStep3 = async (req, res) => {
       'Send reminder immediately:', shouldSendReminderImmediately,
       'Send meet link immediately:', shouldSendMeetLinkImmediately,
       'Send 30-min reminder immediately:', shouldSendReminder30MinImmediately);
+    if (!shouldSendReminderImmediately) {
+      console.log(
+        '[saveStep3] pre4hr WhatsApp immediate skipped:',
+        `hoursUntilSlot=${hoursUntilSlot.toFixed(2)} (>4h rule)`
+      );
+    }
 
     const setPayload = {
       selectedSlot,

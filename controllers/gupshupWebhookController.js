@@ -14,11 +14,13 @@ function sanitizeSnippet(raw, maxLen = 3800) {
  */
 function extractWebhookFields(body) {
   let root = body;
+  let parseError = null;
   if (body && typeof body.payload === 'string') {
     try {
       root = JSON.parse(body.payload);
     } catch {
       root = body;
+      parseError = 'payload_json_parse_failed';
     }
   }
 
@@ -87,26 +89,37 @@ function extractWebhookFields(body) {
   return {
     messageId: pick.id ? String(pick.id) : null,
     phone10,
-    status: pick.status ? String(pick.status) : null
+    status: pick.status ? String(pick.status) : null,
+    parseError
   };
 }
 
 exports.ingestGupshupWebhook = async (req, res) => {
   try {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
-    const { messageId, phone10, status } = extractWebhookFields(body);
+    const { messageId, phone10, status, parseError } = extractWebhookFields(body);
 
     const receivedAt = new Date();
     const rawPayloadSnippet = sanitizeSnippet(body);
 
     let formSubmissionId = null;
+    let matchedBy = null;
+    let matchConfidence = null;
     if (messageId) {
       const sub = await FormSubmission.findOne({ whatsappLastMessageId: messageId }).select('_id phone').lean();
-      if (sub) formSubmissionId = sub._id;
+      if (sub) {
+        formSubmissionId = sub._id;
+        matchedBy = 'messageId';
+        matchConfidence = 'high';
+      }
     }
     if (!formSubmissionId && phone10) {
       const sub2 = await FormSubmission.findOne({ phone: phone10 }).select('_id').lean();
-      if (sub2) formSubmissionId = sub2._id;
+      if (sub2) {
+        formSubmissionId = sub2._id;
+        matchedBy = 'phone';
+        matchConfidence = 'medium';
+      }
     }
 
     await WhatsAppWebhookEvent.create({
@@ -115,7 +128,10 @@ exports.ingestGupshupWebhook = async (req, res) => {
       phone: phone10 || null,
       status: status || null,
       formSubmissionId,
-      rawPayloadSnippet
+      rawPayloadSnippet,
+      matchedBy,
+      matchConfidence,
+      parseError
     });
 
     const normStatus = status ? status.toLowerCase() : '';
@@ -159,9 +175,32 @@ exports.ingestGupshupWebhook = async (req, res) => {
           $set: { status: evtStatus, updatedAt: receivedAt }
         }
       );
+    } else if (phone10) {
+      const evtStatus =
+        deliveryHint === 'read'
+          ? 'read'
+          : deliveryHint === 'delivered'
+            ? 'delivered'
+            : deliveryHint === 'failed'
+              ? 'failed'
+              : 'submitted';
+      const recentWindow = new Date(receivedAt.getTime() - 48 * 60 * 60 * 1000);
+      await WhatsAppMessageEvent.updateMany(
+        {
+          phone: phone10,
+          createdAt: { $gte: recentWindow }
+        },
+        { $set: { status: evtStatus, updatedAt: receivedAt } }
+      );
     }
 
-    console.log('[Gupshup webhook]', { messageId: messageId || '(none)', status: deliveryHint, phoneSuffix: phone10 ? phone10.slice(-4) : null });
+    console.log('[Gupshup webhook]', {
+      messageId: messageId || '(none)',
+      status: deliveryHint,
+      phoneSuffix: phone10 ? phone10.slice(-4) : null,
+      matchedBy,
+      parseError: parseError || null
+    });
 
     return res.status(200).json({ success: true, received: true });
   } catch (e) {

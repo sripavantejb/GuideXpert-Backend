@@ -77,6 +77,9 @@ exports.getSummary = async (req, res) => {
           successes: [{
             $match: { status: { $in: ['submitted', 'delivered', 'read'] } }
           }, { $count: 'c' }],
+          accepted: [{
+            $match: { status: 'submitted' }
+          }, { $count: 'c' }],
           failed: [{
             $match: { status: { $in: ['failed'] } }
           }, { $count: 'c' }],
@@ -98,6 +101,7 @@ exports.getSummary = async (req, res) => {
 
     const total = msgAgg.total[0]?.c || 0;
     const successN = msgAgg.successes[0]?.c || 0;
+    const acceptedN = msgAgg.accepted[0]?.c || 0;
     const failedN = msgAgg.failed[0]?.c || 0;
     const deliveredN = msgAgg.delivered[0]?.c || 0;
     const readN = msgAgg.read[0]?.c || 0;
@@ -126,9 +130,14 @@ exports.getSummary = async (req, res) => {
     }
 
     const data = {
+      meta: {
+        selectedMessageKind: messageKind || null,
+        attemptedRows: total
+      },
       totals: {
         whatsappAttempts: total,
         whatsappSuccessApprox: successN,
+        providerAcceptedCount: acceptedN,
         whatsappFailed: failedN,
         deliveredCount: deliveredN,
         readCount: readN,
@@ -139,15 +148,17 @@ exports.getSummary = async (req, res) => {
       rates: {
         deliveryRatePct: total ? Math.round((successN / total) * 1000) / 10 : null,
         retryRatePct: total ? Math.round((retriedN / total) * 1000) / 10 : null,
+        acceptedToDeliveredPct: acceptedN ? Math.round((deliveredN / acceptedN) * 1000) / 10 : null,
+        deliveredToReadPct: deliveredN ? Math.round((readN / deliveredN) * 1000) / 10 : null,
         ...(messageKind ? {} : { cronSuccessRatePct: c.runs ? Math.round((c.ok / c.runs) * 1000) / 10 : null })
       },
       ...(messageKind
         ? {}
         : {
             cronRuns: {
-              runs: c.runs,
-              success: c.ok,
-              failure: c.failed
+              runs: c?.runs || 0,
+              success: c?.ok || 0,
+              failure: c?.failed || 0
             }
           }),
       byKind: (msgAgg.byKind || []).map((x) => ({ kind: x._id, count: x.c })),
