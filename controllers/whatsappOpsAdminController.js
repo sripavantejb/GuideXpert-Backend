@@ -82,7 +82,7 @@ function facetStatsPipeline(match) {
         byKind: [{ $group: { _id: '$messageKind', c: { $sum: 1 } } }],
         byStatus: [{ $group: { _id: '$status', c: { $sum: 1 } } }],
         accepted: [{ $match: { status: 'submitted' } }, { $count: 'c' }],
-        failed: [{ $match: { status: 'failed' } }, { $count: 'c' }],
+        failed: [{ $match: { status: { $in: ['failed', 'retry_exhausted'] } } }, { $count: 'c' }],
         delivered: [{ $match: { status: 'delivered' } }, { $count: 'c' }],
         read: [{ $match: { status: 'read' } }, { $count: 'c' }],
         retryExhausted: [{ $match: { status: 'retry_exhausted' } }, { $count: 'c' }],
@@ -176,7 +176,7 @@ exports.getSummary = async (req, res) => {
             $match: { status: 'submitted' }
           }, { $count: 'c' }],
           failed: [{
-            $match: { status: { $in: ['failed'] } }
+            $match: { status: { $in: ['failed', 'retry_exhausted'] } }
           }, { $count: 'c' }],
           delivered: [{
             $match: { status: 'delivered' }
@@ -314,7 +314,7 @@ exports.getCalendarMonthOverview = async (req, res) => {
               day: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'Asia/Kolkata' } }
             },
             attempts: { $sum: 1 },
-            failed: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } },
+            failed: { $sum: { $cond: [{ $in: ['$status', ['failed', 'retry_exhausted']] }, 1, 0] } },
             delivered: { $sum: { $cond: [{ $eq: ['$status', 'delivered'] }, 1, 0] } },
             read: { $sum: { $cond: [{ $eq: ['$status', 'read'] }, 1, 0] } },
             accepted: { $sum: { $cond: [{ $eq: ['$status', 'submitted'] }, 1, 0] } },

@@ -16,6 +16,24 @@ function mapDeliveryHintToEventStatus(deliveryHint) {
   return 'submitted';
 }
 
+function normalizeDeliveryHint(raw) {
+  const v = raw == null ? '' : String(raw).trim().toLowerCase();
+  if (!v) return null;
+  if (v === 'enqueued') return 'sent';
+  if (v.includes('read')) return 'read';
+  if (v.includes('delivered') || v.includes('delivery')) return 'delivered';
+  if (v.includes('fail') || v.includes('error') || v.includes('undeliver')) return 'failed';
+  if (v.includes('sent') || v.includes('submit') || v.includes('enqueue') || v.includes('queued')) return 'sent';
+  return v;
+}
+
+function normalizeEventType(raw) {
+  const v = raw == null ? '' : String(raw).trim().toLowerCase();
+  if (!v) return null;
+  if (['enqueued', 'sent', 'delivered', 'read', 'failed'].includes(v)) return v;
+  return null;
+}
+
 /**
  * Extract message id, recipient phone (10-digit IN), inbound status text from heterogeneous Gupshup payloads.
  */
@@ -31,7 +49,74 @@ function extractWebhookFields(body) {
     }
   }
 
-  const candidates = [];
+  const gsIdCandidates = [];
+  const payloadIdCandidates = [];
+  const phoneCandidates = [];
+  const statusCandidates = [];
+  const eventTypeCandidates = [];
+
+  function scoreProviderIdKey(key) {
+    const k = String(key || '').toLowerCase();
+    if (k === 'gsid' || k === 'gssentmessageid' || k === 'gs_id') return 6;
+    if (k === 'messageid' || k === 'message_id') return 5;
+    if (k === 'id') return 4;
+    if (k.includes('message') && k.includes('id')) return 4;
+    if (k.includes('gsid') || k.includes('gssentmessageid') || k.includes('gs_id')) return 6;
+    return 1;
+  }
+
+  function scorePhoneKey(key) {
+    const k = String(key || '').toLowerCase();
+    if (k === 'phone' || k === 'mobile' || k === 'source' || k === 'recipient') return 5;
+    if (k.includes('phone') || k.includes('mobile') || k.includes('source') || k.includes('recipient') || k.includes('destination')) return 4;
+    return 1;
+  }
+
+  function scoreStatusKey(key) {
+    const k = String(key || '').toLowerCase();
+    if (k === 'type' || k === 'eventtype') return 6;
+    if (k === 'status') return 5;
+    if (k.includes('status') || k.includes('event') || k === 'type') return 4;
+    return 1;
+  }
+
+  function pushGsId(value, score) {
+    if (value == null) return;
+    if (typeof value === 'object') return;
+    const normalized = String(value).trim();
+    if (!normalized) return;
+    gsIdCandidates.push({ value: normalized, score });
+  }
+
+  function pushPayloadId(value, score) {
+    if (value == null) return;
+    if (typeof value === 'object') return;
+    const normalized = String(value).trim();
+    if (!normalized) return;
+    payloadIdCandidates.push({ value: normalized, score });
+  }
+
+  function pushPhone(value, score) {
+    if (value == null) return;
+    if (typeof value === 'object') return;
+    const digits = String(value).replace(/\D/g, '');
+    if (digits.length < 10) return;
+    phoneCandidates.push({ value: digits.slice(-10), score });
+  }
+
+  function pushStatus(value, score) {
+    if (value != null && typeof value === 'object') return;
+    const normalized = normalizeDeliveryHint(value);
+    if (!normalized) return;
+    statusCandidates.push({ value: normalized, score });
+  }
+
+  function pushEventType(value, score) {
+    if (value != null && typeof value === 'object') return;
+    const normalized = normalizeEventType(value);
+    if (!normalized) return;
+    eventTypeCandidates.push({ value: normalized, score });
+  }
 
   function visit(node, depth) {
     if (depth > 12 || node == null) return;
@@ -50,53 +135,82 @@ function extractWebhookFields(body) {
     }
     if (typeof node !== 'object') return;
 
-    const id =
-      node.id ||
+    const gsId = node.gsId || node.GsSentMessageId || node.gs_id;
+    pushGsId(gsId, 6);
+
+    const payloadId =
       node.messageId ||
       node.message_id ||
-      (node.message && node.message.id) ||
-      node.gsId ||
-      node.GsSentMessageId;
+      node.id ||
+      (node.message && node.message.id);
+    pushPayloadId(payloadId, 5);
 
-    let phone =
+    const phone =
       node.source ||
       node.mobile ||
       node.phone ||
       node.recipient ||
-      (node.destination && String(node.destination)) ||
+      node.destination ||
       node.waNumber;
+    pushPhone(phone, 5);
 
-    let status =
+    const typeLike =
+      node.type ||
+      node.eventType ||
+      node.event ||
+      (node.payload && node.payload.type) ||
+      (node.messageStatus && node.messageStatus.type);
+    pushEventType(typeLike, 6);
+
+    const status =
       node.status ||
       node.eventType ||
       node.type ||
       node.event ||
+      (node.message && node.message.status) ||
       (node.payload && node.payload.status) ||
       (node.messageStatus && node.messageStatus.status);
+    pushStatus(status, 5);
 
-    if (id || phone || status) {
-      candidates.push({ id: id ? String(id) : null, phone: phone ? String(phone) : null, status: status ? String(status) : null });
+    for (const [k, v] of Object.entries(node)) {
+      if (v == null) continue;
+      const idScore = scoreProviderIdKey(k);
+      const phoneScore = scorePhoneKey(k);
+      const statusScore = scoreStatusKey(k);
+      const key = String(k || '').toLowerCase();
+      if (idScore > 1 && (key.includes('gsid') || key.includes('gssentmessageid') || key.includes('gs_id'))) {
+        pushGsId(v, idScore);
+      } else if (idScore > 1) {
+        pushPayloadId(v, idScore);
+      }
+      if (phoneScore > 1) pushPhone(v, phoneScore);
+      if (statusScore > 1) {
+        pushStatus(v, statusScore);
+        pushEventType(v, statusScore);
+      }
     }
 
     Object.values(node).forEach((x) => visit(x, depth + 1));
   }
 
   visit(root, 0);
-
-  const scored = candidates
-    .filter((c) => c.id || c.status)
-    .sort((a, b) => (b.id ? 1 : 0) - (a.id ? 1 : 0));
-
-  const pick = scored[0] || {};
-  let phone10 = null;
-  if (pick.phone) {
-    const d = pick.phone.replace(/\D/g, '');
-    phone10 = d.length >= 10 ? d.slice(-10) : null;
-  }
+  const best = (arr) => (arr.length ? arr.sort((a, b) => b.score - a.score)[0].value : null);
+  const gsId = best(gsIdCandidates);
+  const payloadId = best(payloadIdCandidates);
+  const phone10 = best(phoneCandidates);
+  const status = best(statusCandidates);
+  const eventType = best(eventTypeCandidates);
+  const providerIds = [...new Set([gsId, payloadId].filter(Boolean))];
+  const deliveryHint = eventType ? normalizeDeliveryHint(eventType) : (normalizeDeliveryHint(status) || null);
   return {
-    messageId: pick.id ? String(pick.id) : null,
+    gsId,
+    payloadId,
+    providerIds,
     phone10,
-    status: pick.status ? String(pick.status) : null,
+    statusRaw: status || eventType || null,
+    eventType: eventType || null,
+    deliveryHint,
+    status,
     parseError
   };
 }
@@ -104,7 +218,17 @@ function extractWebhookFields(body) {
 exports.ingestGupshupWebhook = async (req, res) => {
   try {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
-    const { messageId, phone10, status, parseError } = extractWebhookFields(body);
+    const extracted = extractWebhookFields(body);
+    const {
+      gsId,
+      payloadId,
+      providerIds,
+      phone10,
+      statusRaw,
+      eventType,
+      deliveryHint: extractedDeliveryHint,
+      parseError
+    } = extracted;
 
     const receivedAt = new Date();
     const rawPayloadSnippet = sanitizeSnippet(body);
@@ -112,11 +236,16 @@ exports.ingestGupshupWebhook = async (req, res) => {
     let formSubmissionId = null;
     let matchedBy = null;
     let matchConfidence = null;
-    if (messageId) {
-      const sub = await FormSubmission.findOne({ whatsappLastMessageId: messageId }).select('_id phone').lean();
+    let matchedProviderId = null;
+
+    if (providerIds.length > 0) {
+      const sub = await FormSubmission.findOne({ whatsappLastMessageId: { $in: providerIds } })
+        .select('_id whatsappLastMessageId')
+        .lean();
       if (sub) {
         formSubmissionId = sub._id;
-        matchedBy = 'messageId';
+        matchedProviderId = sub.whatsappLastMessageId ? String(sub.whatsappLastMessageId) : null;
+        matchedBy = 'providerId';
         matchConfidence = 'high';
       }
     }
@@ -131,9 +260,9 @@ exports.ingestGupshupWebhook = async (req, res) => {
 
     await WhatsAppWebhookEvent.create({
       receivedAt,
-      messageId,
+      messageId: matchedProviderId || gsId || payloadId || null,
       phone: phone10 || null,
-      status: status || null,
+      status: statusRaw || null,
       formSubmissionId,
       rawPayloadSnippet,
       matchedBy,
@@ -141,43 +270,55 @@ exports.ingestGupshupWebhook = async (req, res) => {
       parseError
     });
 
-    const normStatus = status ? status.toLowerCase() : '';
+    const deliveryHint = extractedDeliveryHint || 'unknown';
+    const evtStatus = mapDeliveryHintToEventStatus(deliveryHint);
+    let updatePath = 'none';
+    let updatedEventCount = 0;
+    let resolvedMatchId = null;
 
-    const deliveryHint =
-      normStatus.includes('read')
-        ? 'read'
-        : normStatus.includes('delivered') || normStatus.includes('delivery')
-          ? 'delivered'
-          : normStatus.includes('fail') || normStatus.includes('error')
-            ? 'failed'
-            : normStatus.includes('sent') || normStatus.includes('submit')
-              ? 'sent'
-              : normStatus || 'unknown';
-
-    if (formSubmissionId) {
-      await FormSubmission.updateOne(
-        { _id: formSubmissionId },
-        {
-          $set: {
-            whatsappDeliveryStatus: deliveryHint,
-            whatsappLastWebhookAt: receivedAt
-          }
-        }
+    if (providerIds.length > 0) {
+      const updateRes = await WhatsAppMessageEvent.updateMany(
+        { gupshupMessageId: { $in: providerIds } },
+        { $set: { status: evtStatus, updatedAt: receivedAt } }
       );
+      updatedEventCount = updateRes?.modifiedCount || 0;
+      if (updatedEventCount > 0) {
+        updatePath = 'providerIds';
+        resolvedMatchId = providerIds.find(Boolean) || null;
+      }
     }
 
-    if (messageId) {
-      const evtStatus = mapDeliveryHintToEventStatus(deliveryHint);
-      await WhatsAppMessageEvent.updateMany(
-        { gupshupMessageId: messageId },
-        {
-          $set: { status: evtStatus, updatedAt: receivedAt }
-        }
-      );
-    } else if (phone10) {
-      const evtStatus = mapDeliveryHintToEventStatus(deliveryHint);
+    if (updatedEventCount === 0 && formSubmissionId && phone10) {
       const recentWindow = new Date(receivedAt.getTime() - 24 * 60 * 60 * 1000);
-      // Message-id-less webhooks are ambiguous. Update only one best candidate
+      let targetEvent = await WhatsAppMessageEvent.findOne({
+        formSubmissionId,
+        phone: phone10,
+        createdAt: { $gte: recentWindow },
+        status: { $in: ['queued', 'submitted', 'retry_pending'] }
+      }).sort({ createdAt: -1 }).select('_id').lean();
+      if (!targetEvent) {
+        targetEvent = await WhatsAppMessageEvent.findOne({
+          formSubmissionId,
+          phone: phone10,
+          createdAt: { $gte: recentWindow }
+        }).sort({ createdAt: -1 }).select('_id').lean();
+      }
+      if (targetEvent?._id) {
+        const updateRes = await WhatsAppMessageEvent.updateOne(
+          { _id: targetEvent._id },
+          { $set: { status: evtStatus, updatedAt: receivedAt } }
+        );
+        updatedEventCount = updateRes?.modifiedCount || 0;
+        if (updatedEventCount > 0) {
+          updatePath = 'submissionPhoneFallback';
+          resolvedMatchId = String(targetEvent._id);
+        }
+      }
+    }
+
+    if (updatedEventCount === 0 && phone10) {
+      const recentWindow = new Date(receivedAt.getTime() - 24 * 60 * 60 * 1000);
+      // Message-id-less (or wrong-id) webhooks are ambiguous. Update only one best candidate
       // to avoid inflating delivered/read counts by touching every recent event.
       let targetEvent = await WhatsAppMessageEvent.findOne({
         phone: phone10,
@@ -199,16 +340,40 @@ exports.ingestGupshupWebhook = async (req, res) => {
       }
 
       if (targetEvent?._id) {
-        await WhatsAppMessageEvent.updateOne(
+        const updateRes = await WhatsAppMessageEvent.updateOne(
           { _id: targetEvent._id },
           { $set: { status: evtStatus, updatedAt: receivedAt } }
         );
+        updatedEventCount = updateRes?.modifiedCount || 0;
+        if (updatedEventCount > 0) {
+          updatePath = 'phoneFallback';
+          resolvedMatchId = String(targetEvent._id);
+        }
       }
     }
 
+    if (formSubmissionId) {
+      await FormSubmission.updateOne(
+        { _id: formSubmissionId },
+        {
+          $set: {
+            whatsappDeliveryStatus: deliveryHint,
+            whatsappLastWebhookAt: receivedAt
+          }
+        }
+      );
+    }
+
     console.log('[Gupshup webhook]', {
-      messageId: messageId || '(none)',
-      status: deliveryHint,
+      rawProviderIds: providerIds,
+      resolvedMessageId: matchedProviderId || gsId || payloadId || '(none)',
+      eventType: eventType || null,
+      rawStatus: statusRaw || null,
+      resolvedStatus: deliveryHint,
+      eventStatus: evtStatus,
+      updatePath,
+      resolvedMatchId,
+      updatedEventCount,
       phoneSuffix: phone10 ? phone10.slice(-4) : null,
       matchedBy,
       parseError: parseError || null
