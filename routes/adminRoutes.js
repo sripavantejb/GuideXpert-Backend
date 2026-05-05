@@ -51,7 +51,6 @@ const {
   getCertifiedCounsellors,
   getCertifiedCounsellorDetail,
 } = require('../controllers/certifiedCounsellorsController');
-
 router.post('/login', login);
 router.get('/admins', requireAdmin, requireSuperAdmin, listAdmins);
 router.post('/admins', requireAdmin, requireSuperAdmin, createAdmin);

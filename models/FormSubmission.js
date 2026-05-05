@@ -146,6 +146,43 @@ const formSubmissionSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  // WhatsApp (Gupshup) — reliability + ops dashboard
+  whatsappRetryCount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  lastWhatsappAttemptAt: {
+    type: Date,
+    default: null
+  },
+  whatsappRetryKind: {
+    type: String,
+    default: null,
+    maxlength: 32
+  },
+  whatsappLastMessageId: {
+    type: String,
+    trim: true,
+    default: null,
+    maxlength: 128
+  },
+  whatsappDeliveryStatus: {
+    type: String,
+    trim: true,
+    default: null,
+    maxlength: 64
+  },
+  whatsappLastWebhookAt: {
+    type: Date,
+    default: null
+  },
+  whatsappLastError: {
+    type: String,
+    trim: true,
+    maxlength: 2000,
+    default: null
+  },
   // UTM attribution (first-touch from registration page)
   utm_source: { type: String, trim: true },
   utm_medium: { type: String, trim: true },
@@ -212,6 +249,14 @@ formSubmissionSchema.index({ isRegistered: 1, reminderSent: 1, 'step3Data.slotDa
 formSubmissionSchema.index({ isRegistered: 1, meetLinkSent: 1, 'step3Data.slotDate': 1 });
 // Index for 30-min reminder cron job queries
 formSubmissionSchema.index({ isRegistered: 1, reminder30MinSent: 1, 'step3Data.slotDate': 1 });
+formSubmissionSchema.index({
+  isRegistered: 1,
+  whatsappRetryCount: 1,
+  whatsappRetryKind: 1,
+  lastWhatsappAttemptAt: 1
+});
+formSubmissionSchema.index({ whatsappLastMessageId: 1 }, { sparse: true });
+formSubmissionSchema.index({ 'step3Data.slotDate': 1, whatsappDeliveryStatus: 1 });
 formSubmissionSchema.index({ utm_content: 1 });
 // OSVI delayed outbound cron
 formSubmissionSchema.index({ osviOutboundCallStatus: 1, osviOutboundScheduledAt: 1 });

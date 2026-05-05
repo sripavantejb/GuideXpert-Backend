@@ -1,14 +1,20 @@
 const express = require('express');
 const router = express.Router();
 const FormSubmission = require('../models/FormSubmission');
+const MessagingCronRun = require('../models/MessagingCronRun');
 const { sendBulkReminderSms, sendBulkMeetLinkSms, sendBulkReminder30MinSms } = require('../utils/msg91Service');
+const { buildSlotNotificationVariables } = require('../utils/slotNotificationFormatters');
+const {
+  sendPre4HrReminderWhatsApp,
+  sendMeetLinkWhatsApp,
+  sendReminder30MinWhatsApp
+} = require('../services/gupshupService');
+const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
+const { executeRetryWhatsAppBatch } = require('../services/retryWhatsAppBatch');
 const { isOsviConfigured } = require('../utils/osviService');
 const { processOsviOutboundForPhone } = require('../utils/osviOutboundProcessor');
 const { hasCronSecretConfigured, isValidCronSecret } = require('../utils/cronSecret');
 
-/**
- * Middleware to verify cron secret key
- */
 function verifyCronSecret(req, res, next) {
   if (!hasCronSecretConfigured()) {
     console.error('[Cron] No cron secret — set GUIDEXPERT_CRON_SECRET or CRON_SECRET');
@@ -33,25 +39,43 @@ function verifyCronSecret(req, res, next) {
   next();
 }
 
-/**
- * GET /api/cron/send-reminders
- * Send reminder SMS to all users with slots in the next 4 hours
- * Protected by CRON_SECRET
- */
+async function startCronRun(jobKey) {
+  return MessagingCronRun.create({
+    jobKey,
+    startedAt: new Date(),
+    success: false,
+    trigger: 'cron',
+    stats: {}
+  });
+}
+
+async function finishCronRun(run, baseStats, overrides = {}) {
+  const finishedAt = new Date();
+  const durationMs = run && run.startedAt ? finishedAt - new Date(run.startedAt).getTime() : null;
+  const mergedStats = { ...baseStats, ...(overrides.stats || {}) };
+  await MessagingCronRun.updateOne(
+    { _id: run._id },
+    {
+      $set: {
+        finishedAt,
+        durationMs,
+        stats: mergedStats,
+        success: overrides.success !== undefined ? overrides.success : true,
+        errorSummary: overrides.errorSummary ?? null
+      }
+    }
+  );
+}
+
 router.get('/send-reminders', verifyCronSecret, async (req, res) => {
+  let cronRun = null;
   try {
     console.log('[Cron] Starting reminder SMS job...');
+    cronRun = await startCronRun('send_reminders');
 
-    // Calculate time window: now to 4 hours from now (in IST)
     const now = new Date();
     const fourHoursFromNow = new Date(now.getTime() + 4 * 60 * 60 * 1000);
 
-    console.log('[Cron] Time window:', {
-      now: now.toISOString(),
-      fourHoursFromNow: fourHoursFromNow.toISOString()
-    });
-
-    // Find all registered users with slots in the next 4 hours who haven't received reminder
     const usersToRemind = await FormSubmission.find({
       isRegistered: true,
       reminderSent: { $ne: true },
@@ -64,6 +88,16 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
     console.log('[Cron] Found', usersToRemind.length, 'users to send reminders');
 
     if (usersToRemind.length === 0) {
+      await finishCronRun(cronRun, {
+        found: 0,
+        smsSent: 0,
+        smsFailed: 0,
+        waAttempted: 0,
+        waSucceeded: 0,
+        waFailed: 0,
+        retriesAttempted: 0,
+        flagsUpdated: 0
+      });
       return res.status(200).json({
         success: true,
         message: 'No reminders to send',
@@ -71,20 +105,33 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
       });
     }
 
-    // Extract phone numbers
-    const phones = usersToRemind.map(user => user.phone);
-
-    // Prepare variables for the SMS template (if needed)
-    // Since all users in this batch have slots in similar time window,
-    // we can use generic variables or skip them if template doesn't need them
+    const phones = usersToRemind.map((user) => user.phone);
     const variables = {};
-
-    // Send bulk SMS
     const smsResult = await sendBulkReminderSms(phones, variables);
 
+    let whatsappReminderAttempted = 0;
+    let whatsappReminderFailed = 0;
+    let whatsappReminderSucceeded = 0;
+
     if (smsResult.success) {
-      // Mark all users as reminder sent
-      const phoneList = usersToRemind.map(u => u.phone);
+      for (const user of usersToRemind) {
+        whatsappReminderAttempted += 1;
+        const waVars = buildSlotNotificationVariables(user);
+        const wa = await safeSendWhatsApp({
+          phone10: user.phone,
+          formSubmissionId: user._id,
+          vars: waVars,
+          retryKind: 'pre4hr',
+          source: 'cron',
+          cronRunId: cronRun._id,
+          cronJobKey: 'send_reminders',
+          sendFn: sendPre4HrReminderWhatsApp
+        });
+        if (wa.success) whatsappReminderSucceeded += 1;
+        else whatsappReminderFailed += 1;
+      }
+
+      const phoneList = usersToRemind.map((u) => u.phone);
       await FormSubmission.updateMany(
         { phone: { $in: phoneList } },
         {
@@ -100,19 +147,39 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
       console.error('[Cron] Failed to send bulk SMS:', smsResult.error);
     }
 
+    await finishCronRun(cronRun, {
+      found: usersToRemind.length,
+      smsSent: smsResult.sentCount || 0,
+      smsFailed: smsResult.failedCount || 0,
+      waAttempted: whatsappReminderAttempted,
+      waSucceeded: whatsappReminderSucceeded,
+      waFailed: whatsappReminderFailed,
+      retriesAttempted: 0,
+      flagsUpdated: smsResult.success ? usersToRemind.length : 0
+    }, { success: smsResult.success });
+
     return res.status(200).json({
       success: true,
       message: smsResult.success ? 'Reminders sent successfully' : 'Failed to send some reminders',
       stats: {
         found: usersToRemind.length,
         sent: smsResult.sentCount,
-        failed: smsResult.failedCount
+        failed: smsResult.failedCount,
+        whatsappAttempted: whatsappReminderAttempted,
+        whatsappFailed: whatsappReminderFailed,
+        whatsappSucceeded: whatsappReminderSucceeded
       },
       error: smsResult.error || null
     });
-
   } catch (error) {
     console.error('[Cron] Error in send-reminders:', error);
+    if (cronRun) {
+      await finishCronRun(
+        cronRun,
+        { found: 0, smsSent: 0, smsFailed: 0, waAttempted: 0, waSucceeded: 0, waFailed: 0, retriesAttempted: 0, flagsUpdated: 0 },
+        { success: false, errorSummary: error.message }
+      ).catch(() => {});
+    }
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -121,25 +188,15 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
   }
 });
 
-/**
- * GET /api/cron/send-meetlinks
- * Send meet link SMS to all users with slots in the next 1 hour
- * Protected by CRON_SECRET
- */
 router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
+  let cronRun = null;
   try {
     console.log('[Cron] Starting meet link SMS job...');
+    cronRun = await startCronRun('send_meetlinks');
 
-    // Calculate time window: now to 1 hour from now
     const now = new Date();
     const oneHourFromNow = new Date(now.getTime() + 1 * 60 * 60 * 1000);
 
-    console.log('[Cron] Meet link time window:', {
-      now: now.toISOString(),
-      oneHourFromNow: oneHourFromNow.toISOString()
-    });
-
-    // Find all registered users with slots in the next 1 hour who haven't received meet link
     const usersToSendMeetLink = await FormSubmission.find({
       isRegistered: true,
       meetLinkSent: { $ne: true },
@@ -152,6 +209,16 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
     console.log('[Cron] Found', usersToSendMeetLink.length, 'users to send meet links');
 
     if (usersToSendMeetLink.length === 0) {
+      await finishCronRun(cronRun, {
+        found: 0,
+        smsSent: 0,
+        smsFailed: 0,
+        waAttempted: 0,
+        waSucceeded: 0,
+        waFailed: 0,
+        retriesAttempted: 0,
+        flagsUpdated: 0
+      });
       return res.status(200).json({
         success: true,
         message: 'No meet links to send',
@@ -159,11 +226,7 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
       });
     }
 
-    // Extract phone numbers
-    const phones = usersToSendMeetLink.map(user => user.phone);
-
-    // Prepare variables for the SMS template
-    // var = meeting link (maps to ##var## in MSG91 template)
+    const phones = usersToSendMeetLink.map((user) => user.phone);
     const meetingLink = process.env.DEMO_MEETING_LINK || 'https://guidexpert.co.in/demo';
     const variables = {
       var: meetingLink
@@ -171,12 +234,31 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
 
     console.log('[Cron] Using meeting link:', meetingLink);
 
-    // Send bulk SMS
     const smsResult = await sendBulkMeetLinkSms(phones, variables);
 
+    let whatsappMeetAttempted = 0;
+    let whatsappMeetFailed = 0;
+    let whatsappMeetSucceeded = 0;
+
     if (smsResult.success) {
-      // Mark all users as meet link sent
-      const phoneList = usersToSendMeetLink.map(u => u.phone);
+      for (const user of usersToSendMeetLink) {
+        whatsappMeetAttempted += 1;
+        const waVars = buildSlotNotificationVariables(user, { withMeetingLink: true });
+        const wa = await safeSendWhatsApp({
+          phone10: user.phone,
+          formSubmissionId: user._id,
+          vars: waVars,
+          retryKind: 'meet',
+          source: 'cron',
+          cronRunId: cronRun._id,
+          cronJobKey: 'send_meetlinks',
+          sendFn: sendMeetLinkWhatsApp
+        });
+        if (wa.success) whatsappMeetSucceeded += 1;
+        else whatsappMeetFailed += 1;
+      }
+
+      const phoneList = usersToSendMeetLink.map((u) => u.phone);
       await FormSubmission.updateMany(
         { phone: { $in: phoneList } },
         {
@@ -192,19 +274,39 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
       console.error('[Cron] Failed to send bulk meet link SMS:', smsResult.error);
     }
 
+    await finishCronRun(cronRun, {
+      found: usersToSendMeetLink.length,
+      smsSent: smsResult.sentCount || 0,
+      smsFailed: smsResult.failedCount || 0,
+      waAttempted: whatsappMeetAttempted,
+      waSucceeded: whatsappMeetSucceeded,
+      waFailed: whatsappMeetFailed,
+      retriesAttempted: 0,
+      flagsUpdated: smsResult.success ? usersToSendMeetLink.length : 0
+    }, { success: smsResult.success });
+
     return res.status(200).json({
       success: true,
       message: smsResult.success ? 'Meet links sent successfully' : 'Failed to send some meet links',
       stats: {
         found: usersToSendMeetLink.length,
         sent: smsResult.sentCount,
-        failed: smsResult.failedCount
+        failed: smsResult.failedCount,
+        whatsappAttempted: whatsappMeetAttempted,
+        whatsappFailed: whatsappMeetFailed,
+        whatsappSucceeded: whatsappMeetSucceeded
       },
       error: smsResult.error || null
     });
-
   } catch (error) {
     console.error('[Cron] Error in send-meetlinks:', error);
+    if (cronRun) {
+      await finishCronRun(
+        cronRun,
+        { found: 0, smsSent: 0, smsFailed: 0, waAttempted: 0, waSucceeded: 0, waFailed: 0, retriesAttempted: 0, flagsUpdated: 0 },
+        { success: false, errorSummary: error.message }
+      ).catch(() => {});
+    }
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -213,25 +315,15 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
   }
 });
 
-/**
- * GET /api/cron/send-30min-reminders
- * Send 30-min live reminder SMS to all users with slots in the next 30 minutes
- * Protected by CRON_SECRET
- */
 router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
+  let cronRun = null;
   try {
     console.log('[Cron] Starting 30-min reminder SMS job...');
+    cronRun = await startCronRun('send_30min_reminders');
 
-    // Calculate time window: now to 30 minutes from now
     const now = new Date();
     const thirtyMinFromNow = new Date(now.getTime() + 30 * 60 * 1000);
 
-    console.log('[Cron] 30-min reminder time window:', {
-      now: now.toISOString(),
-      thirtyMinFromNow: thirtyMinFromNow.toISOString()
-    });
-
-    // Find all registered users with slots in the next 30 min who haven't received 30-min reminder
     const usersToSend30MinReminder = await FormSubmission.find({
       isRegistered: true,
       reminder30MinSent: { $ne: true },
@@ -244,6 +336,16 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
     console.log('[Cron] Found', usersToSend30MinReminder.length, 'users to send 30-min reminders');
 
     if (usersToSend30MinReminder.length === 0) {
+      await finishCronRun(cronRun, {
+        found: 0,
+        smsSent: 0,
+        smsFailed: 0,
+        waAttempted: 0,
+        waSucceeded: 0,
+        waFailed: 0,
+        retriesAttempted: 0,
+        flagsUpdated: 0
+      });
       return res.status(200).json({
         success: true,
         message: 'No 30-min reminders to send',
@@ -251,11 +353,7 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
       });
     }
 
-    // Extract phone numbers
-    const phones = usersToSend30MinReminder.map(user => user.phone);
-
-    // Prepare variables for the SMS template
-    // var = meeting link (maps to ##var## in MSG91 template)
+    const phones = usersToSend30MinReminder.map((user) => user.phone);
     const meetingLink = process.env.DEMO_MEETING_LINK || 'https://guidexpert.co.in/demo';
     const variables = {
       var: meetingLink
@@ -263,12 +361,31 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
 
     console.log('[Cron] Using meeting link for 30-min reminder:', meetingLink);
 
-    // Send bulk SMS
     const smsResult = await sendBulkReminder30MinSms(phones, variables);
 
+    let whatsapp30Attempted = 0;
+    let whatsapp30Failed = 0;
+    let whatsapp30Succeeded = 0;
+
     if (smsResult.success) {
-      // Mark all users as 30-min reminder sent
-      const phoneList = usersToSend30MinReminder.map(u => u.phone);
+      for (const user of usersToSend30MinReminder) {
+        whatsapp30Attempted += 1;
+        const waVars = buildSlotNotificationVariables(user, { withMeetingLink: true });
+        const wa = await safeSendWhatsApp({
+          phone10: user.phone,
+          formSubmissionId: user._id,
+          vars: waVars,
+          retryKind: '30min',
+          source: 'cron',
+          cronRunId: cronRun._id,
+          cronJobKey: 'send_30min_reminders',
+          sendFn: sendReminder30MinWhatsApp
+        });
+        if (wa.success) whatsapp30Succeeded += 1;
+        else whatsapp30Failed += 1;
+      }
+
+      const phoneList = usersToSend30MinReminder.map((u) => u.phone);
       await FormSubmission.updateMany(
         { phone: { $in: phoneList } },
         {
@@ -284,19 +401,39 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
       console.error('[Cron] Failed to send bulk 30-min reminder SMS:', smsResult.error);
     }
 
+    await finishCronRun(cronRun, {
+      found: usersToSend30MinReminder.length,
+      smsSent: smsResult.sentCount || 0,
+      smsFailed: smsResult.failedCount || 0,
+      waAttempted: whatsapp30Attempted,
+      waSucceeded: whatsapp30Succeeded,
+      waFailed: whatsapp30Failed,
+      retriesAttempted: 0,
+      flagsUpdated: smsResult.success ? usersToSend30MinReminder.length : 0
+    }, { success: smsResult.success });
+
     return res.status(200).json({
       success: true,
       message: smsResult.success ? '30-min reminders sent successfully' : 'Failed to send some 30-min reminders',
       stats: {
         found: usersToSend30MinReminder.length,
         sent: smsResult.sentCount,
-        failed: smsResult.failedCount
+        failed: smsResult.failedCount,
+        whatsappAttempted: whatsapp30Attempted,
+        whatsappFailed: whatsapp30Failed,
+        whatsappSucceeded: whatsapp30Succeeded
       },
       error: smsResult.error || null
     });
-
   } catch (error) {
     console.error('[Cron] Error in send-30min-reminders:', error);
+    if (cronRun) {
+      await finishCronRun(
+        cronRun,
+        { found: 0, smsSent: 0, smsFailed: 0, waAttempted: 0, waSucceeded: 0, waFailed: 0, retriesAttempted: 0, flagsUpdated: 0 },
+        { success: false, errorSummary: error.message }
+      ).catch(() => {});
+    }
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -305,12 +442,50 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
   }
 });
 
-/**
- * GET /api/cron/osvi-outbound-due
- * Process counselor Apply abandoned-flow: OSVI outbound calls scheduled after OTP (+delay),
- * and cancelled if slot is booked before due time.
- * Schedule with CRON_SECRET every 1 minute in production (Vercel Cron or external scheduler).
- */
+router.get('/retry-whatsapp', verifyCronSecret, async (req, res) => {
+  let cronRun = null;
+  try {
+    console.log('[Cron] Starting retry WhatsApp job...');
+    cronRun = await startCronRun('retry_whatsapp');
+
+    const batch = await executeRetryWhatsAppBatch(cronRun._id);
+
+    await finishCronRun(
+      cronRun,
+      {
+        found: batch.found,
+        smsSent: 0,
+        smsFailed: 0,
+        waAttempted: batch.attempted,
+        waSucceeded: batch.succeeded,
+        waFailed: batch.failed,
+        retriesAttempted: batch.attempted,
+        flagsUpdated: 0
+      },
+      { success: true }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Retry WhatsApp batch completed',
+      stats: batch
+    });
+  } catch (error) {
+    console.error('[Cron] retry-whatsapp:', error);
+    if (cronRun) {
+      await finishCronRun(
+        cronRun,
+        { found: 0, smsSent: 0, smsFailed: 0, waAttempted: 0, waSucceeded: 0, waFailed: 0, retriesAttempted: 0, flagsUpdated: 0 },
+        { success: false, errorSummary: error.message }
+      ).catch(() => {});
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Internal server error'
+    });
+  }
+});
+
 router.get('/osvi-outbound-due', verifyCronSecret, async (req, res) => {
   try {
     if (!isOsviConfigured()) {
@@ -354,10 +529,6 @@ router.get('/osvi-outbound-due', verifyCronSecret, async (req, res) => {
   }
 });
 
-/**
- * GET /api/cron/health
- * Health check endpoint for cron monitoring
- */
 router.get('/health', (req, res) => {
   res.status(200).json({
     success: true,

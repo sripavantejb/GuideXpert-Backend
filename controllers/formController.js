@@ -23,6 +23,9 @@ const { findOrCreateCounsellorAndGetToken } = require('./counsellorAuthControlle
 const { isOsviConfigured } = require('../utils/osviService');
 const { getOsviEnabled, getOsviAbandonedDelayMs } = require('../utils/appSettings');
 const { listExams } = require('../services/rankPredictorService');
+const { buildSlotNotificationVariables } = require('../utils/slotNotificationFormatters');
+const gupshupService = require('../services/gupshupService');
+const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
 
 /** Optional body.rankPredictorLead — validated snapshot for admin follow-up. */
 function parseRankPredictorLeadFromBody(body) {
@@ -52,47 +55,6 @@ const GOOGLE_SHEET_RANGE = process.env.GOOGLE_SHEET_RANGE || 'Sheet1';
 const VALID_SLOT_ID_REGEX = /^(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)_(7PM|11AM|3PM|6PM)$/;
 function isValidSlotId(slot) {
   return typeof slot === 'string' && VALID_SLOT_ID_REGEX.test(slot);
-}
-
-/**
- * Format slot date for SMS (e.g., "Saturday, 15th Feb")
- */
-function formatSlotDateForSms(date) {
-  const d = new Date(date);
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  
-  const dayName = days[d.getDay()];
-  const day = d.getDate();
-  const month = months[d.getMonth()];
-  
-  // Add ordinal suffix (1st, 2nd, 3rd, 4th, etc.)
-  const suffix = (day === 1 || day === 21 || day === 31) ? 'st' 
-               : (day === 2 || day === 22) ? 'nd' 
-               : (day === 3 || day === 23) ? 'rd' 
-               : 'th';
-  
-  return `${dayName}, ${day}${suffix} ${month}`;
-}
-
-/**
- * Format slot time from slot ID for SMS (e.g., "7:00 PM", "11:00 AM")
- */
-function formatSlotTimeForSms(slotId) {
-  if (!slotId || typeof slotId !== 'string') return '';
-  
-  const timeMap = {
-    '7PM': '7:00 PM',
-    '11AM': '11:00 AM',
-    '3PM': '3:00 PM',
-    '6PM': '6:00 PM'
-  };
-  
-  // Extract time part from slot ID (e.g., "FRIDAY_7PM" -> "7PM")
-  const parts = slotId.split('_');
-  const timePart = parts[parts.length - 1];
-  
-  return timeMap[timePart] || timePart;
 }
 
 async function appendToSheetIfConfigured(submission) {
@@ -787,11 +749,7 @@ exports.saveStep3 = async (req, res) => {
     let reminder30MinStatus = { sent: false, error: null, immediate: false };
     
     try {
-      const smsVariables = {
-        name: submission.step1Data?.fullName || submission.fullName || 'Counsellor',
-        date: formatSlotDateForSms(slotDate),
-        time: formatSlotTimeForSms(selectedSlot)
-      };
+      const smsVariables = buildSlotNotificationVariables(submission);
       
       console.log('[saveStep3] Sending slot confirmation SMS:', { phone: p, variables: smsVariables });
       
@@ -829,11 +787,7 @@ exports.saveStep3 = async (req, res) => {
       if (shouldSendMeetLinkImmediately) {
         console.log('[saveStep3] Slot is within 1 hour - sending meet link SMS immediately');
         
-        // Add meeting link variable (maps to ##var## in MSG91 template)
-        const meetLinkVariables = {
-          ...smsVariables,
-          var: process.env.DEMO_MEETING_LINK || 'https://guidexpert.co.in/demo'
-        };
+        const meetLinkVariables = buildSlotNotificationVariables(submission, { withMeetingLink: true });
         
         const meetLinkResult = await sendMeetLinkSms(p, meetLinkVariables);
         
@@ -855,11 +809,7 @@ exports.saveStep3 = async (req, res) => {
       if (shouldSendReminder30MinImmediately) {
         console.log('[saveStep3] Slot is within 30 min - sending 30-min live reminder SMS immediately');
         
-        // Add meeting link variable (maps to ##var## in MSG91 template)
-        const reminder30MinVariables = {
-          ...smsVariables,
-          var: process.env.DEMO_MEETING_LINK || 'https://guidexpert.co.in/demo'
-        };
+        const reminder30MinVariables = buildSlotNotificationVariables(submission, { withMeetingLink: true });
         
         const reminder30MinResult = await sendReminder30MinSms(p, reminder30MinVariables);
         
@@ -879,6 +829,56 @@ exports.saveStep3 = async (req, res) => {
     } catch (smsError) {
       console.error('[saveStep3] Error sending SMS:', smsError.message);
       smsStatus = { sent: false, error: smsError.message };
+    }
+
+    await safeSendWhatsApp({
+      phone10: p,
+      formSubmissionId: submission._id,
+      vars: buildSlotNotificationVariables(submission),
+      retryKind: 'slot_booked',
+      source: 'save_step3',
+      cronRunId: null,
+      cronJobKey: null,
+      sendFn: gupshupService.sendSlotBookedWhatsApp
+    });
+
+    if (shouldSendReminderImmediately) {
+      await safeSendWhatsApp({
+        phone10: p,
+        formSubmissionId: submission._id,
+        vars: buildSlotNotificationVariables(submission),
+        retryKind: 'pre4hr',
+        source: 'save_step3',
+        cronRunId: null,
+        cronJobKey: null,
+        sendFn: gupshupService.sendPre4HrReminderWhatsApp
+      });
+    }
+
+    if (shouldSendMeetLinkImmediately) {
+      await safeSendWhatsApp({
+        phone10: p,
+        formSubmissionId: submission._id,
+        vars: buildSlotNotificationVariables(submission, { withMeetingLink: true }),
+        retryKind: 'meet',
+        source: 'save_step3',
+        cronRunId: null,
+        cronJobKey: null,
+        sendFn: gupshupService.sendMeetLinkWhatsApp
+      });
+    }
+
+    if (shouldSendReminder30MinImmediately) {
+      await safeSendWhatsApp({
+        phone10: p,
+        formSubmissionId: submission._id,
+        vars: buildSlotNotificationVariables(submission, { withMeetingLink: true }),
+        retryKind: '30min',
+        source: 'save_step3',
+        cronRunId: null,
+        cronJobKey: null,
+        sendFn: gupshupService.sendReminder30MinWhatsApp
+      });
     }
 
     otpStore.removeVerified(p);

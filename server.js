@@ -11,6 +11,7 @@ const assessment3Routes = require('./routes/assessment3Routes');
 const assessment4Routes = require('./routes/assessment4Routes');
 const assessment5Routes = require('./routes/assessment5Routes');
 const adminRoutes = require('./routes/adminRoutes');
+const whatsappOpsAdminRoutes = require('./routes/whatsappOpsAdminRoutes');
 const influencerRoutes = require('./routes/influencerRoutes');
 const meetingRoutes = require('./routes/meetingRoutes');
 const iitMeetRoutes = require('./routes/iitMeetRoutes');
@@ -37,6 +38,7 @@ const blogRoutes = require('./routes/blogRoutes');
 const posterTemplatePublicRoutes = require('./routes/posterTemplatePublicRoutes');
 const osviRoutes = require('./routes/osviRoutes');
 const counsellorSupportRoutes = require('./routes/counsellorSupportRoutes');
+const gupshupWebhookRoutes = require('./routes/gupshupWebhookRoutes');
 const { configStatus: counsellorConfigStatus } = require('./controllers/counsellorAuthController');
 const { getPosterDownloads, getPosterDownloadStats } = require('./controllers/posterDownloadController');
 const { checkPosterEligibility, trackPosterDownload } = require('./controllers/posterController');
@@ -183,6 +185,8 @@ app.use('/api/blogs', blogRoutes);
 // Compatibility alias for misconfigured clients sending /api/api/blogs
 app.use('/api/api/blogs', blogRoutes);
 app.use('/api/posters', posterTemplatePublicRoutes);
+// WhatsApp Messaging Ops console — explicit mount before generic /api/admin (same middleware stack elsewhere).
+app.use('/api/admin/whatsapp-ops', requireAdmin, whatsappOpsAdminRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/meeting', meetingRoutes);
 app.use('/api/iit-meet', iitMeetRoutes);
@@ -196,6 +200,7 @@ app.use('/api/webinar-assessment', webinarAssessmentRoutes);
 app.use('/api/webinar-progress', webinarProgressRoutes);
 app.use('/api/osvi', osviRoutes);
 app.use('/api/counsellor-support', counsellorSupportRoutes);
+app.use('/webhook/gupshup', gupshupWebhookRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ success: false, message: 'Not found' });
