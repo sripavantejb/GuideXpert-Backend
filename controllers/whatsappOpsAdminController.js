@@ -8,6 +8,7 @@ const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
 const gupshupService = require('../services/gupshupService');
 const { executeRetryWhatsAppBatch } = require('../services/retryWhatsAppBatch');
 const { deriveSubmissionWaStatus } = require('../services/whatsappOpsStatus');
+const IST_OFFSET_MINUTES = 330;
 
 function clampInt(v, dflt, max) {
   const n = parseInt(v, 10);
@@ -33,6 +34,76 @@ function parseBoundaryDate(raw, mode) {
   }
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function parseIsoDateOnly(value) {
+  const s = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const [y, m, d] = s.split('-').map((x) => parseInt(x, 10));
+  if (!y || !m || !d) return null;
+  return { y, m, d, iso: s };
+}
+
+function parseIsoMonth(value) {
+  const s = String(value || '').trim();
+  if (!/^\d{4}-\d{2}$/.test(s)) return null;
+  const [y, m] = s.split('-').map((x) => parseInt(x, 10));
+  if (!y || !m) return null;
+  return { y, m, iso: s };
+}
+
+function istDayRangeFromIso(dateIso) {
+  const p = parseIsoDateOnly(dateIso);
+  if (!p) return null;
+  const startUtcMs = Date.UTC(p.y, p.m - 1, p.d, 0, 0, 0, 0) - (IST_OFFSET_MINUTES * 60 * 1000);
+  const endUtcMs = startUtcMs + (24 * 60 * 60 * 1000) - 1;
+  return { from: new Date(startUtcMs), to: new Date(endUtcMs), isoDate: p.iso };
+}
+
+function istMonthRangeFromIso(monthIso) {
+  const p = parseIsoMonth(monthIso);
+  if (!p) return null;
+  const startUtcMs = Date.UTC(p.y, p.m - 1, 1, 0, 0, 0, 0) - (IST_OFFSET_MINUTES * 60 * 1000);
+  const nextMonthStartUtcMs = Date.UTC(p.m === 12 ? p.y + 1 : p.y, p.m === 12 ? 0 : p.m, 1, 0, 0, 0, 0)
+    - (IST_OFFSET_MINUTES * 60 * 1000);
+  return {
+    from: new Date(startUtcMs),
+    to: new Date(nextMonthStartUtcMs - 1),
+    isoMonth: p.iso
+  };
+}
+
+function facetStatsPipeline(match) {
+  return [
+    { $match: match },
+    {
+      $facet: {
+        total: [{ $count: 'c' }],
+        byKind: [{ $group: { _id: '$messageKind', c: { $sum: 1 } } }],
+        byStatus: [{ $group: { _id: '$status', c: { $sum: 1 } } }],
+        accepted: [{ $match: { status: 'submitted' } }, { $count: 'c' }],
+        failed: [{ $match: { status: 'failed' } }, { $count: 'c' }],
+        delivered: [{ $match: { status: 'delivered' } }, { $count: 'c' }],
+        read: [{ $match: { status: 'read' } }, { $count: 'c' }],
+        retryExhausted: [{ $match: { status: 'retry_exhausted' } }, { $count: 'c' }],
+        retried: [{ $match: { retryCountSnapshot: { $gt: 0 } } }, { $count: 'c' }],
+        slotBookedAttempts: [{ $match: { messageKind: 'slot_booked' } }, { $count: 'c' }]
+      }
+    }
+  ];
+}
+
+function facetStatsToTotals(facet) {
+  return {
+    whatsappAttempts: facet.total?.[0]?.c || 0,
+    providerAcceptedCount: facet.accepted?.[0]?.c || 0,
+    whatsappFailed: facet.failed?.[0]?.c || 0,
+    deliveredCount: facet.delivered?.[0]?.c || 0,
+    readCount: facet.read?.[0]?.c || 0,
+    retried: facet.retried?.[0]?.c || 0,
+    retryExhausted: facet.retryExhausted?.[0]?.c || 0,
+    slotBookedAttempts: facet.slotBookedAttempts?.[0]?.c || 0
+  };
 }
 
 function mapEventStatusToDeliveryStatus(status) {
@@ -210,6 +281,166 @@ exports.getSummary = async (req, res) => {
   } catch (e) {
     console.error('[whatsapp-ops summary]', e);
     res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+exports.getCalendarMonthOverview = async (req, res) => {
+  try {
+    const monthIso = req.query.month || new Date().toISOString().slice(0, 7);
+    const messageKind = req.query.messageKind ? String(req.query.messageKind).trim() : null;
+    if (messageKind && !ALLOWED_MESSAGE_KINDS.includes(messageKind)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid messageKind. Allowed: ${ALLOWED_MESSAGE_KINDS.join(', ')}`
+      });
+    }
+    const range = istMonthRangeFromIso(monthIso);
+    if (!range) return res.status(400).json({ success: false, message: 'Invalid month format. Use YYYY-MM' });
+
+    const eventMatch = {
+      createdAt: { $gte: range.from, $lte: range.to },
+      ...(messageKind ? { messageKind } : {})
+    };
+    const bookingMatch = {
+      'step3Data.slotDate': { $gte: range.from, $lte: range.to }
+    };
+
+    const [eventsByDay, bookingsByDay] = await Promise.all([
+      WhatsAppMessageEvent.aggregate([
+        { $match: eventMatch },
+        {
+          $group: {
+            _id: {
+              day: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'Asia/Kolkata' } }
+            },
+            attempts: { $sum: 1 },
+            failed: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } },
+            delivered: { $sum: { $cond: [{ $eq: ['$status', 'delivered'] }, 1, 0] } },
+            read: { $sum: { $cond: [{ $eq: ['$status', 'read'] }, 1, 0] } },
+            accepted: { $sum: { $cond: [{ $eq: ['$status', 'submitted'] }, 1, 0] } },
+            retried: { $sum: { $cond: [{ $gt: ['$retryCountSnapshot', 0] }, 1, 0] } }
+          }
+        }
+      ]),
+      FormSubmission.aggregate([
+        { $match: bookingMatch },
+        {
+          $group: {
+            _id: {
+              day: { $dateToString: { format: '%Y-%m-%d', date: '$step3Data.slotDate', timezone: 'Asia/Kolkata' }
+              }
+            },
+            bookedSlotsCount: { $sum: 1 }
+          }
+        }
+      ])
+    ]);
+
+    const byDayMap = new Map();
+    eventsByDay.forEach((r) => {
+      byDayMap.set(r._id.day, {
+        date: r._id.day,
+        attempts: r.attempts || 0,
+        accepted: r.accepted || 0,
+        delivered: r.delivered || 0,
+        read: r.read || 0,
+        failed: r.failed || 0,
+        retried: r.retried || 0,
+        bookedSlotsCount: 0
+      });
+    });
+    bookingsByDay.forEach((r) => {
+      const day = r._id.day;
+      const prev = byDayMap.get(day) || {
+        date: day,
+        attempts: 0,
+        accepted: 0,
+        delivered: 0,
+        read: 0,
+        failed: 0,
+        retried: 0,
+        bookedSlotsCount: 0
+      };
+      prev.bookedSlotsCount = r.bookedSlotsCount || 0;
+      byDayMap.set(day, prev);
+    });
+
+    const days = [...byDayMap.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const monthTotals = days.reduce((acc, d) => ({
+      bookedSlotsCount: acc.bookedSlotsCount + (d.bookedSlotsCount || 0),
+      attempts: acc.attempts + (d.attempts || 0),
+      accepted: acc.accepted + (d.accepted || 0),
+      delivered: acc.delivered + (d.delivered || 0),
+      read: acc.read + (d.read || 0),
+      failed: acc.failed + (d.failed || 0),
+      retried: acc.retried + (d.retried || 0)
+    }), {
+      bookedSlotsCount: 0,
+      attempts: 0,
+      accepted: 0,
+      delivered: 0,
+      read: 0,
+      failed: 0,
+      retried: 0
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        filter: { month: range.isoMonth, messageKind: messageKind || null },
+        range: { from: range.from, to: range.to },
+        monthTotals,
+        days
+      }
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+exports.getCalendarDayOverview = async (req, res) => {
+  try {
+    const dateIso = req.query.date || new Date().toISOString().slice(0, 10);
+    const selectedKind = req.query.messageKind ? String(req.query.messageKind).trim() : null;
+    if (selectedKind && !ALLOWED_MESSAGE_KINDS.includes(selectedKind)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid messageKind. Allowed: ${ALLOWED_MESSAGE_KINDS.join(', ')}`
+      });
+    }
+    const range = istDayRangeFromIso(dateIso);
+    if (!range) return res.status(400).json({ success: false, message: 'Invalid date format. Use YYYY-MM-DD' });
+
+    const baseMatch = { createdAt: { $gte: range.from, $lte: range.to } };
+    const filteredMatch = { ...baseMatch, ...(selectedKind ? { messageKind: selectedKind } : {}) };
+
+    const [bookedSlotsCount, allFacet, filteredFacet] = await Promise.all([
+      FormSubmission.countDocuments({ 'step3Data.slotDate': { $gte: range.from, $lte: range.to } }),
+      WhatsAppMessageEvent.aggregate(facetStatsPipeline(baseMatch)),
+      WhatsAppMessageEvent.aggregate(facetStatsPipeline(filteredMatch))
+    ]);
+
+    const allStats = allFacet[0] || {};
+    const filteredStats = filteredFacet[0] || {};
+    const overall = facetStatsToTotals(allStats);
+    const filtered = facetStatsToTotals(filteredStats);
+    const byKind = (allStats.byKind || []).map((x) => ({ kind: x._id, count: x.c }));
+    const byStatus = (allStats.byStatus || []).map((x) => ({ status: x._id, count: x.c }));
+
+    return res.json({
+      success: true,
+      data: {
+        filter: { date: range.isoDate, messageKind: selectedKind || null },
+        range: { from: range.from, to: range.to },
+        bookedSlotsCount,
+        overall,
+        selectedKindMetrics: filtered,
+        byKind,
+        byStatus
+      }
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
   }
 };
 

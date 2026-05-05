@@ -5,6 +5,8 @@ const ctrl = require('../controllers/whatsappOpsAdminController');
 
 router.get('/meta', ctrl.getOpsMeta);
 router.get('/summary', ctrl.getSummary);
+router.get('/calendar/month', ctrl.getCalendarMonthOverview);
+router.get('/calendar/day', ctrl.getCalendarDayOverview);
 router.get('/cron-runs', ctrl.listCronRuns);
 router.get('/cron-runs/:id', ctrl.getCronRunDetail);
 router.get('/messages', ctrl.listMessages);
