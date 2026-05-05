@@ -9,6 +9,13 @@ function sanitizeSnippet(raw, maxLen = 3800) {
   return s.length > maxLen ? s.slice(0, maxLen) + '…' : s;
 }
 
+function mapDeliveryHintToEventStatus(deliveryHint) {
+  if (deliveryHint === 'read') return 'read';
+  if (deliveryHint === 'delivered') return 'delivered';
+  if (deliveryHint === 'failed') return 'failed';
+  return 'submitted';
+}
+
 /**
  * Extract message id, recipient phone (10-digit IN), inbound status text from heterogeneous Gupshup payloads.
  */
@@ -160,15 +167,7 @@ exports.ingestGupshupWebhook = async (req, res) => {
     }
 
     if (messageId) {
-      const evtStatus =
-        deliveryHint === 'read'
-          ? 'read'
-          : deliveryHint === 'delivered'
-            ? 'delivered'
-            : deliveryHint === 'failed'
-              ? 'failed'
-              : 'submitted';
-
+      const evtStatus = mapDeliveryHintToEventStatus(deliveryHint);
       await WhatsAppMessageEvent.updateMany(
         { gupshupMessageId: messageId },
         {
@@ -176,22 +175,35 @@ exports.ingestGupshupWebhook = async (req, res) => {
         }
       );
     } else if (phone10) {
-      const evtStatus =
-        deliveryHint === 'read'
-          ? 'read'
-          : deliveryHint === 'delivered'
-            ? 'delivered'
-            : deliveryHint === 'failed'
-              ? 'failed'
-              : 'submitted';
-      const recentWindow = new Date(receivedAt.getTime() - 48 * 60 * 60 * 1000);
-      await WhatsAppMessageEvent.updateMany(
-        {
+      const evtStatus = mapDeliveryHintToEventStatus(deliveryHint);
+      const recentWindow = new Date(receivedAt.getTime() - 24 * 60 * 60 * 1000);
+      // Message-id-less webhooks are ambiguous. Update only one best candidate
+      // to avoid inflating delivered/read counts by touching every recent event.
+      let targetEvent = await WhatsAppMessageEvent.findOne({
+        phone: phone10,
+        createdAt: { $gte: recentWindow },
+        status: { $in: ['queued', 'submitted', 'retry_pending'] }
+      })
+        .sort({ createdAt: -1 })
+        .select('_id')
+        .lean();
+
+      if (!targetEvent) {
+        targetEvent = await WhatsAppMessageEvent.findOne({
           phone: phone10,
           createdAt: { $gte: recentWindow }
-        },
-        { $set: { status: evtStatus, updatedAt: receivedAt } }
-      );
+        })
+          .sort({ createdAt: -1 })
+          .select('_id')
+          .lean();
+      }
+
+      if (targetEvent?._id) {
+        await WhatsAppMessageEvent.updateOne(
+          { _id: targetEvent._id },
+          { $set: { status: evtStatus, updatedAt: receivedAt } }
+        );
+      }
     }
 
     console.log('[Gupshup webhook]', {

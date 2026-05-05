@@ -16,11 +16,32 @@ function clampInt(v, dflt, max) {
 }
 
 function dateRange(query) {
-  const from = query.from ? new Date(query.from) : null;
-  const to = query.to ? new Date(query.to) : new Date();
-  if (from && Number.isNaN(from.getTime())) return { from: null, to };
-  if (to && Number.isNaN(to.getTime())) return { from, to: new Date() };
+  const from = parseBoundaryDate(query.from, 'start');
+  const to = parseBoundaryDate(query.to, 'end') || new Date();
   return { from, to };
+}
+
+function parseBoundaryDate(raw, mode) {
+  if (!raw) return null;
+  const value = String(raw).trim();
+  if (!value) return null;
+  // HTML date inputs send YYYY-MM-DD without time. Treat them as full-day bounds.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const iso = mode === 'start' ? `${value}T00:00:00.000Z` : `${value}T23:59:59.999Z`;
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function mapEventStatusToDeliveryStatus(status) {
+  const s = status ? String(status).toLowerCase() : '';
+  if (s === 'read') return 'read';
+  if (s === 'delivered') return 'delivered';
+  if (s === 'failed' || s === 'retry_exhausted') return 'failed';
+  if (s === 'submitted' || s === 'queued' || s === 'retry_pending') return 'submitted';
+  return s || null;
 }
 
 const ALLOWED_MESSAGE_KINDS = ['slot_booked', 'pre4hr', 'meet', '30min'];
@@ -60,8 +81,11 @@ exports.getSummary = async (req, res) => {
       });
     }
     const match = {};
-    if (from) {
-      match.createdAt = { $gte: from, $lte: to };
+    if (from || to) {
+      match.createdAt = {
+        ...(from ? { $gte: from } : {}),
+        ...(to ? { $lte: to } : {})
+      };
     }
     if (messageKind) {
       match.messageKind = messageKind;
@@ -111,7 +135,14 @@ exports.getSummary = async (req, res) => {
     let c = null;
     let webhookN = null;
     if (!messageKind) {
-      const cronMatch = from ? { startedAt: { $gte: from, $lte: to } } : {};
+      const cronMatch = from || to
+        ? {
+            startedAt: {
+              ...(from ? { $gte: from } : {}),
+              ...(to ? { $lte: to } : {})
+            }
+          }
+        : {};
       const cronCounts = await MessagingCronRun.aggregate([
         { $match: cronMatch },
         {
@@ -124,9 +155,14 @@ exports.getSummary = async (req, res) => {
         }
       ]);
       c = cronCounts[0] || { runs: 0, ok: 0, failed: 0 };
-      webhookN = await WhatsAppWebhookEvent.countDocuments(
-        from ? { receivedAt: { $gte: from, $lte: to } } : {}
-      );
+      webhookN = await WhatsAppWebhookEvent.countDocuments(from || to
+        ? {
+            receivedAt: {
+              ...(from ? { $gte: from } : {}),
+              ...(to ? { $lte: to } : {})
+            }
+          }
+        : {});
     }
 
     const data = {
@@ -229,7 +265,12 @@ exports.listMessages = async (req, res) => {
     const clauses = [];
     const { from, to } = dateRange(req.query);
     const base = {};
-    if (from) base.createdAt = { $gte: from, $lte: to };
+    if (from || to) {
+      base.createdAt = {
+        ...(from ? { $gte: from } : {}),
+        ...(to ? { $lte: to } : {})
+      };
+    }
     if (req.query.phone) base.phone = String(req.query.phone).replace(/\D/g, '').slice(-10);
     if (req.query.messageKind) base.messageKind = req.query.messageKind;
     if (req.query.status) base.status = req.query.status;
@@ -266,6 +307,12 @@ exports.listMessages = async (req, res) => {
 
     const rows = events.map((e) => {
       const fs = e.formSubmissionId ? subMap[String(e.formSubmissionId)] : null;
+      const eventStatus = e.status || null;
+      const deliveryStatus = mapEventStatusToDeliveryStatus(eventStatus);
+      const retryCount = Number.isFinite(e.retryCountSnapshot)
+        ? e.retryCountSnapshot
+        : (Number.isFinite(fs?.whatsappRetryCount) ? fs.whatsappRetryCount : 0);
+      const failureReason = e.errorMessage || fs?.whatsappLastError || null;
       return {
         ...e,
         userName: fs?.fullName || fs?.step1Data?.fullName || null,
@@ -274,7 +321,11 @@ exports.listMessages = async (req, res) => {
         submissionDeliveryStatus: fs?.whatsappDeliveryStatus,
         submissionLastWebhookAt: fs?.whatsappLastWebhookAt,
         derivedStatus: fs ? deriveSubmissionWaStatus(fs) : null,
-        whatsappRetryCountSnap: fs?.whatsappRetryCount
+        whatsappRetryCountSnap: fs?.whatsappRetryCount,
+        deliveryStatus,
+        failureReason,
+        retryCount,
+        sentAt: e.createdAt || null
       };
     });
 
