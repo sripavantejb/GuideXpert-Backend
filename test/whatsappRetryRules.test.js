@@ -2,6 +2,7 @@ const { describe, test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   filterRetryPromotionRows,
+  RETRY_EXCLUSION_REASON,
   getRetryPolicy,
   isCampaignStrategy,
   isImmediateOnlyStrategy,
@@ -29,7 +30,8 @@ describe('filterRetryPromotionRows (50 → 20 → 5 style exclusions)', () => {
       alreadyPromotedPhones: [],
       cooldownCutoffMs: 5 * 60 * 1000
     });
-    assert.equal(out.length, 20);
+    assert.equal(out.includedRows.length, 20);
+    assert.equal(out.exclusionCounts[RETRY_EXCLUSION_REASON.alreadyDeliveredOrRead], 30);
   });
 
   test('excludes phones already promoted to next attempt slice', () => {
@@ -39,8 +41,9 @@ describe('filterRetryPromotionRows (50 → 20 → 5 style exclusions)', () => {
       alreadyPromotedPhones: ['8111111111', '8333333333'],
       cooldownCutoffMs: 5 * 60 * 1000
     });
-    assert.equal(out.length, 1);
-    assert.equal(out[0].phone, '8222222222');
+    assert.equal(out.includedRows.length, 1);
+    assert.equal(out.includedRows[0].phone, '8222222222');
+    assert.equal(out.exclusionCounts[RETRY_EXCLUSION_REASON.duplicateRetryPrevented], 2);
   });
 
   test('respects cooldown (too recent failures omitted)', () => {
@@ -51,8 +54,9 @@ describe('filterRetryPromotionRows (50 → 20 → 5 style exclusions)', () => {
       alreadyPromotedPhones: [],
       cooldownCutoffMs: 5 * 60 * 1000
     });
-    assert.equal(out.length, 1);
-    assert.equal(out[0].phone, '8555555555');
+    assert.equal(out.includedRows.length, 1);
+    assert.equal(out.includedRows[0].phone, '8555555555');
+    assert.equal(out.exclusionCounts[RETRY_EXCLUSION_REASON.cooldownBlocked], 1);
   });
 
   test('duplicate trigger guard: retryEligible false skips', () => {
@@ -62,7 +66,8 @@ describe('filterRetryPromotionRows (50 → 20 → 5 style exclusions)', () => {
       alreadyPromotedPhones: [],
       cooldownCutoffMs: 0
     });
-    assert.equal(out.length, 0);
+    assert.equal(out.includedRows.length, 0);
+    assert.equal(out.exclusionCounts[RETRY_EXCLUSION_REASON.retryEligibilityDisabled], 1);
   });
 });
 

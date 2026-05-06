@@ -83,6 +83,26 @@ const whatsAppMessageEventSchema = new mongoose.Schema({
   immediateRetryLastTriedAt: { type: Date, default: null },
   webhookErrorCode: { type: String, trim: true, maxlength: 32, default: null },
   webhookErrorReason: { type: String, trim: true, maxlength: 2000, default: null },
+  retryExclusionReason: {
+    type: String,
+    enum: [
+      'already_delivered_or_read',
+      'duplicate_retry_prevented',
+      'retry_eligibility_disabled',
+      'cooldown_blocked',
+      'missing_phone',
+      'missing_registered_submission',
+      'policy_non_retryable'
+    ],
+    default: null,
+    index: true
+  },
+  retryExclusionAt: { type: Date, default: null },
+  retryExclusionMeta: {
+    nextAttempt: { type: Number, min: 2, max: 3, default: null },
+    attemptBatchId: { type: mongoose.Schema.Types.ObjectId, default: null },
+    note: { type: String, trim: true, maxlength: 200, default: null }
+  },
   sentAt: { type: Date, default: null },
   deliveredAt: { type: Date, default: null },
   readAt: { type: Date, default: null },

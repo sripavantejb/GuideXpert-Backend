@@ -421,11 +421,19 @@ async function applyWebhookToMessageEvent(doc, newStatus, opts) {
           })
         );
       }
+      set.retryExclusionReason = null;
+      set.retryExclusionAt = null;
+      set['retryExclusionMeta.nextAttempt'] = null;
+      set['retryExclusionMeta.attemptBatchId'] = null;
+      set['retryExclusionMeta.note'] = null;
       if (failureCode) set.webhookErrorCode = failureCode;
       if (failureReason) set.webhookErrorReason = failureReason;
     }
     if (newStatus === 'delivered' || newStatus === 'read') {
       set.retryEligible = false;
+      set.retryExclusionReason = 'already_delivered_or_read';
+      set.retryExclusionAt = receivedAt;
+      set['retryExclusionMeta.note'] = 'webhook_recovery';
     }
   }
 

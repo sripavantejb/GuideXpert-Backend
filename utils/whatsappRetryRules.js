@@ -55,6 +55,16 @@ const PERMANENT_FAILURE_PATTERNS = [
   /does not exist/i
 ];
 
+const RETRY_EXCLUSION_REASON = {
+  alreadyDeliveredOrRead: 'already_delivered_or_read',
+  duplicateRetryPrevented: 'duplicate_retry_prevented',
+  retryEligibilityDisabled: 'retry_eligibility_disabled',
+  cooldownBlocked: 'cooldown_blocked',
+  missingPhone: 'missing_phone',
+  missingRegisteredSubmission: 'missing_registered_submission',
+  policyNonRetryable: 'policy_non_retryable'
+};
+
 function getRetryPolicy(kind) {
   return RETRY_POLICIES[kind] || {
     strategy: 'multi_stage',
@@ -97,15 +107,46 @@ function filterRetryPromotionRows(failedStageRows, opts) {
   const promoted = new Set(alreadyPromotedPhones);
   const now = Date.now();
   const cutoff = now - (Number.isFinite(cooldownCutoffMs) ? cooldownCutoffMs : 0);
-  return failedStageRows.filter((r) => {
+  const includedRows = [];
+  const excludedRows = [];
+  const exclusionCounts = {};
+
+  function pushExcluded(r, reason) {
+    excludedRows.push({
+      phone: r && r.phone ? r.phone : null,
+      parentMessageEventId: r && r._id ? r._id : null,
+      reason
+    });
+    exclusionCounts[reason] = (exclusionCounts[reason] || 0) + 1;
+  }
+
+  failedStageRows.forEach((r) => {
     const p = r.phone;
-    if (!p || banned.has(p)) return false;
-    if (promoted.has(p)) return false;
-    if (r.retryEligible === false) return false;
+    if (!p) {
+      pushExcluded(r, RETRY_EXCLUSION_REASON.missingPhone);
+      return;
+    }
+    if (banned.has(p)) {
+      pushExcluded(r, RETRY_EXCLUSION_REASON.alreadyDeliveredOrRead);
+      return;
+    }
+    if (promoted.has(p)) {
+      pushExcluded(r, RETRY_EXCLUSION_REASON.duplicateRetryPrevented);
+      return;
+    }
+    if (r.retryEligible === false) {
+      pushExcluded(r, RETRY_EXCLUSION_REASON.retryEligibilityDisabled);
+      return;
+    }
     const t = new Date(r.failedAt || r.updatedAt || r.createdAt || now).getTime();
-    if (Number.isFinite(t) && t > cutoff) return false;
-    return true;
+    if (Number.isFinite(t) && t > cutoff) {
+      pushExcluded(r, RETRY_EXCLUSION_REASON.cooldownBlocked);
+      return;
+    }
+    includedRows.push(r);
   });
+
+  return { includedRows, excludedRows, exclusionCounts };
 }
 
 function retrySourceFromAttemptNumber(n) {
@@ -119,6 +160,7 @@ module.exports = {
   RETRY_POLICIES,
   TERMINAL_FAILURE_STATUSES,
   SUCCESS_TERMINAL_STATUSES,
+  RETRY_EXCLUSION_REASON,
   filterRetryPromotionRows,
   retrySourceFromAttemptNumber,
   getRetryPolicy,

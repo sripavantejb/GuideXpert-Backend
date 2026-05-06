@@ -526,6 +526,13 @@ exports.getCalendarDayOverview = async (req, res) => {
         inFlight: row.inFlight || 0
       };
     });
+    const retry2Exclusions = selectedKind ? await computeRetry2Exclusions(filteredMatch, byAttempt) : {
+      retry1Failed: 0,
+      retry2Targeted: 0,
+      totalExcluded: 0,
+      trackedExcluded: 0,
+      byReason: {}
+    };
 
     return res.json({
       success: true,
@@ -538,6 +545,7 @@ exports.getCalendarDayOverview = async (req, res) => {
         byKind,
         byStatus,
         byAttempt,
+        retry2Exclusions,
         uniqueRecipientsDeliveredRead: uniqDelivered[0]?.c || 0
       }
     });
@@ -1071,6 +1079,38 @@ function emptyAttemptBuckets() {
   };
 }
 
+async function computeRetry2Exclusions(match, byAttempt) {
+  const failedAtRetry1 = Number((byAttempt?.[2] || byAttempt?.['2'] || {}).failed || 0);
+  const targetedAtRetry2 = Number((byAttempt?.[3] || byAttempt?.['3'] || {}).targeted || 0);
+  const expectedGap = Math.max(0, failedAtRetry1 - targetedAtRetry2);
+  const rows = await WhatsAppMessageEvent.aggregate([
+    {
+      $match: {
+        ...match,
+        attemptNumber: 2,
+        retryExclusionReason: { $ne: null }
+      }
+    },
+    { $group: { _id: '$retryExclusionReason', count: { $sum: 1 } } }
+  ]);
+  const byReason = {};
+  rows.forEach((r) => {
+    byReason[r._id] = r.count || 0;
+  });
+  const trackedExcluded = Object.values(byReason).reduce((sum, n) => sum + (Number(n) || 0), 0);
+  const residualUnclassified = Math.max(0, expectedGap - trackedExcluded);
+  if (residualUnclassified > 0) {
+    byReason.unclassified = residualUnclassified;
+  }
+  return {
+    retry1Failed: failedAtRetry1,
+    retry2Targeted: targetedAtRetry2,
+    totalExcluded: expectedGap,
+    trackedExcluded,
+    byReason
+  };
+}
+
 exports.getAttemptAnalytics = async (req, res) => {
   try {
     const messageKind = req.query.messageKind ? String(req.query.messageKind).trim() : null;
@@ -1159,6 +1199,8 @@ exports.getAttemptAnalytics = async (req, res) => {
       };
     });
 
+    const retry2Exclusions = await computeRetry2Exclusions(match, byAttempt);
+
     return res.json({
       success: true,
       data: {
@@ -1166,6 +1208,7 @@ exports.getAttemptAnalytics = async (req, res) => {
         range: { from: range.from, to: range.to },
         retryPolicy: getRetryPolicy(messageKind),
         byAttempt,
+        retry2Exclusions,
         uniqueRecipientsDeliveredRead: facet.uniqDeliv?.[0]?.c || 0
       }
     });
