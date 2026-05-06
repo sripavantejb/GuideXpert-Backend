@@ -200,6 +200,7 @@ app.use('/api/webinar-assessment', webinarAssessmentRoutes);
 app.use('/api/webinar-progress', webinarProgressRoutes);
 app.use('/api/osvi', osviRoutes);
 app.use('/api/counsellor-support', counsellorSupportRoutes);
+// Gupshup app callback URL (production): POST https://<API_HOST>/webhook/gupshup — configure in Gupshup console; no admin auth.
 app.use('/webhook/gupshup', gupshupWebhookRoutes);
 
 app.use((req, res) => {

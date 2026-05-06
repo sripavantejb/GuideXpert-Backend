@@ -1,6 +1,15 @@
+const crypto = require('crypto');
+const mongoose = require('mongoose');
 const FormSubmission = require('../models/FormSubmission');
 const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');
 const WhatsAppWebhookEvent = require('../models/WhatsAppWebhookEvent');
+const {
+  messageEventIdMatchClause,
+  isLikelyGupshupInternalId,
+  isLikelyWaMessageId
+} = require('../utils/gupshupMessageIds');
+const { mapStageToDbStatus, canApplyWebhookStatus } = require('../utils/gupshupWebhookMonotonic');
+const { isRetryableFailure, isCampaignStrategy } = require('../utils/whatsappRetryRules');
 
 function sanitizeSnippet(raw, maxLen = 3800) {
   if (raw == null) return null;
@@ -9,21 +18,14 @@ function sanitizeSnippet(raw, maxLen = 3800) {
   return s.length > maxLen ? s.slice(0, maxLen) + '…' : s;
 }
 
-function mapDeliveryHintToEventStatus(deliveryHint) {
-  if (deliveryHint === 'read') return 'read';
-  if (deliveryHint === 'delivered') return 'delivered';
-  if (deliveryHint === 'failed') return 'failed';
-  return 'submitted';
-}
-
 function normalizeDeliveryHint(raw) {
   const v = raw == null ? '' : String(raw).trim().toLowerCase();
   if (!v) return null;
-  if (v === 'enqueued') return 'sent';
+  if (v === 'enqueued' || v === 'submitted') return 'submitted';
   if (v.includes('read')) return 'read';
   if (v.includes('delivered') || v.includes('delivery')) return 'delivered';
   if (v.includes('fail') || v.includes('error') || v.includes('undeliver')) return 'failed';
-  if (v.includes('sent') || v.includes('submit') || v.includes('enqueue') || v.includes('queued')) return 'sent';
+  if (v === 'sent' || v.includes('enqueue') || v.includes('queued')) return 'sent';
   return v;
 }
 
@@ -32,6 +34,54 @@ function normalizeEventType(raw) {
   if (!v) return null;
   if (['enqueued', 'sent', 'delivered', 'read', 'failed'].includes(v)) return v;
   return null;
+}
+
+/**
+ * Gupshup V2 message-event: outer `type` === `message-event`, inner stage in `payload.type`.
+ * @see https://docs.gupshup.io/docs/message-events
+ */
+function tryParseMessageEventBody(body) {
+  let root = body;
+  if (body && typeof body.payload === 'string') {
+    try {
+      root = JSON.parse(body.payload);
+    } catch {
+      return null;
+    }
+  }
+  if (!root || typeof root !== 'object') return null;
+  if (String(root.type || '').toLowerCase() !== 'message-event') return null;
+  const p = root.payload;
+  if (!p || typeof p !== 'object') return null;
+
+  const stage = normalizeEventType(p.type);
+  const gsId = p.gsId != null ? String(p.gsId).trim() : null;
+  const outerId = p.id != null ? String(p.id).trim() : null;
+  const dest = p.destination;
+  const digits = String(dest || '').replace(/\D/g, '');
+  const phone10 = digits.length >= 10 ? digits.slice(-10) : null;
+  const inner = p.payload && typeof p.payload === 'object' && !Array.isArray(p.payload) ? p.payload : {};
+  const metaTs = inner.ts != null && !Number.isNaN(Number(inner.ts)) ? Number(inner.ts) : null;
+  const failureCode = inner.code != null ? String(inner.code).slice(0, 32) : null;
+  const failureReason = inner.reason != null ? String(inner.reason).slice(0, 2000) : null;
+  const whatsappMessageFromInner =
+    inner.whatsappMessageId != null ? String(inner.whatsappMessageId).trim() : null;
+  const gupshupTimestamp = root.timestamp != null ? String(root.timestamp) : null;
+
+  const providerIds = [...new Set([gsId, outerId, whatsappMessageFromInner].filter(Boolean))];
+  return {
+    stage,
+    gsId,
+    outerId,
+    phone10,
+    metaTs,
+    failureCode,
+    failureReason,
+    whatsappMessageFromInner,
+    gupshupTimestamp,
+    providerIds,
+    deliveryHintForSubmission: stage ? normalizeDeliveryHint(stage) : null
+  };
 }
 
 /**
@@ -215,23 +265,202 @@ function extractWebhookFields(body) {
   };
 }
 
+function buildDedupeKey(explicit, extracted, receivedAt) {
+  const stage = explicit?.stage || extracted?.eventType || '';
+  const gsId = explicit?.gsId || extracted?.gsId || '';
+  const outerId = explicit?.outerId || extracted?.payloadId || '';
+  const phone = explicit?.phone10 || extracted?.phone10 || '';
+  const metaTs = explicit?.metaTs != null ? String(explicit.metaTs) : '';
+  const gts = explicit?.gupshupTimestamp || '';
+  const base = [stage, gsId, outerId, phone, metaTs, gts].join('|');
+  if (!base.replace(/\|/g, '')) {
+    const fallback = sanitizeSnippet({ e: extracted?.parseError, t: receivedAt.getTime() }, 500) || String(receivedAt.getTime());
+    return crypto.createHash('sha256').update(fallback, 'utf8').digest('hex').slice(0, 64);
+  }
+  return crypto.createHash('sha256').update(base, 'utf8').digest('hex').slice(0, 64);
+}
+
+function transitionTimestamp(explicit, receivedAt) {
+  if (explicit && explicit.metaTs != null && explicit.metaTs > 0) {
+    return new Date(explicit.metaTs * 1000);
+  }
+  return receivedAt;
+}
+
+function submissionHintRank(hint) {
+  const s = hint == null ? '' : String(hint).toLowerCase();
+  if (s.includes('read')) return 40;
+  if (s.includes('deliver')) return 30;
+  if (s.includes('sent') && !s.includes('submit')) return 20;
+  if (s.includes('submit') || s.includes('enqueued') || s === 'submitted') return 10;
+  if (s.includes('fail')) return 25;
+  return 0;
+}
+
+/** When outer `type` is not message-event, infer DB status from recursive parse hints. */
+function inferredStatusFromDeliveryHint(hint) {
+  if (!hint || hint === 'unknown') return null;
+  const h = String(hint).toLowerCase();
+  if (h === 'read') return 'read';
+  if (h === 'delivered') return 'delivered';
+  if (h === 'failed') return 'failed';
+  if (h === 'sent') return 'sent';
+  if (h === 'submitted') return 'submitted';
+  return null;
+}
+
+function mergeExplicitAndExtracted(explicit, extracted) {
+  const providerIds = [
+    ...new Set([
+      ...(explicit?.providerIds || []),
+      ...(extracted?.providerIds || [])
+    ].filter(Boolean))
+  ];
+  const phone10 = explicit?.phone10 || extracted?.phone10 || null;
+  const gsId = explicit?.gsId || extracted?.gsId || null;
+  const payloadId = explicit?.outerId || extracted?.payloadId || null;
+  const stage = explicit?.stage || extracted?.eventType || null;
+  const dbStatusFromStage = stage ? mapStageToDbStatus(stage) : null;
+  const deliveryHint =
+    explicit?.deliveryHintForSubmission ||
+    extracted?.deliveryHint ||
+    (stage ? normalizeDeliveryHint(stage) : null) ||
+    'unknown';
+  const statusRaw = stage || extracted?.statusRaw || null;
+  const parseError = extracted?.parseError || null;
+  const failureCode = explicit?.failureCode || null;
+  const failureReason = explicit?.failureReason || null;
+  const whatsappMessageFromInner = explicit?.whatsappMessageFromInner || null;
+  return {
+    providerIds,
+    phone10,
+    gsId,
+    payloadId,
+    stage,
+    dbStatusFromStage,
+    deliveryHint,
+    statusRaw,
+    parseError,
+    failureCode,
+    failureReason,
+    whatsappMessageFromInner
+  };
+}
+
+function buildIdPatchFromWebhook(doc, { gsId, outerId, whatsappMessageFromInner }) {
+  const set = {};
+  if (gsId && !doc.gupshupInternalMessageId && isLikelyGupshupInternalId(gsId)) {
+    set.gupshupInternalMessageId = gsId;
+  }
+  if (outerId) {
+    if (isLikelyWaMessageId(outerId) && !doc.whatsappWaMessageId) set.whatsappWaMessageId = outerId;
+    else if (isLikelyGupshupInternalId(outerId) && !doc.gupshupInternalMessageId) {
+      set.gupshupInternalMessageId = outerId;
+    }
+  }
+  if (whatsappMessageFromInner && !doc.whatsappWaMessageId) {
+    set.whatsappWaMessageId = whatsappMessageFromInner;
+  }
+  if (gsId && isLikelyGupshupInternalId(gsId) && !doc.gupshupMessageId) {
+    set.gupshupMessageId = gsId;
+  } else if (outerId && isLikelyGupshupInternalId(outerId) && !doc.gupshupMessageId) {
+    set.gupshupMessageId = outerId;
+  }
+  return set;
+}
+
+/**
+ * Apply monotonic status + first transition timestamps + id backfill from webhook.
+ * Enqueued events may only add provider ids while status stays `submitted`.
+ */
+async function applyWebhookToMessageEvent(doc, newStatus, opts) {
+  const {
+    receivedAt,
+    transitionTs,
+    failureCode,
+    failureReason,
+    gsId,
+    outerId,
+    whatsappMessageFromInner,
+    stage
+  } = opts;
+
+  const idPatch = buildIdPatchFromWebhook(doc, { gsId, outerId, whatsappMessageFromInner });
+  const statusMayChange = newStatus && canApplyWebhookStatus(doc.status, newStatus);
+  const enqueuedIdOnly =
+    String(stage || '').toLowerCase() === 'enqueued' &&
+    newStatus === 'submitted' &&
+    String(doc.status || '').toLowerCase() === 'submitted' &&
+    Object.keys(idPatch).length > 0;
+
+  if (!statusMayChange && !enqueuedIdOnly) {
+    return { modified: false, reason: 'monotonic_block' };
+  }
+
+  const set = {
+    ...idPatch,
+    updatedAt: receivedAt
+  };
+
+  if (statusMayChange) {
+    set.status = newStatus;
+    if (newStatus === 'sent' && !doc.sentAt) set.sentAt = transitionTs;
+    if (newStatus === 'delivered' && !doc.deliveredAt) set.deliveredAt = transitionTs;
+    if (newStatus === 'read' && !doc.readAt) set.readAt = transitionTs;
+    if (newStatus === 'failed') {
+      set.failedAt = transitionTs;
+      if (isCampaignStrategy(doc.messageKind)) {
+        set.retryEligible = true;
+      } else {
+        set.retryEligible = (
+          Number(doc.attemptNumber || 1) === 1 &&
+          isRetryableFailure(doc.messageKind, {
+            errorCode: failureCode,
+            errorReason: failureReason,
+            errorText: failureReason || doc.errorMessage
+          })
+        );
+      }
+      if (failureCode) set.webhookErrorCode = failureCode;
+      if (failureReason) set.webhookErrorReason = failureReason;
+    }
+    if (newStatus === 'delivered' || newStatus === 'read') {
+      set.retryEligible = false;
+    }
+  }
+
+  const res = await WhatsAppMessageEvent.updateOne(
+    { _id: doc._id },
+    { $set: set }
+  );
+  return { modified: (res.modifiedCount || 0) > 0, reason: 'updated' };
+}
+
 exports.ingestGupshupWebhook = async (req, res) => {
+  const receivedAt = new Date();
   try {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const explicit = tryParseMessageEventBody(body);
     const extracted = extractWebhookFields(body);
+    const merged = mergeExplicitAndExtracted(explicit, extracted);
     const {
-      gsId,
-      payloadId,
       providerIds,
       phone10,
+      gsId,
+      payloadId,
+      stage,
+      dbStatusFromStage,
+      deliveryHint,
       statusRaw,
-      eventType,
-      deliveryHint: extractedDeliveryHint,
-      parseError
-    } = extracted;
+      parseError,
+      failureCode,
+      failureReason,
+      whatsappMessageFromInner
+    } = merged;
 
-    const receivedAt = new Date();
+    const dedupeKey = buildDedupeKey(explicit, extracted, receivedAt);
     const rawPayloadSnippet = sanitizeSnippet(body);
+    const logBody = String(process.env.LOG_GUPSHUP_WEBHOOK_BODY || '').toLowerCase() === 'true';
 
     let formSubmissionId = null;
     let matchedBy = null;
@@ -239,7 +468,9 @@ exports.ingestGupshupWebhook = async (req, res) => {
     let matchedProviderId = null;
 
     if (providerIds.length > 0) {
-      const sub = await FormSubmission.findOne({ whatsappLastMessageId: { $in: providerIds } })
+      const sub = await FormSubmission.findOne({
+        whatsappLastMessageId: { $in: providerIds }
+      })
         .select('_id whatsappLastMessageId')
         .lean();
       if (sub) {
@@ -258,125 +489,152 @@ exports.ingestGupshupWebhook = async (req, res) => {
       }
     }
 
-    await WhatsAppWebhookEvent.create({
-      receivedAt,
-      messageId: matchedProviderId || gsId || payloadId || null,
-      phone: phone10 || null,
-      status: statusRaw || null,
-      formSubmissionId,
-      rawPayloadSnippet,
-      matchedBy,
-      matchConfidence,
-      parseError
-    });
+    let webhookEventDoc = null;
+    try {
+      webhookEventDoc = await WhatsAppWebhookEvent.create({
+        webhookDedupeKey: dedupeKey,
+        receivedAt,
+        messageId: matchedProviderId || gsId || payloadId || null,
+        phone: phone10 || null,
+        status: statusRaw || null,
+        formSubmissionId: formSubmissionId || null,
+        rawPayloadSnippet,
+        matchedBy: matchedBy || (explicit ? 'message_event' : 'recursive'),
+        matchConfidence: matchConfidence || (stage ? 'high' : 'low'),
+        parseError: parseError || null
+      });
+    } catch (e) {
+      if (e && (e.code === 11000 || String(e.message || '').includes('E11000'))) {
+        console.log('[Gupshup webhook] dedupe_skip', { dedupeKey: dedupeKey ? `${dedupeKey.slice(0, 12)}…` : null });
+        return res.status(200).json({ success: true, received: true, dedupe: true });
+      }
+      throw e;
+    }
 
-    const deliveryHint = extractedDeliveryHint || 'unknown';
-    const evtStatus = mapDeliveryHintToEventStatus(deliveryHint);
+    const transitionTs = transitionTimestamp(explicit, receivedAt);
+    const newStatus = dbStatusFromStage || inferredStatusFromDeliveryHint(deliveryHint);
     let updatePath = 'none';
     let updatedEventCount = 0;
     let resolvedMatchId = null;
 
-    if (providerIds.length > 0) {
-      const updateRes = await WhatsAppMessageEvent.updateMany(
-        { gupshupMessageId: { $in: providerIds } },
-        { $set: { status: evtStatus, updatedAt: receivedAt } }
-      );
-      updatedEventCount = updateRes?.modifiedCount || 0;
-      if (updatedEventCount > 0) {
-        updatePath = 'providerIds';
-        resolvedMatchId = providerIds.find(Boolean) || null;
+    let quarantineCandidateEventIds = [];
+    const tryUpdateDocs = async (query) => {
+      const docs = await WhatsAppMessageEvent.find(query).limit(25).lean();
+      quarantineCandidateEventIds = docs.map((d) => d._id).slice(0, 25);
+      if (docs.length > 1) {
+        console.warn('[Gupshup webhook] provider_id_multi_match', {
+          count: docs.length,
+          eventIds: docs.map((d) => String(d._id)).slice(0, 12),
+          attemptNumbers: docs.map((d) => d.attemptNumber).filter((x) => x != null)
+        });
       }
-    }
+      if (docs.length > 1) {
+        return 0;
+      }
+      let n = 0;
+      for (const d of docs) {
+        if (!newStatus) continue;
+        const r = await applyWebhookToMessageEvent(d, newStatus, {
+          receivedAt,
+          transitionTs,
+          failureCode,
+          failureReason,
+          gsId,
+          outerId: payloadId,
+          whatsappMessageFromInner,
+          stage
+        });
+        if (r.modified) {
+          n += 1;
+          resolvedMatchId = String(d._id);
+        }
+      }
+      return n;
+    };
 
-    if (updatedEventCount === 0 && formSubmissionId && phone10) {
-      const recentWindow = new Date(receivedAt.getTime() - 24 * 60 * 60 * 1000);
-      let targetEvent = await WhatsAppMessageEvent.findOne({
-        formSubmissionId,
-        phone: phone10,
-        createdAt: { $gte: recentWindow },
-        status: { $in: ['queued', 'submitted', 'retry_pending'] }
-      }).sort({ createdAt: -1 }).select('_id').lean();
-      if (!targetEvent) {
-        targetEvent = await WhatsAppMessageEvent.findOne({
-          formSubmissionId,
-          phone: phone10,
-          createdAt: { $gte: recentWindow }
-        }).sort({ createdAt: -1 }).select('_id').lean();
-      }
-      if (targetEvent?._id) {
-        const updateRes = await WhatsAppMessageEvent.updateOne(
-          { _id: targetEvent._id },
-          { $set: { status: evtStatus, updatedAt: receivedAt } }
-        );
-        updatedEventCount = updateRes?.modifiedCount || 0;
-        if (updatedEventCount > 0) {
-          updatePath = 'submissionPhoneFallback';
-          resolvedMatchId = String(targetEvent._id);
+    if (newStatus && providerIds.length > 0) {
+      const idClause = messageEventIdMatchClause(providerIds);
+      if (idClause) {
+        const n = await tryUpdateDocs(idClause);
+        updatedEventCount = n;
+        if (n > 0) {
+          updatePath = 'providerIds';
         }
       }
     }
 
-    if (updatedEventCount === 0 && phone10) {
-      const recentWindow = new Date(receivedAt.getTime() - 24 * 60 * 60 * 1000);
-      // Message-id-less (or wrong-id) webhooks are ambiguous. Update only one best candidate
-      // to avoid inflating delivered/read counts by touching every recent event.
-      let targetEvent = await WhatsAppMessageEvent.findOne({
-        phone: phone10,
-        createdAt: { $gte: recentWindow },
-        status: { $in: ['queued', 'submitted', 'retry_pending'] }
-      })
-        .sort({ createdAt: -1 })
-        .select('_id')
-        .lean();
-
-      if (!targetEvent) {
-        targetEvent = await WhatsAppMessageEvent.findOne({
-          phone: phone10,
-          createdAt: { $gte: recentWindow }
-        })
-          .sort({ createdAt: -1 })
-          .select('_id')
-          .lean();
-      }
-
-      if (targetEvent?._id) {
-        const updateRes = await WhatsAppMessageEvent.updateOne(
-          { _id: targetEvent._id },
-          { $set: { status: evtStatus, updatedAt: receivedAt } }
-        );
-        updatedEventCount = updateRes?.modifiedCount || 0;
-        if (updatedEventCount > 0) {
-          updatePath = 'phoneFallback';
-          resolvedMatchId = String(targetEvent._id);
-        }
-      }
+    if (newStatus && updatedEventCount === 0 && providerIds.length > 0) {
+      console.warn('[Gupshup webhook] no_message_event_matched', {
+        providerIds: providerIds.slice(0, 5),
+        stage: stage || null,
+        phoneSuffix: phone10 ? phone10.slice(-4) : null
+      });
     }
 
-    if (formSubmissionId) {
-      await FormSubmission.updateOne(
-        { _id: formSubmissionId },
+    if (webhookEventDoc && updatedEventCount === 0) {
+      const reason = providerIds.length > 0 ? 'provider_id_no_exact_match' : 'missing_provider_id';
+      await WhatsAppWebhookEvent.updateOne(
+        { _id: webhookEventDoc._id },
         {
           $set: {
-            whatsappDeliveryStatus: deliveryHint,
-            whatsappLastWebhookAt: receivedAt
+            isQuarantined: true,
+            quarantineReason: reason,
+            quarantineCandidateEventIds: quarantineCandidateEventIds,
+            resolvedMessageEventId: null,
+            resolvedBy: null
+          }
+        }
+      );
+      updatePath = 'quarantined_unmatched';
+    } else if (webhookEventDoc && updatedEventCount > 0) {
+      await WhatsAppWebhookEvent.updateOne(
+        { _id: webhookEventDoc._id },
+        {
+          $set: {
+            isQuarantined: false,
+            quarantineReason: null,
+            quarantineCandidateEventIds: [],
+            resolvedMessageEventId: resolvedMatchId && mongoose.Types.ObjectId.isValid(String(resolvedMatchId))
+              ? new mongoose.Types.ObjectId(String(resolvedMatchId))
+              : null,
+            resolvedBy: 'providerIds'
           }
         }
       );
     }
 
+    if (formSubmissionId && deliveryHint && updatedEventCount > 0) {
+      const sub = await FormSubmission.findById(formSubmissionId).select('whatsappDeliveryStatus').lean();
+      const prevRank = submissionHintRank(sub?.whatsappDeliveryStatus);
+      const nextRank = submissionHintRank(deliveryHint);
+      if (nextRank >= prevRank) {
+        await FormSubmission.updateOne(
+          { _id: formSubmissionId },
+          {
+            $set: {
+              whatsappDeliveryStatus: deliveryHint,
+              whatsappLastWebhookAt: receivedAt
+            }
+          }
+        );
+      }
+    }
+
     console.log('[Gupshup webhook]', {
       rawProviderIds: providerIds,
       resolvedMessageId: matchedProviderId || gsId || payloadId || '(none)',
-      eventType: eventType || null,
+      stage: stage || null,
       rawStatus: statusRaw || null,
       resolvedStatus: deliveryHint,
-      eventStatus: evtStatus,
+      eventStatus: newStatus || null,
       updatePath,
       resolvedMatchId,
       updatedEventCount,
+      quarantined: updatedEventCount === 0,
       phoneSuffix: phone10 ? phone10.slice(-4) : null,
       matchedBy,
-      parseError: parseError || null
+      parseError: parseError || null,
+      ...(logBody ? { bodySnippet: rawPayloadSnippet } : {})
     });
 
     return res.status(200).json({ success: true, received: true });

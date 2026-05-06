@@ -9,6 +9,7 @@ const {
   sendMeetLinkWhatsApp,
   sendReminder30MinWhatsApp
 } = require('../services/gupshupService');
+const WhatsAppRetryGroup = require('../models/WhatsAppRetryGroup');
 const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
 const { executeRetryWhatsAppBatch } = require('../services/retryWhatsAppBatch');
 const { isOsviConfigured } = require('../utils/osviService');
@@ -114,6 +115,12 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
     let whatsappReminderSucceeded = 0;
 
     if (smsResult.success) {
+      const waRetryGroup = await WhatsAppRetryGroup.create({
+        messageKind: 'pre4hr',
+        cronRunId: cronRun._id,
+        trigger: 'cron',
+        status: 'open'
+      });
       for (const user of usersToRemind) {
         whatsappReminderAttempted += 1;
         const waVars = buildSlotNotificationVariables(user);
@@ -125,7 +132,10 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
           source: 'cron',
           cronRunId: cronRun._id,
           cronJobKey: 'send_reminders',
-          sendFn: sendPre4HrReminderWhatsApp
+          sendFn: sendPre4HrReminderWhatsApp,
+          retryGroupId: waRetryGroup._id,
+          attemptNumber: 1,
+          attemptBatchId: cronRun._id
         });
         if (wa.success) whatsappReminderSucceeded += 1;
         else whatsappReminderFailed += 1;
@@ -241,6 +251,12 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
     let whatsappMeetSucceeded = 0;
 
     if (smsResult.success) {
+      const waRetryGroup = await WhatsAppRetryGroup.create({
+        messageKind: 'meet',
+        cronRunId: cronRun._id,
+        trigger: 'cron',
+        status: 'open'
+      });
       for (const user of usersToSendMeetLink) {
         whatsappMeetAttempted += 1;
         const waVars = buildSlotNotificationVariables(user, { withMeetingLink: true });
@@ -252,7 +268,10 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
           source: 'cron',
           cronRunId: cronRun._id,
           cronJobKey: 'send_meetlinks',
-          sendFn: sendMeetLinkWhatsApp
+          sendFn: sendMeetLinkWhatsApp,
+          retryGroupId: waRetryGroup._id,
+          attemptNumber: 1,
+          attemptBatchId: cronRun._id
         });
         if (wa.success) whatsappMeetSucceeded += 1;
         else whatsappMeetFailed += 1;
@@ -368,6 +387,12 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
     let whatsapp30Succeeded = 0;
 
     if (smsResult.success) {
+      const waRetryGroup = await WhatsAppRetryGroup.create({
+        messageKind: '30min',
+        cronRunId: cronRun._id,
+        trigger: 'cron',
+        status: 'open'
+      });
       for (const user of usersToSend30MinReminder) {
         whatsapp30Attempted += 1;
         const waVars = buildSlotNotificationVariables(user, { withMeetingLink: true });
@@ -379,7 +404,10 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
           source: 'cron',
           cronRunId: cronRun._id,
           cronJobKey: 'send_30min_reminders',
-          sendFn: sendReminder30MinWhatsApp
+          sendFn: sendReminder30MinWhatsApp,
+          retryGroupId: waRetryGroup._id,
+          attemptNumber: 1,
+          attemptBatchId: cronRun._id
         });
         if (wa.success) whatsapp30Succeeded += 1;
         else whatsapp30Failed += 1;

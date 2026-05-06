@@ -3,10 +3,20 @@ const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');
 const MessagingCronRun = require('../models/MessagingCronRun');
 const WhatsAppWebhookEvent = require('../models/WhatsAppWebhookEvent');
 const FormSubmission = require('../models/FormSubmission');
+const WhatsAppRetryGroup = require('../models/WhatsAppRetryGroup');
 const { buildSlotNotificationVariables } = require('../utils/slotNotificationFormatters');
 const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
 const gupshupService = require('../services/gupshupService');
 const { executeRetryWhatsAppBatch } = require('../services/retryWhatsAppBatch');
+const {
+  previewRetryPromotion,
+  executeRetryAttempt,
+  computeRetryCandidates
+} = require('../services/whatsappRetryOrchestrator');
+const {
+  getRetryPolicy,
+  isCampaignStrategy
+} = require('../utils/whatsappRetryRules');
 const { deriveSubmissionWaStatus } = require('../services/whatsappOpsStatus');
 const IST_OFFSET_MINUTES = 330;
 
@@ -81,10 +91,22 @@ function facetStatsPipeline(match) {
         total: [{ $count: 'c' }],
         byKind: [{ $group: { _id: '$messageKind', c: { $sum: 1 } } }],
         byStatus: [{ $group: { _id: '$status', c: { $sum: 1 } } }],
-        accepted: [{ $match: { status: 'submitted' } }, { $count: 'c' }],
+        /** Accepted by Gupshup (API success path), any lifecycle stage before terminal send-fail */
+        submittedAccepted: [{
+          $match: { status: { $in: ['submitted', 'sent', 'delivered', 'read'] } }
+        }, { $count: 'c' }],
+        /** Still awaiting DLR past `submitted` */
+        strictSubmitted: [{ $match: { status: 'submitted' } }, { $count: 'c' }],
+        /** Webhook `sent` or later */
+        sentCumulative: [{
+          $match: { status: { $in: ['sent', 'delivered', 'read'] } }
+        }, { $count: 'c' }],
+        /** Device delivery or read */
+        deliveredCumulative: [{
+          $match: { status: { $in: ['delivered', 'read'] } }
+        }, { $count: 'c' }],
+        readStrict: [{ $match: { status: 'read' } }, { $count: 'c' }],
         failed: [{ $match: { status: { $in: ['failed', 'retry_exhausted'] } } }, { $count: 'c' }],
-        delivered: [{ $match: { status: 'delivered' } }, { $count: 'c' }],
-        read: [{ $match: { status: 'read' } }, { $count: 'c' }],
         retryExhausted: [{ $match: { status: 'retry_exhausted' } }, { $count: 'c' }],
         retried: [{ $match: { retryCountSnapshot: { $gt: 0 } } }, { $count: 'c' }],
         slotBookedAttempts: [{ $match: { messageKind: 'slot_booked' } }, { $count: 'c' }]
@@ -96,10 +118,14 @@ function facetStatsPipeline(match) {
 function facetStatsToTotals(facet) {
   return {
     whatsappAttempts: facet.total?.[0]?.c || 0,
-    providerAcceptedCount: facet.accepted?.[0]?.c || 0,
+    /** Funnel: messages accepted by provider (not send-failed / exhausted) */
+    providerAcceptedCount: facet.submittedAccepted?.[0]?.c || 0,
+    strictSubmittedCount: facet.strictSubmitted?.[0]?.c || 0,
+    sentCount: facet.sentCumulative?.[0]?.c || 0,
     whatsappFailed: facet.failed?.[0]?.c || 0,
-    deliveredCount: facet.delivered?.[0]?.c || 0,
-    readCount: facet.read?.[0]?.c || 0,
+    /** Count of messages that reached device delivery (includes those later read) */
+    deliveredCount: facet.deliveredCumulative?.[0]?.c || 0,
+    readCount: facet.readStrict?.[0]?.c || 0,
     retried: facet.retried?.[0]?.c || 0,
     retryExhausted: facet.retryExhausted?.[0]?.c || 0,
     slotBookedAttempts: facet.slotBookedAttempts?.[0]?.c || 0
@@ -111,6 +137,7 @@ function mapEventStatusToDeliveryStatus(status) {
   if (s === 'read') return 'read';
   if (s === 'delivered') return 'delivered';
   if (s === 'failed' || s === 'retry_exhausted') return 'failed';
+  if (s === 'sent') return 'sent';
   if (s === 'submitted' || s === 'queued' || s === 'retry_pending') return 'submitted';
   return s || null;
 }
@@ -132,10 +159,10 @@ exports.getOpsMeta = (_req, res) => {
         'WHATSAPP_CRON_SCHEDULE_COPY'
       ],
       templateKinds: [
-        { id: 'slot_booked', label: 'Slot booked', description: 'Immediate confirmation after slot booking' },
-        { id: 'pre4hr', label: '4hr reminder', description: 'Reminder sent around 4 hours before slot' },
-        { id: 'meet', label: 'Meet link (~1hr)', description: 'Meeting link reminder sent around 1 hour before slot' },
-        { id: '30min', label: '30 min reminder', description: 'Final reminder sent around 30 minutes before slot' }
+        { id: 'slot_booked', label: 'Slot booked', description: 'Immediate confirmation after slot booking', retryPolicy: getRetryPolicy('slot_booked') },
+        { id: 'pre4hr', label: '4hr reminder', description: 'Reminder sent around 4 hours before slot', retryPolicy: getRetryPolicy('pre4hr') },
+        { id: 'meet', label: 'Meet link (~1hr)', description: 'Meeting link reminder sent around 1 hour before slot', retryPolicy: getRetryPolicy('meet') },
+        { id: '30min', label: '30 min reminder', description: 'Final reminder sent around 30 minutes before slot', retryPolicy: getRetryPolicy('30min') }
       ]
     }
   });
@@ -170,16 +197,19 @@ exports.getSummary = async (req, res) => {
           byKind: [{ $group: { _id: '$messageKind', c: { $sum: 1 } } }],
           byStatus: [{ $group: { _id: '$status', c: { $sum: 1 } } }],
           successes: [{
-            $match: { status: { $in: ['submitted', 'delivered', 'read'] } }
+            $match: { status: { $in: ['submitted', 'sent', 'delivered', 'read'] } }
           }, { $count: 'c' }],
-          accepted: [{
-            $match: { status: 'submitted' }
+          submittedAccepted: [{
+            $match: { status: { $in: ['submitted', 'sent', 'delivered', 'read'] } }
+          }, { $count: 'c' }],
+          sentCumulative: [{
+            $match: { status: { $in: ['sent', 'delivered', 'read'] } }
           }, { $count: 'c' }],
           failed: [{
             $match: { status: { $in: ['failed', 'retry_exhausted'] } }
           }, { $count: 'c' }],
           delivered: [{
-            $match: { status: 'delivered' }
+            $match: { status: { $in: ['delivered', 'read'] } }
           }, { $count: 'c' }],
           read: [{
             $match: { status: 'read' }
@@ -196,10 +226,11 @@ exports.getSummary = async (req, res) => {
 
     const total = msgAgg.total[0]?.c || 0;
     const successN = msgAgg.successes[0]?.c || 0;
-    const acceptedN = msgAgg.accepted[0]?.c || 0;
+    const acceptedN = msgAgg.submittedAccepted[0]?.c || 0;
     const failedN = msgAgg.failed[0]?.c || 0;
     const deliveredN = msgAgg.delivered[0]?.c || 0;
     const readN = msgAgg.read[0]?.c || 0;
+    const sentN = msgAgg.sentCumulative[0]?.c || 0;
     const retryExN = msgAgg.retryExhausted[0]?.c || 0;
     const retriedN = msgAgg.retried[0]?.c || 0;
 
@@ -245,6 +276,7 @@ exports.getSummary = async (req, res) => {
         whatsappAttempts: total,
         whatsappSuccessApprox: successN,
         providerAcceptedCount: acceptedN,
+        sentCount: sentN,
         whatsappFailed: failedN,
         deliveredCount: deliveredN,
         readCount: readN,
@@ -315,9 +347,22 @@ exports.getCalendarMonthOverview = async (req, res) => {
             },
             attempts: { $sum: 1 },
             failed: { $sum: { $cond: [{ $in: ['$status', ['failed', 'retry_exhausted']] }, 1, 0] } },
-            delivered: { $sum: { $cond: [{ $eq: ['$status', 'delivered'] }, 1, 0] } },
+            delivered: {
+              $sum: {
+                $cond: [{ $in: ['$status', ['delivered', 'read']] }, 1, 0]
+              }
+            },
             read: { $sum: { $cond: [{ $eq: ['$status', 'read'] }, 1, 0] } },
-            accepted: { $sum: { $cond: [{ $eq: ['$status', 'submitted'] }, 1, 0] } },
+            accepted: {
+              $sum: {
+                $cond: [{ $in: ['$status', ['submitted', 'sent', 'delivered', 'read']] }, 1, 0]
+              }
+            },
+            sent: {
+              $sum: {
+                $cond: [{ $in: ['$status', ['sent', 'delivered', 'read']] }, 1, 0]
+              }
+            },
             retried: { $sum: { $cond: [{ $gt: ['$retryCountSnapshot', 0] }, 1, 0] } }
           }
         }
@@ -342,6 +387,7 @@ exports.getCalendarMonthOverview = async (req, res) => {
         date: r._id.day,
         attempts: r.attempts || 0,
         accepted: r.accepted || 0,
+        sent: r.sent || 0,
         delivered: r.delivered || 0,
         read: r.read || 0,
         failed: r.failed || 0,
@@ -355,6 +401,7 @@ exports.getCalendarMonthOverview = async (req, res) => {
         date: day,
         attempts: 0,
         accepted: 0,
+        sent: 0,
         delivered: 0,
         read: 0,
         failed: 0,
@@ -370,6 +417,7 @@ exports.getCalendarMonthOverview = async (req, res) => {
       bookedSlotsCount: acc.bookedSlotsCount + (d.bookedSlotsCount || 0),
       attempts: acc.attempts + (d.attempts || 0),
       accepted: acc.accepted + (d.accepted || 0),
+      sent: acc.sent + (d.sent || 0),
       delivered: acc.delivered + (d.delivered || 0),
       read: acc.read + (d.read || 0),
       failed: acc.failed + (d.failed || 0),
@@ -378,6 +426,7 @@ exports.getCalendarMonthOverview = async (req, res) => {
       bookedSlotsCount: 0,
       attempts: 0,
       accepted: 0,
+      sent: 0,
       delivered: 0,
       read: 0,
       failed: 0,
@@ -398,6 +447,10 @@ exports.getCalendarMonthOverview = async (req, res) => {
   }
 };
 
+/**
+ * Day metrics bucket WhatsAppMessageEvent rows by IST calendar day of `createdAt` (send / row time),
+ * not by `deliveredAt` — see model for webhook transition timestamps.
+ */
 exports.getCalendarDayOverview = async (req, res) => {
   try {
     const dateIso = req.query.date || new Date().toISOString().slice(0, 10);
@@ -414,10 +467,44 @@ exports.getCalendarDayOverview = async (req, res) => {
     const baseMatch = { createdAt: { $gte: range.from, $lte: range.to } };
     const filteredMatch = { ...baseMatch, ...(selectedKind ? { messageKind: selectedKind } : {}) };
 
-    const [bookedSlotsCount, allFacet, filteredFacet] = await Promise.all([
+    const attemptFacet = [
+      { $match: filteredMatch },
+      {
+        $group: {
+          _id: '$attemptNumber',
+          targeted: { $sum: 1 },
+          submittedPlus: {
+            $sum: { $cond: [{ $in: ['$status', ['submitted', 'sent', 'delivered', 'read']] }, 1, 0] }
+          },
+          sentPlus: {
+            $sum: { $cond: [{ $in: ['$status', ['sent', 'delivered', 'read']] }, 1, 0] }
+          },
+          deliveredPlus: {
+            $sum: { $cond: [{ $in: ['$status', ['delivered', 'read']] }, 1, 0] }
+          },
+          readStrict: { $sum: { $cond: [{ $eq: ['$status', 'read'] }, 1, 0] } },
+          failed: {
+            $sum: { $cond: [{ $in: ['$status', ['failed', 'retry_exhausted']] }, 1, 0] }
+          },
+          inFlight: {
+            $sum: {
+              $cond: [{ $in: ['$status', ['queued', 'submitted', 'retry_pending', 'sent']] }, 1, 0]
+            }
+          }
+        }
+      }
+    ];
+
+    const [bookedSlotsCount, allFacet, filteredFacet, filteredByAttempt, uniqDelivered] = await Promise.all([
       FormSubmission.countDocuments({ 'step3Data.slotDate': { $gte: range.from, $lte: range.to } }),
       WhatsAppMessageEvent.aggregate(facetStatsPipeline(baseMatch)),
-      WhatsAppMessageEvent.aggregate(facetStatsPipeline(filteredMatch))
+      WhatsAppMessageEvent.aggregate(facetStatsPipeline(filteredMatch)),
+      WhatsAppMessageEvent.aggregate(attemptFacet),
+      WhatsAppMessageEvent.aggregate([
+        { $match: { ...filteredMatch, status: { $in: ['delivered', 'read'] } } },
+        { $group: { _id: '$phone' } },
+        { $count: 'c' }
+      ])
     ]);
 
     const allStats = allFacet[0] || {};
@@ -426,6 +513,19 @@ exports.getCalendarDayOverview = async (req, res) => {
     const filtered = facetStatsToTotals(filteredStats);
     const byKind = (allStats.byKind || []).map((x) => ({ kind: x._id, count: x.c }));
     const byStatus = (allStats.byStatus || []).map((x) => ({ status: x._id, count: x.c }));
+    const byAttempt = {};
+    (filteredByAttempt || []).forEach((row) => {
+      const key = row._id;
+      byAttempt[key] = {
+        targeted: row.targeted || 0,
+        submitted: row.submittedPlus || 0,
+        sent: row.sentPlus || 0,
+        delivered: row.deliveredPlus || 0,
+        read: row.readStrict || 0,
+        failed: row.failed || 0,
+        inFlight: row.inFlight || 0
+      };
+    });
 
     return res.json({
       success: true,
@@ -436,7 +536,9 @@ exports.getCalendarDayOverview = async (req, res) => {
         overall,
         selectedKindMetrics: filtered,
         byKind,
-        byStatus
+        byStatus,
+        byAttempt,
+        uniqueRecipientsDeliveredRead: uniqDelivered[0]?.c || 0
       }
     });
   } catch (e) {
@@ -504,8 +606,24 @@ exports.listMessages = async (req, res) => {
     }
     if (req.query.phone) base.phone = String(req.query.phone).replace(/\D/g, '').slice(-10);
     if (req.query.messageKind) base.messageKind = req.query.messageKind;
-    if (req.query.status) base.status = req.query.status;
+    if (req.query.status) {
+      const parts = String(req.query.status)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (parts.length > 1) base.status = { $in: parts };
+      else base.status = parts[0];
+    }
     if (req.query.cronJobKey) base.cronJobKey = req.query.cronJobKey;
+    if (req.query.retryGroupId && mongoose.Types.ObjectId.isValid(String(req.query.retryGroupId))) {
+      base.retryGroupId = new mongoose.Types.ObjectId(String(req.query.retryGroupId));
+    }
+    if (req.query.attemptNumber != null && req.query.attemptNumber !== '') {
+      const an = parseInt(String(req.query.attemptNumber), 10);
+      if (an >= 1 && an <= 3) base.attemptNumber = an;
+    }
+    if (req.query.retryEligible === 'true') base.retryEligible = true;
+    if (req.query.retryEligible === 'false') base.retryEligible = false;
     if (req.query.gupshupMessageId) base.gupshupMessageId = req.query.gupshupMessageId;
     if (Object.keys(base).length) clauses.push(base);
 
@@ -556,7 +674,7 @@ exports.listMessages = async (req, res) => {
         deliveryStatus,
         failureReason,
         retryCount,
-        sentAt: e.createdAt || null
+        sentAt: e.sentAt || e.createdAt || null
       };
     });
 
@@ -636,7 +754,7 @@ exports.retriesAnalytics = async (req, res) => {
 
     const retrySuccessMatch = {
       ...(from ? { createdAt: { $gte: from, $lte: to } } : {}),
-      status: { $in: ['submitted', 'delivered', 'read'] },
+      status: { $in: ['submitted', 'sent', 'delivered', 'read'] },
       retryCountSnapshot: { $gt: 0 }
     };
 
@@ -830,6 +948,232 @@ exports.manualResend = async (req, res) => {
   }
 };
 
+exports.previewRetries = async (req, res) => {
+  try {
+    const retryGroupId = req.query.retryGroupId;
+    const promoteToAttempt = parseInt(String(req.query.promoteToAttempt || req.query.promote || '2'), 10);
+    if (!retryGroupId || !mongoose.Types.ObjectId.isValid(String(retryGroupId))) {
+      return res.status(400).json({ success: false, message: 'Valid retryGroupId query param required' });
+    }
+    const group = await WhatsAppRetryGroup.findById(retryGroupId).select('messageKind').lean();
+    if (!group) return res.status(404).json({ success: false, message: 'Retry group not found' });
+    if (!isCampaignStrategy(group.messageKind)) {
+      return res.json({
+        success: true,
+        data: {
+          retryGroupId,
+          promoteToAttempt,
+          dupBlocked: true,
+          candidateCount: 0,
+          phonesSample: [],
+          blockedReason: 'slot_booked_uses_immediate_retry_only'
+        }
+      });
+    }
+    const data = await previewRetryPromotion(retryGroupId, promoteToAttempt);
+    return res.json({ success: true, data });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+exports.executeRetries = async (req, res) => {
+  try {
+    const confirm = req.headers['x-whatsapps-confirm'] || req.headers['x-whatsapp-ops-confirm'];
+    if (!confirm || String(confirm).trim().toUpperCase() !== 'RETRY') {
+      return res.status(403).json({
+        success: false,
+        message: 'Send header x-whatsapp-ops-confirm: RETRY'
+      });
+    }
+
+    const { retryGroupId, promoteToAttempt } = req.body || {};
+    let attemptBatchId = req.body && req.body.attemptBatchId;
+    if (!retryGroupId || !mongoose.Types.ObjectId.isValid(String(retryGroupId))) {
+      return res.status(400).json({ success: false, message: 'retryGroupId required in body' });
+    }
+    const group = await WhatsAppRetryGroup.findById(retryGroupId).select('messageKind').lean();
+    if (!group) return res.status(404).json({ success: false, message: 'Retry group not found' });
+    if (!isCampaignStrategy(group.messageKind)) {
+      return res.status(400).json({
+        success: false,
+        message: 'slot_booked is transactional and does not support campaign retry execute'
+      });
+    }
+    const pta = parseInt(String(promoteToAttempt || ''), 10);
+    if (pta !== 2 && pta !== 3) {
+      return res.status(400).json({ success: false, message: 'promoteToAttempt must be 2 or 3' });
+    }
+    if (attemptBatchId != null && attemptBatchId !== '' && !mongoose.Types.ObjectId.isValid(String(attemptBatchId))) {
+      return res.status(400).json({ success: false, message: 'Invalid attemptBatchId' });
+    }
+    if (attemptBatchId) {
+      attemptBatchId = new mongoose.Types.ObjectId(String(attemptBatchId));
+    }
+
+    const data = await executeRetryAttempt({
+      retryGroupId,
+      nextAttempt: pta,
+      attemptBatchId: attemptBatchId || undefined,
+      source: 'retry_api',
+      cronRunId: null,
+      cronJobKey: null,
+      requireRegistered: true
+    });
+
+    return res.json({ success: true, data });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+exports.getRetryGroupDetail = async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!mongoose.Types.ObjectId.isValid(String(id))) {
+      return res.status(400).json({ success: false, message: 'Invalid id' });
+    }
+    const group = await WhatsAppRetryGroup.findById(id).lean();
+    if (!group) return res.status(404).json({ success: false, message: 'Not found' });
+
+    const [c1, c2, c3, next2, next3] = await Promise.all([
+      WhatsAppMessageEvent.countDocuments({ retryGroupId: group._id, attemptNumber: 1 }),
+      WhatsAppMessageEvent.countDocuments({ retryGroupId: group._id, attemptNumber: 2 }),
+      WhatsAppMessageEvent.countDocuments({ retryGroupId: group._id, attemptNumber: 3 }),
+      computeRetryCandidates(group._id, 1),
+      computeRetryCandidates(group._id, 2)
+    ]);
+
+    return res.json({
+      success: true,
+      data: {
+        group,
+        retryPolicy: getRetryPolicy(group.messageKind),
+        countsByAttempt: { 1: c1, 2: c2, 3: c3 },
+        previewNextAttempt2: { candidateCount: next2.candidateCount },
+        previewNextAttempt3: { candidateCount: next3.candidateCount }
+      }
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+function emptyAttemptBuckets() {
+  return {
+    targeted: 0,
+    submitted: 0,
+    sent: 0,
+    delivered: 0,
+    read: 0,
+    failed: 0,
+    inFlight: 0
+  };
+}
+
+exports.getAttemptAnalytics = async (req, res) => {
+  try {
+    const messageKind = req.query.messageKind ? String(req.query.messageKind).trim() : null;
+    if (!messageKind || !ALLOWED_MESSAGE_KINDS.includes(messageKind)) {
+      return res.status(400).json({
+        success: false,
+        message: `messageKind query param required. Allowed: ${ALLOWED_MESSAGE_KINDS.join(', ')}`
+      });
+    }
+    const dateIso = req.query.date ? String(req.query.date).trim().slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const range = istDayRangeFromIso(dateIso);
+    if (!range) return res.status(400).json({ success: false, message: 'Invalid date. Use YYYY-MM-DD (IST anchor)' });
+
+    const match = {
+      createdAt: { $gte: range.from, $lte: range.to },
+      messageKind
+    };
+
+    if (req.query.retryGroupId && mongoose.Types.ObjectId.isValid(String(req.query.retryGroupId))) {
+      match.retryGroupId = new mongoose.Types.ObjectId(String(req.query.retryGroupId));
+    }
+    if (req.query.attemptNumber != null && req.query.attemptNumber !== '') {
+      const an = parseInt(String(req.query.attemptNumber), 10);
+      if (an >= 1 && an <= 3) match.attemptNumber = an;
+    }
+
+    const rows = await WhatsAppMessageEvent.aggregate([
+      { $match: match },
+      {
+        $facet: {
+          perAttempt: [
+            {
+              $group: {
+                _id: '$attemptNumber',
+                targeted: { $sum: 1 },
+                submitted: {
+                  $sum: {
+                    $cond: [{ $in: ['$status', ['submitted', 'sent', 'delivered', 'read']] }, 1, 0]
+                  }
+                },
+                sent: {
+                  $sum: { $cond: [{ $in: ['$status', ['sent', 'delivered', 'read']] }, 1, 0] }
+                },
+                delivered: {
+                  $sum: { $cond: [{ $in: ['$status', ['delivered', 'read']] }, 1, 0] }
+                },
+                read: { $sum: { $cond: [{ $eq: ['$status', 'read'] }, 1, 0] } },
+                failed: {
+                  $sum: { $cond: [{ $in: ['$status', ['failed', 'retry_exhausted']] }, 1, 0] }
+                },
+                inFlight: {
+                  $sum: {
+                    $cond: [{ $in: ['$status', ['queued', 'submitted', 'retry_pending', 'sent']] }, 1, 0]
+                  }
+                }
+              }
+            }
+          ],
+          uniqDeliv: [
+            { $match: { status: { $in: ['delivered', 'read'] } } },
+            { $group: { _id: '$phone' } },
+            { $count: 'c' }
+          ]
+        }
+      }
+    ]);
+
+    const facet = rows[0] || {};
+    const byAttemptRaw = facet.perAttempt || [];
+    const byAttempt = {
+      1: emptyAttemptBuckets(),
+      2: emptyAttemptBuckets(),
+      3: emptyAttemptBuckets()
+    };
+    byAttemptRaw.forEach((row) => {
+      const k = row._id;
+      if (!byAttempt[k]) return;
+      byAttempt[k] = {
+        targeted: row.targeted || 0,
+        submitted: row.submitted || 0,
+        sent: row.sent || 0,
+        delivered: row.delivered || 0,
+        read: row.read || 0,
+        failed: row.failed || 0,
+        inFlight: row.inFlight || 0
+      };
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        filter: { date: range.isoDate, messageKind, retryGroupId: match.retryGroupId || null, attemptNumber: match.attemptNumber || null },
+        range: { from: range.from, to: range.to },
+        retryPolicy: getRetryPolicy(messageKind),
+        byAttempt,
+        uniqueRecipientsDeliveredRead: facet.uniqDeliv?.[0]?.c || 0
+      }
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
 exports.triggerRetryBatch = async (req, res) => {
   try {
     const confirm = req.headers['x-whatsapps-confirm'] || req.headers['x-whatsapp-ops-confirm'];
@@ -862,6 +1206,7 @@ exports.triggerRetryBatch = async (req, res) => {
             success: true,
             stats: {
               found: batch.found,
+              groupsTouched: batch.groupsTouched,
               smsSent: 0,
               smsFailed: 0,
               waAttempted: batch.attempted,

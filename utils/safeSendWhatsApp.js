@@ -1,30 +1,23 @@
 /**
  * Non-blocking WhatsApp send with FormSubmission retry fields + WhatsAppMessageEvent audit row.
  */
+const crypto = require('crypto');
+const mongoose = require('mongoose');
 const FormSubmission = require('../models/FormSubmission');
 const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');
+const WhatsAppRetryGroup = require('../models/WhatsAppRetryGroup');
 const { getTemplateMetaForKind } = require('./whatsappTemplateMeta');
+const { parseGupshupTemplateSendResponse } = require('./gupshupMessageIds');
+const {
+  retrySourceFromAttemptNumber,
+  isImmediateOnlyStrategy,
+  isRetryableFailure
+} = require('./whatsappRetryRules');
 
 function maskPhone(phone10) {
   const s = String(phone10 || '').replace(/\D/g, '');
   const last4 = s.slice(-4);
   return last4.length === 4 ? `****${last4}` : '****';
-}
-
-function extractMessageId(result) {
-  const d = result && result.data;
-  if (!d || typeof d !== 'object') return undefined;
-  const candidates = [
-    d.messageId,
-    d.message_id,
-    d.id,
-    d.msgId,
-    d.gsId,
-    d?.data?.messageId,
-    d?.data?.id
-  ];
-  const id = candidates.find((x) => x != null && x !== '');
-  return id != null && id !== '' ? String(id) : undefined;
 }
 
 function summarizeVars(vars) {
@@ -48,17 +41,130 @@ function providerPayloadSnippet(result, max = 1000) {
   }
 }
 
+function mapSourceToGroupTrigger(source) {
+  switch (source) {
+    case 'save_step3':
+      return 'save_step3';
+    case 'cron':
+      return 'cron';
+    case 'retry_cron':
+      return 'cron';
+    case 'admin_manual':
+      return 'manual';
+    case 'retry_api':
+      return 'retry_api';
+    default:
+      return 'manual';
+  }
+}
+
+async function resolveRetryGroupId({ retryGroupId, messageKind, cronRunId, source }) {
+  if (retryGroupId && mongoose.Types.ObjectId.isValid(String(retryGroupId))) {
+    return new mongoose.Types.ObjectId(String(retryGroupId));
+  }
+  const g = await WhatsAppRetryGroup.create({
+    messageKind,
+    cronRunId: cronRunId || null,
+    trigger: mapSourceToGroupTrigger(source),
+    status: 'open'
+  });
+  return g._id;
+}
+
+function toOidMaybe(value) {
+  if (value != null && mongoose.Types.ObjectId.isValid(String(value))) {
+    return new mongoose.Types.ObjectId(String(value));
+  }
+  return null;
+}
+
+function buildMessageEventPayload({
+  phone10,
+  subId,
+  retryKind,
+  cronRunId,
+  cronJobKey,
+  source,
+  templateIdEnvKey,
+  templateId,
+  messageId,
+  ids,
+  payloadSnippet,
+  now,
+  status,
+  retrySnap,
+  errText,
+  retryGroupId,
+  attemptNumber,
+  parentOid,
+  attemptBatchOid,
+  retrySourceLabel,
+  retryEligible,
+  correlationId
+}) {
+  return {
+    phone: phone10,
+    formSubmissionId: subId,
+    messageKind: retryKind,
+    cronRunId: cronRunId || null,
+    cronJobKey: cronJobKey || null,
+    source,
+    templateIdEnvKey,
+    templateId,
+    gupshupMessageId: messageId,
+    gupshupInternalMessageId: ids.gupshupInternalMessageId || null,
+    whatsappWaMessageId: ids.whatsappWaMessageId || null,
+    providerAcceptedAt: status === 'submitted' || messageId ? now : null,
+    providerPayloadSnippet: payloadSnippet,
+    status,
+    retryCountSnapshot: retrySnap,
+    errorMessage: errText ? errText.slice(0, 2000) : null,
+    retryGroupId,
+    attemptNumber,
+    parentMessageEventId: parentOid,
+    attemptBatchId: attemptBatchOid,
+    retrySource: retrySourceLabel,
+    retryEligible,
+    correlationId: correlationId || null
+  };
+}
+
+async function persistAttemptEvent(payload) {
+  const key = {
+    retryGroupId: payload.retryGroupId,
+    phone: payload.phone,
+    attemptNumber: payload.attemptNumber
+  };
+  if (payload.attemptNumber > 1 && payload.retryGroupId) {
+    await WhatsAppMessageEvent.updateOne(
+      key,
+      {
+        $set: payload,
+        $setOnInsert: { createdAt: payload.createdAt || new Date() }
+      },
+      { upsert: true }
+    );
+    return;
+  }
+  await WhatsAppMessageEvent.create(payload);
+}
+
 /**
  * @param {object} opts
  * @param {string} opts.phone10
  * @param {string} [opts.formSubmissionId]
  * @param {object} opts.vars
  * @param {'slot_booked'|'pre4hr'|'meet'|'30min'} opts.retryKind
- * @param {'save_step3'|'cron'|'retry_cron'|'admin_manual'} opts.source
+ * @param {'save_step3'|'cron'|'retry_cron'|'admin_manual'|'retry_api'} opts.source
  * @param {import('mongoose').Types.ObjectId|null} [opts.cronRunId]
  * @param {string|null} [opts.cronJobKey]
  * @param {(phone10: string, vars: object) => Promise<{ success: boolean, data?: object, error?: string }>} opts.sendFn
- * @returns {Promise<{ success: boolean, error?: string }>}
+ * @param {import('mongoose').Types.ObjectId|null} [opts.retryGroupId]
+ * @param {number} [opts.attemptNumber]
+ * @param {import('mongoose').Types.ObjectId|null} [opts.parentMessageEventId]
+ * @param {import('mongoose').Types.ObjectId|null} [opts.attemptBatchId]
+ * @param {string|null} [opts.correlationId]
+ * @returns {Promise<{ success: boolean, error?: string, retryGroupId?: import('mongoose').Types.ObjectId }>}
  */
 async function safeSendWhatsApp({
   phone10,
@@ -68,10 +174,20 @@ async function safeSendWhatsApp({
   source,
   cronRunId,
   cronJobKey,
-  sendFn
+  sendFn,
+  retryGroupId: retryGroupIdOpt,
+  attemptNumber: attemptNumberOpt,
+  parentMessageEventId,
+  attemptBatchId: attemptBatchIdOpt,
+  correlationId: correlationIdOpt
 }) {
   const { templateIdEnvKey, templateId } = getTemplateMetaForKind(retryKind);
   const varSummary = summarizeVars(vars);
+
+  const attNum = Math.min(3, Math.max(1, parseInt(String(attemptNumberOpt ?? 1), 10) || 1));
+  const retrySourceLabel = retrySourceFromAttemptNumber(attNum);
+  const correlationId = correlationIdOpt || crypto.randomUUID();
+  let resolvedGroupId = null;
 
   try {
     if (typeof sendFn !== 'function') {
@@ -79,10 +195,24 @@ async function safeSendWhatsApp({
       return { success: false, error: 'sendFn missing' };
     }
 
+    resolvedGroupId = await resolveRetryGroupId({
+      retryGroupId: retryGroupIdOpt,
+      messageKind: retryKind,
+      cronRunId,
+      source
+    });
+    const parentOid = toOidMaybe(parentMessageEventId);
+    let attemptBatchOid = toOidMaybe(attemptBatchIdOpt);
+    if (!attemptBatchOid && attNum === 1 && cronRunId) {
+      attemptBatchOid = toOidMaybe(cronRunId);
+    }
+
     console.log(
       '[WhatsApp] attempt',
       maskPhone(phone10),
       `type=${retryKind}`,
+      `attempt=${attNum}`,
+      `group=${String(resolvedGroupId)}`,
       `templateKey=${templateIdEnvKey || 'n/a'}`,
       `templateId=${templateId || 'missing'}`,
       `vars=${JSON.stringify(varSummary)}`
@@ -97,8 +227,17 @@ async function safeSendWhatsApp({
 
     const result = await sendFn(phone10, vars);
     const now = new Date();
-    const messageId = extractMessageId(result);
+    const ids = parseGupshupTemplateSendResponse(result && result.data);
+    const messageId = ids.canonicalMessageId || null;
     const payloadSnippet = providerPayloadSnippet(result);
+    if (result && result.success && !messageId) {
+      console.warn('[WhatsApp] send_ok_but_no_provider_id', {
+        mask: maskPhone(phone10),
+        type: retryKind,
+        templateId: templateId || null,
+        templateKey: templateIdEnvKey || null
+      });
+    }
 
     let subId = formSubmissionId;
     if (!subId) {
@@ -108,9 +247,8 @@ async function safeSendWhatsApp({
 
     if (result && result.success) {
       const prior = await FormSubmission.findOne({ phone: phone10 }).select('whatsappRetryCount').lean();
-      const retrySnapOnSuccess = prior && Number.isFinite(prior.whatsappRetryCount)
-        ? prior.whatsappRetryCount
-        : 0;
+      const retrySnapOnSuccess =
+        prior && Number.isFinite(prior.whatsappRetryCount) ? prior.whatsappRetryCount : 0;
 
       const setDoc = {
         whatsappRetryCount: 0,
@@ -123,61 +261,91 @@ async function safeSendWhatsApp({
       }
       await FormSubmission.updateOne({ phone: phone10 }, { $set: setDoc });
 
-      await WhatsAppMessageEvent.create({
-        phone: phone10,
-        formSubmissionId: subId,
-        messageKind: retryKind,
-        cronRunId: cronRunId || null,
-        cronJobKey: cronJobKey || null,
+      await persistAttemptEvent(
+        buildMessageEventPayload({
+          phone10,
+          subId,
+          retryKind,
+          cronRunId,
+          cronJobKey,
+          source,
+          templateIdEnvKey,
+          templateId,
+          messageId,
+          ids,
+          payloadSnippet,
+          now,
+          status: 'submitted',
+          retrySnap: retrySnapOnSuccess,
+          errText: null,
+          retryGroupId: resolvedGroupId,
+          attemptNumber: attNum,
+          parentOid,
+          attemptBatchOid,
+          retrySourceLabel,
+          retryEligible: false,
+          correlationId
+        })
+      );
+
+      console.log('[WhatsApp] success', maskPhone(phone10), `type=${retryKind}`);
+      return { success: true, retryGroupId: resolvedGroupId };
+    }
+
+    const errText = result && result.error ? String(result.error) : 'send failed';
+    const providerDebug = providerPayloadSnippet(result, 500) || '';
+
+    let snap = attNum > 1 ? attNum - 1 : null;
+    if (attNum === 1) {
+      const subBefore = await FormSubmission.findOneAndUpdate(
+        { phone: phone10 },
+        {
+          $inc: { whatsappRetryCount: 1 },
+          $set: {
+            whatsappRetryKind: retryKind,
+            lastWhatsappAttemptAt: now,
+            whatsappLastError: errText.slice(0, 2000)
+          }
+        },
+        { new: true, select: 'whatsappRetryCount' }
+      );
+      snap = subBefore ? subBefore.whatsappRetryCount : null;
+    }
+
+    const immediateOnly = isImmediateOnlyStrategy(retryKind);
+    const transientRetryable = isRetryableFailure(retryKind, { errorText: errText });
+    const derivedStatus =
+      (immediateOnly && attNum >= 2) || (!transientRetryable && immediateOnly) || attNum >= 3
+        ? 'retry_exhausted'
+        : 'failed';
+    const rowRetryEligible = immediateOnly ? (attNum === 1 && transientRetryable) : true;
+
+    await persistAttemptEvent(
+      buildMessageEventPayload({
+        phone10,
+        subId,
+        retryKind,
+        cronRunId,
+        cronJobKey,
         source,
         templateIdEnvKey,
         templateId,
-        gupshupMessageId: messageId || null,
-        providerAcceptedAt: now,
-        providerPayloadSnippet: payloadSnippet,
-        status: 'submitted',
-        retryCountSnapshot: retrySnapOnSuccess,
-        errorMessage: null
-      });
-
-      console.log('[WhatsApp] success', maskPhone(phone10), `type=${retryKind}`);
-      return { success: true };
-    }
-
-    const errText = (result && result.error) ? String(result.error) : 'send failed';
-    const providerDebug = providerPayloadSnippet(result, 500) || '';
-
-    const subBefore = await FormSubmission.findOneAndUpdate(
-      { phone: phone10 },
-      {
-        $inc: { whatsappRetryCount: 1 },
-        $set: {
-          whatsappRetryKind: retryKind,
-          lastWhatsappAttemptAt: now,
-          whatsappLastError: errText.slice(0, 2000)
-        }
-      },
-      { new: true, select: 'whatsappRetryCount' }
+        messageId: null,
+        ids,
+        payloadSnippet: providerDebug || null,
+        now,
+        status: derivedStatus,
+        retrySnap: snap,
+        errText,
+        retryGroupId: resolvedGroupId,
+        attemptNumber: attNum,
+        parentOid,
+        attemptBatchOid,
+        retrySourceLabel,
+        retryEligible: rowRetryEligible,
+        correlationId
+      })
     );
-
-    const snap = subBefore ? subBefore.whatsappRetryCount : null;
-    const derivedStatus =
-      snap != null && snap >= 3 ? 'retry_exhausted' : 'failed';
-
-    await WhatsAppMessageEvent.create({
-      phone: phone10,
-      formSubmissionId: subId,
-      messageKind: retryKind,
-      cronRunId: cronRunId || null,
-        cronJobKey: cronJobKey || null,
-      source,
-      templateIdEnvKey,
-      templateId,
-      gupshupMessageId: null,
-      status: derivedStatus === 'retry_exhausted' ? 'retry_exhausted' : 'failed',
-      retryCountSnapshot: snap,
-      errorMessage: errText.slice(0, 2000)
-    });
 
     console.warn(
       '[WhatsApp] failure',
@@ -186,47 +354,82 @@ async function safeSendWhatsApp({
       errText,
       providerDebug ? `provider=${providerDebug}` : ''
     );
-    return { success: false, error: errText };
+    return { success: false, error: errText, retryGroupId: resolvedGroupId };
   } catch (e) {
     const msg = e && e.message ? String(e.message) : 'unknown error';
     const now = new Date();
     try {
+      if (!resolvedGroupId) {
+        resolvedGroupId = await resolveRetryGroupId({
+          retryGroupId: retryGroupIdOpt,
+          messageKind: retryKind,
+          cronRunId,
+          source
+        });
+      }
+      const parentOidInner = toOidMaybe(parentMessageEventId);
+      let attemptBatchOidInner = toOidMaybe(attemptBatchIdOpt);
+      if (!attemptBatchOidInner && attNum === 1 && cronRunId) {
+        attemptBatchOidInner = toOidMaybe(cronRunId);
+      }
+
       let subId = formSubmissionId;
       if (!subId) {
         const sub = await FormSubmission.findOne({ phone: phone10 }).select('_id').lean();
         subId = sub ? sub._id : null;
       }
 
-      const subBefore = await FormSubmission.findOneAndUpdate(
-        { phone: phone10 },
-        {
-          $inc: { whatsappRetryCount: 1 },
-          $set: {
-            whatsappRetryKind: retryKind,
-            lastWhatsappAttemptAt: now,
-            whatsappLastError: msg.slice(0, 2000)
-          }
-        },
-        { new: true, select: 'whatsappRetryCount' }
-      );
+      let snap = attNum > 1 ? attNum - 1 : null;
+      if (attNum === 1) {
+        const subBefore = await FormSubmission.findOneAndUpdate(
+          { phone: phone10 },
+          {
+            $inc: { whatsappRetryCount: 1 },
+            $set: {
+              whatsappRetryKind: retryKind,
+              lastWhatsappAttemptAt: now,
+              whatsappLastError: msg.slice(0, 2000)
+            }
+          },
+          { new: true, select: 'whatsappRetryCount' }
+        );
+        snap = subBefore ? subBefore.whatsappRetryCount : null;
+      }
 
-      const snap = subBefore ? subBefore.whatsappRetryCount : null;
+      const immediateOnly = isImmediateOnlyStrategy(retryKind);
+      const transientRetryable = isRetryableFailure(retryKind, { errorText: msg });
       const evtStatus =
-        snap != null && snap >= 3 ? 'retry_exhausted' : 'failed';
+        (immediateOnly && attNum >= 2) || (!transientRetryable && immediateOnly) || attNum >= 3
+          ? 'retry_exhausted'
+          : 'failed';
+      const rowRetryEligible = immediateOnly ? (attNum === 1 && transientRetryable) : true;
 
-      await WhatsAppMessageEvent.create({
-        phone: phone10,
-        formSubmissionId: subId,
-        messageKind: retryKind,
-        cronRunId: cronRunId || null,
-        cronJobKey: cronJobKey || null,
-        source,
-        templateIdEnvKey,
-        templateId,
-        status: evtStatus,
-        retryCountSnapshot: snap,
-        errorMessage: msg.slice(0, 2000)
-      });
+      await persistAttemptEvent(
+        buildMessageEventPayload({
+          phone10,
+          subId,
+          retryKind,
+          cronRunId,
+          cronJobKey,
+          source,
+          templateIdEnvKey,
+          templateId,
+          messageId: null,
+          ids: {},
+          payloadSnippet: null,
+          now,
+          status: evtStatus,
+          retrySnap: snap,
+          errText: msg,
+          retryGroupId: resolvedGroupId,
+          attemptNumber: attNum,
+          parentOid: parentOidInner,
+          attemptBatchOid: attemptBatchOidInner,
+          retrySourceLabel,
+          retryEligible: rowRetryEligible,
+          correlationId
+        })
+      );
     } catch (inner) {
       console.warn('[WhatsApp] failure', maskPhone(phone10), `type=${retryKind}`, msg, '| persist:', inner.message);
       return { success: false, error: msg };

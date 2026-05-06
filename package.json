@@ -17,7 +17,10 @@
     "migrate:iit-counselling": "node scripts/migrateIitCounsellingToDedicatedCollection.js",
     "migrate:iit-counselling:delete-source": "node scripts/migrateIitCounsellingToDedicatedCollection.js --delete-source",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "test:poster-track": "node scripts/testPosterTrackKeys.js"
+    "test:poster-track": "node scripts/testPosterTrackKeys.js",
+    "test:gupshup-webhook": "node --test test/gupshupWebhookFlow.test.js",
+    "test:whatsapp-retry-rules": "node --test test/whatsappRetryRules.test.js",
+    "backfill:wa-retry-groups": "node scripts/backfillWhatsAppMessageEventRetryGroups.js"
   },
   "repository": {
     "type": "git",

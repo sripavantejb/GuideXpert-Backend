@@ -165,7 +165,7 @@ const formSubmissionSchema = new mongoose.Schema({
     type: String,
     trim: true,
     default: null,
-    maxlength: 128
+    maxlength: 256
   },
   whatsappDeliveryStatus: {
     type: String,

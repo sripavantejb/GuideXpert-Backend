@@ -17,6 +17,7 @@ const WebsiteLogin = require('../models/WebsiteLogin');
 const IitCounsellingVisit = require('../models/IitCounsellingVisit');
 const SlotConfig = require('../models/SlotConfig');
 const SlotDateOverride = require('../models/SlotDateOverride');
+const WhatsAppRetryGroup = require('../models/WhatsAppRetryGroup');
 const { getISTCalendarDateUTC } = require('../utils/dateHelpers');
 const { appendRow, updateRow, markRowDeleted } = require('../utils/googleSheetsService');
 const { findOrCreateCounsellorAndGetToken } = require('./counsellorAuthController');
@@ -837,6 +838,12 @@ exports.saveStep3 = async (req, res) => {
       smsStatus = { sent: false, error: smsError.message };
     }
 
+    const slotBookedGroup = await WhatsAppRetryGroup.create({
+      messageKind: 'slot_booked',
+      cronRunId: null,
+      trigger: 'save_step3',
+      status: 'open'
+    });
     await safeSendWhatsApp({
       phone10: p,
       formSubmissionId: submission._id,
@@ -845,10 +852,18 @@ exports.saveStep3 = async (req, res) => {
       source: 'save_step3',
       cronRunId: null,
       cronJobKey: null,
-      sendFn: gupshupService.sendSlotBookedWhatsApp
+      sendFn: gupshupService.sendSlotBookedWhatsApp,
+      retryGroupId: slotBookedGroup._id,
+      attemptNumber: 1
     });
 
     if (shouldSendReminderImmediately) {
+      const pre4hrGroup = await WhatsAppRetryGroup.create({
+        messageKind: 'pre4hr',
+        cronRunId: null,
+        trigger: 'save_step3',
+        status: 'open'
+      });
       await safeSendWhatsApp({
         phone10: p,
         formSubmissionId: submission._id,
@@ -857,11 +872,19 @@ exports.saveStep3 = async (req, res) => {
         source: 'save_step3',
         cronRunId: null,
         cronJobKey: null,
-        sendFn: gupshupService.sendPre4HrReminderWhatsApp
+        sendFn: gupshupService.sendPre4HrReminderWhatsApp,
+        retryGroupId: pre4hrGroup._id,
+        attemptNumber: 1
       });
     }
 
     if (shouldSendMeetLinkImmediately) {
+      const meetGroup = await WhatsAppRetryGroup.create({
+        messageKind: 'meet',
+        cronRunId: null,
+        trigger: 'save_step3',
+        status: 'open'
+      });
       await safeSendWhatsApp({
         phone10: p,
         formSubmissionId: submission._id,
@@ -870,11 +893,19 @@ exports.saveStep3 = async (req, res) => {
         source: 'save_step3',
         cronRunId: null,
         cronJobKey: null,
-        sendFn: gupshupService.sendMeetLinkWhatsApp
+        sendFn: gupshupService.sendMeetLinkWhatsApp,
+        retryGroupId: meetGroup._id,
+        attemptNumber: 1
       });
     }
 
     if (shouldSendReminder30MinImmediately) {
+      const thirtyGroup = await WhatsAppRetryGroup.create({
+        messageKind: '30min',
+        cronRunId: null,
+        trigger: 'save_step3',
+        status: 'open'
+      });
       await safeSendWhatsApp({
         phone10: p,
         formSubmissionId: submission._id,
@@ -883,7 +914,9 @@ exports.saveStep3 = async (req, res) => {
         source: 'save_step3',
         cronRunId: null,
         cronJobKey: null,
-        sendFn: gupshupService.sendReminder30MinWhatsApp
+        sendFn: gupshupService.sendReminder30MinWhatsApp,
+        retryGroupId: thirtyGroup._id,
+        attemptNumber: 1
       });
     }
 
