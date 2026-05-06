@@ -74,9 +74,20 @@ Set `CRON_SECRET` in the environment. Schedule HTTP calls (e.g. Vercel Cron or e
 | GET | Path | Purpose |
 |-----|------|---------|
 | | `/api/cron/send-reminders` | Reminder SMS (existing) |
+| | `/api/cron/retry-whatsapp` | Promote retry-eligible WhatsApp failures to Retry 1 / Retry 2 using existing retry orchestrator |
 | | `/api/cron/osvi-outbound-due` | OSVI outbound calls due for abandoned Apply flows (`?key=` or `x-cron-key` header) |
 
-Use the same `key` query param, `x-cron-key` header, or `Authorization: Bearer <CRON_SECRET>` (Vercel Cron uses the Bearer form when `CRON_SECRET` is set in the project). [`vercel.json`](vercel.json) schedules `/api/cron/osvi-outbound-due` every minute; redeploy after changing it.
+Use the same `key` query param, `x-cron-key` header, or `Authorization: Bearer <CRON_SECRET>` (Vercel Cron uses the Bearer form when `CRON_SECRET` is set in the project). [`vercel.json`](vercel.json) schedules `/api/cron/retry-whatsapp` every minute; redeploy after changing cron config.
+
+### Retry orchestration verification checklist
+
+After deployment, verify these to confirm automatic Retry 1/Retry 2 promotion is working:
+
+1. `MessagingCronRun` has recurring rows with `jobKey=retry_whatsapp` and `trigger=cron`.
+2. Cron logs include `[Cron] Retry WhatsApp batch result` with non-zero `found` when failures exist.
+3. Attempt 2 rows appear in `WhatsAppMessageEvent` for eligible attempt-1 failures after cooldown.
+4. Attempt 3 rows appear only for remaining attempt-2 failures (campaign templates only).
+5. `slot_booked` remains immediate-only and does not use campaign Retry 1/Retry 2 promotion.
 
 **OSVI:** Set `OSVI_API_TOKEN` and `OSVI_AGENT_UUID` on the deployment (e.g. Vercel Environment Variables). If `OSVI_AGENT_UUID` is missing, abandoned-flow calls will not be scheduled (`isOsviConfigured()` is false).
 

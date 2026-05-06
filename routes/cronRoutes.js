@@ -37,6 +37,13 @@ function verifyCronSecret(req, res, next) {
     return res.status(401).json({ success: false, message: 'Unauthorized' });
   }
 
+  const authMode = bearerKey ? 'bearer' : (headerKey ? 'x-cron-key' : 'query');
+  console.log('[Cron] Authenticated request', {
+    path: req.path,
+    mode: authMode,
+    userAgent: req.headers['user-agent'] || 'unknown'
+  });
+
   next();
 }
 
@@ -477,6 +484,15 @@ router.get('/retry-whatsapp', verifyCronSecret, async (req, res) => {
     cronRun = await startCronRun('retry_whatsapp');
 
     const batch = await executeRetryWhatsAppBatch(cronRun._id);
+    console.log('[Cron] Retry WhatsApp batch result', {
+      cronRunId: String(cronRun._id),
+      found: batch.found || 0,
+      groupsTouched: batch.groupsTouched || 0,
+      attempted: batch.attempted || 0,
+      succeeded: batch.succeeded || 0,
+      failed: batch.failed || 0,
+      slotBookedImmediate: batch.slotBookedImmediate || null
+    });
 
     await finishCronRun(
       cronRun,
