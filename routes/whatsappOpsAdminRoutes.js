@@ -22,4 +22,17 @@ router.get('/export', ctrl.exportCsv);
 router.post('/actions/resend', requireSuperAdmin, ctrl.manualResend);
 router.post('/actions/retry-batch', requireSuperAdmin, ctrl.triggerRetryBatch);
 
+router.post('/snapshots/capture', ctrl.captureSnapshot);
+router.get('/snapshots/latest', ctrl.getLatestSnapshot);
+
+router.get('/operational-health', ctrl.getOperationalHealth);
+router.get('/unresolved', ctrl.getUnresolvedRecipients);
+router.get('/unresolved/export', ctrl.exportUnresolvedCsv);
+
+router.post('/manual-recovery/preview', ctrl.previewManualRecovery);
+router.get('/manual-recovery', ctrl.listManualRecoveryJobs);
+router.get('/manual-recovery/:id', ctrl.getManualRecoveryJob);
+router.post('/manual-recovery/start', requireSuperAdmin, ctrl.startManualRecovery);
+router.post('/manual-recovery/:id/cancel', requireSuperAdmin, ctrl.cancelManualRecoveryJob);
+
 module.exports = router;

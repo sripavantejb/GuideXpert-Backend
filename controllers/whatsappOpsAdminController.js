@@ -4,6 +4,8 @@ const MessagingCronRun = require('../models/MessagingCronRun');
 const WhatsAppWebhookEvent = require('../models/WhatsAppWebhookEvent');
 const FormSubmission = require('../models/FormSubmission');
 const WhatsAppRetryGroup = require('../models/WhatsAppRetryGroup');
+const WhatsAppOpsChartSnapshot = require('../models/WhatsAppOpsChartSnapshot');
+const WhatsAppManualRecoveryJob = require('../models/WhatsAppManualRecoveryJob');
 const { buildSlotNotificationVariables } = require('../utils/slotNotificationFormatters');
 const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
 const gupshupService = require('../services/gupshupService');
@@ -18,6 +20,8 @@ const {
   isCampaignStrategy
 } = require('../utils/whatsappRetryRules');
 const { deriveSubmissionWaStatus } = require('../services/whatsappOpsStatus');
+const opsAggregates = require('../services/whatsappOpsAggregates');
+const manualRecoveryService = require('../services/whatsappManualRecovery');
 const IST_OFFSET_MINUTES = 330;
 
 function clampInt(v, dflt, max) {
@@ -172,144 +176,11 @@ exports.getSummary = async (req, res) => {
   try {
     const { from, to } = dateRange(req.query);
     const messageKind = req.query.messageKind ? String(req.query.messageKind).trim() : null;
-    if (messageKind && !ALLOWED_MESSAGE_KINDS.includes(messageKind)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid messageKind. Allowed: ${ALLOWED_MESSAGE_KINDS.join(', ')}`
-      });
+    const result = await opsAggregates.computeSummary({ from, to, messageKind });
+    if (result.error) {
+      return res.status(400).json({ success: false, message: result.error });
     }
-    const match = {};
-    if (from || to) {
-      match.createdAt = {
-        ...(from ? { $gte: from } : {}),
-        ...(to ? { $lte: to } : {})
-      };
-    }
-    if (messageKind) {
-      match.messageKind = messageKind;
-    }
-
-    const [msgAgg] = await WhatsAppMessageEvent.aggregate([
-      { $match: match },
-      {
-        $facet: {
-          total: [{ $count: 'c' }],
-          byKind: [{ $group: { _id: '$messageKind', c: { $sum: 1 } } }],
-          byStatus: [{ $group: { _id: '$status', c: { $sum: 1 } } }],
-          successes: [{
-            $match: { status: { $in: ['submitted', 'sent', 'delivered', 'read'] } }
-          }, { $count: 'c' }],
-          submittedAccepted: [{
-            $match: { status: { $in: ['submitted', 'sent', 'delivered', 'read'] } }
-          }, { $count: 'c' }],
-          sentCumulative: [{
-            $match: { status: { $in: ['sent', 'delivered', 'read'] } }
-          }, { $count: 'c' }],
-          failed: [{
-            $match: { status: { $in: ['failed', 'retry_exhausted'] } }
-          }, { $count: 'c' }],
-          delivered: [{
-            $match: { status: { $in: ['delivered', 'read'] } }
-          }, { $count: 'c' }],
-          read: [{
-            $match: { status: 'read' }
-          }, { $count: 'c' }],
-          retryExhausted: [{
-            $match: { status: 'retry_exhausted' }
-          }, { $count: 'c' }],
-          retried: [{
-            $match: { retryCountSnapshot: { $gt: 0 } }
-          }, { $count: 'c' }]
-        }
-      }
-    ]);
-
-    const total = msgAgg.total[0]?.c || 0;
-    const successN = msgAgg.successes[0]?.c || 0;
-    const acceptedN = msgAgg.submittedAccepted[0]?.c || 0;
-    const failedN = msgAgg.failed[0]?.c || 0;
-    const deliveredN = msgAgg.delivered[0]?.c || 0;
-    const readN = msgAgg.read[0]?.c || 0;
-    const sentN = msgAgg.sentCumulative[0]?.c || 0;
-    const retryExN = msgAgg.retryExhausted[0]?.c || 0;
-    const retriedN = msgAgg.retried[0]?.c || 0;
-
-    let c = null;
-    let webhookN = null;
-    if (!messageKind) {
-      const cronMatch = from || to
-        ? {
-            startedAt: {
-              ...(from ? { $gte: from } : {}),
-              ...(to ? { $lte: to } : {})
-            }
-          }
-        : {};
-      const cronCounts = await MessagingCronRun.aggregate([
-        { $match: cronMatch },
-        {
-          $group: {
-            _id: null,
-            runs: { $sum: 1 },
-            ok: { $sum: { $cond: ['$success', 1, 0] } },
-            failed: { $sum: { $cond: [{ $eq: ['$success', false] }, 1, 0] } }
-          }
-        }
-      ]);
-      c = cronCounts[0] || { runs: 0, ok: 0, failed: 0 };
-      webhookN = await WhatsAppWebhookEvent.countDocuments(from || to
-        ? {
-            receivedAt: {
-              ...(from ? { $gte: from } : {}),
-              ...(to ? { $lte: to } : {})
-            }
-          }
-        : {});
-    }
-
-    const data = {
-      meta: {
-        selectedMessageKind: messageKind || null,
-        attemptedRows: total
-      },
-      totals: {
-        whatsappAttempts: total,
-        whatsappSuccessApprox: successN,
-        providerAcceptedCount: acceptedN,
-        sentCount: sentN,
-        whatsappFailed: failedN,
-        deliveredCount: deliveredN,
-        readCount: readN,
-        retried: retriedN,
-        permanentlyFailedApprox: retryExN,
-        ...(messageKind ? {} : { webhookEvents: webhookN })
-      },
-      rates: {
-        deliveryRatePct: total ? Math.round((successN / total) * 1000) / 10 : null,
-        retryRatePct: total ? Math.round((retriedN / total) * 1000) / 10 : null,
-        acceptedToDeliveredPct: acceptedN ? Math.round((deliveredN / acceptedN) * 1000) / 10 : null,
-        deliveredToReadPct: deliveredN ? Math.round((readN / deliveredN) * 1000) / 10 : null,
-        ...(messageKind ? {} : { cronSuccessRatePct: c.runs ? Math.round((c.ok / c.runs) * 1000) / 10 : null })
-      },
-      ...(messageKind
-        ? {}
-        : {
-            cronRuns: {
-              runs: c?.runs || 0,
-              success: c?.ok || 0,
-              failure: c?.failed || 0
-            }
-          }),
-      byKind: (msgAgg.byKind || []).map((x) => ({ kind: x._id, count: x.c })),
-      byStatus: (msgAgg.byStatus || []).map((x) => ({ status: x._id, count: x.c })),
-      filter: { messageKind: messageKind || null },
-      range: from ? { from, to } : { from: null, to }
-    };
-
-    res.json({
-      success: true,
-      data
-    });
+    res.json({ success: true, data: result.data });
   } catch (e) {
     console.error('[whatsapp-ops summary]', e);
     res.status(500).json({ success: false, message: e.message });
@@ -320,128 +191,11 @@ exports.getCalendarMonthOverview = async (req, res) => {
   try {
     const monthIso = req.query.month || new Date().toISOString().slice(0, 7);
     const messageKind = req.query.messageKind ? String(req.query.messageKind).trim() : null;
-    if (messageKind && !ALLOWED_MESSAGE_KINDS.includes(messageKind)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid messageKind. Allowed: ${ALLOWED_MESSAGE_KINDS.join(', ')}`
-      });
+    const result = await opsAggregates.computeMonthOverview({ monthIso, messageKind });
+    if (result.error) {
+      return res.status(400).json({ success: false, message: result.error });
     }
-    const range = istMonthRangeFromIso(monthIso);
-    if (!range) return res.status(400).json({ success: false, message: 'Invalid month format. Use YYYY-MM' });
-
-    const eventMatch = {
-      createdAt: { $gte: range.from, $lte: range.to },
-      ...(messageKind ? { messageKind } : {})
-    };
-    const bookingMatch = {
-      'step3Data.slotDate': { $gte: range.from, $lte: range.to }
-    };
-
-    const [eventsByDay, bookingsByDay] = await Promise.all([
-      WhatsAppMessageEvent.aggregate([
-        { $match: eventMatch },
-        {
-          $group: {
-            _id: {
-              day: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'Asia/Kolkata' } }
-            },
-            attempts: { $sum: 1 },
-            failed: { $sum: { $cond: [{ $in: ['$status', ['failed', 'retry_exhausted']] }, 1, 0] } },
-            delivered: {
-              $sum: {
-                $cond: [{ $in: ['$status', ['delivered', 'read']] }, 1, 0]
-              }
-            },
-            read: { $sum: { $cond: [{ $eq: ['$status', 'read'] }, 1, 0] } },
-            accepted: {
-              $sum: {
-                $cond: [{ $in: ['$status', ['submitted', 'sent', 'delivered', 'read']] }, 1, 0]
-              }
-            },
-            sent: {
-              $sum: {
-                $cond: [{ $in: ['$status', ['sent', 'delivered', 'read']] }, 1, 0]
-              }
-            },
-            retried: { $sum: { $cond: [{ $gt: ['$retryCountSnapshot', 0] }, 1, 0] } }
-          }
-        }
-      ]),
-      FormSubmission.aggregate([
-        { $match: bookingMatch },
-        {
-          $group: {
-            _id: {
-              day: { $dateToString: { format: '%Y-%m-%d', date: '$step3Data.slotDate', timezone: 'Asia/Kolkata' }
-              }
-            },
-            bookedSlotsCount: { $sum: 1 }
-          }
-        }
-      ])
-    ]);
-
-    const byDayMap = new Map();
-    eventsByDay.forEach((r) => {
-      byDayMap.set(r._id.day, {
-        date: r._id.day,
-        attempts: r.attempts || 0,
-        accepted: r.accepted || 0,
-        sent: r.sent || 0,
-        delivered: r.delivered || 0,
-        read: r.read || 0,
-        failed: r.failed || 0,
-        retried: r.retried || 0,
-        bookedSlotsCount: 0
-      });
-    });
-    bookingsByDay.forEach((r) => {
-      const day = r._id.day;
-      const prev = byDayMap.get(day) || {
-        date: day,
-        attempts: 0,
-        accepted: 0,
-        sent: 0,
-        delivered: 0,
-        read: 0,
-        failed: 0,
-        retried: 0,
-        bookedSlotsCount: 0
-      };
-      prev.bookedSlotsCount = r.bookedSlotsCount || 0;
-      byDayMap.set(day, prev);
-    });
-
-    const days = [...byDayMap.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
-    const monthTotals = days.reduce((acc, d) => ({
-      bookedSlotsCount: acc.bookedSlotsCount + (d.bookedSlotsCount || 0),
-      attempts: acc.attempts + (d.attempts || 0),
-      accepted: acc.accepted + (d.accepted || 0),
-      sent: acc.sent + (d.sent || 0),
-      delivered: acc.delivered + (d.delivered || 0),
-      read: acc.read + (d.read || 0),
-      failed: acc.failed + (d.failed || 0),
-      retried: acc.retried + (d.retried || 0)
-    }), {
-      bookedSlotsCount: 0,
-      attempts: 0,
-      accepted: 0,
-      sent: 0,
-      delivered: 0,
-      read: 0,
-      failed: 0,
-      retried: 0
-    });
-
-    return res.json({
-      success: true,
-      data: {
-        filter: { month: range.isoMonth, messageKind: messageKind || null },
-        range: { from: range.from, to: range.to },
-        monthTotals,
-        days
-      }
-    });
+    return res.json({ success: true, data: result.data });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
   }
@@ -455,100 +209,11 @@ exports.getCalendarDayOverview = async (req, res) => {
   try {
     const dateIso = req.query.date || new Date().toISOString().slice(0, 10);
     const selectedKind = req.query.messageKind ? String(req.query.messageKind).trim() : null;
-    if (selectedKind && !ALLOWED_MESSAGE_KINDS.includes(selectedKind)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid messageKind. Allowed: ${ALLOWED_MESSAGE_KINDS.join(', ')}`
-      });
+    const result = await opsAggregates.computeDayOverview({ dateIso, messageKind: selectedKind });
+    if (result.error) {
+      return res.status(400).json({ success: false, message: result.error });
     }
-    const range = istDayRangeFromIso(dateIso);
-    if (!range) return res.status(400).json({ success: false, message: 'Invalid date format. Use YYYY-MM-DD' });
-
-    const baseMatch = { createdAt: { $gte: range.from, $lte: range.to } };
-    const filteredMatch = { ...baseMatch, ...(selectedKind ? { messageKind: selectedKind } : {}) };
-
-    const attemptFacet = [
-      { $match: filteredMatch },
-      {
-        $group: {
-          _id: '$attemptNumber',
-          targeted: { $sum: 1 },
-          submittedPlus: {
-            $sum: { $cond: [{ $in: ['$status', ['submitted', 'sent', 'delivered', 'read']] }, 1, 0] }
-          },
-          sentPlus: {
-            $sum: { $cond: [{ $in: ['$status', ['sent', 'delivered', 'read']] }, 1, 0] }
-          },
-          deliveredPlus: {
-            $sum: { $cond: [{ $in: ['$status', ['delivered', 'read']] }, 1, 0] }
-          },
-          readStrict: { $sum: { $cond: [{ $eq: ['$status', 'read'] }, 1, 0] } },
-          failed: {
-            $sum: { $cond: [{ $in: ['$status', ['failed', 'retry_exhausted']] }, 1, 0] }
-          },
-          inFlight: {
-            $sum: {
-              $cond: [{ $in: ['$status', ['queued', 'submitted', 'retry_pending', 'sent']] }, 1, 0]
-            }
-          }
-        }
-      }
-    ];
-
-    const [bookedSlotsCount, allFacet, filteredFacet, filteredByAttempt, uniqDelivered] = await Promise.all([
-      FormSubmission.countDocuments({ 'step3Data.slotDate': { $gte: range.from, $lte: range.to } }),
-      WhatsAppMessageEvent.aggregate(facetStatsPipeline(baseMatch)),
-      WhatsAppMessageEvent.aggregate(facetStatsPipeline(filteredMatch)),
-      WhatsAppMessageEvent.aggregate(attemptFacet),
-      WhatsAppMessageEvent.aggregate([
-        { $match: { ...filteredMatch, status: { $in: ['delivered', 'read'] } } },
-        { $group: { _id: '$phone' } },
-        { $count: 'c' }
-      ])
-    ]);
-
-    const allStats = allFacet[0] || {};
-    const filteredStats = filteredFacet[0] || {};
-    const overall = facetStatsToTotals(allStats);
-    const filtered = facetStatsToTotals(filteredStats);
-    const byKind = (allStats.byKind || []).map((x) => ({ kind: x._id, count: x.c }));
-    const byStatus = (allStats.byStatus || []).map((x) => ({ status: x._id, count: x.c }));
-    const byAttempt = {};
-    (filteredByAttempt || []).forEach((row) => {
-      const key = row._id;
-      byAttempt[key] = {
-        targeted: row.targeted || 0,
-        submitted: row.submittedPlus || 0,
-        sent: row.sentPlus || 0,
-        delivered: row.deliveredPlus || 0,
-        read: row.readStrict || 0,
-        failed: row.failed || 0,
-        inFlight: row.inFlight || 0
-      };
-    });
-    const retry2Exclusions = selectedKind ? await computeRetry2Exclusions(filteredMatch, byAttempt) : {
-      retry1Failed: 0,
-      retry2Targeted: 0,
-      totalExcluded: 0,
-      trackedExcluded: 0,
-      byReason: {}
-    };
-
-    return res.json({
-      success: true,
-      data: {
-        filter: { date: range.isoDate, messageKind: selectedKind || null },
-        range: { from: range.from, to: range.to },
-        bookedSlotsCount,
-        overall,
-        selectedKindMetrics: filtered,
-        byKind,
-        byStatus,
-        byAttempt,
-        retry2Exclusions,
-        uniqueRecipientsDeliveredRead: uniqDelivered[0]?.c || 0
-      }
-    });
+    return res.json({ success: true, data: result.data });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
   }
@@ -1283,5 +948,549 @@ exports.triggerRetryBatch = async (req, res) => {
     }
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+/**
+ * Compute aggregate(s) for the requested scope and persist a snapshot keyed by
+ * deterministic scopeKey. Always writes a single row per scope (upsert), so a
+ * subsequent capture refreshes the chart payload while live aggregates stay
+ * available on the legacy endpoints.
+ *
+ * Body / query params:
+ *   - scope: 'summary' | 'month' | 'day' | 'all' (defaults to 'summary')
+ *   - month: YYYY-MM (when scope=month or all)
+ *   - date: YYYY-MM-DD (when scope=day or all)
+ *   - from / to: ISO strings (when scope=summary or all)
+ *   - messageKind: optional filter
+ */
+exports.captureSnapshot = async (req, res) => {
+  try {
+    const params = { ...req.query, ...(req.body || {}) };
+    const scope = String(params.scope || 'summary').toLowerCase();
+    const messageKind = params.messageKind ? String(params.messageKind).trim() : null;
+    const username = req.admin?.username || null;
+    const captures = [];
+    const errors = [];
+
+    const captureOne = async (entry) => {
+      const { scopeKey, scope: scopeName, payload, range } = entry;
+      const doc = await WhatsAppOpsChartSnapshot.findOneAndUpdate(
+        { scopeKey },
+        {
+          $set: {
+            scopeKey,
+            scope: scopeName,
+            messageKind: messageKind || null,
+            range,
+            payload,
+            capturedAt: new Date(),
+            capturedBy: username
+          }
+        },
+        { upsert: true, new: true }
+      ).lean();
+      captures.push({
+        scopeKey: doc.scopeKey,
+        scope: doc.scope,
+        capturedAt: doc.capturedAt,
+        messageKind: doc.messageKind || null,
+        range: doc.range || {}
+      });
+    };
+
+    const wantSummary = scope === 'summary' || scope === 'all';
+    const wantMonth = scope === 'month' || scope === 'all';
+    const wantDay = scope === 'day' || scope === 'all';
+
+    if (wantSummary) {
+      const from = opsAggregates.parseBoundaryDate(params.from, 'start');
+      const to = opsAggregates.parseBoundaryDate(params.to, 'end') || new Date();
+      const summary = await opsAggregates.computeSummary({ from, to, messageKind });
+      if (summary.error) {
+        errors.push({ scope: 'summary', message: summary.error });
+      } else {
+        await captureOne({
+          scopeKey: opsAggregates.buildScopeKey({
+            scope: 'summary',
+            messageKind,
+            fromIso: from ? from.toISOString() : '',
+            toIso: to ? to.toISOString() : ''
+          }),
+          scope: 'summary',
+          payload: summary.data,
+          range: {
+            fromIso: from ? from.toISOString() : null,
+            toIso: to ? to.toISOString() : null,
+            monthIso: null,
+            dateIso: null
+          }
+        });
+      }
+    }
+
+    if (wantMonth) {
+      const monthIso = params.month || new Date().toISOString().slice(0, 7);
+      const month = await opsAggregates.computeMonthOverview({ monthIso, messageKind });
+      if (month.error) {
+        errors.push({ scope: 'month', message: month.error });
+      } else {
+        await captureOne({
+          scopeKey: opsAggregates.buildScopeKey({ scope: 'month', messageKind, monthIso }),
+          scope: 'month',
+          payload: month.data,
+          range: { monthIso, dateIso: null, fromIso: null, toIso: null }
+        });
+      }
+    }
+
+    if (wantDay) {
+      const dateIso = params.date || new Date().toISOString().slice(0, 10);
+      const day = await opsAggregates.computeDayOverview({ dateIso, messageKind });
+      if (day.error) {
+        errors.push({ scope: 'day', message: day.error });
+      } else {
+        await captureOne({
+          scopeKey: opsAggregates.buildScopeKey({ scope: 'day', messageKind, dateIso }),
+          scope: 'day',
+          payload: day.data,
+          range: { dateIso, monthIso: null, fromIso: null, toIso: null }
+        });
+      }
+    }
+
+    if (!captures.length && errors.length) {
+      return res.status(400).json({ success: false, message: errors[0].message, errors });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        captures,
+        capturedAt: captures.length ? captures[0].capturedAt : new Date(),
+        capturedBy: username,
+        errors: errors.length ? errors : undefined
+      }
+    });
+  } catch (e) {
+    console.error('[whatsapp-ops captureSnapshot]', e);
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+/**
+ * Read the latest snapshot(s). Caller may either:
+ *   - pass scopeKey directly, OR
+ *   - pass { scope, messageKind, month, date, from, to } to derive scopeKey, OR
+ *   - pass scope=all to fetch summary/month/day in one call.
+ */
+exports.getLatestSnapshot = async (req, res) => {
+  try {
+    const params = req.query || {};
+    const messageKind = params.messageKind ? String(params.messageKind).trim() : null;
+
+    if (params.scopeKey) {
+      const doc = await WhatsAppOpsChartSnapshot.findOne({ scopeKey: String(params.scopeKey) }).lean();
+      if (!doc) return res.json({ success: true, data: null });
+      return res.json({ success: true, data: doc });
+    }
+
+    const scope = String(params.scope || 'summary').toLowerCase();
+    const requested = scope === 'all' ? ['summary', 'month', 'day'] : [scope];
+    const out = {};
+
+    /* eslint-disable no-await-in-loop */
+    for (const s of requested) {
+      let scopeKey = null;
+      if (s === 'summary') {
+        const from = opsAggregates.parseBoundaryDate(params.from, 'start');
+        const to = opsAggregates.parseBoundaryDate(params.to, 'end') || null;
+        scopeKey = opsAggregates.buildScopeKey({
+          scope: 'summary',
+          messageKind,
+          fromIso: from ? from.toISOString() : '',
+          toIso: to ? to.toISOString() : ''
+        });
+      } else if (s === 'month') {
+        const monthIso = params.month || new Date().toISOString().slice(0, 7);
+        scopeKey = opsAggregates.buildScopeKey({ scope: 'month', messageKind, monthIso });
+      } else if (s === 'day') {
+        const dateIso = params.date || new Date().toISOString().slice(0, 10);
+        scopeKey = opsAggregates.buildScopeKey({ scope: 'day', messageKind, dateIso });
+      }
+      if (!scopeKey) {
+        out[s] = null;
+        continue;
+      }
+      const doc = await WhatsAppOpsChartSnapshot.findOne({ scopeKey }).lean();
+      out[s] = doc || null;
+    }
+    /* eslint-enable no-await-in-loop */
+
+    if (scope === 'all') {
+      return res.json({ success: true, data: out });
+    }
+    return res.json({ success: true, data: out[scope] || null });
+  } catch (e) {
+    console.error('[whatsapp-ops getLatestSnapshot]', e);
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+/**
+ * Build the unresolved candidates list for a single template. Read-only.
+ * Body / query: { messageKind, from, to }
+ */
+exports.previewManualRecovery = async (req, res) => {
+  try {
+    const params = { ...req.query, ...(req.body || {}) };
+    const messageKind = params.messageKind ? String(params.messageKind).trim() : null;
+    if (!messageKind) {
+      return res.status(400).json({ success: false, message: 'messageKind is required' });
+    }
+    const fromAt = opsAggregates.parseBoundaryDate(params.from, 'start');
+    const toAt = opsAggregates.parseBoundaryDate(params.to, 'end');
+    const result = await manualRecoveryService.buildPreview({ messageKind, fromAt, toAt });
+    if (result.error) {
+      return res.status(400).json({ success: false, message: result.error });
+    }
+    return res.json({ success: true, data: result.data });
+  } catch (e) {
+    console.error('[whatsapp-ops previewManualRecovery]', e);
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+/**
+ * Create a manual recovery job and start async execution.
+ * Body: { messageKind, from?, to?, phones? } — when phones present, restrict to those.
+ */
+exports.startManualRecovery = async (req, res) => {
+  try {
+    const body = req.body || {};
+    const messageKind = body.messageKind ? String(body.messageKind).trim() : null;
+    if (!messageKind) {
+      return res.status(400).json({ success: false, message: 'messageKind is required' });
+    }
+    const fromAt = opsAggregates.parseBoundaryDate(body.from, 'start');
+    const toAt = opsAggregates.parseBoundaryDate(body.to, 'end');
+    const explicitPhones = Array.isArray(body.phones)
+      ? body.phones.map((p) => String(p || '').replace(/\D/g, '').slice(-10)).filter(Boolean)
+      : null;
+
+    const preview = await manualRecoveryService.buildPreview({ messageKind, fromAt, toAt });
+    if (preview.error) {
+      return res.status(400).json({ success: false, message: preview.error });
+    }
+    let candidates = preview.data.candidates || [];
+    if (explicitPhones && explicitPhones.length) {
+      const allow = new Set(explicitPhones);
+      candidates = candidates.filter((c) => allow.has(c.phone));
+    }
+    if (!candidates.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'No unresolved recipients to recover'
+      });
+    }
+
+    const phones = candidates.map((c) => c.phone);
+    const job = await WhatsAppManualRecoveryJob.create({
+      status: 'queued',
+      messageKind,
+      fromAt: fromAt || null,
+      toAt: toAt || null,
+      candidatePhones: phones,
+      createdBy: req.admin?.username || null,
+      counters: {
+        targeted: phones.length,
+        attempted: 0,
+        apiAccepted: 0,
+        sendFailed: 0,
+        skippedAlreadyDelivered: preview.data.skippedAlreadyDelivered || 0,
+        skippedGlobalRecentSuccess: preview.data.skippedGlobalRecentSuccess || 0,
+        skippedInFlightDuplicate: preview.data.skippedInFlightDuplicate || 0,
+        remaining: phones.length
+      }
+    });
+
+    manualRecoveryService.startJobAsync(job._id);
+
+    return res.json({
+      success: true,
+      data: {
+        jobId: job._id,
+        status: job.status,
+        targeted: phones.length,
+        skippedAlreadyDelivered: preview.data.skippedAlreadyDelivered || 0,
+        skippedGlobalRecentSuccess: preview.data.skippedGlobalRecentSuccess || 0,
+        skippedInFlightDuplicate: preview.data.skippedInFlightDuplicate || 0
+      }
+    });
+  } catch (e) {
+    console.error('[whatsapp-ops startManualRecovery]', e);
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+exports.getManualRecoveryJob = async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!mongoose.Types.ObjectId.isValid(String(id))) {
+      return res.status(400).json({ success: false, message: 'Invalid id' });
+    }
+    const doc = await WhatsAppManualRecoveryJob.findById(id).lean();
+    if (!doc) return res.status(404).json({ success: false, message: 'Not found' });
+
+    /** Recompute post-start counters on read so polled progress reflects the latest
+     *  webhook activity even when the worker loop has paused or is between phones. */
+    let liveCounters = { ...(doc.counters || {}) };
+    if (doc.startedAt) {
+      try {
+        const post = await manualRecoveryService.computePostStartCounters({
+          startedAt: doc.startedAt,
+          messageKind: doc.messageKind,
+          candidatePhones: doc.candidatePhones || []
+        });
+        liveCounters = { ...liveCounters, recovered: post.recovered, inFlight: post.inFlight };
+      } catch {
+        /* fall back to persisted counters */
+      }
+    }
+
+    const targeted = liveCounters.targeted || (doc.candidatePhones || []).length || 0;
+    const completed = (liveCounters.attempted || 0)
+      + (liveCounters.skippedAlreadyDelivered || 0)
+      + (liveCounters.skippedGlobalRecentSuccess || 0)
+      + (liveCounters.skippedInFlightDuplicate || 0);
+    const percent = targeted ? Math.min(100, Math.round((completed / targeted) * 100)) : 0;
+
+    return res.json({
+      success: true,
+      data: {
+        _id: doc._id,
+        status: doc.status,
+        messageKind: doc.messageKind,
+        counters: liveCounters,
+        progressPercent: percent,
+        createdAt: doc.createdAt,
+        startedAt: doc.startedAt,
+        finishedAt: doc.finishedAt,
+        lastProgressAt: doc.lastProgressAt,
+        cancelRequested: !!doc.cancelRequested,
+        errorSummary: doc.errorSummary || null,
+        createdBy: doc.createdBy || null,
+        from: doc.fromAt || null,
+        to: doc.toAt || null,
+        candidatePhonesSample: (doc.candidatePhones || []).slice(0, 10),
+        candidatePhonesCount: (doc.candidatePhones || []).length
+      }
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+exports.listManualRecoveryJobs = async (req, res) => {
+  try {
+    const limit = clampInt(req.query.limit, 25, 100);
+    const filter = {};
+    if (req.query.messageKind) filter.messageKind = String(req.query.messageKind).trim();
+    if (req.query.status) filter.status = String(req.query.status).trim();
+    const rows = await WhatsAppManualRecoveryJob.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+    return res.json({
+      success: true,
+      data: rows.map((doc) => ({
+        _id: doc._id,
+        status: doc.status,
+        messageKind: doc.messageKind,
+        counters: doc.counters || {},
+        createdAt: doc.createdAt,
+        startedAt: doc.startedAt,
+        finishedAt: doc.finishedAt,
+        lastProgressAt: doc.lastProgressAt,
+        createdBy: doc.createdBy || null,
+        candidatePhonesCount: (doc.candidatePhones || []).length
+      }))
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+exports.cancelManualRecoveryJob = async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!mongoose.Types.ObjectId.isValid(String(id))) {
+      return res.status(400).json({ success: false, message: 'Invalid id' });
+    }
+    const doc = await WhatsAppManualRecoveryJob.findById(id);
+    if (!doc) return res.status(404).json({ success: false, message: 'Not found' });
+    if (doc.status === 'completed' || doc.status === 'failed' || doc.status === 'cancelled') {
+      return res.json({ success: true, data: { _id: doc._id, status: doc.status } });
+    }
+    doc.cancelRequested = true;
+    await doc.save();
+    return res.json({ success: true, data: { _id: doc._id, status: doc.status, cancelRequested: true } });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+/**
+ * Operational health for the new Health Console.
+ * Stable/closed window for charts/tables; today's strip is live-labelled.
+ */
+exports.getOperationalHealth = async (req, res) => {
+  try {
+    const messageKind = req.query.messageKind ? String(req.query.messageKind).trim() : null;
+    const asOfDateIso = req.query.date ? String(req.query.date).trim().slice(0, 10) : null;
+    const windowDays = req.query.windowDays != null ? parseInt(String(req.query.windowDays), 10) : 14;
+    const result = await opsAggregates.computeOperationalHealth({
+      asOfDateIso,
+      windowDays,
+      messageKind
+    });
+    if (result.error) {
+      return res.status(400).json({ success: false, message: result.error });
+    }
+    return res.json({ success: true, data: result.data });
+  } catch (e) {
+    console.error('[whatsapp-ops getOperationalHealth]', e);
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+/**
+ * Paginated unresolved recipients for the Recovery Console.
+ * Returns rows + grouped totals so the UI can paint tab counters in one round-trip.
+ */
+exports.getUnresolvedRecipients = async (req, res) => {
+  try {
+    const params = req.query || {};
+    const messageKind = params.messageKind ? String(params.messageKind).trim() : null;
+    const group = params.group ? String(params.group).trim().toLowerCase() : 'all';
+    const from = opsAggregates.parseBoundaryDate(params.from, 'start');
+    const to = opsAggregates.parseBoundaryDate(params.to, 'end');
+    const page = parseInt(String(params.page || '1'), 10) || 1;
+    const limit = parseInt(String(params.limit || '50'), 10) || 50;
+
+    const result = await opsAggregates.computeUnresolvedRecipients({
+      from,
+      to,
+      messageKind,
+      group,
+      page,
+      limit
+    });
+    if (result.error) {
+      return res.status(400).json({ success: false, message: result.error });
+    }
+    return res.json({ success: true, data: result.data });
+  } catch (e) {
+    console.error('[whatsapp-ops getUnresolvedRecipients]', e);
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+/**
+ * CSV export grouped by reason for the Recovery Console "Final Unresolved" panel.
+ * Streams a single text/csv response; safe for thousands of recipients.
+ */
+exports.exportUnresolvedCsv = async (req, res) => {
+  try {
+    const params = req.query || {};
+    const messageKind = params.messageKind ? String(params.messageKind).trim() : null;
+    const group = params.group ? String(params.group).trim().toLowerCase() : 'all';
+    const from = opsAggregates.parseBoundaryDate(params.from, 'start');
+    const to = opsAggregates.parseBoundaryDate(params.to, 'end');
+
+    const result = await opsAggregates.computeUnresolvedRecipients({
+      from,
+      to,
+      messageKind,
+      group,
+      page: 1,
+      limit: 200
+    });
+    if (result.error) {
+      return res.status(400).json({ success: false, message: result.error });
+    }
+
+    /** Re-run the aggregation in pages to stream all rows. We bound to 5000 hard. */
+    const pages = result.data.totalPages || 1;
+    const rows = [...result.data.rows];
+    for (let p = 2; p <= pages && rows.length < 5000; p += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const next = await opsAggregates.computeUnresolvedRecipients({
+        from,
+        to,
+        messageKind,
+        group,
+        page: p,
+        limit: 200
+      });
+      if (next?.data?.rows?.length) rows.push(...next.data.rows);
+    }
+
+    /** Sort grouped by exclusionCategory, then reason, then phone for operator copy/paste UX. */
+    rows.sort((a, b) => {
+      const c = String(a.exclusionCategory || '').localeCompare(String(b.exclusionCategory || ''));
+      if (c !== 0) return c;
+      const r = String(a.reason || '').localeCompare(String(b.reason || ''));
+      if (r !== 0) return r;
+      return String(a.phone || '').localeCompare(String(b.phone || ''));
+    });
+
+    const escape = (v) => {
+      if (v == null) return '';
+      const s = String(v).replace(/"/g, '""').replace(/[\r\n]+/g, ' ');
+      return /[",]/.test(s) ? `"${s}"` : s;
+    };
+    const header = [
+      'exclusion_category',
+      'reason',
+      'template',
+      'phone',
+      'name',
+      'attempt_stage',
+      'lifecycle_state',
+      'exclusion_reason',
+      'failure_reason',
+      'retry_history_count',
+      'retry_exhausted',
+      'ever_delivered_at',
+      'last_attempt_at',
+      'retry_group_id',
+      'last_event_id'
+    ].join(',');
+    const lines = rows.map((r) => [
+      escape(r.exclusionCategory),
+      escape(r.reason),
+      escape(r.messageKind),
+      escape(r.phone),
+      escape(r.name),
+      escape(r.attemptStage),
+      escape(r.lifecycleState),
+      escape(r.exclusionReason),
+      escape(r.errorMessage),
+      escape(r.retryHistoryCount),
+      escape(r.retryExhausted ? 'yes' : 'no'),
+      escape(r.everDeliveredAt ? new Date(r.everDeliveredAt).toISOString() : ''),
+      escape(r.lastAttemptAt ? new Date(r.lastAttemptAt).toISOString() : ''),
+      escape(r.retryGroupId),
+      escape(r.lastEventId)
+    ].join(','));
+
+    const filename = `unresolved-${messageKind || 'all'}-${group}-${Date.now()}.csv`;
+    res.header('Content-Type', 'text/csv; charset=utf-8');
+    res.header('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send([header, ...lines].join('\n'));
+  } catch (e) {
+    console.error('[whatsapp-ops exportUnresolvedCsv]', e);
+    return res.status(500).json({ success: false, message: e.message });
   }
 };
