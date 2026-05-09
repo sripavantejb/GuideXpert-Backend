@@ -1,4 +1,5 @@
 const IitMeetAttendance = require('../models/IitMeetAttendance');
+const IitMeetHindiAttendance = require('../models/IitMeetHindiAttendance');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 const otpRepository = require('../utils/otpRepository');
 
@@ -13,7 +14,23 @@ exports.iitMeetHealth = async (req, res) => {
       message:
         process.env.NODE_ENV !== 'production'
           ? error.message
-          : 'DB or IIT meet model unavailable'
+          : 'DB or IIT meet model unavailable',
+    });
+  }
+};
+
+exports.iitMeetHindiHealth = async (req, res) => {
+  try {
+    await IitMeetHindiAttendance.countDocuments();
+    return res.status(200).json({ status: 'ok', message: 'IIT meet Hindi API and DB connected' });
+  } catch (error) {
+    console.error('[iitMeetHindiHealth] Error:', error);
+    return res.status(500).json({
+      status: 'error',
+      message:
+        process.env.NODE_ENV !== 'production'
+          ? error.message
+          : 'DB or IIT meet Hindi model unavailable',
     });
   }
 };
@@ -44,7 +61,7 @@ exports.registerForIitMeet = async (req, res) => {
     const record = await IitMeetAttendance.create({
       name: rawName,
       mobileNumber: mobile,
-      attendanceStatus: 'joined'
+      attendanceStatus: 'joined',
     });
 
     return res.status(201).json({
@@ -55,15 +72,63 @@ exports.registerForIitMeet = async (req, res) => {
         name: record.name,
         mobileNumber: record.mobileNumber,
         timestamp: record.timestamp,
-        attendanceStatus: record.attendanceStatus
-      }
+        attendanceStatus: record.attendanceStatus,
+      },
     });
   } catch (error) {
     if (error.name === 'ValidationError') {
-      const msg = Object.values(error.errors).map((e) => e.message).join('; ');
+      const msg = Object.values(error.errors)
+        .map((e) => e.message)
+        .join('; ');
       return res.status(400).json({ success: false, message: msg || 'Validation failed' });
     }
     console.error('[registerForIitMeet] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  }
+};
+
+/** Register for the /iitcounsellingmeethindi flow (separate collection). */
+exports.registerForIitMeetHindi = async (req, res) => {
+  try {
+    const { name, mobileNumber } = req.body || {};
+    const rawName = typeof name === 'string' ? name.trim() : '';
+    const mobile = normalizeMobile(mobileNumber || '');
+
+    if (!rawName || rawName.length < 2) {
+      return res.status(400).json({ success: false, message: 'Name is required (at least 2 characters)' });
+    }
+    if (rawName.length > 100) {
+      return res.status(400).json({ success: false, message: 'Name must be at most 100 characters' });
+    }
+    if (!mobile || mobile.length !== 10) {
+      return res.status(400).json({ success: false, message: 'Valid 10-digit mobile number is required' });
+    }
+
+    const record = await IitMeetHindiAttendance.create({
+      name: rawName,
+      mobileNumber: mobile,
+      attendanceStatus: 'joined',
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Registered for IIT counselling meet (Hindi)',
+      data: {
+        id: record._id,
+        name: record.name,
+        mobileNumber: record.mobileNumber,
+        timestamp: record.timestamp,
+        attendanceStatus: record.attendanceStatus,
+      },
+    });
+  } catch (error) {
+    if (error.name === 'ValidationError') {
+      const msg = Object.values(error.errors)
+        .map((e) => e.message)
+        .join('; ');
+      return res.status(400).json({ success: false, message: msg || 'Validation failed' });
+    }
+    console.error('[registerForIitMeetHindi] Error:', error);
     return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
   }
 };
@@ -98,7 +163,7 @@ function buildSearchQuery(q) {
   return { $or: clauses };
 }
 
-exports.getIitMeetAttendance = async (req, res) => {
+async function getIitMeetAttendanceForModel(Model, req, res, logLabel) {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(ADMIN_LIST_MAX_LIMIT, Math.max(1, parseInt(req.query.limit, 10) || 50));
@@ -113,11 +178,7 @@ exports.getIitMeetAttendance = async (req, res) => {
     if (dateRange) match.timestamp = dateRange;
     if (searchQuery) Object.assign(match, searchQuery);
 
-    const statsPipeline = [
-      { $match: match },
-      { $group: { _id: '$mobileNumber' } },
-      { $count: 'uniqueAttendees' }
-    ];
+    const statsPipeline = [{ $match: match }, { $group: { _id: '$mobileNumber' } }, { $count: 'uniqueAttendees' }];
 
     if (uniqueByMobile) {
       const pipeline = [
@@ -126,19 +187,19 @@ exports.getIitMeetAttendance = async (req, res) => {
         {
           $group: {
             _id: '$mobileNumber',
-            record: { $first: '$$ROOT' }
-          }
+            record: { $first: '$$ROOT' },
+          },
         },
         { $replaceRoot: { newRoot: '$record' } },
         { $sort: { timestamp: sortDirection } },
         { $skip: skip },
-        { $limit: limit }
+        { $limit: limit },
       ];
 
       const [records, totalRecords, uniqueAgg] = await Promise.all([
-        IitMeetAttendance.aggregate(pipeline),
-        IitMeetAttendance.countDocuments(match),
-        IitMeetAttendance.aggregate(statsPipeline)
+        Model.aggregate(pipeline),
+        Model.countDocuments(match),
+        Model.aggregate(statsPipeline),
       ]);
 
       const uniqueAttendees = uniqueAgg[0]?.uniqueAttendees || 0;
@@ -151,25 +212,21 @@ exports.getIitMeetAttendance = async (req, res) => {
         mobileNumber: r.mobileNumber,
         timestamp: r.timestamp,
         attendanceStatus: r.attendanceStatus,
-        createdAt: r.createdAt
+        createdAt: r.createdAt,
       }));
 
       return res.status(200).json({
         success: true,
         data,
         pagination: { page, limit, total: uniqueAttendees, totalPages },
-        stats: { totalRecords, uniqueAttendees, duplicateCount }
+        stats: { totalRecords, uniqueAttendees, duplicateCount },
       });
     }
 
     const [records, totalRecords, uniqueAgg] = await Promise.all([
-      IitMeetAttendance.find(match)
-        .sort({ timestamp: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      IitMeetAttendance.countDocuments(match),
-      IitMeetAttendance.aggregate(statsPipeline)
+      Model.find(match).sort({ timestamp: -1 }).skip(skip).limit(limit).lean(),
+      Model.countDocuments(match),
+      Model.aggregate(statsPipeline),
     ]);
 
     const uniqueAttendees = uniqueAgg[0]?.uniqueAttendees || 0;
@@ -182,17 +239,23 @@ exports.getIitMeetAttendance = async (req, res) => {
       mobileNumber: r.mobileNumber,
       timestamp: r.timestamp,
       attendanceStatus: r.attendanceStatus,
-      createdAt: r.createdAt
+      createdAt: r.createdAt,
     }));
 
     return res.status(200).json({
       success: true,
       data,
       pagination: { page, limit, total: totalRecords, totalPages },
-      stats: { totalRecords, uniqueAttendees, duplicateCount }
+      stats: { totalRecords, uniqueAttendees, duplicateCount },
     });
   } catch (error) {
-    console.error('[getIitMeetAttendance] Error:', error);
+    console.error(`[${logLabel}] Error:`, error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
-};
+}
+
+exports.getIitMeetAttendance = (req, res) =>
+  getIitMeetAttendanceForModel(IitMeetAttendance, req, res, 'getIitMeetAttendance');
+
+exports.getIitMeetHindiAttendance = (req, res) =>
+  getIitMeetAttendanceForModel(IitMeetHindiAttendance, req, res, 'getIitMeetHindiAttendance');
