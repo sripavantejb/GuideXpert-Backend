@@ -1450,10 +1450,14 @@ exports.exportUnresolvedCsv = async (req, res) => {
       return String(a.phone || '').localeCompare(String(b.phone || ''));
     });
 
+    /** RFC 4180–style fields; quote on comma, quote, CR/LF, tab, or leading formula chars for Excel. */
     const escape = (v) => {
       if (v == null) return '';
-      const s = String(v).replace(/"/g, '""').replace(/[\r\n]+/g, ' ');
-      return /[",]/.test(s) ? `"${s}"` : s;
+      const s = String(v);
+      const inner = s.replace(/"/g, '""');
+      const trimmed = s.trimStart();
+      const mustQuote = /[",\r\n\t]/.test(s) || /^[=+\-@]/.test(trimmed);
+      return mustQuote ? `"${inner}"` : inner;
     };
     const header = [
       'exclusion_category',
@@ -1491,9 +1495,10 @@ exports.exportUnresolvedCsv = async (req, res) => {
     ].join(','));
 
     const filename = `unresolved-${messageKind || 'all'}-${group}-${Date.now()}.csv`;
-    res.header('Content-Type', 'text/csv; charset=utf-8');
-    res.header('Content-Disposition', `attachment; filename="${filename}"`);
-    return res.send([header, ...lines].join('\n'));
+    const csvBody = [header, ...lines].join('\r\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/"/g, '')}"`);
+    return res.send(`\uFEFF${csvBody}`);
   } catch (e) {
     console.error('[whatsapp-ops exportUnresolvedCsv]', e);
     return res.status(500).json({ success: false, message: e.message });
