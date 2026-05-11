@@ -1450,18 +1450,21 @@ exports.exportUnresolvedCsv = async (req, res) => {
       return String(a.phone || '').localeCompare(String(b.phone || ''));
     });
 
-    /** Operator export: 10-digit phones only, one per line (no header, no other columns). */
-    const digitsOnly = (v) => {
+    /** Operator export: India E.164-style lines `91` + 10-digit mobile, one per line (deduped). */
+    const to91Line = (v) => {
       const d = String(v || '').replace(/\D/g, '');
-      return d.length >= 10 ? d.slice(-10) : '';
+      if (d.length < 10) return '';
+      const national10 = d.slice(-10);
+      if (!/^\d{10}$/.test(national10)) return '';
+      return `91${national10}`;
     };
     const seen = new Set();
     const phones = [];
     for (const r of rows) {
-      const p = digitsOnly(r.phone);
-      if (p.length === 10 && !seen.has(p)) {
-        seen.add(p);
-        phones.push(p);
+      const line = to91Line(r.phone);
+      if (line && !seen.has(line)) {
+        seen.add(line);
+        phones.push(line);
       }
     }
     const csvBody = phones.join('\r\n');
