@@ -1,32 +1,32 @@
 const FormSubmission = require('../models/FormSubmission');
 const otpRepository = require('./otpRepository');
-const { evaluateLiveWindows, formatIst } = require('./demoMeetLiveWindows');
-const { getOrCreateDemoMeetLiveSchedule, toPlainSchedule } = require('../services/demoMeetLiveScheduleService');
+const { formatIst } = require('./demoMeetLiveWindows');
 
 const FIVE_MIN_MS = 5 * 60 * 1000;
 const SLOT_DURATION_MS = 60 * 60 * 1000;
 
 /**
- * Demo `/meet` gate: requires a completed demo booking once; join times follow **global** live windows (IST), not the lead’s booked slot.
+ * Demo `/meet` gate: requires a completed demo booking once. **Live IST windows are not enforced**
+ * (anyone with the link who passes OTP and has a booking may join at any time).
  *
  * @param {string} rawPhone
- * @param {Date} [now]
+ * @param {Date} [_now] unused; kept for API stability / tests
  * @returns {Promise<{
- *   status: 'allowed'|'too_early'|'no_booking',
+ *   status: 'allowed'|'no_booking',
  *   message: string,
  *   phone?: string,
  *   selectedSlot?: string|null,
  *   originalBookingSlotStart?: string,
  *   originalBookingSlotStartLabel?: string,
  *   slotStart?: string,
- *   joinOpensAt?: string,
- *   slotEnd?: string,
+ *   joinOpensAt?: string|null,
+ *   slotEnd?: string|null,
  *   slotStartLabel?: string,
  *   joinOpensAtLabel?: string,
  *   slotEndLabel?: string
  * }>}
  */
-async function getDemoMeetEligibility(rawPhone, now = new Date()) {
+async function getDemoMeetEligibility(rawPhone, _now = new Date()) {
   const phone = otpRepository.normalize(rawPhone);
   if (!phone || phone.length !== 10) {
     return {
@@ -58,10 +58,6 @@ async function getDemoMeetEligibility(rawPhone, now = new Date()) {
     };
   }
 
-  const scheduleDoc = await getOrCreateDemoMeetLiveSchedule();
-  const schedule = toPlainSchedule(scheduleDoc);
-  const live = evaluateLiveWindows(schedule, now);
-
   const bookingInfo = {
     phone,
     selectedSlot: doc.step3Data?.selectedSlot || null,
@@ -69,43 +65,16 @@ async function getDemoMeetEligibility(rawPhone, now = new Date()) {
     originalBookingSlotStartLabel: formatIst(slotStart),
   };
 
-  if (live.phase === 'no_windows') {
-    return {
-      status: 'too_early',
-      message:
-        live.message ||
-        'Demo meet join is not configured yet. Please ask an administrator to set live windows.',
-      ...bookingInfo,
-      joinOpensAtLabel: '',
-      slotEndLabel: '',
-      slotStartLabel: '',
-    };
-  }
-
-  if (live.phase === 'too_early') {
-    return {
-      status: 'too_early',
-      message: live.message,
-      ...bookingInfo,
-      joinOpensAt: live.joinOpensAt,
-      slotEnd: live.slotEnd,
-      slotStart: live.slotStart,
-      joinOpensAtLabel: live.joinOpensAtLabel || '',
-      slotEndLabel: live.slotEndLabel || '',
-      slotStartLabel: live.slotStartLabel || '',
-    };
-  }
-
   return {
     status: 'allowed',
-    message: live.message,
+    message: 'You may join the live demo now.',
     ...bookingInfo,
-    joinOpensAt: live.joinOpensAt,
-    slotEnd: live.slotEnd,
-    slotStart: live.slotStart,
-    joinOpensAtLabel: live.joinOpensAtLabel,
-    slotEndLabel: live.slotEndLabel,
-    slotStartLabel: live.slotStartLabel,
+    slotStart: slotStart.toISOString(),
+    joinOpensAt: null,
+    slotEnd: null,
+    joinOpensAtLabel: '',
+    slotEndLabel: '',
+    slotStartLabel: formatIst(slotStart),
   };
 }
 
