@@ -97,6 +97,39 @@ const IIT_ALLOWED_VALUES = {
   biggestConfusion: ['Course', 'College', 'Placements', 'Parent pressure', 'Not sure'],
 };
 
+const IIT_SLOT_BOOKING_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const IIT_SLOT_TO_IST_WEEKDAY_SHORT = {
+  'Wednesday 6PM': 'Wed',
+  'Saturday 6PM': 'Sat',
+  'Sunday 11AM': 'Sun',
+};
+
+function istWeekdayShortFromYmd(ymd) {
+  const d = new Date(`${ymd}T12:00:00+05:30`);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'Asia/Kolkata' }).format(d);
+}
+
+/** Optional slotBookingDate from client: YYYY-MM-DD and weekday must match slot (IST). */
+function normalizeOptionalSlotBookingDate(payload, slotBookingTrimmed) {
+  const raw = payload.slotBookingDate;
+  if (raw == null || raw === '') return { ok: true, value: null };
+  if (typeof raw !== 'string') {
+    return { ok: false, message: 'slotBookingDate must be a string' };
+  }
+  const ymd = raw.trim();
+  if (!IIT_SLOT_BOOKING_DATE_RE.test(ymd)) {
+    return { ok: false, message: 'slotBookingDate must be YYYY-MM-DD' };
+  }
+  const expected = IIT_SLOT_TO_IST_WEEKDAY_SHORT[slotBookingTrimmed];
+  if (!expected) return { ok: true, value: null };
+  const actual = istWeekdayShortFromYmd(ymd);
+  if (actual !== expected) {
+    return { ok: false, message: 'slotBookingDate does not match slot weekday (IST)' };
+  }
+  return { ok: true, value: ymd };
+}
+
 function normalizePhone(phone) {
   return otpRepository.normalize(phone);
 }
@@ -1109,6 +1142,12 @@ exports.saveIitSection1 = async (req, res) => {
       return res.status(400).json({ success: false, message: 'top5Colleges is required' });
     }
 
+    const slotBookingTrimmed = payload.slotBooking.trim();
+    const slotDateNorm = normalizeOptionalSlotBookingDate(payload, slotBookingTrimmed);
+    if (!slotDateNorm.ok) {
+      return res.status(400).json({ success: false, message: slotDateNorm.message });
+    }
+
     const now = new Date();
     const section1Data = {
       fullName,
@@ -1117,7 +1156,8 @@ exports.saveIitSection1 = async (req, res) => {
       classStatus: payload.classStatus.trim(),
       stream: payload.stream.trim(),
       city,
-      slotBooking: payload.slotBooking.trim(),
+      slotBooking: slotBookingTrimmed,
+      ...(slotDateNorm.value ? { slotBookingDate: slotDateNorm.value } : {}),
       top5Colleges,
       submittedAt: now,
     };

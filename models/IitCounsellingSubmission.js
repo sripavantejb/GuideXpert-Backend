@@ -67,6 +67,11 @@ const iitCounsellingSubmissionSchema = new mongoose.Schema({
       stream: { type: String, enum: ['MPC', 'BiPC', 'Commerce', 'Others'] },
       city: { type: String, trim: true },
       slotBooking: { type: String, enum: ['Wednesday 6PM', 'Saturday 6PM', 'Sunday 11AM'] },
+      slotBookingDate: {
+        type: String,
+        trim: true,
+        match: [/^\d{4}-\d{2}-\d{2}$/, 'slotBookingDate must be YYYY-MM-DD'],
+      },
       top5Colleges: [{ type: String, trim: true }],
       submittedAt: { type: Date },
     },
