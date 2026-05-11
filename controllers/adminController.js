@@ -273,6 +273,32 @@ function pickUtmFromSources(sub, visit) {
   };
 }
 
+/** Stages for deduping IIT submissions by phone (used by list + analytics). */
+const IIT_SUB_DEDUP_PHONE_ADD_FIELDS = {
+  $addFields: {
+    phoneKey: { $trim: { input: { $ifNull: ['$phone', ''] } } },
+    _demoSortKey: {
+      $let: {
+        vars: {
+          d: { $trim: { input: { $ifNull: ['$iitCounselling.section1Data.slotBookingDate', ''] } } },
+        },
+        in: {
+          $cond: [
+            {
+              $regexMatch: {
+                input: '$$d',
+                regex: '^\\d{4}-\\d{2}-\\d{2}$',
+              },
+            },
+            '$$d',
+            '0000-01-01',
+          ],
+        },
+      },
+    },
+  },
+};
+
 function mapIitCounsellingToDTO(sub, visit) {
   const iit = sub.iitCounselling || {};
   const utm = pickUtmFromSources(sub, visit);
@@ -402,10 +428,26 @@ exports.getIitCounsellingSubmissions = async (req, res) => {
       ];
     }
 
-    const [rows, total] = await Promise.all([
-      IitCounsellingSubmission.find(filter).sort({ updatedAt: -1, createdAt: -1, _id: -1 }).skip(skip).limit(limit).lean(),
-      IitCounsellingSubmission.countDocuments(filter),
-    ]);
+    const dedupePipeline = [
+      { $match: filter },
+      IIT_SUB_DEDUP_PHONE_ADD_FIELDS,
+      { $sort: { _demoSortKey: -1, updatedAt: -1, createdAt: -1, _id: -1 } },
+      { $group: { _id: '$phoneKey', doc: { $first: '$$ROOT' } } },
+      { $replaceRoot: { newRoot: '$doc' } },
+      { $project: { phoneKey: 0, _demoSortKey: 0 } },
+      { $sort: { updatedAt: -1, createdAt: -1, _id: -1 } },
+      {
+        $facet: {
+          data: [{ $skip: skip }, { $limit: limit }],
+          meta: [{ $count: 'total' }],
+        },
+      },
+    ];
+
+    const aggOut = await IitCounsellingSubmission.aggregate(dedupePipeline);
+    const facet = Array.isArray(aggOut) && aggOut[0] ? aggOut[0] : { data: [], meta: [] };
+    const rows = facet.data || [];
+    const total = facet.meta?.[0]?.total ?? 0;
 
     // Attach UTM from the most recent IitCounsellingVisit linked to each submission.
     const submissionIds = rows.map((r) => r._id).filter(Boolean);
@@ -472,7 +514,7 @@ exports.getIitCounsellingVisitAnalytics = async (req, res) => {
     }
 
     const trendDateFormat = dateTime.granularity === 'hourly' ? '%Y-%m-%d %H:00' : '%Y-%m-%d';
-    const [base, trend, topReferrers, topUtmSources, topCampaigns, totalSubmissions] = await Promise.all([
+    const [base, trend, topReferrers, topUtmSources, topCampaigns, uniqueSubmissionsAgg] = await Promise.all([
       IitCounsellingVisit.aggregate([
         { $match: match },
         {
@@ -518,15 +560,23 @@ exports.getIitCounsellingVisitAnalytics = async (req, res) => {
         { $sort: { visits: -1 } },
         { $limit: 500 },
       ]),
-      IitCounsellingSubmission.countDocuments({
-        submissionType: 'iitCounselling',
-        ...(dateTime.hasRange ? { createdAt: dateTime.createdAt } : {}),
-      }),
+      IitCounsellingSubmission.aggregate([
+        {
+          $match: {
+            submissionType: 'iitCounselling',
+            ...(dateTime.hasRange ? { createdAt: dateTime.createdAt } : {}),
+          },
+        },
+        { $addFields: { phoneKey: { $trim: { input: { $ifNull: ['$phone', ''] } } } } },
+        { $group: { _id: '$phoneKey' } },
+        { $count: 'total' },
+      ]),
     ]);
 
     const totals = base[0] || { totalVisits: 0, uniqueVisitors: [] };
     const totalVisits = totals.totalVisits || 0;
     const uniqueVisitors = Array.isArray(totals.uniqueVisitors) ? totals.uniqueVisitors.length : 0;
+    const totalSubmissions = uniqueSubmissionsAgg?.[0]?.total ?? 0;
 
     return res.status(200).json({
       success: true,
