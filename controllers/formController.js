@@ -86,7 +86,8 @@ const IIT_ALLOWED_VALUES = {
   studentOrParent: ['Student', 'Parent'],
   classStatus: ['12th Appearing', '12th Passed'],
   stream: ['MPC', 'BiPC', 'Commerce', 'Others'],
-  slotBooking: ['Saturday 6PM', 'Sunday 11AM'],
+  // Keep in sync with GuideXpert-Frontend/src/utils/weekendSlots.js getAvailableSlots() values.
+  slotBooking: ['Wednesday 6PM', 'Saturday 6PM', 'Sunday 11AM'],
   careerDecisionClarity: ['Very clear', 'Somewhat clear', 'Completely confused'],
   collegeDecisionStakeholder: ['Self', 'Parents', 'Both'],
   expectedBudget: ['<1L', '1-3L', '3-6L', '6L+'],
