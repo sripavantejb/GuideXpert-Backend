@@ -63,12 +63,10 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
   }
 
   const match = { messageKind };
-  if (fromAt || toAt) {
-    match.createdAt = {
-      ...(fromAt ? { $gte: fromAt } : {}),
-      ...(toAt ? { $lte: toAt } : {})
-    };
-  }
+  /** For "delivered in UI window" we still scope success events to the same date bounds. */
+  const windowCreatedRange = (fromAt || toAt)
+    ? { ...(fromAt ? { $gte: fromAt } : {}), ...(toAt ? { $lte: toAt } : {}) }
+    : null;
 
   const inFlightStaleBefore = new Date(Date.now() - getInFlightStaleMs());
 
@@ -119,7 +117,17 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
     }
   ]);
 
-  if (!rows.length) {
+  const rowInPreviewWindow = (r) => {
+    if (!fromAt && !toAt) return true;
+    const t = r.createdAt ? new Date(r.createdAt).getTime() : NaN;
+    if (Number.isNaN(t)) return false;
+    if (fromAt && t < fromAt.getTime()) return false;
+    if (toAt && t > toAt.getTime()) return false;
+    return true;
+  };
+  const rowsFiltered = rows.filter(rowInPreviewWindow);
+
+  if (!rowsFiltered.length) {
     return {
       data: {
         candidates: [],
@@ -132,12 +140,12 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
     };
   }
 
-  const allPhones = rows.map((r) => r._id).filter(Boolean);
+  const allPhones = rowsFiltered.map((r) => r._id).filter(Boolean);
 
   /** Phones already resolved within the same UI window (window-scoped exclusion) */
   const windowSuccess = await WhatsAppMessageEvent.distinct('phone', {
     messageKind,
-    ...(match.createdAt ? { createdAt: match.createdAt } : {}),
+    ...(windowCreatedRange ? { createdAt: windowCreatedRange } : {}),
     phone: { $in: allPhones },
     status: { $in: SUCCESS_TERMINAL_STATUSES }
   });
@@ -182,7 +190,7 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
   let skippedInFlightDuplicate = 0;
   const candidatesByReason = {};
 
-  rows.forEach((r) => {
+  rowsFiltered.forEach((r) => {
     const phone = r._id;
     if (!phone) return;
     if (windowSuccessSet.has(phone)) {

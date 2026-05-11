@@ -1377,6 +1377,7 @@ exports.getUnresolvedRecipients = async (req, res) => {
     const to = opsAggregates.parseBoundaryDate(params.to, 'end');
     const page = parseInt(String(params.page || '1'), 10) || 1;
     const limit = parseInt(String(params.limit || '50'), 10) || 50;
+    const q = params.q != null && String(params.q).trim() ? String(params.q).trim() : null;
 
     const result = await opsAggregates.computeUnresolvedRecipients({
       from,
@@ -1384,7 +1385,8 @@ exports.getUnresolvedRecipients = async (req, res) => {
       messageKind,
       group,
       page,
-      limit
+      limit,
+      q
     });
     if (result.error) {
       return res.status(400).json({ success: false, message: result.error });
@@ -1407,6 +1409,7 @@ exports.exportUnresolvedCsv = async (req, res) => {
     const group = params.group ? String(params.group).trim().toLowerCase() : 'all';
     const from = opsAggregates.parseBoundaryDate(params.from, 'start');
     const to = opsAggregates.parseBoundaryDate(params.to, 'end');
+    const q = params.q != null && String(params.q).trim() ? String(params.q).trim() : null;
 
     const result = await opsAggregates.computeUnresolvedRecipients({
       from,
@@ -1414,7 +1417,8 @@ exports.exportUnresolvedCsv = async (req, res) => {
       messageKind,
       group,
       page: 1,
-      limit: 200
+      limit: 200,
+      q
     });
     if (result.error) {
       return res.status(400).json({ success: false, message: result.error });
@@ -1431,7 +1435,8 @@ exports.exportUnresolvedCsv = async (req, res) => {
         messageKind,
         group,
         page: p,
-        limit: 200
+        limit: 200,
+        q
       });
       if (next?.data?.rows?.length) rows.push(...next.data.rows);
     }

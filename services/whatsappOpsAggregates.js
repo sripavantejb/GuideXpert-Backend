@@ -993,10 +993,29 @@ function classifyExclusionCategory(reason, status) {
  *   messageKind?: string|null,
  *   group?: 'failed'|'excluded'|'exhausted'|'not_accepted'|'in_flight_stale'|'all',
  *   page?: number, limit?: number,
+ *   q?: string|null,
  *   inFlightStaleMinutes?: number,
  *   notAcceptedThresholdMinutes?: number
  * }} opts
  */
+function reasonLabelFromAggRow(r) {
+  return r.lastExclusionReason
+    || (r.anyExhausted ? 'retry_exhausted'
+      : (r.anyTerminalFail ? 'failed'
+        : (r.anyNotAccepted ? 'not_accepted'
+          : (r.anyInFlightStale ? 'in_flight_stale' : 'unknown'))));
+}
+
+/** After grouping, keep rows whose latest event time falls in [from, to] (inclusive). */
+function lastEventInDateWindow(row, from, to) {
+  if (!from && !to) return true;
+  const t = row.lastCreatedAt ? new Date(row.lastCreatedAt).getTime() : NaN;
+  if (Number.isNaN(t)) return false;
+  if (from && t < from.getTime()) return false;
+  if (to && t > to.getTime()) return false;
+  return true;
+}
+
 async function computeUnresolvedRecipients({
   from = null,
   to = null,
@@ -1004,6 +1023,7 @@ async function computeUnresolvedRecipients({
   group = 'all',
   page = 1,
   limit = 50,
+  q = null,
   inFlightStaleMinutes = parseInt(process.env.WHATSAPP_RECOVERY_INFLIGHT_STALE_MINUTES || '180', 10) || 180,
   notAcceptedThresholdMinutes = parseInt(process.env.WHATSAPP_NOT_ACCEPTED_THRESHOLD_MINUTES || '30', 10) || 30
 } = {}) {
@@ -1020,8 +1040,9 @@ async function computeUnresolvedRecipients({
   const inFlightStaleBefore = new Date(Date.now() - inFlightStaleMinutes * 60 * 1000);
   const notAcceptedBefore = new Date(Date.now() - notAcceptedThresholdMinutes * 60 * 1000);
 
+  /** Do not filter by createdAt here: unresolved flags need the full attempt history per
+   *  phone+template. The UI date range is applied after grouping on lastCreatedAt. */
   const match = {
-    ...(from || to ? { createdAt: { ...(from ? { $gte: from } : {}), ...(to ? { $lte: to } : {}) } } : {}),
     ...(messageKind ? { messageKind } : {})
   };
 
@@ -1114,17 +1135,53 @@ async function computeUnresolvedRecipients({
     { $sort: { lastCreatedAt: -1 } }
   ]);
 
+  const windowRows = baseRows.filter((r) => lastEventInDateWindow(r, from, to));
+
+  /** Group filter applied AFTER global totals so tab counters stay accurate when no text search. */
+  let filtered = windowRows;
+  if (grp !== 'all') {
+    filtered = windowRows.filter((r) => {
+      if (grp === 'failed') return r.anyTerminalFail && !r.anyExhausted;
+      if (grp === 'excluded') return r.anyExcluded;
+      if (grp === 'exhausted') return r.anyExhausted;
+      if (grp === 'not_accepted') return r.anyNotAccepted;
+      if (grp === 'in_flight_stale') return r.anyInFlightStale;
+      return true;
+    });
+  }
+
+  const qTrim = q != null && String(q).trim() ? String(q).trim().toLowerCase() : '';
+
+  if (qTrim) {
+    const subIdsForQ = [...new Set(filtered.map((r) => r.lastFormSubmissionId).filter(Boolean))];
+    const subsForQ = subIdsForQ.length
+      ? await FormSubmission.find({ _id: { $in: subIdsForQ } }).select('fullName').lean()
+      : [];
+    const nameBySubId = Object.fromEntries(subsForQ.map((s) => [String(s._id), s.fullName || '']));
+
+    filtered = filtered.filter((r) => {
+      const phone = String(r._id?.phone || '').toLowerCase();
+      const template = String(r._id?.messageKind || '').toLowerCase();
+      const name = String(nameBySubId[String(r.lastFormSubmissionId)] || '').toLowerCase();
+      const err = String(r.lastErrorMessage || '').toLowerCase();
+      const excl = String(r.lastExclusionReason || '').toLowerCase();
+      const reason = String(reasonLabelFromAggRow(r) || '').toLowerCase();
+      return [phone, template, name, err, excl, reason].some((field) => field.includes(qTrim));
+    });
+  }
+
   const totalsByGroup = {
     failed: 0,
     excluded: 0,
     exhausted: 0,
     not_accepted: 0,
     in_flight_stale: 0,
-    all: baseRows.length
+    all: qTrim ? filtered.length : windowRows.length
   };
   const totalsByExclusionReason = {};
   const totalsByExclusionCategory = {};
-  baseRows.forEach((r) => {
+  const rowsForTotals = qTrim ? filtered : windowRows;
+  rowsForTotals.forEach((r) => {
     if (r.anyTerminalFail && r.anyExhausted !== 1) totalsByGroup.failed += 1;
     if (r.anyExcluded) totalsByGroup.excluded += 1;
     if (r.anyExhausted) totalsByGroup.exhausted += 1;
@@ -1135,19 +1192,6 @@ async function computeUnresolvedRecipients({
     const category = classifyExclusionCategory(r.lastExclusionReason, r.lastStatus);
     totalsByExclusionCategory[category] = (totalsByExclusionCategory[category] || 0) + 1;
   });
-
-  /** Group filter applied AFTER totals so tab counters stay accurate regardless of filter. */
-  let filtered = baseRows;
-  if (grp !== 'all') {
-    filtered = baseRows.filter((r) => {
-      if (grp === 'failed') return r.anyTerminalFail && !r.anyExhausted;
-      if (grp === 'excluded') return r.anyExcluded;
-      if (grp === 'exhausted') return r.anyExhausted;
-      if (grp === 'not_accepted') return r.anyNotAccepted;
-      if (grp === 'in_flight_stale') return r.anyInFlightStale;
-      return true;
-    });
-  }
 
   const total = filtered.length;
   const skip = (safePage - 1) * safeLimit;
@@ -1164,11 +1208,7 @@ async function computeUnresolvedRecipients({
   const rows = pageSlice.map((r) => {
     const phone = r._id.phone;
     const fs = r.lastFormSubmissionId ? subMap[String(r.lastFormSubmissionId)] : null;
-    const reasonLabel = r.lastExclusionReason
-      || (r.anyExhausted ? 'retry_exhausted'
-        : (r.anyTerminalFail ? 'failed'
-          : (r.anyNotAccepted ? 'not_accepted'
-            : (r.anyInFlightStale ? 'in_flight_stale' : 'unknown'))));
+    const reasonLabel = reasonLabelFromAggRow(r);
     return {
       phone,
       name: fs?.fullName || null,
@@ -1202,6 +1242,7 @@ async function computeUnresolvedRecipients({
         to: to || null,
         messageKind: messageKind || null,
         group: grp,
+        q: qTrim || null,
         inFlightStaleMinutes,
         notAcceptedThresholdMinutes
       },
