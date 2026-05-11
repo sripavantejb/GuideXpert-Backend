@@ -2,6 +2,7 @@ const MeetingAttendance = require('../models/MeetingAttendance');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 const otpRepository = require('../utils/otpRepository');
 const { getDemoMeetEligibility } = require('../utils/demoMeetEligibility');
+const { getOrientationMeetEligibility } = require('../utils/orientationMeetEligibility');
 
 exports.meetingHealth = async (req, res) => {
   try {
@@ -57,7 +58,8 @@ exports.registerForMeeting = async (req, res) => {
         data: {
           status: eligibility.status,
           slotStartLabel: eligibility.slotStartLabel,
-          joinOpensAtLabel: eligibility.joinOpensAtLabel
+          joinOpensAtLabel: eligibility.joinOpensAtLabel,
+          slotEndLabel: eligibility.slotEndLabel,
         }
       });
     }
@@ -65,7 +67,8 @@ exports.registerForMeeting = async (req, res) => {
     const record = await MeetingAttendance.create({
       name: rawName,
       mobileNumber: mobile,
-      attendanceStatus: 'joined'
+      attendanceStatus: 'joined',
+      meetType: 'demo',
     });
 
     return res.status(201).json({
@@ -119,6 +122,94 @@ function buildSearchQuery(q) {
   return { $or: clauses };
 }
 
+/** Admin list: default `demo` includes legacy docs without `meetType`. */
+function meetTypeClauseForAdmin(meetTypeQuery) {
+  const normalized = String(meetTypeQuery || 'demo').toLowerCase();
+  if (normalized === 'orientation') {
+    return { meetType: 'orientation' };
+  }
+  return {
+    $or: [{ meetType: 'demo' }, { meetType: { $exists: false } }],
+  };
+}
+
+function buildMeetingAttendanceMatch({ from, to, q, meetTypeQuery }) {
+  const parts = [meetTypeClauseForAdmin(meetTypeQuery)];
+  const dateRange = buildDateRange(from, to);
+  if (dateRange) parts.push({ timestamp: dateRange });
+  const searchQuery = buildSearchQuery(q);
+  if (searchQuery) parts.push(searchQuery);
+  if (parts.length === 1) return parts[0];
+  return { $and: parts };
+}
+
+exports.orientationMeetEligibility = async (req, res) => {
+  try {
+    const { mobileNumber } = req.body || {};
+    const eligibility = await getOrientationMeetEligibility(mobileNumber);
+    return res.status(200).json({
+      success: true,
+      data: eligibility,
+    });
+  } catch (error) {
+    console.error('[orientationMeetEligibility] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  }
+};
+
+exports.registerForOrientationMeeting = async (req, res) => {
+  try {
+    const { name, mobileNumber } = req.body || {};
+    const rawName = typeof name === 'string' ? name.trim() : '';
+    const mobile = normalizeMobile(mobileNumber || '');
+
+    if (!rawName || rawName.length < 2) {
+      return res.status(400).json({ success: false, message: 'Name is required (at least 2 characters)' });
+    }
+    if (rawName.length > 100) {
+      return res.status(400).json({ success: false, message: 'Name must be at most 100 characters' });
+    }
+    if (!mobile || mobile.length !== 10) {
+      return res.status(400).json({ success: false, message: 'Valid 10-digit mobile number is required' });
+    }
+
+    const eligibility = await getOrientationMeetEligibility(mobile);
+    if (eligibility.status !== 'allowed') {
+      return res.status(403).json({
+        success: false,
+        message: eligibility.message || 'You are not allowed to register for the orientation meet.',
+        data: { status: eligibility.status },
+      });
+    }
+
+    const record = await MeetingAttendance.create({
+      name: rawName,
+      mobileNumber: mobile,
+      attendanceStatus: 'joined',
+      meetType: 'orientation',
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Registered successfully',
+      data: {
+        id: record._id,
+        name: record.name,
+        mobileNumber: record.mobileNumber,
+        timestamp: record.timestamp,
+        attendanceStatus: record.attendanceStatus,
+      },
+    });
+  } catch (error) {
+    if (error.name === 'ValidationError') {
+      const msg = Object.values(error.errors).map((e) => e.message).join('; ');
+      return res.status(400).json({ success: false, message: msg || 'Validation failed' });
+    }
+    console.error('[registerForOrientationMeeting] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  }
+};
+
 exports.getMeetingAttendance = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -127,12 +218,12 @@ exports.getMeetingAttendance = async (req, res) => {
     const uniqueByMobile = String(req.query.uniqueByMobile || '').toLowerCase() === 'true';
     const dedupeMode = String(req.query.dedupeMode || 'latest').toLowerCase();
     const sortDirection = dedupeMode === 'oldest' ? 1 : -1;
-    const dateRange = buildDateRange(req.query.from, req.query.to);
-    const searchQuery = buildSearchQuery(req.query.q);
-
-    const match = {};
-    if (dateRange) match.timestamp = dateRange;
-    if (searchQuery) Object.assign(match, searchQuery);
+    const match = buildMeetingAttendanceMatch({
+      from: req.query.from,
+      to: req.query.to,
+      q: req.query.q,
+      meetTypeQuery: req.query.meetType,
+    });
 
     const statsPipeline = [
       { $match: match },

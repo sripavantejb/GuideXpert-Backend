@@ -20,6 +20,7 @@
     "test:poster-track": "node scripts/testPosterTrackKeys.js",
     "test:gupshup-webhook": "node --test test/gupshupWebhookFlow.test.js",
     "test:whatsapp-retry-rules": "node --test test/whatsappRetryRules.test.js",
+    "test:demo-meet-live-windows": "node --test test/demoMeetLiveWindows.test.js",
     "backfill:wa-retry-groups": "node scripts/backfillWhatsAppMessageEventRetryGroups.js"
   },
   "repository": {

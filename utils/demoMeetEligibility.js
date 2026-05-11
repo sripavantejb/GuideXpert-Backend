@@ -1,32 +1,23 @@
 const FormSubmission = require('../models/FormSubmission');
 const otpRepository = require('./otpRepository');
+const { evaluateLiveWindows, formatIst } = require('./demoMeetLiveWindows');
+const { getOrCreateDemoMeetLiveSchedule, toPlainSchedule } = require('../services/demoMeetLiveScheduleService');
 
 const FIVE_MIN_MS = 5 * 60 * 1000;
 const SLOT_DURATION_MS = 60 * 60 * 1000;
 
-const IST_FORMAT = {
-  timeZone: 'Asia/Kolkata',
-  weekday: 'long',
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-  hour12: true
-};
-
-function formatIst(date) {
-  return new Date(date).toLocaleString('en-IN', IST_FORMAT);
-}
-
 /**
+ * Demo `/meet` gate: requires a completed demo booking once; join times follow **global** live windows (IST), not the lead’s booked slot.
+ *
  * @param {string} rawPhone
  * @param {Date} [now]
  * @returns {Promise<{
- *   status: 'allowed'|'too_early'|'too_late'|'no_booking',
+ *   status: 'allowed'|'too_early'|'no_booking',
  *   message: string,
  *   phone?: string,
  *   selectedSlot?: string|null,
+ *   originalBookingSlotStart?: string,
+ *   originalBookingSlotStartLabel?: string,
  *   slotStart?: string,
  *   joinOpensAt?: string,
  *   slotEnd?: string,
@@ -40,7 +31,7 @@ async function getDemoMeetEligibility(rawPhone, now = new Date()) {
   if (!phone || phone.length !== 10) {
     return {
       status: 'no_booking',
-      message: 'Valid 10-digit mobile number is required.'
+      message: 'Valid 10-digit mobile number is required.',
     };
   }
 
@@ -63,54 +54,63 @@ async function getDemoMeetEligibility(rawPhone, now = new Date()) {
       status: 'no_booking',
       message:
         'We could not find a registered demo booking for this number. Please complete registration and book a demo slot first.',
-      phone
+      phone,
     };
   }
 
-  const joinOpensAt = new Date(slotStart.getTime() - FIVE_MIN_MS);
-  const slotEnd = new Date(slotStart.getTime() + SLOT_DURATION_MS);
-  const t = now.getTime();
+  const scheduleDoc = await getOrCreateDemoMeetLiveSchedule();
+  const schedule = toPlainSchedule(scheduleDoc);
+  const live = evaluateLiveWindows(schedule, now);
 
-  const slotStartLabel = formatIst(slotStart);
-  const joinOpensAtLabel = formatIst(joinOpensAt);
-  const slotEndLabel = formatIst(slotEnd);
-
-  const base = {
+  const bookingInfo = {
     phone,
-    selectedSlot: doc.step3Data.selectedSlot || null,
-    slotStart: slotStart.toISOString(),
-    joinOpensAt: joinOpensAt.toISOString(),
-    slotEnd: slotEnd.toISOString(),
-    slotStartLabel,
-    joinOpensAtLabel,
-    slotEndLabel
+    selectedSlot: doc.step3Data?.selectedSlot || null,
+    originalBookingSlotStart: slotStart.toISOString(),
+    originalBookingSlotStartLabel: formatIst(slotStart),
   };
 
-  if (t < joinOpensAt.getTime()) {
+  if (live.phase === 'no_windows') {
     return {
       status: 'too_early',
-      message: `Your demo session starts on ${slotStartLabel}. You will be allowed into the meet from ${joinOpensAtLabel} (5 minutes before the session starts).`,
-      ...base
+      message:
+        live.message ||
+        'Demo meet join is not configured yet. Please ask an administrator to set live windows.',
+      ...bookingInfo,
+      joinOpensAtLabel: '',
+      slotEndLabel: '',
+      slotStartLabel: '',
     };
   }
 
-  if (t >= slotEnd.getTime()) {
+  if (live.phase === 'too_early') {
     return {
-      status: 'too_late',
-      message: 'Your demo session window has ended. Please book a new demo slot if you would like to attend another session.',
-      ...base
+      status: 'too_early',
+      message: live.message,
+      ...bookingInfo,
+      joinOpensAt: live.joinOpensAt,
+      slotEnd: live.slotEnd,
+      slotStart: live.slotStart,
+      joinOpensAtLabel: live.joinOpensAtLabel || '',
+      slotEndLabel: live.slotEndLabel || '',
+      slotStartLabel: live.slotStartLabel || '',
     };
   }
 
   return {
     status: 'allowed',
-    message: 'You may join the demo meet now.',
-    ...base
+    message: live.message,
+    ...bookingInfo,
+    joinOpensAt: live.joinOpensAt,
+    slotEnd: live.slotEnd,
+    slotStart: live.slotStart,
+    joinOpensAtLabel: live.joinOpensAtLabel,
+    slotEndLabel: live.slotEndLabel,
+    slotStartLabel: live.slotStartLabel,
   };
 }
 
 module.exports = {
   getDemoMeetEligibility,
   FIVE_MIN_MS,
-  SLOT_DURATION_MS
+  SLOT_DURATION_MS,
 };

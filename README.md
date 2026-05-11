@@ -27,6 +27,10 @@ cp .env.example .env
 npm run dev
 ```
 
+## Demo meet (`/meet`) join gate
+
+Registered leads (completed demo booking) may join public `/meet` only during **global live windows** stored in MongoDB (`DemoMeetLiveSchedule`). Configure recurring IST windows in **Admin → Demo meet schedule** (`GET`/`PUT` `/api/admin/demo-meet-schedule`). This is independent of each lead’s originally chosen slot date.
+
 ## Endpoints
 
 | Method | Path | Description |
