@@ -1450,7 +1450,7 @@ exports.exportUnresolvedCsv = async (req, res) => {
       return String(a.phone || '').localeCompare(String(b.phone || ''));
     });
 
-    /** Operator export: India E.164-style lines `91` + 10-digit mobile, one per line (deduped). */
+    /** `91` + 10-digit mobile; CSV with phone + name (deduped by phone, first row wins). */
     const to91Line = (v) => {
       const d = String(v || '').replace(/\D/g, '');
       if (d.length < 10) return '';
@@ -1458,16 +1458,25 @@ exports.exportUnresolvedCsv = async (req, res) => {
       if (!/^\d{10}$/.test(national10)) return '';
       return `91${national10}`;
     };
+    const escapeCell = (v) => {
+      if (v == null) return '';
+      const s = String(v);
+      const inner = s.replace(/"/g, '""');
+      const trimmed = s.trimStart();
+      const mustQuote = /[",\r\n\t]/.test(s) || /^[=+\-@]/.test(trimmed);
+      return mustQuote ? `"${inner}"` : inner;
+    };
+    const header = 'phone,name';
     const seen = new Set();
-    const phones = [];
+    const lines = [];
     for (const r of rows) {
-      const line = to91Line(r.phone);
-      if (line && !seen.has(line)) {
-        seen.add(line);
-        phones.push(line);
-      }
+      const phone = to91Line(r.phone);
+      if (!phone || seen.has(phone)) continue;
+      seen.add(phone);
+      const name = r.name != null ? String(r.name) : '';
+      lines.push(`${escapeCell(phone)},${escapeCell(name)}`);
     }
-    const csvBody = phones.join('\r\n');
+    const csvBody = [header, ...lines].join('\r\n');
 
     const filename = `unresolved-phones-${messageKind || 'all'}-${group}-${Date.now()}.csv`;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
