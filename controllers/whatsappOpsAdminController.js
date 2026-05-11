@@ -1450,52 +1450,23 @@ exports.exportUnresolvedCsv = async (req, res) => {
       return String(a.phone || '').localeCompare(String(b.phone || ''));
     });
 
-    /** RFC 4180–style fields; quote on comma, quote, CR/LF, tab, or leading formula chars for Excel. */
-    const escape = (v) => {
-      if (v == null) return '';
-      const s = String(v);
-      const inner = s.replace(/"/g, '""');
-      const trimmed = s.trimStart();
-      const mustQuote = /[",\r\n\t]/.test(s) || /^[=+\-@]/.test(trimmed);
-      return mustQuote ? `"${inner}"` : inner;
+    /** Operator export: 10-digit phones only, one per line (no header, no other columns). */
+    const digitsOnly = (v) => {
+      const d = String(v || '').replace(/\D/g, '');
+      return d.length >= 10 ? d.slice(-10) : '';
     };
-    const header = [
-      'exclusion_category',
-      'reason',
-      'template',
-      'phone',
-      'name',
-      'attempt_stage',
-      'lifecycle_state',
-      'exclusion_reason',
-      'failure_reason',
-      'retry_history_count',
-      'retry_exhausted',
-      'ever_delivered_at',
-      'last_attempt_at',
-      'retry_group_id',
-      'last_event_id'
-    ].join(',');
-    const lines = rows.map((r) => [
-      escape(r.exclusionCategory),
-      escape(r.reason),
-      escape(r.messageKind),
-      escape(r.phone),
-      escape(r.name),
-      escape(r.attemptStage),
-      escape(r.lifecycleState),
-      escape(r.exclusionReason),
-      escape(r.errorMessage),
-      escape(r.retryHistoryCount),
-      escape(r.retryExhausted ? 'yes' : 'no'),
-      escape(r.everDeliveredAt ? new Date(r.everDeliveredAt).toISOString() : ''),
-      escape(r.lastAttemptAt ? new Date(r.lastAttemptAt).toISOString() : ''),
-      escape(r.retryGroupId),
-      escape(r.lastEventId)
-    ].join(','));
+    const seen = new Set();
+    const phones = [];
+    for (const r of rows) {
+      const p = digitsOnly(r.phone);
+      if (p.length === 10 && !seen.has(p)) {
+        seen.add(p);
+        phones.push(p);
+      }
+    }
+    const csvBody = phones.join('\r\n');
 
-    const filename = `unresolved-${messageKind || 'all'}-${group}-${Date.now()}.csv`;
-    const csvBody = [header, ...lines].join('\r\n');
+    const filename = `unresolved-phones-${messageKind || 'all'}-${group}-${Date.now()}.csv`;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/"/g, '')}"`);
     return res.send(`\uFEFF${csvBody}`);
