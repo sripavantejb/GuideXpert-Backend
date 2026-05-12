@@ -222,9 +222,20 @@ exports.getCalendarDayOverview = async (req, res) => {
   try {
     const dateIso = req.query.date || new Date().toISOString().slice(0, 10);
     const selectedKind = req.query.messageKind ? String(req.query.messageKind).trim() : null;
+    const slotTimeNorm = recipientAnalytics.normalizeSlotTimeParam(req.query.slotTime);
+    if (slotTimeNorm === null) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid slotTime. Use all, ${recipientAnalytics.ALLOWED_SLOT_TIME_SUFFIXES.join(', ')}.`
+      });
+    }
     const [legacy, recipient] = await Promise.all([
       opsAggregates.computeDayOverview({ dateIso, messageKind: selectedKind }),
-      recipientAnalytics.computeRecipientDayOverview({ dateIso, messageKind: selectedKind })
+      recipientAnalytics.computeRecipientDayOverview({
+        dateIso,
+        messageKind: selectedKind,
+        slotTime: slotTimeNorm
+      })
     ]);
     if (legacy.error) {
       return res.status(400).json({ success: false, message: legacy.error });
@@ -233,29 +244,37 @@ exports.getCalendarDayOverview = async (req, res) => {
       return res.status(400).json({ success: false, message: recipient.error });
     }
     const r = recipient.data;
-    const range = r.range || {};
+    const cohortIds = Array.isArray(r._cohortSubmissionIds) ? [...r._cohortSubmissionIds] : [];
+    const rPublic = { ...r };
+    delete rPublic._cohortSubmissionIds;
+    const range = rPublic.range || {};
     const [failureReasons, templateRank] = await Promise.all([
       recipientAnalytics.computeFailureReasonDistribution({
         from: range.from,
         to: range.to,
-        messageKind: selectedKind
+        messageKind: selectedKind,
+        formSubmissionIds: cohortIds.length ? cohortIds : null
       }),
       selectedKind
         ? Promise.resolve([])
-        : recipientAnalytics.computeTemplateReliabilityRanking({ from: range.from, to: range.to })
+        : recipientAnalytics.computeTemplateReliabilityRanking({
+            from: range.from,
+            to: range.to,
+            formSubmissionIds: cohortIds.length ? cohortIds : null
+          })
     ]);
     return res.json({
       success: true,
       data: {
         schemaVersion: 2,
-        cohortAnchor: r.cohortAnchor,
-        filter: r.filter,
-        range: r.range,
-        bookedSlotsCount: legacy.data.bookedSlotsCount,
-        recipientTotals: r.recipientTotals,
-        exclusionBreakdown: r.exclusionBreakdown,
-        retryFunnelByAttempt: r.retryFunnelByAttempt,
-        retryQueue: r.retryQueue,
+        cohortAnchor: rPublic.cohortAnchor,
+        filter: rPublic.filter,
+        range: rPublic.range,
+        bookedSlotsCount: rPublic.bookedSlotsCount,
+        recipientTotals: rPublic.recipientTotals,
+        exclusionBreakdown: rPublic.exclusionBreakdown,
+        retryFunnelByAttempt: rPublic.retryFunnelByAttempt,
+        retryQueue: rPublic.retryQueue,
         charts: {
           failureReasons,
           templateReliability: templateRank
@@ -1018,6 +1037,7 @@ exports.triggerRetryBatch = async (req, res) => {
  *   - scope: 'summary' | 'month' | 'day' | 'all' (defaults to 'summary')
  *   - month: YYYY-MM (when scope=month or all)
  *   - date: YYYY-MM-DD (when scope=day or all)
+ *   - slotTime: all | 11AM | 3PM | 6PM | 7PM (when scope=day or all; optional, default all)
  *   - from / to: ISO strings (when scope=summary or all)
  *   - messageKind: optional filter
  */
@@ -1110,51 +1130,69 @@ exports.captureSnapshot = async (req, res) => {
 
     if (wantDay) {
       const dateIso = params.date || new Date().toISOString().slice(0, 10);
-      const [day, recipient] = await Promise.all([
-        opsAggregates.computeDayOverview({ dateIso, messageKind }),
-        recipientAnalytics.computeRecipientDayOverview({ dateIso, messageKind })
-      ]);
-      if (day.error) {
-        errors.push({ scope: 'day', message: day.error });
-      } else {
-        const r = recipient.error ? {} : recipient.data;
-        const range = r.range || {};
-        const [failureReasons, templateRank] = await Promise.all([
-          recipientAnalytics.computeFailureReasonDistribution({
-            from: range.from,
-            to: range.to,
-            messageKind
-          }),
-          messageKind
-            ? Promise.resolve([])
-            : recipientAnalytics.computeTemplateReliabilityRanking({ from: range.from, to: range.to })
-        ]);
-        await captureOne({
-          scopeKey: opsAggregates.buildScopeKey({ scope: 'day', messageKind, dateIso }),
+      const slotT = recipientAnalytics.normalizeSlotTimeParam(params.slotTime);
+      if (slotT === null) {
+        errors.push({
           scope: 'day',
-          payload: {
-            schemaVersion: 2,
-            cohortAnchor: r.cohortAnchor,
-            filter: r.filter,
-            range: r.range,
-            bookedSlotsCount: day.data.bookedSlotsCount,
-            recipientTotals: r.recipientTotals,
-            exclusionBreakdown: r.exclusionBreakdown,
-            retryFunnelByAttempt: r.retryFunnelByAttempt,
-            retryQueue: r.retryQueue,
-            charts: { failureReasons, templateReliability: templateRank },
-            legacyAttemptMetrics: {
-              overall: day.data.overall,
-              selectedKindMetrics: day.data.selectedKindMetrics,
-              byKind: day.data.byKind,
-              byStatus: day.data.byStatus,
-              byAttempt: day.data.byAttempt,
-              retry2Exclusions: day.data.retry2Exclusions,
-              uniqueRecipientsDeliveredRead: day.data.uniqueRecipientsDeliveredRead
-            }
-          },
-          range: { dateIso, monthIso: null, fromIso: null, toIso: null }
+          message: `Invalid slotTime. Use all, ${recipientAnalytics.ALLOWED_SLOT_TIME_SUFFIXES.join(', ')}.`
         });
+      } else {
+        const [day, recipient] = await Promise.all([
+          opsAggregates.computeDayOverview({ dateIso, messageKind }),
+          recipientAnalytics.computeRecipientDayOverview({ dateIso, messageKind, slotTime: slotT })
+        ]);
+        if (day.error) {
+          errors.push({ scope: 'day', message: day.error });
+        } else if (recipient.error) {
+          errors.push({ scope: 'day', message: recipient.error });
+        } else {
+          const rRaw = recipient.data;
+          const cohortIds = Array.isArray(rRaw._cohortSubmissionIds) ? [...rRaw._cohortSubmissionIds] : [];
+          const r = { ...rRaw };
+          delete r._cohortSubmissionIds;
+          const range = r.range || {};
+          const [failureReasons, templateRank] = await Promise.all([
+            recipientAnalytics.computeFailureReasonDistribution({
+              from: range.from,
+              to: range.to,
+              messageKind,
+              formSubmissionIds: cohortIds.length ? cohortIds : null
+            }),
+            messageKind
+              ? Promise.resolve([])
+              : recipientAnalytics.computeTemplateReliabilityRanking({
+                  from: range.from,
+                  to: range.to,
+                  formSubmissionIds: cohortIds.length ? cohortIds : null
+                })
+          ]);
+          await captureOne({
+            scopeKey: opsAggregates.buildScopeKey({ scope: 'day', messageKind, dateIso, slotTime: slotT }),
+            scope: 'day',
+            payload: {
+              schemaVersion: 2,
+              cohortAnchor: r.cohortAnchor,
+              filter: r.filter,
+              range: r.range,
+              bookedSlotsCount: r.bookedSlotsCount != null ? r.bookedSlotsCount : day.data.bookedSlotsCount,
+              recipientTotals: r.recipientTotals,
+              exclusionBreakdown: r.exclusionBreakdown,
+              retryFunnelByAttempt: r.retryFunnelByAttempt,
+              retryQueue: r.retryQueue,
+              charts: { failureReasons, templateReliability: templateRank },
+              legacyAttemptMetrics: {
+                overall: day.data.overall,
+                selectedKindMetrics: day.data.selectedKindMetrics,
+                byKind: day.data.byKind,
+                byStatus: day.data.byStatus,
+                byAttempt: day.data.byAttempt,
+                retry2Exclusions: day.data.retry2Exclusions,
+                uniqueRecipientsDeliveredRead: day.data.uniqueRecipientsDeliveredRead
+              }
+            },
+            range: { dateIso, monthIso: null, fromIso: null, toIso: null, slotTime: slotT }
+          });
+        }
       }
     }
 
@@ -1215,7 +1253,14 @@ exports.getLatestSnapshot = async (req, res) => {
         scopeKey = opsAggregates.buildScopeKey({ scope: 'month', messageKind, monthIso });
       } else if (s === 'day') {
         const dateIso = params.date || new Date().toISOString().slice(0, 10);
-        scopeKey = opsAggregates.buildScopeKey({ scope: 'day', messageKind, dateIso });
+        const slotT = recipientAnalytics.normalizeSlotTimeParam(params.slotTime);
+        const slotForKey = slotT === null ? 'all' : slotT;
+        scopeKey = opsAggregates.buildScopeKey({
+          scope: 'day',
+          messageKind,
+          dateIso,
+          slotTime: slotForKey
+        });
       }
       if (!scopeKey) {
         out[s] = null;

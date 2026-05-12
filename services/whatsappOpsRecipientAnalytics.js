@@ -1,12 +1,13 @@
 /**
- * Deterministic recipient-based WhatsApp ops analytics (slot-day IST cohort).
- * One logical recipient = (messageKind, phone, lineageId) where lineageId = canonicalRetryGroupId || retryGroupId.
+ * Deterministic recipient-based WhatsApp ops analytics (booking cohort: IST slot calendar day
+ * + optional slot time, FormSubmission-backed). All-templates rollup groups by phone across message kinds.
  */
 const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');
 const WhatsAppRetryGroup = require('../models/WhatsAppRetryGroup');
 const FormSubmission = require('../models/FormSubmission');
 
 const ALLOWED_MESSAGE_KINDS = ['slot_booked', 'pre4hr', 'meet', '30min'];
+const ALLOWED_SLOT_TIME_SUFFIXES = ['11AM', '3PM', '6PM', '7PM'];
 const IST_OFFSET_MINUTES = 330;
 const ACCEPTED_STATUSES = ['submitted', 'sent', 'delivered', 'read'];
 const SENT_PLUS = ['sent', 'delivered', 'read'];
@@ -33,6 +34,27 @@ function istDayRangeFromIso(dateIso) {
 function divPct(num, den) {
   if (!den) return null;
   return Math.round((num / den) * 1000) / 10;
+}
+
+/** @param {unknown} raw */
+function normalizeSlotTimeParam(raw) {
+  if (raw == null || raw === '') return 'all';
+  const s = String(raw).trim();
+  if (!s || s.toLowerCase() === 'all') return 'all';
+  const u = s.toUpperCase();
+  if (ALLOWED_SLOT_TIME_SUFFIXES.includes(u)) return u;
+  return null;
+}
+
+function buildBookingCohortFilter(range, slotTimeNorm) {
+  const q = {
+    isRegistered: true,
+    'step3Data.slotDate': { $gte: range.from, $lte: range.to }
+  };
+  if (slotTimeNorm && slotTimeNorm !== 'all') {
+    q['step3Data.selectedSlot'] = new RegExp(`_${slotTimeNorm}$`);
+  }
+  return q;
 }
 
 /** Annotate events with slotDayIst + lineageId + lookup slot from submission */
@@ -109,26 +131,45 @@ function annotateEventsWithSlotDayPipeline(messageKindFilter) {
 /**
  * @returns {Promise<object>}
  */
-async function computeRecipientDayOverview({ dateIso, messageKind = null }) {
+async function computeRecipientDayOverview({ dateIso, messageKind = null, slotTime = 'all' }) {
   if (messageKind && !ALLOWED_MESSAGE_KINDS.includes(messageKind)) {
     return { error: `Invalid messageKind. Allowed: ${ALLOWED_MESSAGE_KINDS.join(', ')}` };
+  }
+  const slotTimeNorm = normalizeSlotTimeParam(slotTime);
+  if (slotTimeNorm === null) {
+    return { error: `Invalid slotTime. Allowed: all, ${ALLOWED_SLOT_TIME_SUFFIXES.join(', ')}` };
   }
   const range = istDayRangeFromIso(dateIso);
   if (!range) return { error: 'Invalid date format. Use YYYY-MM-DD' };
 
+  const cohortFilter = buildBookingCohortFilter(range, slotTimeNorm);
+  const [cohortBookedCount, cohortIds] = await Promise.all([
+    FormSubmission.countDocuments(cohortFilter),
+    FormSubmission.distinct('_id', cohortFilter)
+  ]);
+
+  const withWaIds =
+    cohortIds.length > 0
+      ? await WhatsAppMessageEvent.distinct('formSubmissionId', { formSubmissionId: { $in: cohortIds } })
+      : [];
+  const withWaSet = new Set(withWaIds.map((id) => String(id)));
+  const bookedWithoutAnyWaEvent = cohortIds.filter((id) => !withWaSet.has(String(id))).length;
+
   const slotDayMatch = { $match: { slotDayIst: range.isoDate } };
+  const cohortMatch = { $match: { formSubmissionId: { $in: cohortIds } } };
   const annotate = annotateEventsWithSlotDayPipeline(messageKind);
 
+  const recipientGroupId = messageKind
+    ? { lineageId: '$lineageId', phone: '$phone', messageKind: '$messageKind' }
+    : { phone: '$phone' };
+
+  const baseAfterAnnotate = [...annotate, slotDayMatch, cohortMatch];
+
   const recipientRollupStages = [
-    ...annotate,
-    slotDayMatch,
+    ...baseAfterAnnotate,
     {
       $group: {
-        _id: {
-          lineageId: '$lineageId',
-          phone: '$phone',
-          messageKind: '$messageKind'
-        },
+        _id: recipientGroupId,
         maxAttempt: { $max: '$attemptNumber' },
         everDelivered: {
           $max: { $cond: [{ $in: ['$status', DELIVERED_PLUS] }, 1, 0] }
@@ -206,14 +247,14 @@ async function computeRecipientDayOverview({ dateIso, messageKind = null }) {
     }
   ];
 
-  const [recipientRows, bookedSlots, exclusionRows, groupSchedule] = await Promise.all([
+  const funnelRowId = messageKind
+    ? { attempt: '$attemptNumber', lineageId: '$lineageId', phone: '$phone', messageKind: '$messageKind' }
+    : { attempt: '$attemptNumber', phone: '$phone' };
+
+  const [recipientRows, exclusionRows, groupSchedule] = await Promise.all([
     WhatsAppMessageEvent.aggregate(recipientRollupStages),
-    FormSubmission.countDocuments({
-      'step3Data.slotDate': { $gte: range.from, $lte: range.to }
-    }),
     WhatsAppMessageEvent.aggregate([
-      ...annotate,
-      slotDayMatch,
+      ...baseAfterAnnotate,
       { $match: { retryExclusionReason: { $ne: null } } },
       { $group: { _id: '$retryExclusionReason', count: { $sum: 1 } } }
     ]),
@@ -256,16 +297,10 @@ async function computeRecipientDayOverview({ dateIso, messageKind = null }) {
   });
 
   const funnelStages = await WhatsAppMessageEvent.aggregate([
-    ...annotate,
-    slotDayMatch,
+    ...baseAfterAnnotate,
     {
       $group: {
-        _id: {
-          attempt: '$attemptNumber',
-          lineageId: '$lineageId',
-          phone: '$phone',
-          messageKind: '$messageKind'
-        },
+        _id: funnelRowId,
         accepted: {
           $max: { $cond: [{ $in: ['$status', ACCEPTED_STATUSES] }, 1, 0] }
         },
@@ -309,19 +344,18 @@ async function computeRecipientDayOverview({ dateIso, messageKind = null }) {
     };
   });
 
-  const nextDue = groupSchedule.length
-    ? groupSchedule[0].nextPromotionDueAt
-    : null;
+  const nextDue = groupSchedule.length ? groupSchedule[0].nextPromotionDueAt : null;
 
   return {
     data: {
       schemaVersion: 2,
-      cohortAnchor: 'slot_day_ist',
-      filter: { date: range.isoDate, messageKind: messageKind || null },
+      cohortAnchor: 'booking_ist_slot_day',
+      filter: { date: range.isoDate, messageKind: messageKind || null, slotTime: slotTimeNorm },
       range: { from: range.from, to: range.to },
-      bookedSlotsCount: bookedSlots,
+      bookedSlotsCount: cohortBookedCount,
       recipientTotals: {
         ...totals,
+        bookedWithoutAnyWaEvent,
         excludedTotal: Object.values(exclusionByReason).reduce((a, b) => a + b, 0)
       },
       exclusionBreakdown: exclusionByReason,
@@ -334,7 +368,8 @@ async function computeRecipientDayOverview({ dateIso, messageKind = null }) {
           hasAttempt2: !!g.attempt2BatchId,
           hasAttempt3: !!g.attempt3BatchId
         }))
-      }
+      },
+      _cohortSubmissionIds: cohortIds
     }
   };
 }
@@ -418,7 +453,7 @@ async function computeRecipientMonthTrend({ monthIso, messageKind = null }) {
   return { data: { days: simplified } };
 }
 
-async function computeFailureReasonDistribution({ from, to, messageKind = null }) {
+async function computeFailureReasonDistribution({ from, to, messageKind = null, formSubmissionIds = null }) {
   const match = {
     status: { $in: TERMINAL_FAILURE },
     ...(from || to
@@ -429,7 +464,10 @@ async function computeFailureReasonDistribution({ from, to, messageKind = null }
           }
         }
       : {}),
-    ...(messageKind ? { messageKind } : {})
+    ...(messageKind ? { messageKind } : {}),
+    ...(formSubmissionIds && formSubmissionIds.length
+      ? { formSubmissionId: { $in: formSubmissionIds } }
+      : {})
   };
   const rows = await WhatsAppMessageEvent.aggregate([
     { $match: match },
@@ -477,7 +515,7 @@ async function computeFailureReasonDistribution({ from, to, messageKind = null }
   return rows;
 }
 
-async function computeTemplateReliabilityRanking({ from, to }) {
+async function computeTemplateReliabilityRanking({ from, to, formSubmissionIds = null }) {
   const match = {
     ...(from || to
       ? {
@@ -486,6 +524,9 @@ async function computeTemplateReliabilityRanking({ from, to }) {
             ...(to ? { $lte: to } : {})
           }
         }
+      : {}),
+    ...(formSubmissionIds && formSubmissionIds.length
+      ? { formSubmissionId: { $in: formSubmissionIds } }
       : {})
   };
   const rows = await WhatsAppMessageEvent.aggregate([
@@ -563,6 +604,8 @@ async function computeTemplateReliabilityRanking({ from, to }) {
 
 module.exports = {
   ALLOWED_MESSAGE_KINDS,
+  ALLOWED_SLOT_TIME_SUFFIXES,
+  normalizeSlotTimeParam,
   computeRecipientDayOverview,
   computeRecipientMonthTrend,
   computeFailureReasonDistribution,

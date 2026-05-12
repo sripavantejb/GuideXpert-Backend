@@ -482,13 +482,17 @@ async function computeDayOverview({ dateIso, messageKind = null }) {
 
 /**
  * Deterministic key used to upsert/replace WhatsAppOpsChartSnapshot per scope.
- * @param {{ scope: 'summary'|'month'|'day', messageKind?: string|null, monthIso?: string|null, dateIso?: string|null, fromIso?: string|null, toIso?: string|null }} parts
+ * @param {{ scope: 'summary'|'month'|'day', messageKind?: string|null, monthIso?: string|null, dateIso?: string|null, fromIso?: string|null, toIso?: string|null, slotTime?: string|null }} parts
  */
 function buildScopeKey(parts) {
   const scope = String(parts.scope || '').toLowerCase();
   const kind = parts.messageKind || 'all';
   if (scope === 'month') return `month:${kind}:${parts.monthIso || ''}`;
-  if (scope === 'day') return `day:${kind}:${parts.dateIso || ''}`;
+  if (scope === 'day') {
+    const date = parts.dateIso || '';
+    const st = parts.slotTime && String(parts.slotTime) !== 'all' ? String(parts.slotTime) : '';
+    return st ? `day:${kind}:${date}:${st}` : `day:${kind}:${date}`;
+  }
   return `summary:${kind}:${parts.fromIso || ''}:${parts.toIso || ''}`;
 }
 
