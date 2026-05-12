@@ -8,13 +8,20 @@ const whatsAppMessageEventSchema = new mongoose.Schema({
     default: null,
     index: true
   },
-  /** 1 = initial, 2 = first retry slice, 3 = second retry slice */
+  /** 1 = initial; 2–3 automated retries; 4+ reserved for admin_manual continuation */
   attemptNumber: {
     type: Number,
     required: true,
     min: 1,
-    max: 3,
+    max: 6,
     default: 1,
+    index: true
+  },
+  /** Original lineage for recipient-based analytics when retryGroupId is a new manual batch */
+  canonicalRetryGroupId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'WhatsAppRetryGroup',
+    default: null,
     index: true
   },
   parentMessageEventId: {
@@ -27,9 +34,18 @@ const whatsAppMessageEventSchema = new mongoose.Schema({
   attemptBatchId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
   retrySource: {
     type: String,
-    enum: ['initial', 'retry1', 'retry2'],
+    enum: ['initial', 'retry1', 'retry2', 'manual_recovery'],
     default: 'initial'
   },
+  /** Set when failure is classified non-retryable for campaigns (or transient) */
+  terminalFailureKind: {
+    type: String,
+    enum: ['permanent', 'transient'],
+    default: null,
+    index: true
+  },
+  /** Parent attempt superseded for promotion (stale in-flight); status unchanged for monotonic safety */
+  promotionSupersededAt: { type: Date, default: null, index: true },
   /** True when eligible for scheduling into the next attempt (terminal failure); false after delivered/read */
   retryEligible: { type: Boolean, default: true, index: true },
   correlationId: { type: String, trim: true, maxlength: 64, default: null, index: true },
@@ -92,14 +108,17 @@ const whatsAppMessageEventSchema = new mongoose.Schema({
       'cooldown_blocked',
       'missing_phone',
       'missing_registered_submission',
-      'policy_non_retryable'
+      'policy_non_retryable',
+      'permanent_failure',
+      'in_flight_timeout',
+      'promotion_superseded'
     ],
     default: null,
     index: true
   },
   retryExclusionAt: { type: Date, default: null },
   retryExclusionMeta: {
-    nextAttempt: { type: Number, min: 2, max: 3, default: null },
+    nextAttempt: { type: Number, min: 2, max: 6, default: null },
     attemptBatchId: { type: mongoose.Schema.Types.ObjectId, default: null },
     note: { type: String, trim: true, maxlength: 200, default: null }
   },
@@ -116,6 +135,11 @@ whatsAppMessageEventSchema.index({ phone: 1, messageKind: 1, createdAt: -1 });
 whatsAppMessageEventSchema.index({ messageKind: 1, createdAt: -1 });
 whatsAppMessageEventSchema.index({ retryGroupId: 1, attemptNumber: 1 });
 whatsAppMessageEventSchema.index({ messageKind: 1, attemptNumber: 1, retryEligible: 1, status: 1, createdAt: 1 });
+whatsAppMessageEventSchema.index({ messageKind: 1, formSubmissionId: 1, createdAt: -1 });
+whatsAppMessageEventSchema.index(
+  { canonicalRetryGroupId: 1, attemptNumber: 1 },
+  { partialFilterExpression: { canonicalRetryGroupId: { $exists: true, $type: 'objectId' } } }
+);
 /** One row per (group, phone, attempt); partial so legacy rows without retryGroupId are not indexed */
 whatsAppMessageEventSchema.index(
   { retryGroupId: 1, phone: 1, attemptNumber: 1 },

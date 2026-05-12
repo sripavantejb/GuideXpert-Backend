@@ -18,6 +18,7 @@
 const mongoose = require('mongoose');
 const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');
 const WhatsAppManualRecoveryJob = require('../models/WhatsAppManualRecoveryJob');
+const WhatsAppRetryGroup = require('../models/WhatsAppRetryGroup');
 const FormSubmission = require('../models/FormSubmission');
 const gupshupService = require('./gupshupService');
 const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
@@ -81,6 +82,7 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
     { $match: match },
     {
       $addFields: {
+        lineageId: { $ifNull: ['$canonicalRetryGroupId', '$retryGroupId'] },
         unresolvedRank: {
           $cond: [
             { $in: ['$status', TERMINAL_FAILURE_STATUSES] }, 3,
@@ -106,6 +108,8 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
         _id: '$phone',
         eventId: { $first: '$_id' },
         retryGroupId: { $first: '$retryGroupId' },
+        lineageId: { $first: '$lineageId' },
+        maxAttemptAtStart: { $max: '$attemptNumber' },
         attemptNumber: { $first: '$attemptNumber' },
         status: { $first: '$status' },
         retryExclusionReason: { $first: '$retryExclusionReason' },
@@ -223,10 +227,19 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
     }
     candidatesByReason[reason] = (candidatesByReason[reason] || 0) + 1;
 
+    const lineageOid =
+      r.lineageId && mongoose.Types.ObjectId.isValid(String(r.lineageId))
+        ? new mongoose.Types.ObjectId(String(r.lineageId))
+        : r.retryGroupId && mongoose.Types.ObjectId.isValid(String(r.retryGroupId))
+          ? new mongoose.Types.ObjectId(String(r.retryGroupId))
+          : null;
+
     candidates.push({
       phone,
       eventId: r.eventId,
       retryGroupId: r.retryGroupId,
+      lineageId: lineageOid,
+      maxAttemptAtStart: Number(r.maxAttemptAtStart) || Number(r.attemptNumber) || 1,
       attemptNumber: r.attemptNumber,
       status: r.status,
       retryExclusionReason: r.retryExclusionReason,
@@ -291,7 +304,13 @@ async function isStillUnresolved(messageKind, phone, candidateCreatedAt) {
  */
 async function computePostStartCounters(job) {
   if (!job?.startedAt || !Array.isArray(job.candidatePhones) || !job.candidatePhones.length) {
-    return { recovered: 0, inFlight: 0 };
+    return {
+      recovered: 0,
+      inFlight: 0,
+      failed: 0,
+      excluded: 0,
+      delivered: 0
+    };
   }
   const rows = await WhatsAppMessageEvent.aggregate([
     {
@@ -306,17 +325,46 @@ async function computePostStartCounters(job) {
         _id: '$phone',
         delivered: { $max: { $cond: [{ $in: ['$status', SUCCESS_TERMINAL_STATUSES] }, 1, 0] } },
         terminalFail: { $max: { $cond: [{ $in: ['$status', TERMINAL_FAILURE_STATUSES] }, 1, 0] } },
+        excluded: {
+          $max: {
+            $cond: [
+              {
+                $and: [
+                  { $ne: ['$retryExclusionReason', null] },
+                  { $ne: ['$retryExclusionReason', ''] }
+                ]
+              },
+              1,
+              0
+            ]
+          }
+        },
         inFlight: { $max: { $cond: [{ $in: ['$status', IN_FLIGHT_STATUSES] }, 1, 0] } }
       }
     }
   ]);
   let recovered = 0;
   let inFlight = 0;
+  let failed = 0;
+  let excluded = 0;
   rows.forEach((r) => {
-    if (r.delivered) recovered += 1;
-    else if (r.inFlight && !r.terminalFail) inFlight += 1;
+    if (r.delivered) {
+      recovered += 1;
+    } else if (r.excluded) {
+      excluded += 1;
+    } else if (r.terminalFail) {
+      failed += 1;
+    } else if (r.inFlight) {
+      inFlight += 1;
+    }
   });
-  return { recovered, inFlight };
+  return {
+    recovered,
+    inFlight,
+    failed,
+    excluded,
+    delivered: recovered
+  };
 }
 
 async function executeJob(jobId) {
@@ -338,27 +386,21 @@ async function executeJob(jobId) {
     return;
   }
 
-  /**
-   * Resolve eventId per phone so we can attach `parentMessageEventId` lineage on each
-   * resend. Accepts the candidatePhones list and looks up the most recent matching
-   * event per (phone, messageKind).
-   */
-  const parentEventByPhone = new Map();
-  try {
-    const recent = await WhatsAppMessageEvent.aggregate([
-      {
-        $match: {
-          messageKind: job.messageKind,
-          phone: { $in: Array.isArray(job.candidatePhones) ? job.candidatePhones : [] }
-        }
-      },
-      { $sort: { phone: 1, createdAt: -1 } },
-      { $group: { _id: '$phone', eventId: { $first: '$_id' } } }
-    ]);
-    recent.forEach((r) => parentEventByPhone.set(r._id, r.eventId));
-  } catch {
-    /* lineage best-effort only */
+  let batchRetryGroupId = job.batchRetryGroupId;
+  if (!batchRetryGroupId) {
+    const g = await WhatsAppRetryGroup.create({
+      messageKind: job.messageKind,
+      trigger: 'manual',
+      status: 'open'
+    });
+    batchRetryGroupId = g._id;
+    await WhatsAppManualRecoveryJob.updateOne({ _id: jobId }, { $set: { batchRetryGroupId } });
   }
+
+  const lineageByPhone = new Map();
+  (Array.isArray(job.candidateLineage) ? job.candidateLineage : []).forEach((e) => {
+    if (e && e.phone) lineageByPhone.set(e.phone, e);
+  });
 
   try {
     const phones = Array.isArray(job.candidatePhones) ? [...job.candidatePhones] : [];
@@ -405,7 +447,9 @@ async function executeJob(jobId) {
         continue;
       }
 
-      const guard = await isStillUnresolved(job.messageKind, phone, null);
+      const lineage = lineageByPhone.get(phone) || {};
+      const candidateCreatedAt = lineage.candidateCreatedAt || null;
+      const guard = await isStillUnresolved(job.messageKind, phone, candidateCreatedAt);
       if (!guard.ok) {
         if (guard.reason === 'already_delivered_or_read') skippedAlreadyDelivered += 1;
         else if (guard.reason === 'newer_in_flight') skippedInFlightDuplicate += 1;
@@ -426,6 +470,18 @@ async function executeJob(jobId) {
       const withMeetingLink = job.messageKind === 'meet' || job.messageKind === '30min';
       const vars = buildSlotNotificationVariables(sub, { withMeetingLink });
 
+      const maxA = Number(lineage.maxAttemptAtStart);
+      const maxAttemptStart = Number.isFinite(maxA) && maxA > 0 ? maxA : 1;
+      const nextAttempt = Math.min(6, maxAttemptStart + 1);
+      const parentId =
+        lineage.lastEventId && mongoose.Types.ObjectId.isValid(String(lineage.lastEventId))
+          ? lineage.lastEventId
+          : null;
+      const canon =
+        lineage.lineageId && mongoose.Types.ObjectId.isValid(String(lineage.lineageId))
+          ? lineage.lineageId
+          : null;
+
       attempted += 1;
       const r = await safeSendWhatsApp({
         phone10: phone,
@@ -436,7 +492,10 @@ async function executeJob(jobId) {
         cronRunId: null,
         cronJobKey: null,
         sendFn,
-        parentMessageEventId: parentEventByPhone.get(phone) || null
+        retryGroupId: batchRetryGroupId,
+        attemptNumber: nextAttempt,
+        parentMessageEventId: parentId,
+        canonicalRetryGroupId: canon
       });
       if (r && r.success) apiAccepted += 1;
       else sendFailed += 1;
@@ -462,6 +521,9 @@ async function executeJob(jobId) {
             'counters.remaining': Math.max(0, phones.length - (i + 1)),
             'counters.recovered': post.recovered,
             'counters.inFlight': post.inFlight,
+            'counters.delivered': post.delivered,
+            'counters.failed': post.failed,
+            'counters.excluded': post.excluded,
             lastProgressAt: new Date()
           }
         }
@@ -486,7 +548,10 @@ async function executeJob(jobId) {
           lastProgressAt: new Date(),
           'counters.remaining': 0,
           'counters.recovered': finalPost.recovered,
-          'counters.inFlight': finalPost.inFlight
+          'counters.inFlight': finalPost.inFlight,
+          'counters.delivered': finalPost.delivered,
+          'counters.failed': finalPost.failed,
+          'counters.excluded': finalPost.excluded
         }
       }
     );

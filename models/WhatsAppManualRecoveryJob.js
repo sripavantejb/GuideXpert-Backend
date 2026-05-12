@@ -9,11 +9,26 @@ const countersSchema = new mongoose.Schema(
     skippedAlreadyDelivered: { type: Number, default: 0 },
     skippedGlobalRecentSuccess: { type: Number, default: 0 },
     skippedInFlightDuplicate: { type: Number, default: 0 },
+    skippedPermanent: { type: Number, default: 0 },
+    excluded: { type: Number, default: 0 },
+    delivered: { type: Number, default: 0 },
+    failed: { type: Number, default: 0 },
     remaining: { type: Number, default: 0 },
     /** Phones whose post-start row reached delivered/read (live recovery counter). */
     recovered: { type: Number, default: 0 },
     /** Phones with submitted/sent post-start row, not yet delivered or terminal. */
     inFlight: { type: Number, default: 0 }
+  },
+  { _id: false }
+);
+
+const candidateLineageEntrySchema = new mongoose.Schema(
+  {
+    phone: { type: String, required: true, match: [/^\d{10}$/, '10-digit phone'] },
+    lineageId: { type: mongoose.Schema.Types.ObjectId, default: null },
+    lastEventId: { type: mongoose.Schema.Types.ObjectId, default: null },
+    maxAttemptAtStart: { type: Number, default: 1 },
+    candidateCreatedAt: { type: Date, default: null }
   },
   { _id: false }
 );
@@ -40,7 +55,17 @@ const whatsAppManualRecoveryJobSchema = new mongoose.Schema({
   toAt: { type: Date, default: null },
   /** Lookback used to skip phones with recent delivered/read same kind */
   globalSuccessLookbackDays: { type: Number, default: 7 },
+  /** Single WhatsAppRetryGroup for all sends in this recovery batch */
+  batchRetryGroupId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'WhatsAppRetryGroup',
+    default: null,
+    index: true
+  },
+  /** Phones targeted by this job (same order as preview filter) */
   candidatePhones: { type: [String], default: [] },
+  /** Snapshot of lineage per phone for execute parity with preview (max 500 entries) */
+  candidateLineage: { type: [candidateLineageEntrySchema], default: [] },
   createdBy: { type: String, trim: true, maxlength: 100, default: null },
   startedAt: { type: Date, default: null },
   finishedAt: { type: Date, default: null },

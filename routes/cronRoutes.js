@@ -15,6 +15,16 @@ const { executeRetryWhatsAppBatch } = require('../services/retryWhatsAppBatch');
 const { isOsviConfigured } = require('../utils/osviService');
 const { processOsviOutboundForPhone } = require('../utils/osviOutboundProcessor');
 const { hasCronSecretConfigured, isValidCronSecret } = require('../utils/cronSecret');
+const {
+  getPre4hrCronConfigFromEnv,
+  getPre4hrSlotDateBoundsForCron
+} = require('../utils/pre4hrSchedule');
+const {
+  getMeetCronConfigFromEnv,
+  getMeetSlotDateBoundsForCron,
+  get30MinCronConfigFromEnv,
+  get30MinSlotDateBoundsForCron
+} = require('../utils/waSlotRelativeSchedule');
 
 function verifyCronSecret(req, res, next) {
   if (!hasCronSecretConfigured()) {
@@ -82,18 +92,35 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
     cronRun = await startCronRun('send_reminders');
 
     const now = new Date();
-    const fourHoursFromNow = new Date(now.getTime() + 4 * 60 * 60 * 1000);
+    const pre4hrCfg = getPre4hrCronConfigFromEnv();
+    const { slotDateMin, slotDateMax } = getPre4hrSlotDateBoundsForCron(now, pre4hrCfg);
+
+    console.log('[Cron] pre4hr slotDate window (T−4h band, not rolling [now, now+4h])', {
+      nowIso: now.toISOString(),
+      slotDateMinIso: slotDateMin.toISOString(),
+      slotDateMaxIso: slotDateMax.toISOString(),
+      offsetMs: pre4hrCfg.offsetMs,
+      windowMs: pre4hrCfg.windowMs
+    });
 
     const usersToRemind = await FormSubmission.find({
       isRegistered: true,
       reminderSent: { $ne: true },
       'step3Data.slotDate': {
-        $gte: now,
-        $lte: fourHoursFromNow
+        $gt: now,
+        $gte: slotDateMin,
+        $lte: slotDateMax
       }
     }).lean();
 
-    console.log('[Cron] Found', usersToRemind.length, 'users to send reminders');
+    console.log('[Cron] Found', usersToRemind.length, 'users to send reminders (pre4hr band)');
+
+    const pre4hrWindowStats = {
+      pre4hrSlotDateMinIso: slotDateMin.toISOString(),
+      pre4hrSlotDateMaxIso: slotDateMax.toISOString(),
+      pre4hrOffsetMs: pre4hrCfg.offsetMs,
+      pre4hrWindowMs: pre4hrCfg.windowMs
+    };
 
     if (usersToRemind.length === 0) {
       await finishCronRun(cronRun, {
@@ -104,12 +131,13 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
         waSucceeded: 0,
         waFailed: 0,
         retriesAttempted: 0,
-        flagsUpdated: 0
+        flagsUpdated: 0,
+        ...pre4hrWindowStats
       });
       return res.status(200).json({
         success: true,
         message: 'No reminders to send',
-        stats: { found: 0, sent: 0, failed: 0 }
+        stats: { found: 0, sent: 0, failed: 0, ...pre4hrWindowStats }
       });
     }
 
@@ -172,7 +200,8 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
       waSucceeded: whatsappReminderSucceeded,
       waFailed: whatsappReminderFailed,
       retriesAttempted: 0,
-      flagsUpdated: smsResult.success ? usersToRemind.length : 0
+      flagsUpdated: smsResult.success ? usersToRemind.length : 0,
+      ...pre4hrWindowStats
     }, { success: smsResult.success });
 
     return res.status(200).json({
@@ -184,7 +213,8 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
         failed: smsResult.failedCount,
         whatsappAttempted: whatsappReminderAttempted,
         whatsappFailed: whatsappReminderFailed,
-        whatsappSucceeded: whatsappReminderSucceeded
+        whatsappSucceeded: whatsappReminderSucceeded,
+        ...pre4hrWindowStats
       },
       error: smsResult.error || null
     });
@@ -212,18 +242,35 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
     cronRun = await startCronRun('send_meetlinks');
 
     const now = new Date();
-    const oneHourFromNow = new Date(now.getTime() + 1 * 60 * 60 * 1000);
+    const meetCfg = getMeetCronConfigFromEnv();
+    const { slotDateMin: meetSlotMin, slotDateMax: meetSlotMax } = getMeetSlotDateBoundsForCron(now, meetCfg);
+
+    console.log('[Cron] meet slotDate window (T−1h band, not rolling [now, now+1h])', {
+      nowIso: now.toISOString(),
+      slotDateMinIso: meetSlotMin.toISOString(),
+      slotDateMaxIso: meetSlotMax.toISOString(),
+      offsetMs: meetCfg.offsetMs,
+      windowMs: meetCfg.windowMs
+    });
 
     const usersToSendMeetLink = await FormSubmission.find({
       isRegistered: true,
       meetLinkSent: { $ne: true },
       'step3Data.slotDate': {
-        $gte: now,
-        $lte: oneHourFromNow
+        $gt: now,
+        $gte: meetSlotMin,
+        $lte: meetSlotMax
       }
     }).lean();
 
-    console.log('[Cron] Found', usersToSendMeetLink.length, 'users to send meet links');
+    console.log('[Cron] Found', usersToSendMeetLink.length, 'users to send meet links (meet band)');
+
+    const meetWindowStats = {
+      meetSlotDateMinIso: meetSlotMin.toISOString(),
+      meetSlotDateMaxIso: meetSlotMax.toISOString(),
+      meetOffsetMs: meetCfg.offsetMs,
+      meetWindowMs: meetCfg.windowMs
+    };
 
     if (usersToSendMeetLink.length === 0) {
       await finishCronRun(cronRun, {
@@ -234,12 +281,13 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
         waSucceeded: 0,
         waFailed: 0,
         retriesAttempted: 0,
-        flagsUpdated: 0
+        flagsUpdated: 0,
+        ...meetWindowStats
       });
       return res.status(200).json({
         success: true,
         message: 'No meet links to send',
-        stats: { found: 0, sent: 0, failed: 0 }
+        stats: { found: 0, sent: 0, failed: 0, ...meetWindowStats }
       });
     }
 
@@ -308,7 +356,8 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
       waSucceeded: whatsappMeetSucceeded,
       waFailed: whatsappMeetFailed,
       retriesAttempted: 0,
-      flagsUpdated: smsResult.success ? usersToSendMeetLink.length : 0
+      flagsUpdated: smsResult.success ? usersToSendMeetLink.length : 0,
+      ...meetWindowStats
     }, { success: smsResult.success });
 
     return res.status(200).json({
@@ -320,7 +369,8 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
         failed: smsResult.failedCount,
         whatsappAttempted: whatsappMeetAttempted,
         whatsappFailed: whatsappMeetFailed,
-        whatsappSucceeded: whatsappMeetSucceeded
+        whatsappSucceeded: whatsappMeetSucceeded,
+        ...meetWindowStats
       },
       error: smsResult.error || null
     });
@@ -348,18 +398,38 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
     cronRun = await startCronRun('send_30min_reminders');
 
     const now = new Date();
-    const thirtyMinFromNow = new Date(now.getTime() + 30 * 60 * 1000);
+    const thirtyCfg = get30MinCronConfigFromEnv();
+    const { slotDateMin: thirtySlotMin, slotDateMax: thirtySlotMax } = get30MinSlotDateBoundsForCron(
+      now,
+      thirtyCfg
+    );
+
+    console.log('[Cron] 30min slotDate window (T−30m band, not rolling [now, now+30m])', {
+      nowIso: now.toISOString(),
+      slotDateMinIso: thirtySlotMin.toISOString(),
+      slotDateMaxIso: thirtySlotMax.toISOString(),
+      offsetMs: thirtyCfg.offsetMs,
+      windowMs: thirtyCfg.windowMs
+    });
 
     const usersToSend30MinReminder = await FormSubmission.find({
       isRegistered: true,
       reminder30MinSent: { $ne: true },
       'step3Data.slotDate': {
-        $gte: now,
-        $lte: thirtyMinFromNow
+        $gt: now,
+        $gte: thirtySlotMin,
+        $lte: thirtySlotMax
       }
     }).lean();
 
-    console.log('[Cron] Found', usersToSend30MinReminder.length, 'users to send 30-min reminders');
+    console.log('[Cron] Found', usersToSend30MinReminder.length, 'users to send 30-min reminders (30min band)');
+
+    const thirtyMinWindowStats = {
+      thirtyMinSlotDateMinIso: thirtySlotMin.toISOString(),
+      thirtyMinSlotDateMaxIso: thirtySlotMax.toISOString(),
+      thirtyMinOffsetMs: thirtyCfg.offsetMs,
+      thirtyMinWindowMs: thirtyCfg.windowMs
+    };
 
     if (usersToSend30MinReminder.length === 0) {
       await finishCronRun(cronRun, {
@@ -370,12 +440,13 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
         waSucceeded: 0,
         waFailed: 0,
         retriesAttempted: 0,
-        flagsUpdated: 0
+        flagsUpdated: 0,
+        ...thirtyMinWindowStats
       });
       return res.status(200).json({
         success: true,
         message: 'No 30-min reminders to send',
-        stats: { found: 0, sent: 0, failed: 0 }
+        stats: { found: 0, sent: 0, failed: 0, ...thirtyMinWindowStats }
       });
     }
 
@@ -444,7 +515,8 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
       waSucceeded: whatsapp30Succeeded,
       waFailed: whatsapp30Failed,
       retriesAttempted: 0,
-      flagsUpdated: smsResult.success ? usersToSend30MinReminder.length : 0
+      flagsUpdated: smsResult.success ? usersToSend30MinReminder.length : 0,
+      ...thirtyMinWindowStats
     }, { success: smsResult.success });
 
     return res.status(200).json({
@@ -456,7 +528,8 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
         failed: smsResult.failedCount,
         whatsappAttempted: whatsapp30Attempted,
         whatsappFailed: whatsapp30Failed,
-        whatsappSucceeded: whatsapp30Succeeded
+        whatsappSucceeded: whatsapp30Succeeded,
+        ...thirtyMinWindowStats
       },
       error: smsResult.error || null
     });

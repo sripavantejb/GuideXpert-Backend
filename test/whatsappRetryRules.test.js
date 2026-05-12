@@ -2,11 +2,14 @@ const { describe, test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   filterRetryPromotionRows,
+  filterRetryPromotionRowsV2,
   RETRY_EXCLUSION_REASON,
   getRetryPolicy,
   isCampaignStrategy,
   isImmediateOnlyStrategy,
-  isRetryableFailure
+  isRetryableFailure,
+  getRetryDelayMsAfterAttempt,
+  retrySourceFromAttemptNumber
 } = require('../utils/whatsappRetryRules');
 
 describe('filterRetryPromotionRows (50 → 20 → 5 style exclusions)', () => {
@@ -92,7 +95,43 @@ describe('template-specific retry policy behavior', () => {
     assert.equal(isRetryableFailure('slot_booked', { errorReason: 'user blocked business' }), false);
   });
 
-  test('campaign templates are retryable regardless of error classification helper', () => {
-    assert.equal(isRetryableFailure('pre4hr', { errorReason: 'invalid number' }), true);
+  test('campaign templates treat permanent-pattern errors as non-retryable', () => {
+    assert.equal(isRetryableFailure('pre4hr', { errorReason: 'invalid number not on whatsapp' }), false);
+    assert.equal(isRetryableFailure('meet', { errorText: 'user blocked business' }), false);
+    assert.equal(isRetryableFailure('30min', { errorText: 'network timeout' }), true);
+  });
+});
+
+describe('filterRetryPromotionRowsV2 (per-row eligibleAtMs)', () => {
+  const now = Date.now();
+  const row = (phone, eligibleAtMs, overrides = {}) => ({
+    phone,
+    eligibleAtMs,
+    retryEligible: true,
+    ...overrides
+  });
+
+  test('omits rows until eligibleAtMs <= now', () => {
+    const out = filterRetryPromotionRowsV2(
+      [row('9111111111', now + 60_000), row('9222222222', now - 1)],
+      { neverRetryPhones: [], alreadyPromotedPhones: [] }
+    );
+    assert.equal(out.includedRows.length, 1);
+    assert.equal(out.includedRows[0].phone, '9222222222');
+    assert.equal(out.exclusionCounts[RETRY_EXCLUSION_REASON.cooldownBlocked], 1);
+  });
+});
+
+describe('getRetryDelayMsAfterAttempt', () => {
+  test('uses policy retryDelayMinutes index by fromAttempt', () => {
+    const ms = getRetryDelayMsAfterAttempt('pre4hr', 1);
+    assert.ok(ms >= 60_000);
+  });
+});
+
+describe('retrySourceFromAttemptNumber', () => {
+  test('attempts beyond 3 map to manual_recovery', () => {
+    assert.equal(retrySourceFromAttemptNumber(4), 'manual_recovery');
+    assert.equal(retrySourceFromAttemptNumber(6), 'manual_recovery');
   });
 });

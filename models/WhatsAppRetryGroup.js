@@ -21,6 +21,19 @@ const whatsAppRetryGroupSchema = new mongoose.Schema({
   attempt2TriggeredAt: { type: Date, default: null },
   attempt3BatchId: { type: mongoose.Schema.Types.ObjectId, default: null },
   attempt3TriggeredAt: { type: Date, default: null },
+  /** When attempt-1 batch promotion finished (all sends attempted for attempt 2 trigger) */
+  attempt1CompletedAt: { type: Date, default: null },
+  /** When attempt-2 batch promotion finished */
+  attempt2CompletedAt: { type: Date, default: null },
+  /** Earliest time the next promotion sweep may target this group (UI countdown) */
+  nextPromotionDueAt: { type: Date, default: null, index: true },
+  /** Manual recovery continuation from an exhausted/open group */
+  continuedFromGroupId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'WhatsAppRetryGroup',
+    default: null,
+    index: true
+  },
   status: {
     type: String,
     enum: ['open', 'closed_no_more_retries', 'exhausted'],

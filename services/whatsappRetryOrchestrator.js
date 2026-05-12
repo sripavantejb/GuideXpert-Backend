@@ -13,11 +13,13 @@ const {
 const {
   TERMINAL_FAILURE_STATUSES,
   SUCCESS_TERMINAL_STATUSES,
+  IN_FLIGHT_PROMOTION_STATUSES,
   RETRY_EXCLUSION_REASON,
-  filterRetryPromotionRows,
+  filterRetryPromotionRowsV2,
   isCampaignStrategy,
   getRetryPolicy,
-  retryCooldownMsForKind,
+  getRetryDelayMsAfterAttempt,
+  inFlightPromotionStaleMsForKind,
   isRetryableFailure
 } = require('../utils/whatsappRetryRules');
 
@@ -108,6 +110,22 @@ async function persistRetryExclusionStates({ includedRows, excludedRows, nextAtt
  * @param {1|2} fromAttempt failures at this slice feed the next promotion
  * @returns {Promise<{ candidateCount: number, candidates: { phone: string, parentMessageEventId: mongoose.Types.ObjectId }[], excludedReasons?: object, excludedRows?: object[] }>}
  */
+function rowEligibleAtMs(groupKind, fromAttempt, row) {
+  const delayMs = getRetryDelayMsAfterAttempt(groupKind, fromAttempt);
+  const staleMs = inFlightPromotionStaleMsForKind(groupKind);
+  const st = String(row.status || '').toLowerCase();
+  const isTerminal = TERMINAL_FAILURE_STATUSES.includes(st);
+  if (isTerminal) {
+    const base = new Date(row.failedAt || row.updatedAt || row.createdAt || Date.now()).getTime();
+    return base + delayMs;
+  }
+  if (IN_FLIGHT_PROMOTION_STATUSES.includes(st)) {
+    const base = new Date(row.createdAt || Date.now()).getTime() + staleMs;
+    return base + delayMs;
+  }
+  return Date.now();
+}
+
 async function computeRetryCandidates(retryGroupId, fromAttempt) {
   const gid = new mongoose.Types.ObjectId(String(retryGroupId));
   const fa = fromAttempt === 2 ? 2 : 1;
@@ -117,7 +135,9 @@ async function computeRetryCandidates(retryGroupId, fromAttempt) {
     return { candidateCount: 0, candidates: [], excludedReasons: { nonCampaignOrMissingGroup: true } };
   }
 
-  const [neverRetryPhones, alreadyNextPhones, rawFailed] = await Promise.all([
+  const staleBefore = new Date(Date.now() - inFlightPromotionStaleMsForKind(group.messageKind));
+
+  const [neverRetryPhones, alreadyNextPhones, rawRows] = await Promise.all([
     WhatsAppMessageEvent.distinct('phone', {
       retryGroupId: gid,
       status: { $in: SUCCESS_TERMINAL_STATUSES }
@@ -129,37 +149,97 @@ async function computeRetryCandidates(retryGroupId, fromAttempt) {
     WhatsAppMessageEvent.find({
       retryGroupId: gid,
       attemptNumber: fa,
-      status: { $in: TERMINAL_FAILURE_STATUSES }
+      $or: [
+        { status: { $in: TERMINAL_FAILURE_STATUSES } },
+        { status: { $in: IN_FLIGHT_PROMOTION_STATUSES }, createdAt: { $lte: staleBefore } }
+      ]
     })
-      .select('phone failedAt updatedAt createdAt retryEligible _id')
+      .select(
+        'phone failedAt updatedAt createdAt retryEligible _id status errorMessage webhookErrorCode webhookErrorReason'
+      )
       .lean()
   ]);
 
-  const { includedRows, excludedRows, exclusionCounts } = filterRetryPromotionRows(rawFailed, {
+  const permanentExcluded = [];
+  const eligibleRows = [];
+  const now = new Date();
+
+  for (const r of rawRows || []) {
+    const st = String(r.status || '').toLowerCase();
+    if (TERMINAL_FAILURE_STATUSES.includes(st) && !isRetryableFailure(group.messageKind, {
+      errorCode: r.webhookErrorCode,
+      errorReason: r.webhookErrorReason,
+      errorText: r.errorMessage
+    })) {
+      permanentExcluded.push({
+        _id: r._id,
+        phone: r.phone,
+        reason: RETRY_EXCLUSION_REASON.permanentFailure
+      });
+      continue;
+    }
+    eligibleRows.push({
+      ...r,
+      eligibleAtMs: rowEligibleAtMs(group.messageKind, fromAttempt, r),
+      _staleInFlight: IN_FLIGHT_PROMOTION_STATUSES.includes(st) && !TERMINAL_FAILURE_STATUSES.includes(st)
+    });
+  }
+
+  if (permanentExcluded.length) {
+    const permIds = permanentExcluded.map((x) => x._id).filter(Boolean);
+    await WhatsAppMessageEvent.updateMany(
+      { _id: { $in: permIds } },
+      {
+        $set: {
+          retryEligible: false,
+          terminalFailureKind: 'permanent',
+          retryExclusionReason: RETRY_EXCLUSION_REASON.permanentFailure,
+          retryExclusionAt: now,
+          'retryExclusionMeta.nextAttempt': nextAttempt,
+          'retryExclusionMeta.note': 'non_retryable_classification'
+        }
+      }
+    );
+  }
+
+  const { includedRows, excludedRows, exclusionCounts } = filterRetryPromotionRowsV2(eligibleRows, {
     neverRetryPhones,
-    alreadyPromotedPhones: alreadyNextPhones,
-    cooldownCutoffMs: retryCooldownMsForKind(group.messageKind) || cooldownMs()
+    alreadyPromotedPhones: alreadyNextPhones
   });
-  const missingPhoneCount = rawFailed.filter((r) => !r.phone).length;
+
+  const permanentRows = permanentExcluded.map((x) => ({
+    phone: x.phone,
+    parentMessageEventId: x._id,
+    reason: x.reason
+  }));
+
+  const allExcluded = [...permanentRows, ...excludedRows];
+  permanentRows.forEach((row) => {
+    exclusionCounts[row.reason] = (exclusionCounts[row.reason] || 0) + 1;
+  });
+
+  const missingPhoneCount = rawRows.filter((r) => !r.phone).length;
   if (!exclusionCounts[RETRY_EXCLUSION_REASON.missingPhone] && missingPhoneCount > 0) {
     exclusionCounts[RETRY_EXCLUSION_REASON.missingPhone] = missingPhoneCount;
   }
 
   const candidates = includedRows.map((r) => ({
     phone: r.phone,
-    parentMessageEventId: r._id
+    parentMessageEventId: r._id,
+    _staleInFlight: !!r._staleInFlight
   }));
 
   return {
     candidateCount: candidates.length,
     candidates,
-    excludedRows,
+    excludedRows: allExcluded,
     excludedReasons: {
       phonesDeliveredOrRead: neverRetryPhones.length,
       phonesAlreadyAtNextAttempt: alreadyNextPhones.length,
-      rawFailuresBeforeRules: rawFailed.length,
+      rawRowsBeforeRules: rawRows.length,
+      permanentClassified: permanentExcluded.length,
       byReason: exclusionCounts,
-      totalExcluded: excludedRows.length
+      totalExcluded: allExcluded.length
     }
   };
 }
@@ -304,6 +384,23 @@ async function executeRetryAttempt(opts) {
     const withMeetingLink = group.messageKind === 'meet' || group.messageKind === '30min';
     const vars = buildSlotNotificationVariables(subFull, { withMeetingLink });
 
+    if (c._staleInFlight) {
+      await WhatsAppMessageEvent.updateOne(
+        { _id: c.parentMessageEventId },
+        {
+          $set: {
+            promotionSupersededAt: new Date(),
+            retryEligible: false,
+            retryExclusionReason: RETRY_EXCLUSION_REASON.inFlightTimeout,
+            retryExclusionAt: new Date(),
+            'retryExclusionMeta.nextAttempt': nextAttempt,
+            'retryExclusionMeta.attemptBatchId': attemptBatchId || null,
+            'retryExclusionMeta.note': 'stale_in_flight_promotion'
+          }
+        }
+      );
+    }
+
     const r = await safeSendWhatsApp({
       phone10: c.phone,
       formSubmissionId: subFull._id,
@@ -324,6 +421,19 @@ async function executeRetryAttempt(opts) {
   }
   /* eslint-enable no-await-in-loop */
 
+  const delayMs = getRetryDelayMsAfterAttempt(group.messageKind, fromAttempt);
+  const completedField = fromAttempt === 1 ? 'attempt1CompletedAt' : 'attempt2CompletedAt';
+  await WhatsAppRetryGroup.updateOne(
+    { _id: gid },
+    {
+      $set: {
+        [completedField]: new Date(),
+        nextPromotionDueAt: new Date(Date.now() + delayMs),
+        updatedAt: new Date()
+      }
+    }
+  );
+
   return {
     attempted,
     succeeded,
@@ -336,7 +446,6 @@ async function executeRetryAttempt(opts) {
   };
 }
 
-/** @param {mongoose.Types.ObjectId|string} retryGroupId @param {2|3} promoteToAttempt */
 async function previewRetryPromotion(retryGroupId, promoteToAttempt) {
   if (promoteToAttempt !== 2 && promoteToAttempt !== 3) {
     return {
@@ -358,11 +467,11 @@ async function previewRetryPromotion(retryGroupId, promoteToAttempt) {
   return { dupBlocked, candidateCount, phonesSample, excludedReasons, promoteToAttempt };
 }
 
-const DEFAULT_MAX_GROUPS_PER_CRON = parseInt(process.env.WHATSAPP_RETRY_CRON_MAX_GROUPS || '15', 10) || 15;
+const CRON_BUDGET_MS = parseInt(process.env.WHATSAPP_RETRY_CRON_BUDGET_MS || '25000', 10) || 25000;
 
 /**
  * Sweep open groups needing attempt 2 or 3 promotions (cron).
- * @returns {Promise<{ groupsTouched: number, attempted: number, succeeded: number, failed: number, foundCandidates: number }>}
+ * @returns {Promise<{ groupsTouched: number, attempted: number, succeeded: number, failed: number, foundCandidates: number, deferredByBudget: number }>}
  */
 async function scanGroupsNeedingRetries(cronRunId) {
   const windowStart = new Date(Date.now() - 72 * 60 * 60 * 1000);
@@ -371,7 +480,7 @@ async function scanGroupsNeedingRetries(cronRunId) {
     createdAt: { $gte: windowStart }
   })
     .sort({ createdAt: 1 })
-    .limit(250)
+    .limit(500)
     .lean();
 
   let groupsTouched = 0;
@@ -379,11 +488,17 @@ async function scanGroupsNeedingRetries(cronRunId) {
   let succeeded = 0;
   let failed = 0;
   let foundCandidates = 0;
+  let deferredByBudget = 0;
+  const deadline = Date.now() + CRON_BUDGET_MS;
 
   /* eslint-disable no-await-in-loop */
   for (const g of groups) {
-    if (groupsTouched >= DEFAULT_MAX_GROUPS_PER_CRON) break;
+    if (Date.now() > deadline) {
+      deferredByBudget += 1;
+      continue;
+    }
     if (!isCampaignStrategy(g.messageKind)) continue;
+    if (g.nextPromotionDueAt && new Date(g.nextPromotionDueAt).getTime() > Date.now()) continue;
 
     let promoteTo = null;
     if (!g.attempt2BatchId) {
@@ -414,7 +529,7 @@ async function scanGroupsNeedingRetries(cronRunId) {
   }
   /* eslint-enable no-await-in-loop */
 
-  return { groupsTouched, attempted, succeeded, failed, foundCandidates };
+  return { groupsTouched, attempted, succeeded, failed, foundCandidates, deferredByBudget };
 }
 
 /**

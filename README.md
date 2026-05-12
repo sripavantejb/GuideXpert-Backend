@@ -73,11 +73,13 @@ Seed sample articles (only if collection is empty): `npm run seed:blogs`
 
 ## Cron (production)
 
-Set `CRON_SECRET` in the environment. Schedule HTTP calls (e.g. Vercel Cron or external scheduler) **every minute** where applicable:
+Set `CRON_SECRET` / `GUIDEXPERT_CRON_SECRET` in the environment. Schedule HTTP calls (e.g. Vercel Cron or external scheduler) **every minute** where applicable:
 
 | GET | Path | Purpose |
 |-----|------|---------|
-| | `/api/cron/send-reminders` | Reminder SMS (existing) |
+| | `/api/cron/send-reminders` | Reminder SMS + pre4hr WhatsApp: **narrow band** around `slotTime ≈ now + 4h` (not `[now, now+4h]`). Tune `WA_PRE4HR_OFFSET_MS` / `WA_PRE4HR_CRON_WINDOW_MS` in `.env`; default window is 10 minutes (±5m). Call this route at least as often as half the window (e.g. every 5 minutes) or widen the window if your host only runs cron every 15 minutes. |
+| | `/api/cron/send-meetlinks` | Meet link SMS + meet WhatsApp: **narrow band** around `slotTime ≈ now + 1h` (not `[now, now+1h]`). Env: `WA_MEET_OFFSET_MS`, `WA_MEET_CRON_WINDOW_MS` (defaults 1h / 10m). Same cadence guidance as pre4hr. |
+| | `/api/cron/send-30min-reminders` | 30min reminder SMS + WhatsApp: **narrow band** around `slotTime ≈ now + 30m` (not `[now, now+30m]`). Env: `WA_30MIN_OFFSET_MS`, `WA_30MIN_CRON_WINDOW_MS` (defaults 30m / 10m). Same cadence guidance. |
 | | `/api/cron/retry-whatsapp` | Promote retry-eligible WhatsApp failures to Retry 1 / Retry 2 using existing retry orchestrator |
 | | `/api/cron/osvi-outbound-due` | OSVI outbound calls due for abandoned Apply flows (`?key=` or `x-cron-key` header) |
 

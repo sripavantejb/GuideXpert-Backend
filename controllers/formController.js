@@ -721,11 +721,12 @@ exports.saveStep3 = async (req, res) => {
 
     console.log('[saveStep3] Attempting to save:', { phone: p, selectedSlot, slotDate });
 
-    // Check timing for immediate SMS sending
+    // Immediate reminder / pre4hr WA path: only when the user books inside the last 4h before slot
+    // (late registration). Otherwise pre4hr is sent by GET /api/cron/send-reminders in a tight window
+    // around slotTime − 4h (see utils/pre4hrSchedule.js), not on a rolling [now, now+4h] slot filter.
     const now = new Date();
     const hoursUntilSlot = (slotDateTime - now) / (1000 * 60 * 60);
-    
-    // Send reminder immediately if within 4 hours
+
     const shouldSendReminderImmediately = hoursUntilSlot <= 4 && hoursUntilSlot > 0;
     // Send meet link immediately if within 1 hour
     const shouldSendMeetLinkImmediately = hoursUntilSlot <= 1 && hoursUntilSlot > 0;
@@ -738,8 +739,8 @@ exports.saveStep3 = async (req, res) => {
       'Send 30-min reminder immediately:', shouldSendReminder30MinImmediately);
     if (!shouldSendReminderImmediately) {
       console.log(
-        '[saveStep3] pre4hr WhatsApp immediate skipped:',
-        `hoursUntilSlot=${hoursUntilSlot.toFixed(2)} (>4h rule)`
+        '[saveStep3] pre4hr immediate path skipped (scheduled cron will send near slot−4h):',
+        `hoursUntilSlot=${hoursUntilSlot.toFixed(2)}`
       );
     }
 

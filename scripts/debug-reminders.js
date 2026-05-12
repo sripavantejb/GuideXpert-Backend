@@ -6,6 +6,17 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const FormSubmission = require('../models/FormSubmission');
+const {
+  getPre4hrCronConfigFromEnv,
+  getPre4hrSlotDateBoundsForCron,
+  isSlotDateInPre4hrCronWindow
+} = require('../utils/pre4hrSchedule');
+const {
+  getMeetCronConfigFromEnv,
+  getMeetSlotDateBoundsForCron,
+  get30MinCronConfigFromEnv,
+  get30MinSlotDateBoundsForCron
+} = require('../utils/waSlotRelativeSchedule');
 
 async function debugReminders() {
   try {
@@ -16,13 +27,15 @@ async function debugReminders() {
 
     // Get current time info
     const now = new Date();
-    const fourHoursFromNow = new Date(now.getTime() + 4 * 60 * 60 * 1000);
-    
+    const pre4hrCfg = getPre4hrCronConfigFromEnv();
+    const { slotDateMin, slotDateMax } = getPre4hrSlotDateBoundsForCron(now, pre4hrCfg);
+
     console.log('=== TIME INFO ===');
     console.log('Current time (UTC):', now.toISOString());
     console.log('Current time (IST):', now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
-    console.log('4 hours from now (UTC):', fourHoursFromNow.toISOString());
-    console.log('4 hours from now (IST):', fourHoursFromNow.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
+    console.log('pre4hr cron slotDate band (UTC):', slotDateMin.toISOString(), '…', slotDateMax.toISOString());
+    console.log('pre4hr cron slotDate band (IST):', slotDateMin.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), '…', slotDateMax.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
+    console.log('WA_PRE4HR_OFFSET_MS:', pre4hrCfg.offsetMs, 'WA_PRE4HR_CRON_WINDOW_MS:', pre4hrCfg.windowMs);
     console.log('');
 
     // Get today's date range
@@ -57,16 +70,19 @@ async function debugReminders() {
       console.log('');
     });
 
-    // Check what the cron job query would find
-    console.log('=== CRON JOB QUERY SIMULATION ===');
-    console.log('Query: isRegistered=true, reminderSent!=true, slotDate between now and 4 hours from now\n');
+    // Match GET /api/cron/send-reminders (T−4h band, not rolling [now, now+4h])
+    console.log('=== CRON JOB QUERY SIMULATION (send-reminders) ===');
+    console.log(
+      'Query: isRegistered=true, reminderSent!=true, step3Data.slotDate > now AND in [slotDateMin, slotDateMax]\n'
+    );
 
     const usersForReminder = await FormSubmission.find({
       isRegistered: true,
       reminderSent: { $ne: true },
       'step3Data.slotDate': {
-        $gte: now,
-        $lte: fourHoursFromNow
+        $gt: now,
+        $gte: slotDateMin,
+        $lte: slotDateMax
       }
     }).select('phone fullName step3Data.slotDate step3Data.selectedSlot').lean();
 
@@ -87,23 +103,56 @@ async function debugReminders() {
       const alreadySent = allUsersToday.filter(u => u.reminderSent === true);
       console.log(`- Users with reminderSent=true: ${alreadySent.length}`);
       
-      // Check users with slot outside the 4-hour window
-      const outsideWindow = allUsersToday.filter(u => {
-        const slotDate = new Date(u.step3Data?.slotDate);
-        return slotDate < now || slotDate > fourHoursFromNow;
+      // Users whose slot is not in the current T−4h cron band (or not in the future)
+      const outsidePre4hrBand = allUsersToday.filter((u) => {
+        const slotDate = u.step3Data?.slotDate;
+        if (!slotDate) return true;
+        if (new Date(slotDate) <= now) return true;
+        return !isSlotDateInPre4hrCronWindow(slotDate, now, pre4hrCfg);
       });
-      console.log(`- Users with slot outside 4-hour window: ${outsideWindow.length}`);
-      
-      // Show slot times for users outside window
-      if (outsideWindow.length > 0) {
-        console.log('\nSlot times outside window:');
-        outsideWindow.forEach(u => {
+      console.log(`- Users with slot not in current pre4hr cron band (or past): ${outsidePre4hrBand.length}`);
+
+      if (outsidePre4hrBand.length > 0) {
+        console.log('\nSlots not in current pre4hr band (IST):');
+        outsidePre4hrBand.forEach((u) => {
           const slotDate = new Date(u.step3Data?.slotDate);
           const hoursUntil = (slotDate - now) / (1000 * 60 * 60);
-          console.log(`  - ${u.phone}: ${slotDate.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} (${hoursUntil.toFixed(2)} hours from now)`);
+          console.log(
+            `  - ${u.phone}: ${slotDate.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} (${hoursUntil.toFixed(2)} hours from now)`
+          );
         });
       }
     }
+
+    // --- meet (T−1h band) ---
+    const meetCfg = getMeetCronConfigFromEnv();
+    const { slotDateMin: meetMin, slotDateMax: meetMax } = getMeetSlotDateBoundsForCron(now, meetCfg);
+    console.log('\n=== CRON QUERY SIMULATION (send-meetlinks) ===');
+    console.log('meet band (UTC):', meetMin.toISOString(), '…', meetMax.toISOString());
+    console.log('WA_MEET_OFFSET_MS:', meetCfg.offsetMs, 'WA_MEET_CRON_WINDOW_MS:', meetCfg.windowMs);
+    const usersForMeet = await FormSubmission.find({
+      isRegistered: true,
+      meetLinkSent: { $ne: true },
+      'step3Data.slotDate': { $gt: now, $gte: meetMin, $lte: meetMax }
+    })
+      .select('phone fullName step3Data.slotDate step3Data.selectedSlot')
+      .lean();
+    console.log(`Would find ${usersForMeet.length} users for meet link cron.\n`);
+
+    // --- 30min (T−30m band) ---
+    const thirtyCfg = get30MinCronConfigFromEnv();
+    const { slotDateMin: tMin, slotDateMax: tMax } = get30MinSlotDateBoundsForCron(now, thirtyCfg);
+    console.log('=== CRON QUERY SIMULATION (send-30min-reminders) ===');
+    console.log('30min band (UTC):', tMin.toISOString(), '…', tMax.toISOString());
+    console.log('WA_30MIN_OFFSET_MS:', thirtyCfg.offsetMs, 'WA_30MIN_CRON_WINDOW_MS:', thirtyCfg.windowMs);
+    const usersFor30 = await FormSubmission.find({
+      isRegistered: true,
+      reminder30MinSent: { $ne: true },
+      'step3Data.slotDate': { $gt: now, $gte: tMin, $lte: tMax }
+    })
+      .select('phone fullName step3Data.slotDate step3Data.selectedSlot')
+      .lean();
+    console.log(`Would find ${usersFor30.length} users for 30min reminder cron.\n`);
 
     console.log('\n=== ENV VARIABLES CHECK ===');
     console.log('MSG91_AUTH_KEY:', process.env.MSG91_AUTH_KEY ? '✓ Set' : '✗ Missing');

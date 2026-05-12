@@ -11,7 +11,10 @@ const { parseGupshupTemplateSendResponse } = require('./gupshupMessageIds');
 const {
   retrySourceFromAttemptNumber,
   isImmediateOnlyStrategy,
-  isRetryableFailure
+  isRetryableFailure,
+  isCampaignStrategy,
+  getRetryPolicy,
+  RETRY_EXCLUSION_REASON
 } = require('./whatsappRetryRules');
 
 function maskPhone(phone10) {
@@ -100,7 +103,10 @@ function buildMessageEventPayload({
   attemptBatchOid,
   retrySourceLabel,
   retryEligible,
-  correlationId
+  correlationId,
+  canonicalRetryGroupId,
+  terminalFailureKind,
+  retryExclusionReason
 }) {
   return {
     phone: phone10,
@@ -120,11 +126,14 @@ function buildMessageEventPayload({
     retryCountSnapshot: retrySnap,
     errorMessage: errText ? errText.slice(0, 2000) : null,
     retryGroupId,
+    canonicalRetryGroupId: canonicalRetryGroupId || null,
     attemptNumber,
     parentMessageEventId: parentOid,
     attemptBatchId: attemptBatchOid,
     retrySource: retrySourceLabel,
     retryEligible,
+    terminalFailureKind: terminalFailureKind || null,
+    retryExclusionReason: retryExclusionReason || null,
     correlationId: correlationId || null
   };
 }
@@ -179,14 +188,16 @@ async function safeSendWhatsApp({
   attemptNumber: attemptNumberOpt,
   parentMessageEventId,
   attemptBatchId: attemptBatchIdOpt,
-  correlationId: correlationIdOpt
+  correlationId: correlationIdOpt,
+  canonicalRetryGroupId: canonicalRetryGroupIdOpt
 }) {
   const { templateIdEnvKey, templateId } = getTemplateMetaForKind(retryKind);
   const varSummary = summarizeVars(vars);
 
-  const attNum = Math.min(3, Math.max(1, parseInt(String(attemptNumberOpt ?? 1), 10) || 1));
+  const attNum = Math.min(6, Math.max(1, parseInt(String(attemptNumberOpt ?? 1), 10) || 1));
   const retrySourceLabel = retrySourceFromAttemptNumber(attNum);
   const correlationId = correlationIdOpt || crypto.randomUUID();
+  const canonicalOid = toOidMaybe(canonicalRetryGroupIdOpt);
   let resolvedGroupId = null;
 
   try {
@@ -284,7 +295,10 @@ async function safeSendWhatsApp({
           attemptBatchOid,
           retrySourceLabel,
           retryEligible: false,
-          correlationId
+          correlationId,
+          canonicalRetryGroupId: canonicalOid,
+          terminalFailureKind: null,
+          retryExclusionReason: null
         })
       );
 
@@ -314,11 +328,37 @@ async function safeSendWhatsApp({
 
     const immediateOnly = isImmediateOnlyStrategy(retryKind);
     const transientRetryable = isRetryableFailure(retryKind, { errorText: errText });
-    const derivedStatus =
-      (immediateOnly && attNum >= 2) || (!transientRetryable && immediateOnly) || attNum >= 3
-        ? 'retry_exhausted'
-        : 'failed';
-    const rowRetryEligible = immediateOnly ? (attNum === 1 && transientRetryable) : true;
+    const policy = getRetryPolicy(retryKind);
+    const maxA = Number(policy.maxAttempts) || 3;
+
+    let derivedStatus = 'failed';
+    let rowRetryEligible = true;
+    let terminalFailureKind = null;
+    let permExcl = null;
+
+    if (immediateOnly) {
+      derivedStatus =
+        (immediateOnly && attNum >= 2) || (!transientRetryable && immediateOnly) || attNum >= maxA
+          ? 'retry_exhausted'
+          : 'failed';
+      rowRetryEligible = attNum === 1 && transientRetryable;
+    } else if (isCampaignStrategy(retryKind)) {
+      if (!transientRetryable) {
+        derivedStatus = 'failed';
+        rowRetryEligible = false;
+        terminalFailureKind = 'permanent';
+        permExcl = RETRY_EXCLUSION_REASON.permanentFailure;
+      } else if (attNum >= maxA) {
+        derivedStatus = 'retry_exhausted';
+        rowRetryEligible = false;
+      } else {
+        derivedStatus = 'failed';
+        rowRetryEligible = true;
+      }
+    } else {
+      derivedStatus = attNum >= maxA ? 'retry_exhausted' : 'failed';
+      rowRetryEligible = attNum < maxA;
+    }
 
     await persistAttemptEvent(
       buildMessageEventPayload({
@@ -343,7 +383,10 @@ async function safeSendWhatsApp({
         attemptBatchOid,
         retrySourceLabel,
         retryEligible: rowRetryEligible,
-        correlationId
+        correlationId,
+        canonicalRetryGroupId: canonicalOid,
+        terminalFailureKind,
+        retryExclusionReason: permExcl
       })
     );
 
@@ -398,11 +441,35 @@ async function safeSendWhatsApp({
 
       const immediateOnly = isImmediateOnlyStrategy(retryKind);
       const transientRetryable = isRetryableFailure(retryKind, { errorText: msg });
-      const evtStatus =
-        (immediateOnly && attNum >= 2) || (!transientRetryable && immediateOnly) || attNum >= 3
-          ? 'retry_exhausted'
-          : 'failed';
-      const rowRetryEligible = immediateOnly ? (attNum === 1 && transientRetryable) : true;
+      const policy = getRetryPolicy(retryKind);
+      const maxA = Number(policy.maxAttempts) || 3;
+      let evtStatus = 'failed';
+      let rowRetryEligible = true;
+      let terminalFailureKind = null;
+      let permExcl = null;
+      if (immediateOnly) {
+        evtStatus =
+          (immediateOnly && attNum >= 2) || (!transientRetryable && immediateOnly) || attNum >= maxA
+            ? 'retry_exhausted'
+            : 'failed';
+        rowRetryEligible = attNum === 1 && transientRetryable;
+      } else if (isCampaignStrategy(retryKind)) {
+        if (!transientRetryable) {
+          evtStatus = 'failed';
+          rowRetryEligible = false;
+          terminalFailureKind = 'permanent';
+          permExcl = RETRY_EXCLUSION_REASON.permanentFailure;
+        } else if (attNum >= maxA) {
+          evtStatus = 'retry_exhausted';
+          rowRetryEligible = false;
+        } else {
+          evtStatus = 'failed';
+          rowRetryEligible = true;
+        }
+      } else {
+        evtStatus = attNum >= maxA ? 'retry_exhausted' : 'failed';
+        rowRetryEligible = attNum < maxA;
+      }
 
       await persistAttemptEvent(
         buildMessageEventPayload({
@@ -427,7 +494,10 @@ async function safeSendWhatsApp({
           attemptBatchOid: attemptBatchOidInner,
           retrySourceLabel,
           retryEligible: rowRetryEligible,
-          correlationId
+          correlationId,
+          canonicalRetryGroupId: canonicalOid,
+          terminalFailureKind,
+          retryExclusionReason: permExcl
         })
       );
     } catch (inner) {

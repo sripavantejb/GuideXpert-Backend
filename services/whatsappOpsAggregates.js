@@ -969,6 +969,9 @@ const UNRESOLVED_GROUPS = ['failed', 'excluded', 'exhausted', 'not_accepted', 'i
 
 const EXCLUSION_CATEGORY_MAP = {
   policy_non_retryable: 'permanent_failure',
+  permanent_failure: 'permanent_failure',
+  in_flight_timeout: 'in_flight_timeout',
+  promotion_superseded: 'promotion_superseded',
   missing_phone: 'invalid_recipient',
   missing_registered_submission: 'invalid_recipient',
   cooldown_blocked: 'cooldown',

@@ -9,7 +9,7 @@ const {
   isLikelyWaMessageId
 } = require('../utils/gupshupMessageIds');
 const { mapStageToDbStatus, canApplyWebhookStatus } = require('../utils/gupshupWebhookMonotonic');
-const { isRetryableFailure, isCampaignStrategy } = require('../utils/whatsappRetryRules');
+const { isRetryableFailure, isCampaignStrategy, RETRY_EXCLUSION_REASON } = require('../utils/whatsappRetryRules');
 
 function sanitizeSnippet(raw, maxLen = 3800) {
   if (raw == null) return null;
@@ -409,23 +409,36 @@ async function applyWebhookToMessageEvent(doc, newStatus, opts) {
     if (newStatus === 'read' && !doc.readAt) set.readAt = transitionTs;
     if (newStatus === 'failed') {
       set.failedAt = transitionTs;
+      const failCtx = {
+        errorCode: failureCode,
+        errorReason: failureReason,
+        errorText: failureReason || doc.errorMessage
+      };
       if (isCampaignStrategy(doc.messageKind)) {
-        set.retryEligible = true;
+        const retryable = isRetryableFailure(doc.messageKind, failCtx);
+        set.retryEligible = retryable;
+        set.terminalFailureKind = retryable ? 'transient' : 'permanent';
+        if (!retryable) {
+          set.retryExclusionReason = RETRY_EXCLUSION_REASON.permanentFailure;
+          set.retryExclusionAt = receivedAt;
+        } else {
+          set.retryExclusionReason = null;
+          set.retryExclusionAt = null;
+          set['retryExclusionMeta.nextAttempt'] = null;
+          set['retryExclusionMeta.attemptBatchId'] = null;
+          set['retryExclusionMeta.note'] = null;
+        }
       } else {
         set.retryEligible = (
           Number(doc.attemptNumber || 1) === 1 &&
-          isRetryableFailure(doc.messageKind, {
-            errorCode: failureCode,
-            errorReason: failureReason,
-            errorText: failureReason || doc.errorMessage
-          })
+          isRetryableFailure(doc.messageKind, failCtx)
         );
+        set.retryExclusionReason = null;
+        set.retryExclusionAt = null;
+        set['retryExclusionMeta.nextAttempt'] = null;
+        set['retryExclusionMeta.attemptBatchId'] = null;
+        set['retryExclusionMeta.note'] = null;
       }
-      set.retryExclusionReason = null;
-      set.retryExclusionAt = null;
-      set['retryExclusionMeta.nextAttempt'] = null;
-      set['retryExclusionMeta.attemptBatchId'] = null;
-      set['retryExclusionMeta.note'] = null;
       if (failureCode) set.webhookErrorCode = failureCode;
       if (failureReason) set.webhookErrorReason = failureReason;
     }

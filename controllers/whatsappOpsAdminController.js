@@ -21,6 +21,7 @@ const {
 } = require('../utils/whatsappRetryRules');
 const { deriveSubmissionWaStatus } = require('../services/whatsappOpsStatus');
 const opsAggregates = require('../services/whatsappOpsAggregates');
+const recipientAnalytics = require('../services/whatsappOpsRecipientAnalytics');
 const manualRecoveryService = require('../services/whatsappManualRecovery');
 const IST_OFFSET_MINUTES = 330;
 
@@ -164,9 +165,9 @@ exports.getOpsMeta = (_req, res) => {
       ],
       templateKinds: [
         { id: 'slot_booked', label: 'Slot booked', description: 'Immediate confirmation after slot booking', retryPolicy: getRetryPolicy('slot_booked') },
-        { id: 'pre4hr', label: '4hr reminder', description: 'Reminder sent around 4 hours before slot', retryPolicy: getRetryPolicy('pre4hr') },
-        { id: 'meet', label: 'Meet link (~1hr)', description: 'Meeting link reminder sent around 1 hour before slot', retryPolicy: getRetryPolicy('meet') },
-        { id: '30min', label: '30 min reminder', description: 'Final reminder sent around 30 minutes before slot', retryPolicy: getRetryPolicy('30min') }
+        { id: 'pre4hr', label: '4hr reminder', description: 'Sent in a short cron window near 4h before slot; immediate WhatsApp if booked inside that window', retryPolicy: getRetryPolicy('pre4hr') },
+        { id: 'meet', label: 'Meet link (~1hr)', description: 'Sent in a short cron window near 1h before slot; immediate WhatsApp if booked inside that window', retryPolicy: getRetryPolicy('meet') },
+        { id: '30min', label: '30 min reminder', description: 'Sent in a short cron window near 30m before slot; immediate WhatsApp if booked inside that window', retryPolicy: getRetryPolicy('30min') }
       ]
     }
   });
@@ -191,29 +192,85 @@ exports.getCalendarMonthOverview = async (req, res) => {
   try {
     const monthIso = req.query.month || new Date().toISOString().slice(0, 7);
     const messageKind = req.query.messageKind ? String(req.query.messageKind).trim() : null;
-    const result = await opsAggregates.computeMonthOverview({ monthIso, messageKind });
-    if (result.error) {
-      return res.status(400).json({ success: false, message: result.error });
+    const [legacy, recipient] = await Promise.all([
+      opsAggregates.computeMonthOverview({ monthIso, messageKind }),
+      recipientAnalytics.computeRecipientMonthTrend({ monthIso, messageKind })
+    ]);
+    if (legacy.error) {
+      return res.status(400).json({ success: false, message: legacy.error });
     }
-    return res.json({ success: true, data: result.data });
+    if (recipient.error) {
+      return res.status(400).json({ success: false, message: recipient.error });
+    }
+    return res.json({
+      success: true,
+      data: {
+        ...legacy.data,
+        schemaVersion: 2,
+        recipientTrendDays: recipient.data.days || []
+      }
+    });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
   }
 };
 
 /**
- * Day metrics bucket WhatsAppMessageEvent rows by IST calendar day of `createdAt` (send / row time),
- * not by `deliveredAt` — see model for webhook transition timestamps.
+ * Primary metrics: recipient-based cohort (IST slot day). Legacy attempt-row drill-down under legacyAttemptMetrics.
  */
 exports.getCalendarDayOverview = async (req, res) => {
   try {
     const dateIso = req.query.date || new Date().toISOString().slice(0, 10);
     const selectedKind = req.query.messageKind ? String(req.query.messageKind).trim() : null;
-    const result = await opsAggregates.computeDayOverview({ dateIso, messageKind: selectedKind });
-    if (result.error) {
-      return res.status(400).json({ success: false, message: result.error });
+    const [legacy, recipient] = await Promise.all([
+      opsAggregates.computeDayOverview({ dateIso, messageKind: selectedKind }),
+      recipientAnalytics.computeRecipientDayOverview({ dateIso, messageKind: selectedKind })
+    ]);
+    if (legacy.error) {
+      return res.status(400).json({ success: false, message: legacy.error });
     }
-    return res.json({ success: true, data: result.data });
+    if (recipient.error) {
+      return res.status(400).json({ success: false, message: recipient.error });
+    }
+    const r = recipient.data;
+    const range = r.range || {};
+    const [failureReasons, templateRank] = await Promise.all([
+      recipientAnalytics.computeFailureReasonDistribution({
+        from: range.from,
+        to: range.to,
+        messageKind: selectedKind
+      }),
+      selectedKind
+        ? Promise.resolve([])
+        : recipientAnalytics.computeTemplateReliabilityRanking({ from: range.from, to: range.to })
+    ]);
+    return res.json({
+      success: true,
+      data: {
+        schemaVersion: 2,
+        cohortAnchor: r.cohortAnchor,
+        filter: r.filter,
+        range: r.range,
+        bookedSlotsCount: legacy.data.bookedSlotsCount,
+        recipientTotals: r.recipientTotals,
+        exclusionBreakdown: r.exclusionBreakdown,
+        retryFunnelByAttempt: r.retryFunnelByAttempt,
+        retryQueue: r.retryQueue,
+        charts: {
+          failureReasons,
+          templateReliability: templateRank
+        },
+        legacyAttemptMetrics: {
+          overall: legacy.data.overall,
+          selectedKindMetrics: legacy.data.selectedKindMetrics,
+          byKind: legacy.data.byKind,
+          byStatus: legacy.data.byStatus,
+          byAttempt: legacy.data.byAttempt,
+          retry2Exclusions: legacy.data.retry2Exclusions,
+          uniqueRecipientsDeliveredRead: legacy.data.uniqueRecipientsDeliveredRead
+        }
+      }
+    });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
   }
@@ -1031,14 +1088,21 @@ exports.captureSnapshot = async (req, res) => {
 
     if (wantMonth) {
       const monthIso = params.month || new Date().toISOString().slice(0, 7);
-      const month = await opsAggregates.computeMonthOverview({ monthIso, messageKind });
+      const [month, recipient] = await Promise.all([
+        opsAggregates.computeMonthOverview({ monthIso, messageKind }),
+        recipientAnalytics.computeRecipientMonthTrend({ monthIso, messageKind })
+      ]);
       if (month.error) {
         errors.push({ scope: 'month', message: month.error });
       } else {
         await captureOne({
           scopeKey: opsAggregates.buildScopeKey({ scope: 'month', messageKind, monthIso }),
           scope: 'month',
-          payload: month.data,
+          payload: {
+            ...month.data,
+            schemaVersion: 2,
+            recipientTrendDays: recipient.error ? [] : recipient.data.days || []
+          },
           range: { monthIso, dateIso: null, fromIso: null, toIso: null }
         });
       }
@@ -1046,14 +1110,49 @@ exports.captureSnapshot = async (req, res) => {
 
     if (wantDay) {
       const dateIso = params.date || new Date().toISOString().slice(0, 10);
-      const day = await opsAggregates.computeDayOverview({ dateIso, messageKind });
+      const [day, recipient] = await Promise.all([
+        opsAggregates.computeDayOverview({ dateIso, messageKind }),
+        recipientAnalytics.computeRecipientDayOverview({ dateIso, messageKind })
+      ]);
       if (day.error) {
         errors.push({ scope: 'day', message: day.error });
       } else {
+        const r = recipient.error ? {} : recipient.data;
+        const range = r.range || {};
+        const [failureReasons, templateRank] = await Promise.all([
+          recipientAnalytics.computeFailureReasonDistribution({
+            from: range.from,
+            to: range.to,
+            messageKind
+          }),
+          messageKind
+            ? Promise.resolve([])
+            : recipientAnalytics.computeTemplateReliabilityRanking({ from: range.from, to: range.to })
+        ]);
         await captureOne({
           scopeKey: opsAggregates.buildScopeKey({ scope: 'day', messageKind, dateIso }),
           scope: 'day',
-          payload: day.data,
+          payload: {
+            schemaVersion: 2,
+            cohortAnchor: r.cohortAnchor,
+            filter: r.filter,
+            range: r.range,
+            bookedSlotsCount: day.data.bookedSlotsCount,
+            recipientTotals: r.recipientTotals,
+            exclusionBreakdown: r.exclusionBreakdown,
+            retryFunnelByAttempt: r.retryFunnelByAttempt,
+            retryQueue: r.retryQueue,
+            charts: { failureReasons, templateReliability: templateRank },
+            legacyAttemptMetrics: {
+              overall: day.data.overall,
+              selectedKindMetrics: day.data.selectedKindMetrics,
+              byKind: day.data.byKind,
+              byStatus: day.data.byStatus,
+              byAttempt: day.data.byAttempt,
+              retry2Exclusions: day.data.retry2Exclusions,
+              uniqueRecipientsDeliveredRead: day.data.uniqueRecipientsDeliveredRead
+            }
+          },
           range: { dateIso, monthIso: null, fromIso: null, toIso: null }
         });
       }
@@ -1195,12 +1294,22 @@ exports.startManualRecovery = async (req, res) => {
     }
 
     const phones = candidates.map((c) => c.phone);
+    const LINEAGE_CAP = 500;
+    const candidateLineage = candidates.slice(0, LINEAGE_CAP).map((c) => ({
+      phone: c.phone,
+      lineageId: c.lineageId || null,
+      lastEventId: c.eventId || null,
+      maxAttemptAtStart: Number(c.maxAttemptAtStart) || Number(c.attemptNumber) || 1,
+      candidateCreatedAt: c.createdAt || null
+    }));
+
     const job = await WhatsAppManualRecoveryJob.create({
       status: 'queued',
       messageKind,
       fromAt: fromAt || null,
       toAt: toAt || null,
       candidatePhones: phones,
+      candidateLineage,
       createdBy: req.admin?.username || null,
       counters: {
         targeted: phones.length,
@@ -1210,6 +1319,10 @@ exports.startManualRecovery = async (req, res) => {
         skippedAlreadyDelivered: preview.data.skippedAlreadyDelivered || 0,
         skippedGlobalRecentSuccess: preview.data.skippedGlobalRecentSuccess || 0,
         skippedInFlightDuplicate: preview.data.skippedInFlightDuplicate || 0,
+        skippedPermanent: 0,
+        excluded: 0,
+        delivered: 0,
+        failed: 0,
         remaining: phones.length
       }
     });
@@ -1252,13 +1365,22 @@ exports.getManualRecoveryJob = async (req, res) => {
           messageKind: doc.messageKind,
           candidatePhones: doc.candidatePhones || []
         });
-        liveCounters = { ...liveCounters, recovered: post.recovered, inFlight: post.inFlight };
+        liveCounters = {
+          ...liveCounters,
+          recovered: post.recovered,
+          inFlight: post.inFlight,
+          delivered: post.delivered,
+          failed: post.failed,
+          excluded: post.excluded
+        };
       } catch {
         /* fall back to persisted counters */
       }
     }
 
     const targeted = liveCounters.targeted || (doc.candidatePhones || []).length || 0;
+    const recovered = liveCounters.recovered || 0;
+    liveCounters.recoveryRatePct = targeted ? Math.round((recovered / targeted) * 1000) / 10 : 0;
     const completed = (liveCounters.attempted || 0)
       + (liveCounters.skippedAlreadyDelivered || 0)
       + (liveCounters.skippedGlobalRecentSuccess || 0)
@@ -1466,7 +1588,7 @@ exports.exportUnresolvedCsv = async (req, res) => {
       const mustQuote = /[",\r\n\t]/.test(s) || /^[=+\-@]/.test(trimmed);
       return mustQuote ? `"${inner}"` : inner;
     };
-    const header = 'phone,name';
+    const header = 'phone,name,messageKind,retriesAttempted,retryGroupId,exclusionReason,operatorReason,eventRows';
     const seen = new Set();
     const lines = [];
     for (const r of rows) {
@@ -1474,7 +1596,24 @@ exports.exportUnresolvedCsv = async (req, res) => {
       if (!phone || seen.has(phone)) continue;
       seen.add(phone);
       const name = r.name != null ? String(r.name) : '';
-      lines.push(`${escapeCell(phone)},${escapeCell(name)}`);
+      const mk = r.messageKind != null ? String(r.messageKind) : '';
+      const attempts = r.lastAttemptNumber != null ? String(r.lastAttemptNumber) : '';
+      const rg = r.retryGroupId != null ? String(r.retryGroupId) : '';
+      const excl = r.exclusionReason != null ? String(r.exclusionReason) : '';
+      const opReason = r.reason != null ? String(r.reason) : '';
+      const hist = r.retryHistoryCount != null ? String(r.retryHistoryCount) : '';
+      lines.push(
+        [
+          escapeCell(phone),
+          escapeCell(name),
+          escapeCell(mk),
+          escapeCell(attempts),
+          escapeCell(rg),
+          escapeCell(excl),
+          escapeCell(opReason),
+          escapeCell(hist)
+        ].join(',')
+      );
     }
     const csvBody = [header, ...lines].join('\r\n');
 
