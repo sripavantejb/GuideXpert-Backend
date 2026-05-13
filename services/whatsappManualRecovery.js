@@ -4,12 +4,12 @@
  * Targets:
  *   - terminal failures (failed | retry_exhausted)
  *   - retry exclusions (any retryExclusionReason set)
- *   - long-lived in-flight rows (queued | submitted | retry_pending) older than threshold
+ *   - long-lived in-flight rows (queued | retry_pending) older than threshold
  *
  * Skips:
- *   - phones with delivered/read for same template (within UI window)
- *   - phones with delivered/read for same template within configurable global lookback
- *   - phones with an in-flight (queued/submitted/retry_pending/sent) row newer than the
+ *   - phones with provider-accepted+ status for same template (within UI window)
+ *   - same within configurable global lookback
+ *   - phones with an in-flight (queued/retry_pending) or success row newer than the
  *     candidate's last failure (avoids racing automated retry slices)
  *
  * Sends via existing safeSendWhatsApp with source: 'admin_manual' so the audit
@@ -23,11 +23,14 @@ const FormSubmission = require('../models/FormSubmission');
 const gupshupService = require('./gupshupService');
 const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
 const { buildSlotNotificationVariables } = require('../utils/slotNotificationFormatters');
+const {
+  TERMINAL_FAILURE_STATUSES,
+  RETRY_TERMINAL_SUCCESS_STATUSES,
+  DLR_DELIVERED_STATUSES,
+  IN_FLIGHT_PROMOTION_STATUSES
+} = require('../utils/whatsappRetryRules');
 
 const ALLOWED_MESSAGE_KINDS = ['slot_booked', 'pre4hr', 'meet', '30min'];
-const TERMINAL_FAILURE_STATUSES = ['failed', 'retry_exhausted'];
-const SUCCESS_TERMINAL_STATUSES = ['delivered', 'read'];
-const IN_FLIGHT_STATUSES = ['queued', 'submitted', 'sent', 'retry_pending'];
 
 function getInFlightStaleMs() {
   const min = parseInt(process.env.WHATSAPP_RECOVERY_INFLIGHT_STALE_MINUTES || '180', 10) || 180;
@@ -91,7 +94,7 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
               { $cond: [
                 {
                   $and: [
-                    { $in: ['$status', IN_FLIGHT_STATUSES] },
+                    { $in: ['$status', IN_FLIGHT_PROMOTION_STATUSES] },
                     { $lte: ['$createdAt', inFlightStaleBefore] }
                   ]
                 }, 1, 0
@@ -151,7 +154,7 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
     messageKind,
     ...(windowCreatedRange ? { createdAt: windowCreatedRange } : {}),
     phone: { $in: allPhones },
-    status: { $in: SUCCESS_TERMINAL_STATUSES }
+    status: { $in: RETRY_TERMINAL_SUCCESS_STATUSES }
   });
   const windowSuccessSet = new Set(windowSuccess);
 
@@ -162,7 +165,7 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
     ? await WhatsAppMessageEvent.distinct('phone', {
         messageKind,
         phone: { $in: remainingAfterWindow },
-        status: { $in: SUCCESS_TERMINAL_STATUSES },
+        status: { $in: RETRY_TERMINAL_SUCCESS_STATUSES },
         createdAt: { $gte: lookbackStart }
       })
     : [];
@@ -174,7 +177,7 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
       $match: {
         messageKind,
         phone: { $in: allPhones },
-        status: { $in: [...IN_FLIGHT_STATUSES, ...SUCCESS_TERMINAL_STATUSES] }
+        status: { $in: [...IN_FLIGHT_PROMOTION_STATUSES, ...RETRY_TERMINAL_SUCCESS_STATUSES] }
       }
     },
     { $sort: { phone: 1, createdAt: -1 } },
@@ -222,7 +225,7 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
       reason = r.status;
     } else if (r.retryExclusionReason) {
       reason = `excluded:${r.retryExclusionReason}`;
-    } else if (IN_FLIGHT_STATUSES.includes(r.status)) {
+    } else if (IN_FLIGHT_PROMOTION_STATUSES.includes(r.status)) {
       reason = `stale_in_flight:${r.status}`;
     }
     candidatesByReason[reason] = (candidatesByReason[reason] || 0) + 1;
@@ -273,7 +276,7 @@ async function isStillUnresolved(messageKind, phone, candidateCreatedAt) {
   const success = await WhatsAppMessageEvent.findOne({
     messageKind,
     phone,
-    status: { $in: SUCCESS_TERMINAL_STATUSES },
+    status: { $in: RETRY_TERMINAL_SUCCESS_STATUSES },
     createdAt: { $gte: lookbackStart }
   })
     .select('_id')
@@ -284,7 +287,7 @@ async function isStillUnresolved(messageKind, phone, candidateCreatedAt) {
     const newer = await WhatsAppMessageEvent.findOne({
       messageKind,
       phone,
-      status: { $in: IN_FLIGHT_STATUSES },
+      status: { $in: IN_FLIGHT_PROMOTION_STATUSES },
       createdAt: { $gt: new Date(candidateCreatedAt) }
     })
       .sort({ createdAt: -1 })
@@ -323,7 +326,7 @@ async function computePostStartCounters(job) {
     {
       $group: {
         _id: '$phone',
-        delivered: { $max: { $cond: [{ $in: ['$status', SUCCESS_TERMINAL_STATUSES] }, 1, 0] } },
+        delivered: { $max: { $cond: [{ $in: ['$status', DLR_DELIVERED_STATUSES] }, 1, 0] } },
         terminalFail: { $max: { $cond: [{ $in: ['$status', TERMINAL_FAILURE_STATUSES] }, 1, 0] } },
         excluded: {
           $max: {
@@ -339,7 +342,7 @@ async function computePostStartCounters(job) {
             ]
           }
         },
-        inFlight: { $max: { $cond: [{ $in: ['$status', IN_FLIGHT_STATUSES] }, 1, 0] } }
+        inFlight: { $max: { $cond: [{ $in: ['$status', IN_FLIGHT_PROMOTION_STATUSES] }, 1, 0] } }
       }
     }
   ]);

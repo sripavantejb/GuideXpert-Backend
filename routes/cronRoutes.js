@@ -30,6 +30,15 @@ const {
   clearCronClaimForPhone,
   clearCronClaimsForPhones
 } = require('../utils/waCronReminderClaims');
+const {
+  campaignSlotDateNotBeforeSendBoundaryExpr,
+  mergeExprIntoFilter
+} = require('../utils/waCronCampaignFilters');
+const {
+  tryAcquireCronCampaignInitialSendLease,
+  releaseCronCampaignInitialSendLease,
+  leaseFieldForKind
+} = require('../utils/waCronCampaignSendGate');
 
 const PRE4HR_CLAIM = 'waPre4hrCronClaimUntil';
 const MEET_CLAIM = 'waMeetCronClaimUntil';
@@ -94,6 +103,31 @@ async function finishCronRun(run, baseStats, overrides = {}) {
   );
 }
 
+/**
+ * Atomic FormSubmission lease so only winners run SMS+WA (claim TTL alone is not enough).
+ */
+async function gateCronCampaignUsersForInitialSend(FormSubmission, params) {
+  const { kind, users, now, slotDateMin, slotDateMax, boundaryExpr, cronRunId, claimKey } = params;
+  const out = [];
+  for (const user of users) {
+    const { acquired } = await tryAcquireCronCampaignInitialSendLease(FormSubmission, {
+      kind,
+      submissionId: user._id,
+      now,
+      slotDateMin,
+      slotDateMax,
+      boundaryExpr,
+      cronRunId
+    });
+    if (!acquired) {
+      await clearCronClaimForPhone(FormSubmission, user.phone, claimKey);
+      continue;
+    }
+    out.push(user);
+  }
+  return out;
+}
+
 router.get('/send-reminders', verifyCronSecret, async (req, res) => {
   let cronRun = null;
   try {
@@ -121,17 +155,21 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
       deadlineForwardSlackMs
     });
 
+    const pre4hrExpr = campaignSlotDateNotBeforeSendBoundaryExpr(pre4hrCfg.offsetMs, now);
     const usersToRemind = await claimSubmissionsForCronJob(
       FormSubmission,
-      {
-        isRegistered: true,
-        reminderSent: { $ne: true },
-        'step3Data.slotDate': {
-          $gt: now,
-          $gte: slotDateMin,
-          $lte: slotDateMax
-        }
-      },
+      mergeExprIntoFilter(
+        {
+          isRegistered: true,
+          reminderSent: { $ne: true },
+          'step3Data.slotDate': {
+            $gt: now,
+            $gte: slotDateMin,
+            $lte: slotDateMax
+          }
+        },
+        pre4hrExpr
+      ),
       PRE4HR_CLAIM
     );
 
@@ -156,7 +194,50 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
       });
     }
 
-    const phones = usersToRemind.map((user) => user.phone);
+    const pre4hrLeasePath = leaseFieldForKind('pre4hr');
+    const gatedUsers = await gateCronCampaignUsersForInitialSend(FormSubmission, {
+      kind: 'pre4hr',
+      users: usersToRemind,
+      now,
+      slotDateMin,
+      slotDateMax,
+      boundaryExpr: pre4hrExpr,
+      cronRunId: cronRun._id,
+      claimKey: PRE4HR_CLAIM
+    });
+
+    console.log('[Cron] pre4hr claimed vs initial-send lease', {
+      claimed: usersToRemind.length,
+      leased: gatedUsers.length
+    });
+
+    if (gatedUsers.length === 0) {
+      await finishCronRun(cronRun, {
+        found: usersToRemind.length,
+        eligibleAfterInitialSendLease: 0,
+        smsSent: 0,
+        smsFailed: 0,
+        waAttempted: 0,
+        waSucceeded: 0,
+        waFailed: 0,
+        retriesAttempted: 0,
+        flagsUpdated: 0,
+        ...pre4hrWindowStats
+      });
+      return res.status(200).json({
+        success: true,
+        message: 'No reminders to send (initial-send lease not acquired)',
+        stats: {
+          found: usersToRemind.length,
+          eligibleAfterInitialSendLease: 0,
+          sent: 0,
+          failed: 0,
+          ...pre4hrWindowStats
+        }
+      });
+    }
+
+    const phones = gatedUsers.map((user) => user.phone);
     const variables = {};
     const smsResult = await sendBulkReminderSms(phones, variables);
 
@@ -168,6 +249,9 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
     if (!smsResult.success) {
       console.error('[Cron] Failed to send bulk SMS:', smsResult.error);
       await clearCronClaimsForPhones(FormSubmission, phones, PRE4HR_CLAIM);
+      for (const user of gatedUsers) {
+        await releaseCronCampaignInitialSendLease(FormSubmission, 'pre4hr', user._id);
+      }
     }
 
     if (smsResult.success) {
@@ -177,7 +261,7 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
         trigger: 'cron',
         status: 'open'
       });
-      for (const user of usersToRemind) {
+      for (const user of gatedUsers) {
         whatsappReminderAttempted += 1;
         const waVars = buildSlotNotificationVariables(user);
         const wa = await safeSendWhatsApp({
@@ -188,11 +272,21 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
           source: 'cron',
           cronRunId: cronRun._id,
           cronJobKey: 'send_reminders',
-          sendFn: sendPre4HrReminderWhatsApp,
+          sendFn: (phone10, vars, sendOpts) => sendPre4HrReminderWhatsApp(phone10, vars, sendOpts || {}),
           retryGroupId: waRetryGroup._id,
           attemptNumber: 1,
           attemptBatchId: cronRun._id
         });
+        if (wa.duplicateInFlight) {
+          await releaseCronCampaignInitialSendLease(FormSubmission, 'pre4hr', user._id);
+          await clearCronClaimForPhone(FormSubmission, user.phone, PRE4HR_CLAIM);
+          continue;
+        }
+        if (wa.skippedOutsideWindow) {
+          await releaseCronCampaignInitialSendLease(FormSubmission, 'pre4hr', user._id);
+          await clearCronClaimForPhone(FormSubmission, user.phone, PRE4HR_CLAIM);
+          continue;
+        }
         if (wa.success) {
           whatsappReminderSucceeded += 1;
           await FormSubmission.updateOne(
@@ -202,12 +296,13 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
                 reminderSent: true,
                 reminderSentAt: new Date()
               },
-              $unset: { [PRE4HR_CLAIM]: '' }
+              $unset: { [PRE4HR_CLAIM]: '', [pre4hrLeasePath]: '' }
             }
           );
           flagsUpdated += 1;
         } else {
           whatsappReminderFailed += 1;
+          await releaseCronCampaignInitialSendLease(FormSubmission, 'pre4hr', user._id);
           await clearCronClaimForPhone(FormSubmission, user.phone, PRE4HR_CLAIM);
         }
       }
@@ -217,6 +312,7 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
 
     await finishCronRun(cronRun, {
       found: usersToRemind.length,
+      eligibleAfterInitialSendLease: gatedUsers.length,
       smsSent: smsResult.sentCount || 0,
       smsFailed: smsResult.failedCount || 0,
       waAttempted: whatsappReminderAttempted,
@@ -232,6 +328,7 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
       message: smsResult.success ? 'Reminders sent successfully' : 'Failed to send some reminders',
       stats: {
         found: usersToRemind.length,
+        eligibleAfterInitialSendLease: gatedUsers.length,
         sent: smsResult.sentCount,
         failed: smsResult.failedCount,
         whatsappAttempted: whatsappReminderAttempted,
@@ -278,17 +375,21 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
       deadlineForwardSlackMs: meetSlack
     });
 
+    const meetExpr = campaignSlotDateNotBeforeSendBoundaryExpr(meetCfg.offsetMs, now);
     const usersToSendMeetLink = await claimSubmissionsForCronJob(
       FormSubmission,
-      {
-        isRegistered: true,
-        meetLinkSent: { $ne: true },
-        'step3Data.slotDate': {
-          $gt: now,
-          $gte: meetSlotMin,
-          $lte: meetSlotMax
-        }
-      },
+      mergeExprIntoFilter(
+        {
+          isRegistered: true,
+          meetLinkSent: { $ne: true },
+          'step3Data.slotDate': {
+            $gt: now,
+            $gte: meetSlotMin,
+            $lte: meetSlotMax
+          }
+        },
+        meetExpr
+      ),
       MEET_CLAIM
     );
 
@@ -321,7 +422,50 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
       });
     }
 
-    const phones = usersToSendMeetLink.map((user) => user.phone);
+    const meetLeasePath = leaseFieldForKind('meet');
+    const gatedMeetUsers = await gateCronCampaignUsersForInitialSend(FormSubmission, {
+      kind: 'meet',
+      users: usersToSendMeetLink,
+      now,
+      slotDateMin: meetSlotMin,
+      slotDateMax: meetSlotMax,
+      boundaryExpr: meetExpr,
+      cronRunId: cronRun._id,
+      claimKey: MEET_CLAIM
+    });
+
+    console.log('[Cron] meet claimed vs initial-send lease', {
+      claimed: usersToSendMeetLink.length,
+      leased: gatedMeetUsers.length
+    });
+
+    if (gatedMeetUsers.length === 0) {
+      await finishCronRun(cronRun, {
+        found: usersToSendMeetLink.length,
+        eligibleAfterInitialSendLease: 0,
+        smsSent: 0,
+        smsFailed: 0,
+        waAttempted: 0,
+        waSucceeded: 0,
+        waFailed: 0,
+        retriesAttempted: 0,
+        flagsUpdated: 0,
+        ...meetWindowStats
+      });
+      return res.status(200).json({
+        success: true,
+        message: 'No meet links to send (initial-send lease not acquired)',
+        stats: {
+          found: usersToSendMeetLink.length,
+          eligibleAfterInitialSendLease: 0,
+          sent: 0,
+          failed: 0,
+          ...meetWindowStats
+        }
+      });
+    }
+
+    const phones = gatedMeetUsers.map((user) => user.phone);
     const meetingLink = process.env.DEMO_MEETING_LINK || 'https://guidexpert.co.in/demo';
     const variables = {
       var: meetingLink
@@ -339,6 +483,9 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
     if (!smsResult.success) {
       console.error('[Cron] Failed to send bulk meet link SMS:', smsResult.error);
       await clearCronClaimsForPhones(FormSubmission, phones, MEET_CLAIM);
+      for (const user of gatedMeetUsers) {
+        await releaseCronCampaignInitialSendLease(FormSubmission, 'meet', user._id);
+      }
     }
 
     if (smsResult.success) {
@@ -348,7 +495,7 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
         trigger: 'cron',
         status: 'open'
       });
-      for (const user of usersToSendMeetLink) {
+      for (const user of gatedMeetUsers) {
         whatsappMeetAttempted += 1;
         const waVars = buildSlotNotificationVariables(user, { withMeetingLink: true });
         const wa = await safeSendWhatsApp({
@@ -359,11 +506,21 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
           source: 'cron',
           cronRunId: cronRun._id,
           cronJobKey: 'send_meetlinks',
-          sendFn: sendMeetLinkWhatsApp,
+          sendFn: (phone10, vars, sendOpts) => sendMeetLinkWhatsApp(phone10, vars, sendOpts || {}),
           retryGroupId: waRetryGroup._id,
           attemptNumber: 1,
           attemptBatchId: cronRun._id
         });
+        if (wa.duplicateInFlight) {
+          await releaseCronCampaignInitialSendLease(FormSubmission, 'meet', user._id);
+          await clearCronClaimForPhone(FormSubmission, user.phone, MEET_CLAIM);
+          continue;
+        }
+        if (wa.skippedOutsideWindow) {
+          await releaseCronCampaignInitialSendLease(FormSubmission, 'meet', user._id);
+          await clearCronClaimForPhone(FormSubmission, user.phone, MEET_CLAIM);
+          continue;
+        }
         if (wa.success) {
           whatsappMeetSucceeded += 1;
           await FormSubmission.updateOne(
@@ -373,12 +530,13 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
                 meetLinkSent: true,
                 meetLinkSentAt: new Date()
               },
-              $unset: { [MEET_CLAIM]: '' }
+              $unset: { [MEET_CLAIM]: '', [meetLeasePath]: '' }
             }
           );
           meetFlagsUpdated += 1;
         } else {
           whatsappMeetFailed += 1;
+          await releaseCronCampaignInitialSendLease(FormSubmission, 'meet', user._id);
           await clearCronClaimForPhone(FormSubmission, user.phone, MEET_CLAIM);
         }
       }
@@ -388,6 +546,7 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
 
     await finishCronRun(cronRun, {
       found: usersToSendMeetLink.length,
+      eligibleAfterInitialSendLease: gatedMeetUsers.length,
       smsSent: smsResult.sentCount || 0,
       smsFailed: smsResult.failedCount || 0,
       waAttempted: whatsappMeetAttempted,
@@ -403,6 +562,7 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
       message: smsResult.success ? 'Meet links sent successfully' : 'Failed to send some meet links',
       stats: {
         found: usersToSendMeetLink.length,
+        eligibleAfterInitialSendLease: gatedMeetUsers.length,
         sent: smsResult.sentCount,
         failed: smsResult.failedCount,
         whatsappAttempted: whatsappMeetAttempted,
@@ -449,17 +609,21 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
       deadlineForwardSlackMs: thirtySlack
     });
 
+    const thirtyExpr = campaignSlotDateNotBeforeSendBoundaryExpr(thirtyCfg.offsetMs, now);
     const usersToSend30MinReminder = await claimSubmissionsForCronJob(
       FormSubmission,
-      {
-        isRegistered: true,
-        reminder30MinSent: { $ne: true },
-        'step3Data.slotDate': {
-          $gt: now,
-          $gte: thirtySlotMin,
-          $lte: thirtySlotMax
-        }
-      },
+      mergeExprIntoFilter(
+        {
+          isRegistered: true,
+          reminder30MinSent: { $ne: true },
+          'step3Data.slotDate': {
+            $gt: now,
+            $gte: thirtySlotMin,
+            $lte: thirtySlotMax
+          }
+        },
+        thirtyExpr
+      ),
       MIN30_CLAIM
     );
 
@@ -492,7 +656,50 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
       });
     }
 
-    const phones = usersToSend30MinReminder.map((user) => user.phone);
+    const min30LeasePath = leaseFieldForKind('30min');
+    const gated30Users = await gateCronCampaignUsersForInitialSend(FormSubmission, {
+      kind: '30min',
+      users: usersToSend30MinReminder,
+      now,
+      slotDateMin: thirtySlotMin,
+      slotDateMax: thirtySlotMax,
+      boundaryExpr: thirtyExpr,
+      cronRunId: cronRun._id,
+      claimKey: MIN30_CLAIM
+    });
+
+    console.log('[Cron] 30min claimed vs initial-send lease', {
+      claimed: usersToSend30MinReminder.length,
+      leased: gated30Users.length
+    });
+
+    if (gated30Users.length === 0) {
+      await finishCronRun(cronRun, {
+        found: usersToSend30MinReminder.length,
+        eligibleAfterInitialSendLease: 0,
+        smsSent: 0,
+        smsFailed: 0,
+        waAttempted: 0,
+        waSucceeded: 0,
+        waFailed: 0,
+        retriesAttempted: 0,
+        flagsUpdated: 0,
+        ...thirtyMinWindowStats
+      });
+      return res.status(200).json({
+        success: true,
+        message: 'No 30-min reminders to send (initial-send lease not acquired)',
+        stats: {
+          found: usersToSend30MinReminder.length,
+          eligibleAfterInitialSendLease: 0,
+          sent: 0,
+          failed: 0,
+          ...thirtyMinWindowStats
+        }
+      });
+    }
+
+    const phones = gated30Users.map((user) => user.phone);
     const meetingLink = process.env.DEMO_MEETING_LINK || 'https://guidexpert.co.in/demo';
     const variables = {
       var: meetingLink
@@ -510,6 +717,9 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
     if (!smsResult.success) {
       console.error('[Cron] Failed to send bulk 30-min reminder SMS:', smsResult.error);
       await clearCronClaimsForPhones(FormSubmission, phones, MIN30_CLAIM);
+      for (const user of gated30Users) {
+        await releaseCronCampaignInitialSendLease(FormSubmission, '30min', user._id);
+      }
     }
 
     if (smsResult.success) {
@@ -519,7 +729,7 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
         trigger: 'cron',
         status: 'open'
       });
-      for (const user of usersToSend30MinReminder) {
+      for (const user of gated30Users) {
         whatsapp30Attempted += 1;
         const waVars = buildSlotNotificationVariables(user, { withMeetingLink: true });
         const wa = await safeSendWhatsApp({
@@ -530,11 +740,21 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
           source: 'cron',
           cronRunId: cronRun._id,
           cronJobKey: 'send_30min_reminders',
-          sendFn: sendReminder30MinWhatsApp,
+          sendFn: (phone10, vars, sendOpts) => sendReminder30MinWhatsApp(phone10, vars, sendOpts || {}),
           retryGroupId: waRetryGroup._id,
           attemptNumber: 1,
           attemptBatchId: cronRun._id
         });
+        if (wa.duplicateInFlight) {
+          await releaseCronCampaignInitialSendLease(FormSubmission, '30min', user._id);
+          await clearCronClaimForPhone(FormSubmission, user.phone, MIN30_CLAIM);
+          continue;
+        }
+        if (wa.skippedOutsideWindow) {
+          await releaseCronCampaignInitialSendLease(FormSubmission, '30min', user._id);
+          await clearCronClaimForPhone(FormSubmission, user.phone, MIN30_CLAIM);
+          continue;
+        }
         if (wa.success) {
           whatsapp30Succeeded += 1;
           await FormSubmission.updateOne(
@@ -544,12 +764,13 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
                 reminder30MinSent: true,
                 reminder30MinSentAt: new Date()
               },
-              $unset: { [MIN30_CLAIM]: '' }
+              $unset: { [MIN30_CLAIM]: '', [min30LeasePath]: '' }
             }
           );
           min30FlagsUpdated += 1;
         } else {
           whatsapp30Failed += 1;
+          await releaseCronCampaignInitialSendLease(FormSubmission, '30min', user._id);
           await clearCronClaimForPhone(FormSubmission, user.phone, MIN30_CLAIM);
         }
       }
@@ -559,6 +780,7 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
 
     await finishCronRun(cronRun, {
       found: usersToSend30MinReminder.length,
+      eligibleAfterInitialSendLease: gated30Users.length,
       smsSent: smsResult.sentCount || 0,
       smsFailed: smsResult.failedCount || 0,
       waAttempted: whatsapp30Attempted,
@@ -574,6 +796,7 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
       message: smsResult.success ? '30-min reminders sent successfully' : 'Failed to send some 30-min reminders',
       stats: {
         found: usersToSend30MinReminder.length,
+        eligibleAfterInitialSendLease: gated30Users.length,
         sent: smsResult.sentCount,
         failed: smsResult.failedCount,
         whatsappAttempted: whatsapp30Attempted,

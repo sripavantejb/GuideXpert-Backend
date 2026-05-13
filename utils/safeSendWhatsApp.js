@@ -1,5 +1,6 @@
 /**
  * Non-blocking WhatsApp send with FormSubmission retry fields + WhatsAppMessageEvent audit row.
+ * Reserves WhatsAppMessageEvent (queued) before provider send when retryGroupId + attemptNumber are set.
  */
 const crypto = require('crypto');
 const mongoose = require('mongoose');
@@ -17,6 +18,7 @@ const {
   RETRY_EXCLUSION_REASON
 } = require('./whatsappRetryRules');
 const { getCampaignReminderEligibility, CAMPAIGN_RELATIVE_KINDS } = require('./waReminderEligibility');
+const { reserveOutboundWhatsAppAttempt } = require('./waSendAttemptReservation');
 
 function maskPhone(phone10) {
   const s = String(phone10 || '').replace(/\D/g, '');
@@ -139,7 +141,16 @@ function buildMessageEventPayload({
   };
 }
 
-async function persistAttemptEvent(payload) {
+async function persistAttemptEvent(payload, reservedEventId) {
+  const nowUp = new Date();
+  if (reservedEventId && mongoose.Types.ObjectId.isValid(String(reservedEventId))) {
+    const { _id, ...rest } = payload;
+    await WhatsAppMessageEvent.updateOne(
+      { _id: new mongoose.Types.ObjectId(String(reservedEventId)) },
+      { $set: { ...rest, updatedAt: nowUp } }
+    );
+    return;
+  }
   const key = {
     retryGroupId: payload.retryGroupId,
     phone: payload.phone,
@@ -150,7 +161,7 @@ async function persistAttemptEvent(payload) {
       key,
       {
         $set: payload,
-        $setOnInsert: { createdAt: payload.createdAt || new Date() }
+        $setOnInsert: { createdAt: payload.createdAt || nowUp }
       },
       { upsert: true }
     );
@@ -168,14 +179,14 @@ async function persistAttemptEvent(payload) {
  * @param {'save_step3'|'cron'|'retry_cron'|'admin_manual'|'retry_api'} opts.source
  * @param {import('mongoose').Types.ObjectId|null} [opts.cronRunId]
  * @param {string|null} [opts.cronJobKey]
- * @param {(phone10: string, vars: object) => Promise<{ success: boolean, data?: object, error?: string }>} opts.sendFn
+ * @param {(phone10: string, vars: object, sendOpts?: { correlationId?: string }) => Promise<{ success: boolean, data?: object, error?: string }>} opts.sendFn
  * @param {import('mongoose').Types.ObjectId|null} [opts.retryGroupId]
  * @param {number} [opts.attemptNumber]
  * @param {import('mongoose').Types.ObjectId|null} [opts.parentMessageEventId]
  * @param {import('mongoose').Types.ObjectId|null} [opts.attemptBatchId]
  * @param {string|null} [opts.correlationId]
  * @param {boolean} [opts.skipSlotRelativeGuard] when true, skip pre4hr/meet/30min slot-window guard (admin manual)
- * @returns {Promise<{ success: boolean, error?: string, retryGroupId?: import('mongoose').Types.ObjectId }>}
+ * @returns {Promise<{ success: boolean, error?: string, retryGroupId?: import('mongoose').Types.ObjectId, idempotent?: boolean, duplicateInFlight?: boolean, skippedOutsideWindow?: boolean }>}
  */
 async function safeSendWhatsApp({
   phone10,
@@ -202,6 +213,7 @@ async function safeSendWhatsApp({
   const correlationId = correlationIdOpt || crypto.randomUUID();
   const canonicalOid = toOidMaybe(canonicalRetryGroupIdOpt);
   let resolvedGroupId = null;
+  let reservedEventId = null;
 
   try {
     if (typeof sendFn !== 'function') {
@@ -250,12 +262,57 @@ async function safeSendWhatsApp({
         return {
           success: false,
           error: elig.reason || 'outside_reminder_validity',
-          skippedOutsideWindow: true
+          skippedOutsideWindow: true,
+          retryGroupId: resolvedGroupId
         };
       }
     }
 
-    const result = await sendFn(phone10, vars);
+    let subId = formSubmissionId;
+    if (!subId) {
+      const sub = await FormSubmission.findOne({ phone: phone10 }).select('_id').lean();
+      subId = sub ? sub._id : null;
+    }
+
+    const reserveResult = await reserveOutboundWhatsAppAttempt({
+      retryGroupId: resolvedGroupId,
+      phone10,
+      attemptNumber: attNum,
+      messageKind: retryKind,
+      formSubmissionId: subId,
+      source,
+      cronRunId,
+      cronJobKey,
+      templateIdEnvKey,
+      templateId,
+      parentMessageEventId: parentOid,
+      attemptBatchId: attemptBatchOid,
+      retrySourceLabel,
+      canonicalRetryGroupId: canonicalOid,
+      correlationId
+    });
+
+    if (reserveResult.outcome === 'already_terminal') {
+      return { success: true, idempotent: true, retryGroupId: resolvedGroupId };
+    }
+    if (reserveResult.outcome === 'duplicate_in_flight') {
+      return {
+        success: false,
+        duplicateInFlight: true,
+        error: 'duplicate_in_flight',
+        retryGroupId: resolvedGroupId
+      };
+    }
+    if (reserveResult.outcome === 'blocked_duplicate_attempt') {
+      return {
+        success: false,
+        error: 'attempt_already_recorded',
+        retryGroupId: resolvedGroupId
+      };
+    }
+    reservedEventId = reserveResult.reservedEventId || null;
+
+    const result = await sendFn(phone10, vars, { correlationId });
     const now = new Date();
     const ids = parseGupshupTemplateSendResponse(result && result.data);
     const messageId = ids.canonicalMessageId || null;
@@ -267,12 +324,6 @@ async function safeSendWhatsApp({
         templateId: templateId || null,
         templateKey: templateIdEnvKey || null
       });
-    }
-
-    let subId = formSubmissionId;
-    if (!subId) {
-      const sub = await FormSubmission.findOne({ phone: phone10 }).select('_id').lean();
-      subId = sub ? sub._id : null;
     }
 
     if (result && result.success) {
@@ -318,7 +369,8 @@ async function safeSendWhatsApp({
           canonicalRetryGroupId: canonicalOid,
           terminalFailureKind: null,
           retryExclusionReason: null
-        })
+        }),
+        reservedEventId
       );
 
       console.log('[WhatsApp] success', maskPhone(phone10), `type=${retryKind}`);
@@ -406,7 +458,8 @@ async function safeSendWhatsApp({
         canonicalRetryGroupId: canonicalOid,
         terminalFailureKind,
         retryExclusionReason: permExcl
-      })
+      }),
+      reservedEventId
     );
 
     console.warn(
@@ -517,7 +570,8 @@ async function safeSendWhatsApp({
           canonicalRetryGroupId: canonicalOid,
           terminalFailureKind,
           retryExclusionReason: permExcl
-        })
+        }),
+        reservedEventId
       );
     } catch (inner) {
       console.warn('[WhatsApp] failure', maskPhone(phone10), `type=${retryKind}`, msg, '| persist:', inner.message);

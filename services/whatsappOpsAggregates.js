@@ -10,12 +10,15 @@ const WhatsAppWebhookEvent = require('../models/WhatsAppWebhookEvent');
 const FormSubmission = require('../models/FormSubmission');
 const WhatsAppManualRecoveryJob = require('../models/WhatsAppManualRecoveryJob');
 const cohortAgg = require('./whatsappOpsCohortShared');
+const {
+  TERMINAL_FAILURE_STATUSES,
+  DLR_DELIVERED_STATUSES,
+  IN_FLIGHT_PROMOTION_STATUSES
+} = require('../utils/whatsappRetryRules');
 
 const ALLOWED_MESSAGE_KINDS = ['slot_booked', 'pre4hr', 'meet', '30min'];
 const IST_OFFSET_MINUTES = 330;
-const TERMINAL_FAILURE_STATUSES = ['failed', 'retry_exhausted'];
-const SUCCESS_TERMINAL_STATUSES = ['delivered', 'read'];
-const IN_FLIGHT_STATUSES = ['queued', 'submitted', 'sent', 'retry_pending'];
+const IN_FLIGHT_STATUSES = IN_FLIGHT_PROMOTION_STATUSES;
 const ACCEPTED_PLUS_STATUSES = ['submitted', 'sent', 'delivered', 'read'];
 
 function parseIsoDateOnly(value) {
@@ -278,7 +281,9 @@ async function computeSummary({ from, to, messageKind = null }) {
     data: {
       meta: {
         selectedMessageKind: messageKind || null,
-        attemptedRows: total
+        attemptedRows: total,
+        cohortMode: 'event_time_utc',
+        cohortNote: 'Summary totals filter by message createdAt; use calendar month/day endpoints for slot-day cohorts.'
       },
       totals: {
         whatsappAttempts: total,
@@ -579,6 +584,21 @@ function divPct(num, den) {
   return Math.round((num / den) * 1000) / 10;
 }
 
+/** Widen createdAt then restrict to IST slot-day window for slot-cohort KPIs */
+function slotCohortPipelinePrefixFromStableWindow(stableFrom, stableTo, messageKind) {
+  const bufferFrom = new Date(stableFrom.getTime() - 8 * 24 * 60 * 60 * 1000);
+  const bufferTo = new Date(stableTo.getTime() + 2 * 24 * 60 * 60 * 1000);
+  const dayMin = stableFrom.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const dayMax = stableTo.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const kindStages = messageKind ? [{ $match: { messageKind } }] : [];
+  return [
+    { $match: { createdAt: { $gte: bufferFrom, $lte: bufferTo } } },
+    ...kindStages,
+    ...cohortAgg.annotateEventsWithSlotDayPipeline(messageKind, { strictSlotDay: true }),
+    { $match: { slotDayIst: { $gte: dayMin, $lte: dayMax, $ne: null } } }
+  ];
+}
+
 async function computeStableFunnel(match) {
   const [agg] = await WhatsAppMessageEvent.aggregate([
     { $match: match },
@@ -587,7 +607,7 @@ async function computeStableFunnel(match) {
         targeted: [{ $count: 'c' }],
         accepted: [{ $match: { status: { $in: ACCEPTED_PLUS_STATUSES } } }, { $count: 'c' }],
         sent: [{ $match: { status: { $in: ['sent', 'delivered', 'read'] } } }, { $count: 'c' }],
-        delivered: [{ $match: { status: { $in: SUCCESS_TERMINAL_STATUSES } } }, { $count: 'c' }],
+        delivered: [{ $match: { status: { $in: DLR_DELIVERED_STATUSES } } }, { $count: 'c' }],
         read: [{ $match: { status: 'read' } }, { $count: 'c' }]
       }
     }
@@ -620,15 +640,16 @@ async function computeStableFunnel(match) {
  * stays meaningful even when retries spill across day boundaries.
  */
 async function computeTemplateReliability(stableFrom, stableTo) {
-  const match = { createdAt: { $gte: stableFrom, $lte: stableTo } };
+  const prefix = slotCohortPipelinePrefixFromStableWindow(stableFrom, stableTo, null);
+
   const totalsRows = await WhatsAppMessageEvent.aggregate([
-    { $match: match },
+    ...prefix,
     {
       $group: {
         _id: '$messageKind',
         targeted: { $sum: 1 },
         accepted: { $sum: { $cond: [{ $in: ['$status', ACCEPTED_PLUS_STATUSES] }, 1, 0] } },
-        delivered: { $sum: { $cond: [{ $in: ['$status', SUCCESS_TERMINAL_STATUSES] }, 1, 0] } },
+        delivered: { $sum: { $cond: [{ $in: ['$status', DLR_DELIVERED_STATUSES] }, 1, 0] } },
         read: { $sum: { $cond: [{ $eq: ['$status', 'read'] }, 1, 0] } },
         failed: { $sum: { $cond: [{ $in: ['$status', TERMINAL_FAILURE_STATUSES] }, 1, 0] } },
         exhausted: { $sum: { $cond: [{ $eq: ['$status', 'retry_exhausted'] }, 1, 0] } },
@@ -640,9 +661,9 @@ async function computeTemplateReliability(stableFrom, stableTo) {
 
   /** Recovery effectiveness: groups whose attempt 1 was terminal-failed but later attempt delivered. */
   const recoveryRows = await WhatsAppMessageEvent.aggregate([
+    ...prefix,
     {
       $match: {
-        ...match,
         attemptNumber: 1,
         status: { $in: TERMINAL_FAILURE_STATUSES },
         retryGroupId: { $ne: null }
@@ -659,7 +680,7 @@ async function computeTemplateReliability(stableFrom, stableTo) {
                 $and: [
                   { $eq: ['$retryGroupId', '$$gid'] },
                   { $gt: ['$attemptNumber', 1] },
-                  { $in: ['$status', SUCCESS_TERMINAL_STATUSES] }
+                  { $in: ['$status', DLR_DELIVERED_STATUSES] }
                 ]
               }
             }
@@ -680,12 +701,12 @@ async function computeTemplateReliability(stableFrom, stableTo) {
   const recoveryMap = new Map(recoveryRows.map((r) => [r._id || 'unknown', r]));
 
   const unresolvedRows = await WhatsAppMessageEvent.aggregate([
-    { $match: match },
+    ...prefix,
     {
       $group: {
         _id: { kind: '$messageKind', phone: '$phone' },
         anyDelivered: {
-          $max: { $cond: [{ $in: ['$status', SUCCESS_TERMINAL_STATUSES] }, 1, 0] }
+          $max: { $cond: [{ $in: ['$status', DLR_DELIVERED_STATUSES] }, 1, 0] }
         },
         anyTerminalFail: {
           $max: { $cond: [{ $in: ['$status', TERMINAL_FAILURE_STATUSES] }, 1, 0] }
@@ -742,6 +763,35 @@ async function computeTemplateReliability(stableFrom, stableTo) {
 }
 
 async function computeDailyTrend(stableFrom, stableTo, messageKind) {
+  const prefix = slotCohortPipelinePrefixFromStableWindow(stableFrom, stableTo, messageKind);
+  const rows = await WhatsAppMessageEvent.aggregate([
+    ...prefix,
+    {
+      $group: {
+        _id: { day: '$slotDayIst' },
+        attempts: { $sum: 1 },
+        accepted: { $sum: { $cond: [{ $in: ['$status', ACCEPTED_PLUS_STATUSES] }, 1, 0] } },
+        delivered: { $sum: { $cond: [{ $in: ['$status', DLR_DELIVERED_STATUSES] }, 1, 0] } },
+        failed: { $sum: { $cond: [{ $in: ['$status', TERMINAL_FAILURE_STATUSES] }, 1, 0] } },
+        retry_exhausted: { $sum: { $cond: [{ $eq: ['$status', 'retry_exhausted'] }, 1, 0] } },
+        retried: { $sum: { $cond: [{ $gt: ['$attemptNumber', 1] }, 1, 0] } }
+      }
+    },
+    { $sort: { '_id.day': 1 } }
+  ]);
+  return rows.map((r) => ({
+    date: r._id.day,
+    attempts: r.attempts || 0,
+    accepted: r.accepted || 0,
+    delivered: r.delivered || 0,
+    failed: r.failed || 0,
+    retryExhausted: r.retry_exhausted || 0,
+    retried: r.retried || 0
+  }));
+}
+
+/** Event-time (createdAt) trend for incident debugging — not slot-cohort */
+async function computeDailyTrendEventTime(stableFrom, stableTo, messageKind) {
   const match = {
     createdAt: { $gte: stableFrom, $lte: stableTo },
     ...(messageKind ? { messageKind } : {})
@@ -753,7 +803,7 @@ async function computeDailyTrend(stableFrom, stableTo, messageKind) {
         _id: { day: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'Asia/Kolkata' } } },
         attempts: { $sum: 1 },
         accepted: { $sum: { $cond: [{ $in: ['$status', ACCEPTED_PLUS_STATUSES] }, 1, 0] } },
-        delivered: { $sum: { $cond: [{ $in: ['$status', SUCCESS_TERMINAL_STATUSES] }, 1, 0] } },
+        delivered: { $sum: { $cond: [{ $in: ['$status', DLR_DELIVERED_STATUSES] }, 1, 0] } },
         failed: { $sum: { $cond: [{ $in: ['$status', TERMINAL_FAILURE_STATUSES] }, 1, 0] } },
         retry_exhausted: { $sum: { $cond: [{ $eq: ['$status', 'retry_exhausted'] }, 1, 0] } },
         retried: { $sum: { $cond: [{ $gt: ['$attemptNumber', 1] }, 1, 0] } }
@@ -802,20 +852,17 @@ async function computeTopFailureReasons(stableFrom, stableTo, messageKind) {
 async function computeRetryAttemptStable(stableFrom, stableTo, messageKind) {
   /** Now supports messageKind=null (aggregate across templates) so the Retry Funnel
    *  on the Health page never collapses when the user is in `All templates` mode. */
-  const match = {
-    createdAt: { $gte: stableFrom, $lte: stableTo },
-    ...(messageKind ? { messageKind } : {})
-  };
+  const prefix = slotCohortPipelinePrefixFromStableWindow(stableFrom, stableTo, messageKind);
   const [rows, exclusionRows] = await Promise.all([
     WhatsAppMessageEvent.aggregate([
-      { $match: match },
+      ...prefix,
       {
         $group: {
           _id: '$attemptNumber',
           targeted: { $sum: 1 },
           submitted: { $sum: { $cond: [{ $in: ['$status', ACCEPTED_PLUS_STATUSES] }, 1, 0] } },
           sent: { $sum: { $cond: [{ $in: ['$status', ['sent', 'delivered', 'read']] }, 1, 0] } },
-          delivered: { $sum: { $cond: [{ $in: ['$status', SUCCESS_TERMINAL_STATUSES] }, 1, 0] } },
+          delivered: { $sum: { $cond: [{ $in: ['$status', DLR_DELIVERED_STATUSES] }, 1, 0] } },
           read: { $sum: { $cond: [{ $eq: ['$status', 'read'] }, 1, 0] } },
           failed: { $sum: { $cond: [{ $in: ['$status', TERMINAL_FAILURE_STATUSES] }, 1, 0] } },
           excluded: { $sum: { $cond: [{ $ne: ['$retryExclusionReason', null] }, 1, 0] } },
@@ -824,7 +871,8 @@ async function computeRetryAttemptStable(stableFrom, stableTo, messageKind) {
       }
     ]),
     WhatsAppMessageEvent.aggregate([
-      { $match: { ...match, retryExclusionReason: { $ne: null } } },
+      ...prefix,
+      { $match: { retryExclusionReason: { $ne: null } } },
       {
         $group: {
           _id: { attempt: '$attemptNumber', reason: '$retryExclusionReason' },
@@ -863,19 +911,16 @@ async function computeRetryAttemptStable(stableFrom, stableTo, messageKind) {
 }
 
 async function computeTodayLiveStrip(todayRange, messageKind) {
-  const match = {
-    createdAt: { $gte: todayRange.from, $lte: todayRange.to },
-    ...(messageKind ? { messageKind } : {})
-  };
+  const prefix = slotCohortPipelinePrefixFromStableWindow(todayRange.from, todayRange.to, messageKind);
   const [bookings, agg] = await Promise.all([
     FormSubmission.countDocuments({ 'step3Data.slotDate': { $gte: todayRange.from, $lte: todayRange.to } }),
     WhatsAppMessageEvent.aggregate([
-      { $match: match },
+      ...prefix,
       {
         $facet: {
           attempts: [{ $count: 'c' }],
           accepted: [{ $match: { status: { $in: ACCEPTED_PLUS_STATUSES } } }, { $count: 'c' }],
-          delivered: [{ $match: { status: { $in: SUCCESS_TERMINAL_STATUSES } } }, { $count: 'c' }],
+          delivered: [{ $match: { status: { $in: DLR_DELIVERED_STATUSES } } }, { $count: 'c' }],
           failed: [{ $match: { status: { $in: TERMINAL_FAILURE_STATUSES } } }, { $count: 'c' }],
           retryExhausted: [{ $match: { status: 'retry_exhausted' } }, { $count: 'c' }],
           inFlight: [{ $match: { status: { $in: IN_FLIGHT_STATUSES } } }, { $count: 'c' }]
@@ -904,8 +949,9 @@ async function computeTodayLiveStrip(todayRange, messageKind) {
  */
 async function computeUnresolvedHeader(stableFrom, stableTo) {
   const inFlightStaleBefore = new Date(Date.now() - 180 * 60 * 1000);
+  const prefix = slotCohortPipelinePrefixFromStableWindow(stableFrom, stableTo, null);
   const rows = await WhatsAppMessageEvent.aggregate([
-    { $match: { createdAt: { $gte: stableFrom, $lte: stableTo } } },
+    ...prefix,
     {
       $group: {
         _id: { kind: '$messageKind', phone: '$phone' },
@@ -925,7 +971,7 @@ async function computeUnresolvedHeader(stableFrom, stableTo) {
             ]
           }
         },
-        anyDelivered: { $max: { $cond: [{ $in: ['$status', SUCCESS_TERMINAL_STATUSES] }, 1, 0] } }
+        anyDelivered: { $max: { $cond: [{ $in: ['$status', DLR_DELIVERED_STATUSES] }, 1, 0] } }
       }
     },
     {
@@ -974,6 +1020,7 @@ async function computeOperationalHealth({ asOfDateIso, windowDays = 14, messageK
     funnelStable,
     templateReliabilityStable,
     dailyTrendStable,
+    dailyTrendEventTime,
     topFailureReasonsStable,
     retryAttemptStable,
     todayLiveStrip,
@@ -983,6 +1030,7 @@ async function computeOperationalHealth({ asOfDateIso, windowDays = 14, messageK
     computeStableFunnel(stableMatch),
     computeTemplateReliability(win.stable.from, win.stable.to),
     computeDailyTrend(win.stable.from, win.stable.to, messageKind),
+    computeDailyTrendEventTime(win.stable.from, win.stable.to, messageKind),
     computeTopFailureReasons(win.stable.from, win.stable.to, messageKind),
     computeRetryAttemptStable(win.stable.from, win.stable.to, messageKind),
     computeTodayLiveStrip(win.today, messageKind),
@@ -993,6 +1041,14 @@ async function computeOperationalHealth({ asOfDateIso, windowDays = 14, messageK
   return {
     data: {
       filter: { asOfDateIso: dateIso, windowDays: win.stable.days, messageKind: messageKind || null },
+      cohortSemantics: {
+        dailyTrendTemplateReliabilityRetryFunnelTodayStripUnresolved:
+          'slot_day_ist_booking_cohort',
+        funnelStable: 'event_time_utc_created_at',
+        topFailureReasons: 'event_time_utc_created_at',
+        note:
+          'Slot-day cohort attributes message events to step3Data.slotDate IST day via submission lookup; funnel uses raw createdAt window.'
+      },
       range: {
         stableFrom: win.stable.from,
         stableTo: win.stable.to,
@@ -1012,6 +1068,7 @@ async function computeOperationalHealth({ asOfDateIso, windowDays = 14, messageK
       funnelStable,
       templateReliabilityStable,
       dailyTrendStable,
+      dailyTrendEventTime,
       topFailureReasonsStable,
       retryAttemptStable,
       todayLiveStrip
@@ -1141,7 +1198,7 @@ async function computeUnresolvedRecipients({
             0
           ]
         },
-        isDelivered: { $cond: [{ $in: ['$status', SUCCESS_TERMINAL_STATUSES] }, 1, 0] }
+        isDelivered: { $cond: [{ $in: ['$status', DLR_DELIVERED_STATUSES] }, 1, 0] }
       }
     },
     {
@@ -1341,5 +1398,7 @@ module.exports = {
   computeOperationalHealth,
   computeUnresolvedRecipients,
   classifyExclusionCategory,
-  slotDayIstPrefixStages
+  slotDayIstPrefixStages,
+  computeDailyTrendEventTime,
+  slotCohortPipelinePrefixFromStableWindow
 };

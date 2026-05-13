@@ -28,11 +28,12 @@ describe('meet slot-relative band (deadline-backward)', () => {
     assert.equal(isSlotDateInCronWindow(slot, fixedNow, meetCfg), false);
   });
 
-  test('getMeetSlotDateBoundsForCron ends at now+1h deadline', () => {
+  test('getMeetSlotDateBoundsForCron ends at strict now+1h deadline (no forward slack)', () => {
     const { slotDateMin, slotDateMax, deadlineForwardSlackMs } = getMeetSlotDateBoundsForCron(fixedNow, meetCfg);
     const deadline = fixedNow.getTime() + DEFAULT_MEET_OFFSET_MS;
     assert.equal(slotDateMin.getTime(), deadline - DEFAULT_CRON_WINDOW_MS);
-    assert.equal(slotDateMax.getTime(), deadline + deadlineForwardSlackMs);
+    assert.equal(slotDateMax.getTime(), deadline);
+    assert.equal(deadlineForwardSlackMs, 0);
   });
 
   test('getMeetCronConfigFromEnv returns positive offsets', () => {
@@ -53,10 +54,11 @@ describe('30min slot-relative band (deadline-backward)', () => {
     assert.equal(isSlotDateInCronWindow(slot, fixedNow, thirtyCfg), false);
   });
 
-  test('get30MinSlotDateBoundsForCron ends at now+30m deadline', () => {
+  test('get30MinSlotDateBoundsForCron ends at strict now+30m deadline (no forward slack)', () => {
     const { slotDateMin, slotDateMax, deadlineForwardSlackMs } = get30MinSlotDateBoundsForCron(fixedNow, thirtyCfg);
     const deadline = fixedNow.getTime() + DEFAULT_30MIN_OFFSET_MS;
     assert.equal(slotDateMin.getTime(), deadline - DEFAULT_CRON_WINDOW_MS);
-    assert.equal(slotDateMax.getTime(), deadline + deadlineForwardSlackMs);
+    assert.equal(slotDateMax.getTime(), deadline);
+    assert.equal(deadlineForwardSlackMs, 0);
   });
 });

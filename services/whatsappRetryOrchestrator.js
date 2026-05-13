@@ -12,7 +12,7 @@ const {
 } = require('./gupshupService');
 const {
   TERMINAL_FAILURE_STATUSES,
-  SUCCESS_TERMINAL_STATUSES,
+  RETRY_TERMINAL_SUCCESS_STATUSES,
   IN_FLIGHT_PROMOTION_STATUSES,
   RETRY_EXCLUSION_REASON,
   filterRetryPromotionRowsV2,
@@ -141,7 +141,7 @@ async function computeRetryCandidates(retryGroupId, fromAttempt) {
   const [neverRetryPhones, alreadyNextPhones, rawRows] = await Promise.all([
     WhatsAppMessageEvent.distinct('phone', {
       retryGroupId: gid,
-      status: { $in: SUCCESS_TERMINAL_STATUSES }
+      status: { $in: RETRY_TERMINAL_SUCCESS_STATUSES }
     }),
     WhatsAppMessageEvent.distinct('phone', {
       retryGroupId: gid,
@@ -277,6 +277,43 @@ async function computeRetryCandidates(retryGroupId, fromAttempt) {
   };
 }
 
+async function maybeSettleCampaignRetryGroup(retryGroupId) {
+  try {
+    const gid = new mongoose.Types.ObjectId(String(retryGroupId));
+    const group = await WhatsAppRetryGroup.findById(gid).lean();
+    if (!group || group.status !== 'open' || !isCampaignStrategy(group.messageKind)) return;
+
+    const staleMs = inFlightPromotionStaleMsForKind(group.messageKind);
+    const freshSince = new Date(Date.now() - staleMs);
+
+    const freshInFlight = await WhatsAppMessageEvent.countDocuments({
+      retryGroupId: gid,
+      status: { $in: ['queued', 'retry_pending'] },
+      createdAt: { $gte: freshSince }
+    });
+    if (freshInFlight > 0) return;
+
+    const [p2, p3] = await Promise.all([
+      computeRetryCandidates(gid, 1),
+      computeRetryCandidates(gid, 2)
+    ]);
+    if ((p2.candidateCount || 0) > 0 || (p3.candidateCount || 0) > 0) return;
+
+    await WhatsAppRetryGroup.updateOne(
+      { _id: gid, status: 'open' },
+      {
+        $set: {
+          status: 'closed_no_more_retries',
+          updatedAt: new Date(),
+          nextPromotionDueAt: null
+        }
+      }
+    );
+  } catch (e) {
+    console.warn('[RetryOrchestrator] maybeSettleCampaignRetryGroup', e && e.message ? e.message : e);
+  }
+}
+
 /**
  * @param {object} opts
  * @param {mongoose.Types.ObjectId|string} opts.retryGroupId
@@ -346,6 +383,7 @@ async function executeRetryAttempt(opts) {
 
   const preview = await computeRetryCandidates(gid, fromAttempt);
   if (!preview.candidateCount) {
+    await maybeSettleCampaignRetryGroup(gid);
     return { noop: true, reason: 'no_candidates' };
   }
 
@@ -395,6 +433,7 @@ async function executeRetryAttempt(opts) {
   let failed = 0;
 
   if (!resolved.length) {
+    await maybeSettleCampaignRetryGroup(gid);
     return {
       noop: false,
       reason: 'zero_candidates_after_cas',
@@ -504,6 +543,8 @@ async function executeRetryAttempt(opts) {
     }
   );
 
+  await maybeSettleCampaignRetryGroup(gid);
+
   return {
     attempted,
     succeeded,
@@ -578,7 +619,10 @@ async function scanGroupsNeedingRetries(cronRunId) {
       const p = await computeRetryCandidates(g._id, 2);
       if (p.candidateCount > 0) promoteTo = 3;
     }
-    if (!promoteTo) continue;
+    if (!promoteTo) {
+      await maybeSettleCampaignRetryGroup(g._id);
+      continue;
+    }
 
     foundCandidates += 1;
     const batchId = new mongoose.Types.ObjectId();

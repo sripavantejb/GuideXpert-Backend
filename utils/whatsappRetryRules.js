@@ -1,10 +1,17 @@
 /** Statuses counting as terminal failure when choosing retry promotion candidates */
 const TERMINAL_FAILURE_STATUSES = ['failed', 'retry_exhausted'];
 
-/** Statuses meaning this recipient never gets another WA attempt in-group */
-const SUCCESS_TERMINAL_STATUSES = ['delivered', 'read'];
+/** Provider accepted or better — automated retries and promotions must not continue */
+const RETRY_TERMINAL_SUCCESS_STATUSES = ['submitted', 'sent', 'delivered', 'read'];
 
-const IN_FLIGHT_PROMOTION_STATUSES = ['queued', 'submitted', 'sent', 'retry_pending'];
+/** Handset delivery / read — funnels and delivery-rate KPIs */
+const DLR_DELIVERED_STATUSES = ['delivered', 'read'];
+
+/** @deprecated Prefer DLR_DELIVERED_STATUSES for delivery KPIs or RETRY_TERMINAL_SUCCESS_STATUSES for retry cut-off */
+const SUCCESS_TERMINAL_STATUSES = DLR_DELIVERED_STATUSES;
+
+/** Rows that may still be promoted after staleness (never submitted/sent — those are retry-terminal) */
+const IN_FLIGHT_PROMOTION_STATUSES = ['queued', 'retry_pending'];
 
 function parseCommaSeparatedPositiveInts(raw, fallbackArr) {
   if (raw == null || String(raw).trim() === '') return [...fallbackArr];
@@ -256,6 +263,8 @@ module.exports = {
     return buildRetryPolicies();
   },
   TERMINAL_FAILURE_STATUSES,
+  RETRY_TERMINAL_SUCCESS_STATUSES,
+  DLR_DELIVERED_STATUSES,
   SUCCESS_TERMINAL_STATUSES,
   IN_FLIGHT_PROMOTION_STATUSES,
   RETRY_EXCLUSION_REASON,

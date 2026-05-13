@@ -9,8 +9,19 @@ const {
   isImmediateOnlyStrategy,
   isRetryableFailure,
   getRetryDelayMsAfterAttempt,
-  retrySourceFromAttemptNumber
+  retrySourceFromAttemptNumber,
+  IN_FLIGHT_PROMOTION_STATUSES,
+  RETRY_TERMINAL_SUCCESS_STATUSES
 } = require('../utils/whatsappRetryRules');
+
+describe('IN_FLIGHT_PROMOTION_STATUSES vs retry-terminal', () => {
+  test('submitted/sent are not promotable in-flight (provider-accepted = retry terminal)', () => {
+    assert.equal(IN_FLIGHT_PROMOTION_STATUSES.includes('submitted'), false);
+    assert.equal(IN_FLIGHT_PROMOTION_STATUSES.includes('sent'), false);
+    assert.equal(RETRY_TERMINAL_SUCCESS_STATUSES.includes('submitted'), true);
+    assert.equal(RETRY_TERMINAL_SUCCESS_STATUSES.includes('sent'), true);
+  });
+});
 
 describe('filterRetryPromotionRows (50 → 20 → 5 style exclusions)', () => {
   const cutoff = Date.now() - 10 * 60 * 1000;

@@ -43,9 +43,11 @@ function formatPhoneE16491(phone10OrMore) {
  * @param {string} phoneE164 - destination already 91XXXXXXXXXX
  * @param {string} templateId - Gupshup template id
  * @param {string[]} params - ordered body variable values
+ * @param {{ correlationId?: string|null }} [opts] — logged for traceability (Gupshup template API has no idempotency field)
  * @returns {Promise<{ success: boolean, data?: unknown, error?: string }>}
  */
-async function sendTemplateMessage(phoneE164, templateId, params) {
+async function sendTemplateMessage(phoneE164, templateId, params, opts = {}) {
+  const { correlationId } = opts;
   if (!isWhatsAppEnabled()) {
     return { success: false, error: 'WhatsApp disabled (ENABLE_WHATSAPP)' };
   }
@@ -86,6 +88,10 @@ async function sendTemplateMessage(phoneE164, templateId, params) {
     const data = res.data;
     const mask = maskPhoneTail(destination);
 
+    if (correlationId) {
+      console.log('[Gupshup] correlationId', correlationId, 'mask', mask, 'template', templateId);
+    }
+
     if (res.status >= 400) {
       const errMsg = (data && (data.message || data.error)) || `HTTP ${res.status}`;
       console.error('[Gupshup] Template send failed', mask, errMsg, data);
@@ -109,28 +115,28 @@ async function sendTemplateMessage(phoneE164, templateId, params) {
   }
 }
 
-async function sendSlotBookedWhatsApp(phone10, vars) {
+async function sendSlotBookedWhatsApp(phone10, vars, sendOpts = {}) {
   const tid = process.env.GUPSHUP_TEMPLATE_REMINDER;
   const params = buildParamsFromKeys(vars, SLOT_BOOKED_PARAM_KEYS);
-  return sendTemplateMessage(formatPhoneE16491(phone10), tid, params);
+  return sendTemplateMessage(formatPhoneE16491(phone10), tid, params, sendOpts);
 }
 
-async function sendPre4HrReminderWhatsApp(phone10, vars) {
+async function sendPre4HrReminderWhatsApp(phone10, vars, sendOpts = {}) {
   const tid = process.env.GUPSHUP_TEMPLATE_PRE4HR;
   const params = buildParamsFromKeys(vars, PRE4HR_PARAM_KEYS);
-  return sendTemplateMessage(formatPhoneE16491(phone10), tid, params);
+  return sendTemplateMessage(formatPhoneE16491(phone10), tid, params, sendOpts);
 }
 
-async function sendMeetLinkWhatsApp(phone10, vars) {
+async function sendMeetLinkWhatsApp(phone10, vars, sendOpts = {}) {
   const tid = process.env.GUPSHUP_TEMPLATE_MEET;
   const params = buildParamsFromKeys(vars, MEET_PARAM_KEYS);
-  return sendTemplateMessage(formatPhoneE16491(phone10), tid, params);
+  return sendTemplateMessage(formatPhoneE16491(phone10), tid, params, sendOpts);
 }
 
-async function sendReminder30MinWhatsApp(phone10, vars) {
+async function sendReminder30MinWhatsApp(phone10, vars, sendOpts = {}) {
   const tid = process.env.GUPSHUP_TEMPLATE_30MIN;
   const params = buildParamsFromKeys(vars, REMINDER_30MIN_PARAM_KEYS);
-  return sendTemplateMessage(formatPhoneE16491(phone10), tid, params);
+  return sendTemplateMessage(formatPhoneE16491(phone10), tid, params, sendOpts);
 }
 
 module.exports = {

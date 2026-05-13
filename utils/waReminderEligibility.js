@@ -61,6 +61,16 @@ function shouldSendCampaignReminderImmediately(kind, slotDate, now = new Date())
 }
 
 /**
+ * @throws {Error} when send would be before slotTime − offset (campaign kinds only)
+ */
+function assertCampaignSendNotEarly(kind, slotDate, now = new Date()) {
+  const e = getCampaignReminderEligibility(kind, slotDate, now);
+  if (!e.ok) {
+    throw new Error(e.reason || 'campaign_send_not_eligible');
+  }
+}
+
+/**
  * Offsets for Mongo $subtract (slotDate BsonDate - ms).
  */
 function getReminderOffsetsMsForDiagnostics() {
@@ -76,5 +86,6 @@ module.exports = {
   offsetMsForKind,
   getCampaignReminderEligibility,
   shouldSendCampaignReminderImmediately,
+  assertCampaignSendNotEarly,
   getReminderOffsetsMsForDiagnostics
 };

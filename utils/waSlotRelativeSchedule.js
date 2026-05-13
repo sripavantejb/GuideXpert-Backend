@@ -3,7 +3,7 @@
  *
  * **Production crons** use a **deadline-backward** band so nothing sends before the true
  * T−offset moment (e.g. pre4hr at slot−4h):
- *   `step3Data.slotDate` ∈ [now + offset − windowMs, now + offset + deadlineForwardSlackMs]
+ *   `step3Data.slotDate` ∈ [now + offset − windowMs, now + offset] (upper bound is strict deadline)
  * plus callers keep `step3Data.slotDate > now` so the session has not started.
  *
  * This replaces the older symmetric ±window/2 band around `now + offset`, which could
@@ -14,9 +14,8 @@
  *   meet:    WA_MEET_OFFSET_MS, WA_MEET_CRON_WINDOW_MS
  *   30min:   WA_30MIN_OFFSET_MS, WA_30MIN_CRON_WINDOW_MS
  *
- * Optional (all kinds): WA_SLOT_CRON_DEADLINE_FORWARD_SLACK_MS — extra ms past `now+offset`
- * for the upper bound only (default 0). Raise slightly if your scheduler often fires a few
- * seconds after the exact deadline.
+ * `WA_SLOT_CRON_DEADLINE_FORWARD_SLACK_MS` is deprecated: positive values are ignored and
+ * logged so the upper slot bound can never admit sends before slotTime − offset.
  */
 
 const MIN_WINDOW_MS = 60 * 1000;
@@ -41,7 +40,14 @@ function parseNonNegativeIntEnv(key, fallback) {
 }
 
 function deadlineForwardSlackMs() {
-  return parseNonNegativeIntEnv('WA_SLOT_CRON_DEADLINE_FORWARD_SLACK_MS', 0);
+  const raw = parseNonNegativeIntEnv('WA_SLOT_CRON_DEADLINE_FORWARD_SLACK_MS', 0);
+  if (raw > 0) {
+    console.warn(
+      '[waSlotRelativeSchedule] WA_SLOT_CRON_DEADLINE_FORWARD_SLACK_MS=%s ignored (must be 0). Forward slack cannot admit pre-boundary sends.',
+      String(process.env.WA_SLOT_CRON_DEADLINE_FORWARD_SLACK_MS)
+    );
+  }
+  return 0;
 }
 
 /**
@@ -83,8 +89,8 @@ function getSlotDateSymmetricBoundsForCron(now = new Date(), config) {
 
 /**
  * Mongo bounds for `step3Data.slotDate` on this cron tick (deadline-backward).
- * Slot is eligible when it lies in the last `windowMs` before `now + offset`, optionally
- * extending `deadlineForwardSlackMs` past that deadline for late ticks.
+ * Slot is eligible when it lies in the last `windowMs` before `now + offset` (inclusive upper
+ * bound `now + offset` only — no forward slack).
  *
  * @param {Date} [now]
  * @param {{ offsetMs: number, windowMs: number }} config
@@ -96,7 +102,7 @@ function getSlotDateDeadlineBackwardBoundsForCron(now = new Date(), config) {
   const slackMs = deadlineForwardSlackMs();
   return {
     slotDateMin: new Date(deadlineMs - windowMs),
-    slotDateMax: new Date(deadlineMs + slackMs),
+    slotDateMax: new Date(deadlineMs),
     offsetMs,
     windowMs,
     deadlineForwardSlackMs: slackMs

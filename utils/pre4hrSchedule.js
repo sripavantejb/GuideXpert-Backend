@@ -4,7 +4,7 @@
  * Env:
  *   WA_PRE4HR_OFFSET_MS — ms from "now" until ideal slot start for this cron tick (default 4h).
  *   WA_PRE4HR_CRON_WINDOW_MS — backward width before that deadline (default 10m). Slot must fall in
- *     [now+offset−window, now+offset+WA_SLOT_CRON_DEADLINE_FORWARD_SLACK_MS] (see waSlotRelativeSchedule).
+ *     [now+offset−window, now+offset] (upper bound is strict; WA_SLOT_CRON_DEADLINE_FORWARD_SLACK_MS is ignored).
  */
 
 const {

@@ -150,6 +150,19 @@ const formSubmissionSchema = new mongoose.Schema({
   waPre4hrCronClaimUntil: { type: Date, default: null, index: true },
   waMeetCronClaimUntil: { type: Date, default: null, index: true },
   wa30minCronClaimUntil: { type: Date, default: null, index: true },
+  /** Durable short-lived winner gate per template (cron SMS+WA); survives TTL claim expiry */
+  waPre4hrInitialSendLease: {
+    token: { type: String, trim: true, maxlength: 64 },
+    until: { type: Date, default: null }
+  },
+  waMeetInitialSendLease: {
+    token: { type: String, trim: true, maxlength: 64 },
+    until: { type: Date, default: null }
+  },
+  wa30minInitialSendLease: {
+    token: { type: String, trim: true, maxlength: 64 },
+    until: { type: Date, default: null }
+  },
   // WhatsApp (Gupshup) — reliability + ops dashboard
   whatsappRetryCount: {
     type: Number,

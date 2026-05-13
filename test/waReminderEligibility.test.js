@@ -4,7 +4,8 @@ const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   getCampaignReminderEligibility,
-  shouldSendCampaignReminderImmediately
+  shouldSendCampaignReminderImmediately,
+  assertCampaignSendNotEarly
 } = require('../utils/waReminderEligibility');
 
 function ist(date, hhmm) {
@@ -47,5 +48,15 @@ describe('waReminderEligibility', () => {
   test('30min: eligible at T-30m boundary', () => {
     const now = ist('2026-05-13', '17:30');
     assert.equal(getCampaignReminderEligibility('30min', SLOT, now).ok, true);
+  });
+
+  test('assertCampaignSendNotEarly throws before T-4h', () => {
+    const now = ist('2026-05-13', '13:59');
+    assert.throws(() => assertCampaignSendNotEarly('pre4hr', SLOT, now), /before_eligibility/);
+  });
+
+  test('assertCampaignSendNotEarly passes at T-4h', () => {
+    const now = ist('2026-05-13', '14:00');
+    assert.doesNotThrow(() => assertCampaignSendNotEarly('pre4hr', SLOT, now));
   });
 });

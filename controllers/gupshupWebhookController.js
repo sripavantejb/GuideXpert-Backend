@@ -8,7 +8,7 @@ const {
   isLikelyGupshupInternalId,
   isLikelyWaMessageId
 } = require('../utils/gupshupMessageIds');
-const { mapStageToDbStatus, canApplyWebhookStatus } = require('../utils/gupshupWebhookMonotonic');
+const { mapStageToDbStatus, canApplyWebhookStatus, rankSuccessStatus } = require('../utils/gupshupWebhookMonotonic');
 const { isRetryableFailure, isCampaignStrategy, RETRY_EXCLUSION_REASON } = require('../utils/whatsappRetryRules');
 
 function sanitizeSnippet(raw, maxLen = 3800) {
@@ -414,7 +414,16 @@ async function applyWebhookToMessageEvent(doc, newStatus, opts) {
         errorReason: failureReason,
         errorText: failureReason || doc.errorMessage
       };
-      if (isCampaignStrategy(doc.messageKind)) {
+      const wasProviderAccepted = rankSuccessStatus(doc.status) >= 3;
+      if (isCampaignStrategy(doc.messageKind) && wasProviderAccepted) {
+        set.retryEligible = false;
+        set.terminalFailureKind = 'transient';
+        set.retryExclusionReason = null;
+        set.retryExclusionAt = null;
+        set['retryExclusionMeta.nextAttempt'] = null;
+        set['retryExclusionMeta.attemptBatchId'] = null;
+        set['retryExclusionMeta.note'] = 'webhook_failed_after_provider_accept';
+      } else if (isCampaignStrategy(doc.messageKind)) {
         const retryable = isRetryableFailure(doc.messageKind, failCtx);
         set.retryEligible = retryable;
         set.terminalFailureKind = retryable ? 'transient' : 'permanent';
