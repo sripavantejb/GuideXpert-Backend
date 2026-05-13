@@ -23,6 +23,7 @@ const { deriveSubmissionWaStatus } = require('../services/whatsappOpsStatus');
 const opsAggregates = require('../services/whatsappOpsAggregates');
 const recipientAnalytics = require('../services/whatsappOpsRecipientAnalytics');
 const manualRecoveryService = require('../services/whatsappManualRecovery');
+const { parseOpsProductQuery, listAllowedOpsProducts } = require('../utils/whatsappOpsProduct');
 const IST_OFFSET_MINUTES = 330;
 
 function clampInt(v, dflt, max) {
@@ -158,11 +159,16 @@ exports.getOpsMeta = (_req, res) => {
         'GUPSHUP_API_KEY',
         'GUPSHUP_SOURCE',
         'GUPSHUP_TEMPLATE_REMINDER',
+        'GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED_WEDNESDAY',
+        'GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED_SATURDAY',
+        'GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED_SUNDAY',
+        'GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED',
         'GUPSHUP_TEMPLATE_PRE4HR',
         'GUPSHUP_TEMPLATE_MEET',
         'GUPSHUP_TEMPLATE_30MIN',
         'WHATSAPP_CRON_SCHEDULE_COPY'
       ],
+      opsProductsAllowed: [...listAllowedOpsProducts()],
       templateKinds: [
         { id: 'slot_booked', label: 'Slot booked', description: 'Immediate confirmation after slot booking', retryPolicy: getRetryPolicy('slot_booked') },
         { id: 'pre4hr', label: '4hr reminder', description: 'Cron + save_step3 use the same deadline-backward window near 4h before slot (see WA_PRE4HR_*).', retryPolicy: getRetryPolicy('pre4hr') },
@@ -177,7 +183,8 @@ exports.getSummary = async (req, res) => {
   try {
     const { from, to } = dateRange(req.query);
     const messageKind = req.query.messageKind ? String(req.query.messageKind).trim() : null;
-    const result = await opsAggregates.computeSummary({ from, to, messageKind });
+    const opsProduct = parseOpsProductQuery(req.query.opsProduct ?? req.query.tenant);
+    const result = await opsAggregates.computeSummary({ from, to, messageKind, opsProduct });
     if (result.error) {
       return res.status(400).json({ success: false, message: result.error });
     }
@@ -192,9 +199,10 @@ exports.getCalendarMonthOverview = async (req, res) => {
   try {
     const monthIso = req.query.month || new Date().toISOString().slice(0, 7);
     const messageKind = req.query.messageKind ? String(req.query.messageKind).trim() : null;
+    const opsProduct = parseOpsProductQuery(req.query.opsProduct ?? req.query.tenant);
     const [legacy, recipient] = await Promise.all([
-      opsAggregates.computeMonthOverview({ monthIso, messageKind }),
-      recipientAnalytics.computeRecipientMonthTrend({ monthIso, messageKind })
+      opsAggregates.computeMonthOverview({ monthIso, messageKind, opsProduct }),
+      recipientAnalytics.computeRecipientMonthTrend({ monthIso, messageKind, opsProduct })
     ]);
     if (legacy.error) {
       return res.status(400).json({ success: false, message: legacy.error });
@@ -222,6 +230,8 @@ exports.getCalendarDayOverview = async (req, res) => {
   try {
     const dateIso = req.query.date || new Date().toISOString().slice(0, 10);
     const selectedKind = req.query.messageKind ? String(req.query.messageKind).trim() : null;
+    const opsProduct = parseOpsProductQuery(req.query.opsProduct ?? req.query.tenant);
+    const cohortIsIit = opsProduct === 'iit_counselling';
     const slotTimeNorm = recipientAnalytics.normalizeSlotTimeParam(req.query.slotTime);
     if (slotTimeNorm === null) {
       return res.status(400).json({
@@ -230,11 +240,12 @@ exports.getCalendarDayOverview = async (req, res) => {
       });
     }
     const [attemptAgg, recipient] = await Promise.all([
-      opsAggregates.computeDayOverview({ dateIso, messageKind: selectedKind }),
+      opsAggregates.computeDayOverview({ dateIso, messageKind: selectedKind, opsProduct }),
       recipientAnalytics.computeRecipientDayOverview({
         dateIso,
         messageKind: selectedKind,
-        slotTime: slotTimeNorm
+        slotTime: slotTimeNorm,
+        opsProduct
       })
     ]);
     if (attemptAgg.error) {
@@ -253,20 +264,25 @@ exports.getCalendarDayOverview = async (req, res) => {
       recipientAnalytics.computeFailureReasonDistribution({
         cohortSlotDayIso: rPublic.filter?.date || dateIso,
         messageKind: selectedKind,
-        formSubmissionIds: cohortIds.length ? cohortIds : null
+        formSubmissionIds: cohortIsIit ? null : cohortIds.length ? cohortIds : null,
+        iitCounsellingSubmissionIds: cohortIsIit && cohortIds.length ? cohortIds : null,
+        opsProduct
       }),
       selectedKind
         ? Promise.resolve([])
         : recipientAnalytics.computeTemplateReliabilityRanking({
             from: range.from,
             to: range.to,
-            formSubmissionIds: cohortIds.length ? cohortIds : null
+            formSubmissionIds: cohortIsIit ? null : cohortIds.length ? cohortIds : null,
+            iitCounsellingSubmissionIds: cohortIsIit && cohortIds.length ? cohortIds : null,
+            opsProduct
           }),
       debugOn && cohortIds.length
         ? recipientAnalytics.computeCohortDayDiagnostics({
             dateIso: rPublic.filter?.date || dateIso,
             messageKind: selectedKind,
-            cohortSubmissionIds: cohortIds
+            cohortSubmissionIds: cohortIds,
+            opsProduct
           })
         : Promise.resolve(null)
     ]);
@@ -873,7 +889,8 @@ exports.getAttemptAnalytics = async (req, res) => {
       });
     }
     const dateIso = req.query.date ? String(req.query.date).trim().slice(0, 10) : new Date().toISOString().slice(0, 10);
-    const prefix = opsAggregates.slotDayIstPrefixStages(dateIso, messageKind);
+    const opsProduct = parseOpsProductQuery(req.query.opsProduct ?? req.query.tenant);
+    const prefix = opsAggregates.slotDayIstPrefixStages(dateIso, messageKind, opsProduct);
     if (!prefix) return res.status(400).json({ success: false, message: 'Invalid date. Use YYYY-MM-DD (IST anchor)' });
 
     const { range, stages: prefixStages } = prefix;
@@ -965,6 +982,7 @@ exports.getAttemptAnalytics = async (req, res) => {
         filter: {
           date: range.isoDate,
           messageKind,
+          opsProduct,
           retryGroupId:
             req.query.retryGroupId && mongoose.Types.ObjectId.isValid(String(req.query.retryGroupId))
               ? String(req.query.retryGroupId)
@@ -1071,6 +1089,8 @@ exports.captureSnapshot = async (req, res) => {
     const params = { ...req.query, ...(req.body || {}) };
     const scope = String(params.scope || 'summary').toLowerCase();
     const messageKind = params.messageKind ? String(params.messageKind).trim() : null;
+    const opsProduct = parseOpsProductQuery(params.opsProduct ?? params.tenant);
+    const cohortIsIit = opsProduct === 'iit_counselling';
     const username = req.admin?.username || null;
     const captures = [];
     const errors = [];
@@ -1108,7 +1128,7 @@ exports.captureSnapshot = async (req, res) => {
     if (wantSummary) {
       const from = opsAggregates.parseBoundaryDate(params.from, 'start');
       const to = opsAggregates.parseBoundaryDate(params.to, 'end') || new Date();
-      const summary = await opsAggregates.computeSummary({ from, to, messageKind });
+      const summary = await opsAggregates.computeSummary({ from, to, messageKind, opsProduct });
       if (summary.error) {
         errors.push({ scope: 'summary', message: summary.error });
       } else {
@@ -1116,6 +1136,7 @@ exports.captureSnapshot = async (req, res) => {
           scopeKey: opsAggregates.buildScopeKey({
             scope: 'summary',
             messageKind,
+            opsProduct,
             fromIso: from ? from.toISOString() : '',
             toIso: to ? to.toISOString() : ''
           }),
@@ -1134,14 +1155,14 @@ exports.captureSnapshot = async (req, res) => {
     if (wantMonth) {
       const monthIso = params.month || new Date().toISOString().slice(0, 7);
       const [month, recipient] = await Promise.all([
-        opsAggregates.computeMonthOverview({ monthIso, messageKind }),
-        recipientAnalytics.computeRecipientMonthTrend({ monthIso, messageKind })
+        opsAggregates.computeMonthOverview({ monthIso, messageKind, opsProduct }),
+        recipientAnalytics.computeRecipientMonthTrend({ monthIso, messageKind, opsProduct })
       ]);
       if (month.error) {
         errors.push({ scope: 'month', message: month.error });
       } else {
         await captureOne({
-          scopeKey: opsAggregates.buildScopeKey({ scope: 'month', messageKind, monthIso }),
+          scopeKey: opsAggregates.buildScopeKey({ scope: 'month', messageKind, monthIso, opsProduct }),
           scope: 'month',
           payload: {
             ...month.data,
@@ -1163,8 +1184,8 @@ exports.captureSnapshot = async (req, res) => {
         });
       } else {
         const [day, recipient] = await Promise.all([
-          opsAggregates.computeDayOverview({ dateIso, messageKind }),
-          recipientAnalytics.computeRecipientDayOverview({ dateIso, messageKind, slotTime: slotT })
+          opsAggregates.computeDayOverview({ dateIso, messageKind, opsProduct }),
+          recipientAnalytics.computeRecipientDayOverview({ dateIso, messageKind, slotTime: slotT, opsProduct })
         ]);
         if (day.error) {
           errors.push({ scope: 'day', message: day.error });
@@ -1180,18 +1201,28 @@ exports.captureSnapshot = async (req, res) => {
             recipientAnalytics.computeFailureReasonDistribution({
               cohortSlotDayIso: r.filter?.date || dateIso,
               messageKind,
-              formSubmissionIds: cohortIds.length ? cohortIds : null
+              formSubmissionIds: cohortIsIit ? null : cohortIds.length ? cohortIds : null,
+              iitCounsellingSubmissionIds: cohortIsIit && cohortIds.length ? cohortIds : null,
+              opsProduct
             }),
             messageKind
               ? Promise.resolve([])
               : recipientAnalytics.computeTemplateReliabilityRanking({
                   from: range.from,
                   to: range.to,
-                  formSubmissionIds: cohortIds.length ? cohortIds : null
+                  formSubmissionIds: cohortIsIit ? null : cohortIds.length ? cohortIds : null,
+                  iitCounsellingSubmissionIds: cohortIsIit && cohortIds.length ? cohortIds : null,
+                  opsProduct
                 })
           ]);
           await captureOne({
-            scopeKey: opsAggregates.buildScopeKey({ scope: 'day', messageKind, dateIso, slotTime: slotT }),
+            scopeKey: opsAggregates.buildScopeKey({
+              scope: 'day',
+              messageKind,
+              dateIso,
+              slotTime: slotT,
+              opsProduct
+            }),
             scope: 'day',
             payload: {
               schemaVersion: 2,
@@ -1249,6 +1280,7 @@ exports.getLatestSnapshot = async (req, res) => {
   try {
     const params = req.query || {};
     const messageKind = params.messageKind ? String(params.messageKind).trim() : null;
+    const opsProduct = parseOpsProductQuery(params.opsProduct ?? params.tenant);
 
     if (params.scopeKey) {
       const doc = await WhatsAppOpsChartSnapshot.findOne({ scopeKey: String(params.scopeKey) }).lean();
@@ -1269,12 +1301,13 @@ exports.getLatestSnapshot = async (req, res) => {
         scopeKey = opsAggregates.buildScopeKey({
           scope: 'summary',
           messageKind,
+          opsProduct,
           fromIso: from ? from.toISOString() : '',
           toIso: to ? to.toISOString() : ''
         });
       } else if (s === 'month') {
         const monthIso = params.month || new Date().toISOString().slice(0, 7);
-        scopeKey = opsAggregates.buildScopeKey({ scope: 'month', messageKind, monthIso });
+        scopeKey = opsAggregates.buildScopeKey({ scope: 'month', messageKind, monthIso, opsProduct });
       } else if (s === 'day') {
         const dateIso = params.date || new Date().toISOString().slice(0, 10);
         const slotT = recipientAnalytics.normalizeSlotTimeParam(params.slotTime);
@@ -1283,7 +1316,8 @@ exports.getLatestSnapshot = async (req, res) => {
           scope: 'day',
           messageKind,
           dateIso,
-          slotTime: slotForKey
+          slotTime: slotForKey,
+          opsProduct
         });
       }
       if (!scopeKey) {

@@ -19,6 +19,7 @@ const {
 } = require('./whatsappRetryRules');
 const { getCampaignReminderEligibility, CAMPAIGN_RELATIVE_KINDS } = require('./waReminderEligibility');
 const { reserveOutboundWhatsAppAttempt } = require('./waSendAttemptReservation');
+const { normalizeOutboundOpsProduct } = require('./whatsappOpsProduct');
 
 function maskPhone(phone10) {
   const s = String(phone10 || '').replace(/\D/g, '');
@@ -109,11 +110,17 @@ function buildMessageEventPayload({
   correlationId,
   canonicalRetryGroupId,
   terminalFailureKind,
-  retryExclusionReason
+  retryExclusionReason,
+  opsProduct,
+  cohortSlotInstantUtc,
+  iitCounsellingSubmissionId
 }) {
   return {
     phone: phone10,
     formSubmissionId: subId,
+    iitCounsellingSubmissionId: iitCounsellingSubmissionId || null,
+    cohortSlotInstantUtc: cohortSlotInstantUtc || null,
+    opsProduct: opsProduct || 'guidexpert',
     messageKind: retryKind,
     cronRunId: cronRunId || null,
     cronJobKey: cronJobKey || null,
@@ -185,6 +192,10 @@ async function persistAttemptEvent(payload, reservedEventId) {
  * @param {import('mongoose').Types.ObjectId|null} [opts.parentMessageEventId]
  * @param {import('mongoose').Types.ObjectId|null} [opts.attemptBatchId]
  * @param {string|null} [opts.correlationId]
+ * @param {'guidexpert'|'iit_counselling'} [opts.opsProduct]
+ * @param {Date|null} [opts.cohortSlotInstantUtc] booking instant for cohort analytics (IIT / non-FormSubmission)
+ * @param {string|import('mongoose').Types.ObjectId|null} [opts.iitCounsellingSubmissionId]
+ * @param {string|null} [opts.explicitTemplateEnvKey] process.env key name override (e.g. IIT slot_booked template)
  * @param {boolean} [opts.skipSlotRelativeGuard] when true, skip pre4hr/meet/30min slot-window guard (admin manual)
  * @returns {Promise<{ success: boolean, error?: string, retryGroupId?: import('mongoose').Types.ObjectId, idempotent?: boolean, duplicateInFlight?: boolean, skippedOutsideWindow?: boolean }>}
  */
@@ -203,15 +214,34 @@ async function safeSendWhatsApp({
   attemptBatchId: attemptBatchIdOpt,
   correlationId: correlationIdOpt,
   canonicalRetryGroupId: canonicalRetryGroupIdOpt,
-  skipSlotRelativeGuard
+  skipSlotRelativeGuard,
+  opsProduct: opsProductOpt,
+  cohortSlotInstantUtc,
+  iitCounsellingSubmissionId,
+  explicitTemplateEnvKey
 }) {
-  const { templateIdEnvKey, templateId } = getTemplateMetaForKind(retryKind);
+  const outboundProduct = normalizeOutboundOpsProduct(opsProductOpt);
+  const trimTemplateKey = typeof explicitTemplateEnvKey === 'string' ? explicitTemplateEnvKey.trim() : '';
+  let templateIdEnvKey;
+  let templateId;
+  if (trimTemplateKey) {
+    templateIdEnvKey = trimTemplateKey;
+    templateId = process.env[trimTemplateKey] || null;
+  } else {
+    ({ templateIdEnvKey, templateId } = getTemplateMetaForKind(retryKind));
+  }
   const varSummary = summarizeVars(vars);
 
   const attNum = Math.min(6, Math.max(1, parseInt(String(attemptNumberOpt ?? 1), 10) || 1));
   const retrySourceLabel = retrySourceFromAttemptNumber(attNum);
   const correlationId = correlationIdOpt || crypto.randomUUID();
   const canonicalOid = toOidMaybe(canonicalRetryGroupIdOpt);
+  const iitSubOid = toOidMaybe(iitCounsellingSubmissionId);
+  const cohortSlotUtc =
+    cohortSlotInstantUtc instanceof Date && !Number.isNaN(cohortSlotInstantUtc.getTime())
+      ? cohortSlotInstantUtc
+      : null;
+  const gxSideEffects = outboundProduct === 'guidexpert';
   let resolvedGroupId = null;
   let reservedEventId = null;
 
@@ -289,7 +319,10 @@ async function safeSendWhatsApp({
       attemptBatchId: attemptBatchOid,
       retrySourceLabel,
       canonicalRetryGroupId: canonicalOid,
-      correlationId
+      correlationId,
+      opsProduct: outboundProduct,
+      cohortSlotInstantUtc: cohortSlotUtc,
+      iitCounsellingSubmissionId: iitSubOid
     });
 
     if (reserveResult.outcome === 'already_terminal') {
@@ -312,7 +345,10 @@ async function safeSendWhatsApp({
     }
     reservedEventId = reserveResult.reservedEventId || null;
 
-    const result = await sendFn(phone10, vars, { correlationId });
+    const result = await sendFn(phone10, vars, {
+      correlationId,
+      ...(trimTemplateKey ? { templateEnvKey: trimTemplateKey } : {})
+    });
     const now = new Date();
     const ids = parseGupshupTemplateSendResponse(result && result.data);
     const messageId = ids.canonicalMessageId || null;
@@ -327,20 +363,23 @@ async function safeSendWhatsApp({
     }
 
     if (result && result.success) {
-      const prior = await FormSubmission.findOne({ phone: phone10 }).select('whatsappRetryCount').lean();
-      const retrySnapOnSuccess =
-        prior && Number.isFinite(prior.whatsappRetryCount) ? prior.whatsappRetryCount : 0;
+      let retrySnapOnSuccess = 0;
+      if (gxSideEffects) {
+        const prior = await FormSubmission.findOne({ phone: phone10 }).select('whatsappRetryCount').lean();
+        retrySnapOnSuccess =
+          prior && Number.isFinite(prior.whatsappRetryCount) ? prior.whatsappRetryCount : 0;
 
-      const setDoc = {
-        whatsappRetryCount: 0,
-        whatsappRetryKind: null,
-        lastWhatsappAttemptAt: now,
-        whatsappLastError: null
-      };
-      if (messageId) {
-        setDoc.whatsappLastMessageId = messageId;
+        const setDoc = {
+          whatsappRetryCount: 0,
+          whatsappRetryKind: null,
+          lastWhatsappAttemptAt: now,
+          whatsappLastError: null
+        };
+        if (messageId) {
+          setDoc.whatsappLastMessageId = messageId;
+        }
+        await FormSubmission.updateOne({ phone: phone10 }, { $set: setDoc });
       }
-      await FormSubmission.updateOne({ phone: phone10 }, { $set: setDoc });
 
       await persistAttemptEvent(
         buildMessageEventPayload({
@@ -368,7 +407,10 @@ async function safeSendWhatsApp({
           correlationId,
           canonicalRetryGroupId: canonicalOid,
           terminalFailureKind: null,
-          retryExclusionReason: null
+          retryExclusionReason: null,
+          opsProduct: outboundProduct,
+          cohortSlotInstantUtc: cohortSlotUtc,
+          iitCounsellingSubmissionId: iitSubOid
         }),
         reservedEventId
       );
@@ -381,7 +423,7 @@ async function safeSendWhatsApp({
     const providerDebug = providerPayloadSnippet(result, 500) || '';
 
     let snap = attNum > 1 ? attNum - 1 : null;
-    if (attNum === 1) {
+    if (gxSideEffects && attNum === 1) {
       const subBefore = await FormSubmission.findOneAndUpdate(
         { phone: phone10 },
         {
@@ -431,36 +473,39 @@ async function safeSendWhatsApp({
       rowRetryEligible = attNum < maxA;
     }
 
-    await persistAttemptEvent(
-      buildMessageEventPayload({
-        phone10,
-        subId,
-        retryKind,
-        cronRunId,
-        cronJobKey,
-        source,
-        templateIdEnvKey,
-        templateId,
-        messageId: null,
-        ids,
-        payloadSnippet: providerDebug || null,
-        now,
-        status: derivedStatus,
-        retrySnap: snap,
-        errText,
-        retryGroupId: resolvedGroupId,
-        attemptNumber: attNum,
-        parentOid,
-        attemptBatchOid,
-        retrySourceLabel,
-        retryEligible: rowRetryEligible,
-        correlationId,
-        canonicalRetryGroupId: canonicalOid,
-        terminalFailureKind,
-        retryExclusionReason: permExcl
-      }),
-      reservedEventId
-    );
+      await persistAttemptEvent(
+        buildMessageEventPayload({
+          phone10,
+          subId,
+          retryKind,
+          cronRunId,
+          cronJobKey,
+          source,
+          templateIdEnvKey,
+          templateId,
+          messageId: null,
+          ids,
+          payloadSnippet: providerDebug || null,
+          now,
+          status: derivedStatus,
+          retrySnap: snap,
+          errText,
+          retryGroupId: resolvedGroupId,
+          attemptNumber: attNum,
+          parentOid,
+          attemptBatchOid,
+          retrySourceLabel,
+          retryEligible: rowRetryEligible,
+          correlationId,
+          canonicalRetryGroupId: canonicalOid,
+          terminalFailureKind,
+          retryExclusionReason: permExcl,
+          opsProduct: outboundProduct,
+          cohortSlotInstantUtc: cohortSlotUtc,
+          iitCounsellingSubmissionId: iitSubOid
+        }),
+        reservedEventId
+      );
 
     console.warn(
       '[WhatsApp] failure',
@@ -495,7 +540,7 @@ async function safeSendWhatsApp({
       }
 
       let snap = attNum > 1 ? attNum - 1 : null;
-      if (attNum === 1) {
+      if (gxSideEffects && attNum === 1) {
         const subBefore = await FormSubmission.findOneAndUpdate(
           { phone: phone10 },
           {
@@ -569,7 +614,10 @@ async function safeSendWhatsApp({
           correlationId,
           canonicalRetryGroupId: canonicalOid,
           terminalFailureKind,
-          retryExclusionReason: permExcl
+          retryExclusionReason: permExcl,
+          opsProduct: outboundProduct,
+          cohortSlotInstantUtc: cohortSlotUtc,
+          iitCounsellingSubmissionId: iitSubOid
         }),
         reservedEventId
       );

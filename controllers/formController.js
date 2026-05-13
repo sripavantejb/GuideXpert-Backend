@@ -27,6 +27,8 @@ const { listExams } = require('../services/rankPredictorService');
 const { buildSlotNotificationVariables } = require('../utils/slotNotificationFormatters');
 const gupshupService = require('../services/gupshupService');
 const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
+const { computeIitCounsellingSlotInstantUtc } = require('../utils/iitCounsellingSlotUtc');
+const { resolveIitSlotBookedTemplateEnvKey } = require('../utils/iitCounsellingWhatsApp');
 const { shouldSendCampaignReminderImmediately } = require('../utils/waReminderEligibility');
 
 /** Optional body.rankPredictorLead — validated snapshot for admin follow-up. */
@@ -103,6 +105,13 @@ const IIT_SLOT_TO_IST_WEEKDAY_SHORT = {
   'Wednesday 6PM': 'Wed',
   'Saturday 6PM': 'Sat',
   'Sunday 11AM': 'Sun',
+};
+
+/** Map IIT counselling booking label to GX slot-id shape for WhatsApp/SMS template time tokens. */
+const IIT_BOOKING_LABEL_TO_SELECTED_SLOT_ID = {
+  'Wednesday 6PM': 'WEDNESDAY_6PM',
+  'Saturday 6PM': 'SATURDAY_6PM',
+  'Sunday 11AM': 'SUNDAY_11AM'
 };
 
 function istWeekdayShortFromYmd(ymd) {
@@ -1157,6 +1166,9 @@ exports.saveIitSection1 = async (req, res) => {
     }
 
     const now = new Date();
+    const slotUtc =
+      slotDateNorm.value ? computeIitCounsellingSlotInstantUtc(slotBookingTrimmed, slotDateNorm.value) : null;
+
     const section1Data = {
       fullName,
       mobileNumber: phone,
@@ -1184,6 +1196,7 @@ exports.saveIitSection1 = async (req, res) => {
           isCompleted: false,
           currentStep: 1,
           applicationStatus: 'in_progress',
+          counsellingSlotInstantUtc: slotUtc || null,
           'iitCounselling.currentStep': 1,
           'iitCounselling.isCompleted': false,
           'iitCounselling.section1Data': section1Data,
@@ -1205,10 +1218,83 @@ exports.saveIitSection1 = async (req, res) => {
       );
     }
 
+    /** @type {{ attempted: boolean, success?: boolean, skippedReason?: string, error?: string, idempotent?: boolean }|null} */
+    let whatsappSlotBooked = null;
+
+    if (!slotUtc) {
+      whatsappSlotBooked = { attempted: false, skippedReason: 'no_slot_calendar_date' };
+      console.info(
+        '[saveIitSection1] WhatsApp skipped: no counselling slot instant (send slotBookingDate YYYY-MM-DD with IST weekday matching slotBooking)'
+      );
+    } else {
+      try {
+        const slotIdForTpl = IIT_BOOKING_LABEL_TO_SELECTED_SLOT_ID[slotBookingTrimmed];
+        const iitTplKey = resolveIitSlotBookedTemplateEnvKey(slotBookingTrimmed);
+        const slotBookedGroup = await WhatsAppRetryGroup.create({
+          messageKind: 'slot_booked',
+          cronRunId: null,
+          trigger: 'save_step3',
+          status: 'open'
+        });
+        const waResult = await safeSendWhatsApp({
+          phone10: phone,
+          formSubmissionId: null,
+          vars: buildSlotNotificationVariables({
+            fullName,
+            step3Data: {
+              slotDate: slotUtc,
+              selectedSlot: slotIdForTpl
+            }
+          }),
+          retryKind: 'slot_booked',
+          source: 'save_step3',
+          cronRunId: null,
+          cronJobKey: null,
+          sendFn: gupshupService.sendSlotBookedWhatsApp,
+          retryGroupId: slotBookedGroup._id,
+          attemptNumber: 1,
+          opsProduct: 'iit_counselling',
+          cohortSlotInstantUtc: slotUtc,
+          iitCounsellingSubmissionId: submission._id,
+          ...(iitTplKey ? { explicitTemplateEnvKey: iitTplKey } : {}),
+        });
+
+        if (waResult && waResult.success) {
+          whatsappSlotBooked = {
+            attempted: true,
+            success: true,
+            ...(waResult.idempotent ? { idempotent: true } : {}),
+          };
+        } else {
+          const errText = (waResult && waResult.error) ? String(waResult.error).slice(0, 240) : 'send_failed';
+          const skippedReason = waResult?.duplicateInFlight
+            ? 'duplicate_in_flight'
+            : waResult?.skippedOutsideWindow
+              ? 'outside_reminder_window'
+              : undefined;
+          whatsappSlotBooked = {
+            attempted: true,
+            success: false,
+            error: errText,
+            ...(skippedReason ? { skippedReason } : {}),
+          };
+          console.warn('[saveIitSection1] WhatsApp slot_booked unsuccessful:', errText);
+        }
+      } catch (waErr) {
+        const msg = String(waErr?.message || waErr || 'exception').slice(0, 240);
+        whatsappSlotBooked = { attempted: true, success: false, error: msg };
+        console.error('[saveIitSection1] WhatsApp slot_booked dispatch error:', msg);
+      }
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Section 1 saved successfully.',
-      data: { submissionId: submission._id.toString(), currentStep: 1 },
+      data: {
+        submissionId: submission._id.toString(),
+        currentStep: 1,
+        whatsappSlotBooked,
+      },
     });
   } catch (error) {
     console.error('[saveIitSection1] Error:', error);

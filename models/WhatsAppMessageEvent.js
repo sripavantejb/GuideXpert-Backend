@@ -51,6 +51,22 @@ const whatsAppMessageEventSchema = new mongoose.Schema({
   correlationId: { type: String, trim: true, maxlength: 64, default: null, index: true },
   phone: { type: String, required: true, index: true, match: [/^\d{10}$/, '10-digit phone'] },
   formSubmissionId: { type: mongoose.Schema.Types.ObjectId, ref: 'FormSubmission', index: true, default: null },
+  /** IIT counselling linkage for cohort analytics (optional) */
+  iitCounsellingSubmissionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'IitCounsellingSubmission',
+    default: null,
+    index: true
+  },
+  /** IST booking instant for cohort tagging when FormSubmission.slotDate is unavailable (e.g. IIT product) */
+  cohortSlotInstantUtc: { type: Date, default: null, index: true },
+  /** Product line for WhatsApp ops Overview filtering; legacy omit → GuideXpert */
+  opsProduct: {
+    type: String,
+    enum: ['guidexpert', 'iit_counselling'],
+    default: 'guidexpert',
+    index: true
+  },
   messageKind: {
     type: String,
     required: true,
@@ -137,6 +153,7 @@ whatsAppMessageEventSchema.index({ messageKind: 1, createdAt: -1 });
 whatsAppMessageEventSchema.index({ retryGroupId: 1, attemptNumber: 1 });
 whatsAppMessageEventSchema.index({ messageKind: 1, attemptNumber: 1, retryEligible: 1, status: 1, createdAt: 1 });
 whatsAppMessageEventSchema.index({ messageKind: 1, formSubmissionId: 1, createdAt: -1 });
+whatsAppMessageEventSchema.index({ opsProduct: 1, messageKind: 1, createdAt: -1 });
 whatsAppMessageEventSchema.index(
   { canonicalRetryGroupId: 1, attemptNumber: 1 },
   { partialFilterExpression: { canonicalRetryGroupId: { $exists: true, $type: 'objectId' } } }

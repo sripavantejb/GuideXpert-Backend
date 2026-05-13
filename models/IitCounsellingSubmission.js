@@ -48,6 +48,12 @@ const iitCounsellingSubmissionSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  /** UTC instant for slot start (Asia/Kolkata), mirrors FormSubmission.step3Data.slotDate for ops cohorts */
+  counsellingSlotInstantUtc: {
+    type: Date,
+    default: null,
+    index: true,
+  },
   iitCounselling: {
     currentStep: {
       type: Number,
@@ -102,6 +108,4 @@ const iitCounsellingSubmissionSchema = new mongoose.Schema({
 
 iitCounsellingSubmissionSchema.index({ phone: 1, createdAt: -1 });
 iitCounsellingSubmissionSchema.index({ createdAt: -1 });
-iitCounsellingSubmissionSchema.index({ currentStep: 1, isCompleted: 1, createdAt: -1 });
-
 module.exports = mongoose.model('IitCounsellingSubmission', iitCounsellingSubmissionSchema);

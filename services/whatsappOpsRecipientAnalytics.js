@@ -5,6 +5,12 @@
 const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');
 const WhatsAppRetryGroup = require('../models/WhatsAppRetryGroup');
 const FormSubmission = require('../models/FormSubmission');
+const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
+const {
+  parseOpsProductQuery,
+  effectiveOverviewMessageKind,
+  matchWhatsAppEventsByOpsProduct
+} = require('../utils/whatsappOpsProduct');
 const {
   istDayRangeFromIso,
   annotateEventsWithSlotDayPipeline: annotateEventsWithSlotDayPipelineBase
@@ -46,14 +52,38 @@ function buildBookingCohortFilter(range, slotTimeNorm) {
 }
 
 /** Strict IST slot-day from submission only (no createdAt cohort fallback). */
-function annotateEventsWithSlotDayPipeline(messageKindFilter) {
-  return annotateEventsWithSlotDayPipelineBase(messageKindFilter, { strictSlotDay: true });
+function annotateEventsWithSlotDayPipeline(messageKindFilter, opsProductRaw = null) {
+  return annotateEventsWithSlotDayPipelineBase(messageKindFilter, {
+    strictSlotDay: true,
+    opsProduct: opsProductRaw
+  });
+}
+
+function buildIitBookingCohortFilter(range, slotTimeNorm) {
+  const q = {
+    counsellingSlotInstantUtc: { $gte: range.from, $lte: range.to }
+  };
+  if (slotTimeNorm && slotTimeNorm !== 'all') {
+    if (slotTimeNorm === '6PM') {
+      q['iitCounselling.section1Data.slotBooking'] = { $in: ['Wednesday 6PM', 'Saturday 6PM'] };
+    } else if (slotTimeNorm === '11AM') {
+      q['iitCounselling.section1Data.slotBooking'] = 'Sunday 11AM';
+    } else {
+      return { ...q, _id: { $in: [] } };
+    }
+  }
+  return q;
 }
 
 /**
  * @returns {Promise<object>}
  */
-async function computeRecipientDayOverview({ dateIso, messageKind = null, slotTime = 'all' }) {
+async function computeRecipientDayOverview({
+  dateIso,
+  messageKind = null,
+  slotTime = 'all',
+  opsProduct = null
+} = {}) {
   if (messageKind && !ALLOWED_MESSAGE_KINDS.includes(messageKind)) {
     return { error: `Invalid messageKind. Allowed: ${ALLOWED_MESSAGE_KINDS.join(', ')}` };
   }
@@ -64,22 +94,39 @@ async function computeRecipientDayOverview({ dateIso, messageKind = null, slotTi
   const range = istDayRangeFromIso(dateIso);
   if (!range) return { error: 'Invalid date format. Use YYYY-MM-DD' };
 
-  const cohortFilter = buildBookingCohortFilter(range, slotTimeNorm);
+  const opsSlug = parseOpsProductQuery(opsProduct);
+  const effKind = effectiveOverviewMessageKind(opsProduct, messageKind);
+  const cohortFilter =
+    opsSlug === 'iit_counselling'
+      ? buildIitBookingCohortFilter(range, slotTimeNorm)
+      : buildBookingCohortFilter(range, slotTimeNorm);
   const [cohortBookedCount, cohortIds] = await Promise.all([
-    FormSubmission.countDocuments(cohortFilter),
-    FormSubmission.distinct('_id', cohortFilter)
+    opsSlug === 'iit_counselling'
+      ? IitCounsellingSubmission.countDocuments(cohortFilter)
+      : FormSubmission.countDocuments(cohortFilter),
+    opsSlug === 'iit_counselling'
+      ? IitCounsellingSubmission.distinct('_id', cohortFilter)
+      : FormSubmission.distinct('_id', cohortFilter)
   ]);
 
+  const idField = opsSlug === 'iit_counselling' ? 'iitCounsellingSubmissionId' : 'formSubmissionId';
   const withWaIds =
     cohortIds.length > 0
-      ? await WhatsAppMessageEvent.distinct('formSubmissionId', { formSubmissionId: { $in: cohortIds } })
+      ? await WhatsAppMessageEvent.distinct(idField, {
+          ...matchWhatsAppEventsByOpsProduct(opsSlug),
+          [idField]: { $in: cohortIds },
+          ...(effKind ? { messageKind: effKind } : {})
+        })
       : [];
   const withWaSet = new Set(withWaIds.map((id) => String(id)));
   const bookedWithoutAnyWaEvent = cohortIds.filter((id) => !withWaSet.has(String(id))).length;
 
   const slotDayMatch = { $match: { slotDayIst: range.isoDate } };
-  const cohortMatch = { $match: { formSubmissionId: { $in: cohortIds } } };
-  const annotate = annotateEventsWithSlotDayPipeline(messageKind);
+  const cohortMatch =
+    opsSlug === 'iit_counselling'
+      ? { $match: { iitCounsellingSubmissionId: { $in: cohortIds } } }
+      : { $match: { formSubmissionId: { $in: cohortIds } } };
+  const annotate = annotateEventsWithSlotDayPipeline(effKind, opsProduct);
 
   const recipientGroupId = messageKind
     ? { lineageId: '$lineageId', phone: '$phone', messageKind: '$messageKind' }
@@ -277,7 +324,7 @@ async function computeRecipientDayOverview({ dateIso, messageKind = null, slotTi
     data: {
       schemaVersion: 2,
       cohortAnchor: 'booking_ist_slot_day',
-      filter: { date: range.isoDate, messageKind: messageKind || null, slotTime: slotTimeNorm },
+      filter: { date: range.isoDate, messageKind: messageKind || null, slotTime: slotTimeNorm, opsProduct: opsSlug },
       range: { from: range.from, to: range.to },
       bookedSlotsCount: cohortBookedCount,
       recipientTotals: {
@@ -301,7 +348,7 @@ async function computeRecipientDayOverview({ dateIso, messageKind = null, slotTi
   };
 }
 
-async function computeRecipientMonthTrend({ monthIso, messageKind = null }) {
+async function computeRecipientMonthTrend({ monthIso, messageKind = null, opsProduct = null }) {
   const s = String(monthIso || '').trim();
   if (!/^\d{4}-\d{2}$/.test(s)) return { error: 'Invalid month YYYY-MM' };
   const [y, m] = s.split('-').map((x) => parseInt(x, 10));
@@ -310,7 +357,8 @@ async function computeRecipientMonthTrend({ monthIso, messageKind = null }) {
   const dayMin = `${y}-${pad(m)}-01`;
   const dayMax = `${y}-${pad(m)}-${pad(lastD)}`;
 
-  const annotate = annotateEventsWithSlotDayPipeline(messageKind);
+  const effKind = effectiveOverviewMessageKind(opsProduct, messageKind);
+  const annotate = annotateEventsWithSlotDayPipeline(effKind, opsProduct);
   const monthSlotMatch = { $match: { slotDayIst: { $gte: dayMin, $lte: dayMax, $ne: null } } };
 
   const simplified = await WhatsAppMessageEvent.aggregate([
@@ -386,18 +434,22 @@ async function computeFailureReasonDistribution({
   to,
   messageKind = null,
   formSubmissionIds = null,
-  cohortSlotDayIso = null
+  iitCounsellingSubmissionIds = null,
+  cohortSlotDayIso = null,
+  opsProduct = null
 }) {
   if (cohortSlotDayIso) {
-    const annotate = annotateEventsWithSlotDayPipeline(messageKind);
-    const cohortIdMatch =
-      formSubmissionIds && formSubmissionIds.length
-        ? [{ $match: { formSubmissionId: { $in: formSubmissionIds } } }]
-        : [];
+    const annotate = annotateEventsWithSlotDayPipeline(messageKind, opsProduct);
+    let cohortSteps = [];
+    if (formSubmissionIds && formSubmissionIds.length) {
+      cohortSteps = [{ $match: { formSubmissionId: { $in: formSubmissionIds } } }];
+    } else if (iitCounsellingSubmissionIds && iitCounsellingSubmissionIds.length) {
+      cohortSteps = [{ $match: { iitCounsellingSubmissionId: { $in: iitCounsellingSubmissionIds } } }];
+    }
     const rows = await WhatsAppMessageEvent.aggregate([
       ...annotate,
       { $match: { slotDayIst: cohortSlotDayIso, status: { $in: TERMINAL_FAILURE } } },
-      ...cohortIdMatch,
+      ...cohortSteps,
       {
         $project: {
           bucket: {
@@ -444,7 +496,10 @@ async function computeFailureReasonDistribution({
 
   const match = {
     status: { $in: TERMINAL_FAILURE },
-    ...(!(formSubmissionIds && formSubmissionIds.length) && (from || to)
+    ...matchWhatsAppEventsByOpsProduct(parseOpsProductQuery(opsProduct)),
+    ...(!(formSubmissionIds && formSubmissionIds.length)
+      && !(iitCounsellingSubmissionIds && iitCounsellingSubmissionIds.length)
+      && (from || to)
       ? {
           createdAt: {
             ...(from ? { $gte: from } : {}),
@@ -455,6 +510,9 @@ async function computeFailureReasonDistribution({
     ...(messageKind ? { messageKind } : {}),
     ...(formSubmissionIds && formSubmissionIds.length
       ? { formSubmissionId: { $in: formSubmissionIds } }
+      : {}),
+    ...(iitCounsellingSubmissionIds && iitCounsellingSubmissionIds.length
+      ? { iitCounsellingSubmissionId: { $in: iitCounsellingSubmissionIds } }
       : {})
   };
   const rows = await WhatsAppMessageEvent.aggregate([
@@ -503,9 +561,18 @@ async function computeFailureReasonDistribution({
   return rows;
 }
 
-async function computeTemplateReliabilityRanking({ from, to, formSubmissionIds = null }) {
+async function computeTemplateReliabilityRanking({
+  from,
+  to,
+  formSubmissionIds = null,
+  iitCounsellingSubmissionIds = null,
+  opsProduct = null
+}) {
   const match = {
-    ...(!(formSubmissionIds && formSubmissionIds.length) && (from || to)
+    ...matchWhatsAppEventsByOpsProduct(parseOpsProductQuery(opsProduct)),
+    ...(!(formSubmissionIds && formSubmissionIds.length)
+      && !(iitCounsellingSubmissionIds && iitCounsellingSubmissionIds.length)
+      && (from || to)
       ? {
           createdAt: {
             ...(from ? { $gte: from } : {}),
@@ -515,6 +582,9 @@ async function computeTemplateReliabilityRanking({ from, to, formSubmissionIds =
       : {}),
     ...(formSubmissionIds && formSubmissionIds.length
       ? { formSubmissionId: { $in: formSubmissionIds } }
+      : {}),
+    ...(iitCounsellingSubmissionIds && iitCounsellingSubmissionIds.length
+      ? { iitCounsellingSubmissionId: { $in: iitCounsellingSubmissionIds } }
       : {})
   };
   const rows = await WhatsAppMessageEvent.aggregate([
@@ -593,7 +663,12 @@ async function computeTemplateReliabilityRanking({ from, to, formSubmissionIds =
 /**
  * Data-quality counters for a slot-day cohort (IST). Intended for admin debug (`?debug=1`).
  */
-async function computeCohortDayDiagnostics({ dateIso, messageKind = null, cohortSubmissionIds = [] }) {
+async function computeCohortDayDiagnostics({
+  dateIso,
+  messageKind = null,
+  cohortSubmissionIds = [],
+  opsProduct = null
+} = {}) {
   const range = istDayRangeFromIso(dateIso);
   if (!range) return { error: 'Invalid date format. Use YYYY-MM-DD' };
   if (!Array.isArray(cohortSubmissionIds) || cohortSubmissionIds.length === 0) {
@@ -616,9 +691,17 @@ async function computeCohortDayDiagnostics({ dateIso, messageKind = null, cohort
   const min30ms = Number(off.min30) || 0;
   const kindMatch = messageKind ? { messageKind } : {};
 
+  const opsSlug = parseOpsProductQuery(opsProduct);
+  const idField = opsSlug === 'iit_counselling' ? 'iitCounsellingSubmissionId' : 'formSubmissionId';
+  const cohortKeyMatch = {
+    ...kindMatch,
+    [idField]: { $in: ids },
+    ...matchWhatsAppEventsByOpsProduct(opsSlug)
+  };
+
   const [orphanSubmissionsMissingSlotDay] = await WhatsAppMessageEvent.aggregate([
-    { $match: { ...kindMatch, formSubmissionId: { $in: ids } } },
-    ...annotateEventsWithSlotDayPipeline(messageKind),
+    { $match: cohortKeyMatch },
+    ...annotateEventsWithSlotDayPipeline(messageKind, opsProduct),
     { $match: { slotDayIst: null } },
     { $count: 'c' }
   ]);
@@ -626,7 +709,7 @@ async function computeCohortDayDiagnostics({ dateIso, messageKind = null, cohort
   const [duplicateRetryAttemptKeys] = await WhatsAppMessageEvent.aggregate([
     {
       $match: {
-        ...kindMatch,
+        ...cohortKeyMatch,
         retryGroupId: { $ne: null, $exists: true },
         attemptNumber: { $gte: 1, $lte: 3 }
       }
@@ -642,8 +725,8 @@ async function computeCohortDayDiagnostics({ dateIso, messageKind = null, cohort
   ]);
 
   const [timing] = await WhatsAppMessageEvent.aggregate([
-    { $match: { ...kindMatch, formSubmissionId: { $in: ids } } },
-    ...annotateEventsWithSlotDayPipeline(messageKind),
+    { $match: cohortKeyMatch },
+    ...annotateEventsWithSlotDayPipeline(messageKind, opsProduct),
     { $match: { slotDayIst: range.isoDate, slotDateFromSub: { $ne: null } } },
     {
       $addFields: {

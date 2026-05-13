@@ -4,6 +4,8 @@
  * (no createdAt-based cohort fallback — avoids cross-day / orphan leakage).
  */
 
+const { parseOpsProductQuery, matchWhatsAppEventsByOpsProduct } = require('../utils/whatsappOpsProduct');
+
 const IST_OFFSET_MINUTES = 330;
 
 function parseIsoDateOnly(value) {
@@ -29,8 +31,10 @@ function istDayRangeFromIso(dateIso) {
  */
 function annotateEventsWithSlotDayPipeline(messageKindFilter, options = {}) {
   const strictSlotDay = options.strictSlotDay !== false;
-  const match = {};
-  if (messageKindFilter) match.messageKind = messageKindFilter;
+  const match = {
+    ...(messageKindFilter ? { messageKind: messageKindFilter } : {}),
+    ...matchWhatsAppEventsByOpsProduct(parseOpsProductQuery(options.opsProduct))
+  };
   return [
     { $match: match },
     {
@@ -52,28 +56,26 @@ function annotateEventsWithSlotDayPipeline(messageKindFilter, options = {}) {
     {
       $addFields: {
         slotDateFromSub: {
-          $cond: [
-            { $gt: [{ $size: '$subDoc' }, 0] },
-            { $arrayElemAt: ['$subDoc.step3Data.slotDate', 0] },
-            null
-          ]
-        },
-        hasSubmissionSlot: {
-          $and: [
-            { $gt: [{ $size: '$subDoc' }, 0] },
-            { $ne: [{ $arrayElemAt: ['$subDoc.step3Data.slotDate', 0] }, null] }
-          ]
-        },
-        cohortFallback: {
-          $cond: [
+          $ifNull: [
+            '$cohortSlotInstantUtc',
             {
-              $and: [
-                { $or: [{ $eq: ['$formSubmissionId', null] }, { $not: ['$formSubmissionId'] }] },
-                { $lte: [{ $size: '$subDoc' }, 0] }
+              $cond: [
+                { $gt: [{ $size: '$subDoc' }, 0] },
+                { $arrayElemAt: ['$subDoc.step3Data.slotDate', 0] },
+                null
               ]
-            },
-            true,
-            false
+            }
+          ]
+        }
+      }
+    },
+    {
+      $addFields: {
+        hasSubmissionSlot: { $ne: ['$slotDateFromSub', null] },
+        cohortFallback: {
+          $and: [
+            { $eq: [{ $ifNull: ['$cohortSlotInstantUtc', null] }, null] },
+            { $lte: [{ $size: '$subDoc' }, 0] }
           ]
         }
       }

@@ -39,7 +39,10 @@ async function reserveOutboundWhatsAppAttempt(p) {
     attemptBatchId,
     retrySourceLabel,
     canonicalRetryGroupId,
-    correlationId
+    correlationId,
+    opsProduct,
+    cohortSlotInstantUtc,
+    iitCounsellingSubmissionId
   } = p;
 
   const gid = toOid(retryGroupId);
@@ -67,6 +70,14 @@ async function reserveOutboundWhatsAppAttempt(p) {
     formSubmissionId && mongoose.Types.ObjectId.isValid(String(formSubmissionId))
       ? new mongoose.Types.ObjectId(String(formSubmissionId))
       : null;
+  const iitSubOid =
+    iitCounsellingSubmissionId && mongoose.Types.ObjectId.isValid(String(iitCounsellingSubmissionId))
+      ? new mongoose.Types.ObjectId(String(iitCounsellingSubmissionId))
+      : null;
+  const slotUtc =
+    cohortSlotInstantUtc instanceof Date && !Number.isNaN(cohortSlotInstantUtc.getTime())
+      ? cohortSlotInstantUtc
+      : null;
 
   const baseQueuedFields = {
     phone: phone10,
@@ -79,6 +90,9 @@ async function reserveOutboundWhatsAppAttempt(p) {
     templateIdEnvKey: templateIdEnvKey || null,
     templateId: templateId || null,
     formSubmissionId: subOid,
+    iitCounsellingSubmissionId: iitSubOid,
+    cohortSlotInstantUtc: slotUtc,
+    opsProduct: opsProduct === 'iit_counselling' ? 'iit_counselling' : 'guidexpert',
     parentMessageEventId: parentOid,
     attemptBatchId: batchOid,
     retrySource: retrySourceLabel || 'initial',

@@ -3,16 +3,19 @@
  *
  * Env: ENABLE_WHATSAPP, GUPSHUP_API_KEY, GUPSHUP_SOURCE,
  * GUPSHUP_TEMPLATE_REMINDER, GUPSHUP_TEMPLATE_PRE4HR, GUPSHUP_TEMPLATE_MEET,
- * GUPSHUP_TEMPLATE_30MIN, optional GUPSHUP_SRC_NAME
+ * GUPSHUP_TEMPLATE_30MIN, IIT slot_booked templates (see utils/iitCounsellingWhatsApp.js),
+ * optional GUPSHUP_SRC_NAME
  */
 const axios = require('axios');
 const {
   SLOT_BOOKED_PARAM_KEYS,
+  SLOT_BOOKED_IIT_PARAM_KEYS,
   PRE4HR_PARAM_KEYS,
   MEET_PARAM_KEYS,
   REMINDER_30MIN_PARAM_KEYS,
   buildParamsFromKeys
 } = require('../utils/gupshupWhatsAppTemplateParams');
+const { isIitSlotBookedTemplateEnvKey } = require('../utils/iitCounsellingWhatsApp');
 
 const GUPSHUP_TEMPLATE_URL = 'https://api.gupshup.io/wa/api/v1/template/msg';
 
@@ -116,8 +119,13 @@ async function sendTemplateMessage(phoneE164, templateId, params, opts = {}) {
 }
 
 async function sendSlotBookedWhatsApp(phone10, vars, sendOpts = {}) {
-  const tid = process.env.GUPSHUP_TEMPLATE_REMINDER;
-  const params = buildParamsFromKeys(vars, SLOT_BOOKED_PARAM_KEYS);
+  const envKey =
+    typeof sendOpts.templateEnvKey === 'string' && sendOpts.templateEnvKey.trim()
+      ? sendOpts.templateEnvKey.trim()
+      : 'GUPSHUP_TEMPLATE_REMINDER';
+  const tid = process.env[envKey];
+  const paramKeys = isIitSlotBookedTemplateEnvKey(envKey) ? SLOT_BOOKED_IIT_PARAM_KEYS : SLOT_BOOKED_PARAM_KEYS;
+  const params = buildParamsFromKeys(vars, paramKeys);
   return sendTemplateMessage(formatPhoneE16491(phone10), tid, params, sendOpts);
 }
 

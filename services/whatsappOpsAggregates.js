@@ -15,6 +15,12 @@ const {
   DLR_DELIVERED_STATUSES,
   IN_FLIGHT_PROMOTION_STATUSES
 } = require('../utils/whatsappRetryRules');
+const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
+const {
+  parseOpsProductQuery,
+  matchWhatsAppEventsByOpsProduct,
+  effectiveOverviewMessageKind
+} = require('../utils/whatsappOpsProduct');
 
 const ALLOWED_MESSAGE_KINDS = ['slot_booked', 'pre4hr', 'meet', '30min'];
 const IST_OFFSET_MINUTES = 330;
@@ -102,13 +108,16 @@ function facetStatsPipeline(match) {
   return [{ $match: match }, { $facet: MESSAGE_EVENT_STATS_FACET }];
 }
 
-function slotDayIstPrefixStages(dateIso, messageKind) {
+function slotDayIstPrefixStages(dateIso, messageKind, opsProduct) {
   const range = istDayRangeFromIso(dateIso);
   if (!range) return null;
   return {
     range,
     stages: [
-      ...cohortAgg.annotateEventsWithSlotDayPipeline(messageKind, { strictSlotDay: true }),
+      ...cohortAgg.annotateEventsWithSlotDayPipeline(messageKind, {
+        strictSlotDay: true,
+        opsProduct
+      }),
       { $match: { slotDayIst: range.isoDate } }
     ]
   };
@@ -196,7 +205,7 @@ async function computeRetry2ExclusionsForPrefix(prefixStages, messageKind, byAtt
 /**
  * @returns {Promise<{ data: object } | { error: string }>}
  */
-async function computeSummary({ from, to, messageKind = null }) {
+async function computeSummary({ from, to, messageKind = null, opsProduct = null } = {}) {
   if (messageKind && !ALLOWED_MESSAGE_KINDS.includes(messageKind)) {
     return { error: `Invalid messageKind. Allowed: ${ALLOWED_MESSAGE_KINDS.join(', ')}` };
   }
@@ -208,6 +217,7 @@ async function computeSummary({ from, to, messageKind = null }) {
     };
   }
   if (messageKind) match.messageKind = messageKind;
+  Object.assign(match, matchWhatsAppEventsByOpsProduct(parseOpsProductQuery(opsProduct)));
 
   const [msgAgg] = await WhatsAppMessageEvent.aggregate([
     { $match: match },
@@ -281,6 +291,7 @@ async function computeSummary({ from, to, messageKind = null }) {
     data: {
       meta: {
         selectedMessageKind: messageKind || null,
+        opsProduct: parseOpsProductQuery(opsProduct),
         attemptedRows: total,
         cohortMode: 'event_time_utc',
         cohortNote: 'Summary totals filter by message createdAt; use calendar month/day endpoints for slot-day cohorts.'
@@ -315,20 +326,23 @@ async function computeSummary({ from, to, messageKind = null }) {
           }),
       byKind: (msgAgg.byKind || []).map((x) => ({ kind: x._id, count: x.c })),
       byStatus: (msgAgg.byStatus || []).map((x) => ({ status: x._id, count: x.c })),
-      filter: { messageKind: messageKind || null },
+      filter: { messageKind: messageKind || null, opsProduct: parseOpsProductQuery(opsProduct) },
       range: from ? { from, to } : { from: null, to }
     }
   };
 }
 
-async function computeMonthOverview({ monthIso, messageKind = null }) {
+async function computeMonthOverview({ monthIso, messageKind = null, opsProduct = null }) {
   if (messageKind && !ALLOWED_MESSAGE_KINDS.includes(messageKind)) {
     return { error: `Invalid messageKind. Allowed: ${ALLOWED_MESSAGE_KINDS.join(', ')}` };
   }
   const range = istMonthRangeFromIso(monthIso);
   if (!range) return { error: 'Invalid month format. Use YYYY-MM' };
 
-  const bookingMatch = {
+  const opsSlug = parseOpsProductQuery(opsProduct);
+  const effKind = effectiveOverviewMessageKind(opsProduct, messageKind);
+
+  const bookingMatchGx = {
     'step3Data.slotDate': { $gte: range.from, $lte: range.to }
   };
 
@@ -339,7 +353,10 @@ async function computeMonthOverview({ monthIso, messageKind = null }) {
   const dayMin = `${p.y}-${pad(p.m)}-01`;
   const dayMax = `${p.y}-${pad(p.m)}-${pad(lastD)}`;
 
-  const monthAnnotate = cohortAgg.annotateEventsWithSlotDayPipeline(messageKind, { strictSlotDay: true });
+  const monthAnnotate = cohortAgg.annotateEventsWithSlotDayPipeline(effKind, {
+    strictSlotDay: true,
+    opsProduct
+  });
 
   const [eventsByDay, bookingsByDay] = await Promise.all([
     WhatsAppMessageEvent.aggregate([
@@ -366,17 +383,35 @@ async function computeMonthOverview({ monthIso, messageKind = null }) {
         }
       }
     ]),
-    FormSubmission.aggregate([
-      { $match: bookingMatch },
-      {
-        $group: {
-          _id: {
-            day: { $dateToString: { format: '%Y-%m-%d', date: '$step3Data.slotDate', timezone: 'Asia/Kolkata' } }
-          },
-          bookedSlotsCount: { $sum: 1 }
+    opsSlug === 'iit_counselling'
+      ? IitCounsellingSubmission.aggregate([
+        { $match: { counsellingSlotInstantUtc: { $gte: range.from, $lte: range.to } } },
+        {
+          $group: {
+            _id: {
+              day: {
+                $dateToString: {
+                  format: '%Y-%m-%d',
+                  date: '$counsellingSlotInstantUtc',
+                  timezone: 'Asia/Kolkata'
+                }
+              }
+            },
+            bookedSlotsCount: { $sum: 1 }
+          }
         }
-      }
-    ])
+      ])
+      : FormSubmission.aggregate([
+        { $match: bookingMatchGx },
+        {
+          $group: {
+            _id: {
+              day: { $dateToString: { format: '%Y-%m-%d', date: '$step3Data.slotDate', timezone: 'Asia/Kolkata' } }
+            },
+            bookedSlotsCount: { $sum: 1 }
+          }
+        }
+      ])
   ]);
 
   const byDayMap = new Map();
@@ -434,7 +469,7 @@ async function computeMonthOverview({ monthIso, messageKind = null }) {
   return {
     data: {
       cohortAnchor: 'booking_ist_slot_day',
-      filter: { month: range.isoMonth, messageKind: messageKind || null },
+      filter: { month: range.isoMonth, messageKind: messageKind || null, opsProduct: opsSlug },
       range: { from: range.from, to: range.to },
       monthTotals,
       days
@@ -442,15 +477,17 @@ async function computeMonthOverview({ monthIso, messageKind = null }) {
   };
 }
 
-async function computeDayOverview({ dateIso, messageKind = null }) {
+async function computeDayOverview({ dateIso, messageKind = null, opsProduct = null } = {}) {
   if (messageKind && !ALLOWED_MESSAGE_KINDS.includes(messageKind)) {
     return { error: `Invalid messageKind. Allowed: ${ALLOWED_MESSAGE_KINDS.join(', ')}` };
   }
-  const prefix = slotDayIstPrefixStages(dateIso, messageKind);
+  const opsSlug = parseOpsProductQuery(opsProduct);
+  const effKind = effectiveOverviewMessageKind(opsProduct, messageKind);
+  const prefix = slotDayIstPrefixStages(dateIso, effKind, opsProduct);
   if (!prefix) return { error: 'Invalid date format. Use YYYY-MM-DD' };
   const { range, stages: prefixStages } = prefix;
 
-  const kindMatchStages = messageKind ? [{ $match: { messageKind } }] : [];
+  const kindMatchStages = effKind ? [{ $match: { messageKind: effKind } }] : [];
 
   const attemptFacet = [
     ...prefixStages,
@@ -482,7 +519,11 @@ async function computeDayOverview({ dateIso, messageKind = null }) {
   ];
 
   const [bookedSlotsCount, allFacet, filteredFacet, filteredByAttempt, uniqDelivered] = await Promise.all([
-    FormSubmission.countDocuments({ 'step3Data.slotDate': { $gte: range.from, $lte: range.to } }),
+    opsSlug === 'iit_counselling'
+      ? IitCounsellingSubmission.countDocuments({
+        counsellingSlotInstantUtc: { $gte: range.from, $lte: range.to }
+      })
+      : FormSubmission.countDocuments({ 'step3Data.slotDate': { $gte: range.from, $lte: range.to } }),
     WhatsAppMessageEvent.aggregate([...prefixStages, { $facet: MESSAGE_EVENT_STATS_FACET }]),
     WhatsAppMessageEvent.aggregate([
       ...prefixStages,
@@ -518,14 +559,14 @@ async function computeDayOverview({ dateIso, messageKind = null }) {
       inFlight: row.inFlight || 0
     };
   });
-  const retry2Exclusions = messageKind
-    ? await computeRetry2ExclusionsForPrefix(prefixStages, messageKind, byAttempt)
+  const retry2Exclusions = effKind
+    ? await computeRetry2ExclusionsForPrefix(prefixStages, effKind, byAttempt)
     : { retry1Failed: 0, retry2Targeted: 0, totalExcluded: 0, trackedExcluded: 0, byReason: {} };
 
   return {
     data: {
       cohortAnchor: 'booking_ist_slot_day',
-      filter: { date: range.isoDate, messageKind: messageKind || null },
+      filter: { date: range.isoDate, messageKind: messageKind || null, opsProduct: opsSlug },
       range: { from: range.from, to: range.to },
       bookedSlotsCount,
       overall,
@@ -541,18 +582,20 @@ async function computeDayOverview({ dateIso, messageKind = null }) {
 
 /**
  * Deterministic key used to upsert/replace WhatsAppOpsChartSnapshot per scope.
- * @param {{ scope: 'summary'|'month'|'day', messageKind?: string|null, monthIso?: string|null, dateIso?: string|null, fromIso?: string|null, toIso?: string|null, slotTime?: string|null }} parts
+ * @param {{ scope: 'summary'|'month'|'day', messageKind?: string|null, monthIso?: string|null, dateIso?: string|null, fromIso?: string|null, toIso?: string|null, slotTime?: string|null, opsProduct?: string|null }} parts
  */
 function buildScopeKey(parts) {
   const scope = String(parts.scope || '').toLowerCase();
   const kind = parts.messageKind || 'all';
-  if (scope === 'month') return `month:${kind}:${parts.monthIso || ''}`;
+  const prod = parseOpsProductQuery(parts.opsProduct);
+  const prodSeg = prod === 'iit_counselling' ? 'iitc' : 'gx';
+  if (scope === 'month') return `month:${prodSeg}:${kind}:${parts.monthIso || ''}`;
   if (scope === 'day') {
     const date = parts.dateIso || '';
     const st = parts.slotTime && String(parts.slotTime) !== 'all' ? String(parts.slotTime) : '';
-    return st ? `day:${kind}:${date}:${st}` : `day:${kind}:${date}`;
+    return st ? `day:${prodSeg}:${kind}:${date}:${st}` : `day:${prodSeg}:${kind}:${date}`;
   }
-  return `summary:${kind}:${parts.fromIso || ''}:${parts.toIso || ''}`;
+  return `summary:${prodSeg}:${kind}:${parts.fromIso || ''}:${parts.toIso || ''}`;
 }
 
 /* ============================================================================
@@ -585,7 +628,7 @@ function divPct(num, den) {
 }
 
 /** Widen createdAt then restrict to IST slot-day window for slot-cohort KPIs */
-function slotCohortPipelinePrefixFromStableWindow(stableFrom, stableTo, messageKind) {
+function slotCohortPipelinePrefixFromStableWindow(stableFrom, stableTo, messageKind, opsProduct = null) {
   const bufferFrom = new Date(stableFrom.getTime() - 8 * 24 * 60 * 60 * 1000);
   const bufferTo = new Date(stableTo.getTime() + 2 * 24 * 60 * 60 * 1000);
   const dayMin = stableFrom.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
@@ -594,7 +637,7 @@ function slotCohortPipelinePrefixFromStableWindow(stableFrom, stableTo, messageK
   return [
     { $match: { createdAt: { $gte: bufferFrom, $lte: bufferTo } } },
     ...kindStages,
-    ...cohortAgg.annotateEventsWithSlotDayPipeline(messageKind, { strictSlotDay: true }),
+    ...cohortAgg.annotateEventsWithSlotDayPipeline(messageKind, { strictSlotDay: true, opsProduct }),
     { $match: { slotDayIst: { $gte: dayMin, $lte: dayMax, $ne: null } } }
   ];
 }

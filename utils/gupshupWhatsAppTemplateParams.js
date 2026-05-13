@@ -10,6 +10,8 @@
 // Slot-booked template currently expects 2 params in order:
 // {{1}} -> Name, {{2}} -> combined slot date+time
 const SLOT_BOOKED_PARAM_KEYS = ['Name', 'slot date and time'];
+// IIT counselling slot-booked templates (Wed/Sat/Sun): single body var {{1}} = name
+const SLOT_BOOKED_IIT_PARAM_KEYS = ['name'];
 const PRE4HR_PARAM_KEYS = ['name', 'date', 'time'];
 const MEET_PARAM_KEYS = ['name', 'date', 'time', 'var'];
 const REMINDER_30MIN_PARAM_KEYS = ['name', 'date', 'time', 'var'];
@@ -45,6 +47,7 @@ function buildParamsFromKeys(obj, orderedKeys) {
 
 module.exports = {
   SLOT_BOOKED_PARAM_KEYS,
+  SLOT_BOOKED_IIT_PARAM_KEYS,
   PRE4HR_PARAM_KEYS,
   MEET_PARAM_KEYS,
   REMINDER_30MIN_PARAM_KEYS,
