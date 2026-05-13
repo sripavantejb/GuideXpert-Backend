@@ -22,6 +22,7 @@ const {
   inFlightPromotionStaleMsForKind,
   isRetryableFailure
 } = require('../utils/whatsappRetryRules');
+const { getCampaignReminderEligibility } = require('../utils/waReminderEligibility');
 
 function cooldownMs() {
   const min = parseInt(process.env.WHATSAPP_RETRY_COOLDOWN_MINUTES || '5', 10);
@@ -155,7 +156,7 @@ async function computeRetryCandidates(retryGroupId, fromAttempt) {
       ]
     })
       .select(
-        'phone failedAt updatedAt createdAt retryEligible _id status errorMessage webhookErrorCode webhookErrorReason'
+        'phone formSubmissionId failedAt updatedAt createdAt retryEligible _id status errorMessage webhookErrorCode webhookErrorReason'
       )
       .lean()
   ]);
@@ -207,13 +208,44 @@ async function computeRetryCandidates(retryGroupId, fromAttempt) {
     alreadyPromotedPhones: alreadyNextPhones
   });
 
+  const phonesForSlot = [...new Set(includedRows.map((r) => r.phone).filter(Boolean))];
+  const subsByPhone = {};
+  if (phonesForSlot.length) {
+    const subs = await FormSubmission.find({ phone: { $in: phonesForSlot }, isRegistered: true })
+      .select('phone step3Data.slotDate')
+      .lean();
+    subs.forEach((s) => {
+      if (s && s.phone) subsByPhone[s.phone] = s;
+    });
+  }
+  const slotOutsideExcluded = [];
+  const includedAfterSlot = [];
+  const nowSlot = new Date();
+  includedRows.forEach((r) => {
+    const sub = subsByPhone[r.phone];
+    const slot = sub && sub.step3Data ? sub.step3Data.slotDate : null;
+    const elig = getCampaignReminderEligibility(group.messageKind, slot, nowSlot);
+    if (!elig.ok) {
+      slotOutsideExcluded.push({
+        phone: r.phone,
+        parentMessageEventId: r._id,
+        reason: RETRY_EXCLUSION_REASON.outsideReminderValidity
+      });
+    } else {
+      includedAfterSlot.push(r);
+    }
+  });
+  slotOutsideExcluded.forEach((row) => {
+    exclusionCounts[row.reason] = (exclusionCounts[row.reason] || 0) + 1;
+  });
+
   const permanentRows = permanentExcluded.map((x) => ({
     phone: x.phone,
     parentMessageEventId: x._id,
     reason: x.reason
   }));
 
-  const allExcluded = [...permanentRows, ...excludedRows];
+  const allExcluded = [...permanentRows, ...slotOutsideExcluded, ...excludedRows];
   permanentRows.forEach((row) => {
     exclusionCounts[row.reason] = (exclusionCounts[row.reason] || 0) + 1;
   });
@@ -223,7 +255,7 @@ async function computeRetryCandidates(retryGroupId, fromAttempt) {
     exclusionCounts[RETRY_EXCLUSION_REASON.missingPhone] = missingPhoneCount;
   }
 
-  const candidates = includedRows.map((r) => ({
+  const candidates = includedAfterSlot.map((r) => ({
     phone: r.phone,
     parentMessageEventId: r._id,
     _staleInFlight: !!r._staleInFlight
@@ -238,6 +270,7 @@ async function computeRetryCandidates(retryGroupId, fromAttempt) {
       phonesAlreadyAtNextAttempt: alreadyNextPhones.length,
       rawRowsBeforeRules: rawRows.length,
       permanentClassified: permanentExcluded.length,
+      outsideReminderValidity: slotOutsideExcluded.length,
       byReason: exclusionCounts,
       totalExcluded: allExcluded.length
     }
@@ -280,6 +313,23 @@ async function executeRetryAttempt(opts) {
   const policy = getRetryPolicy(group.messageKind);
   if (nextAttempt > policy.maxAttempts) {
     return { noop: true, reason: 'max_attempts_policy_block' };
+  }
+
+  const wallMs = Math.max(60_000, parseInt(process.env.WHATSAPP_CAMPAIGN_RETRY_MAX_WALL_MS || '300000', 10) || 300000);
+  const firstFailA1 = await WhatsAppMessageEvent.findOne({
+    retryGroupId: gid,
+    attemptNumber: 1,
+    status: { $in: TERMINAL_FAILURE_STATUSES }
+  })
+    .sort({ createdAt: 1 })
+    .select('createdAt')
+    .lean();
+  if (firstFailA1 && Date.now() - new Date(firstFailA1.createdAt).getTime() > wallMs) {
+    await WhatsAppRetryGroup.updateOne(
+      { _id: gid },
+      { $set: { status: 'exhausted', nextPromotionDueAt: null, updatedAt: new Date() } }
+    );
+    return { noop: true, reason: 'retry_wall_clock_exceeded' };
   }
 
   const attemptBatchId = incomingBatchId || new mongoose.Types.ObjectId();
@@ -373,6 +423,26 @@ async function executeRetryAttempt(opts) {
             'retryExclusionMeta.nextAttempt': nextAttempt,
             'retryExclusionMeta.attemptBatchId': attemptBatchId || null,
             'retryExclusionMeta.note': 'missing_registered_submission'
+          }
+        }
+      );
+      continue;
+    }
+
+    const slotDate = subFull.step3Data && subFull.step3Data.slotDate ? subFull.step3Data.slotDate : null;
+    const elig = getCampaignReminderEligibility(group.messageKind, slotDate, new Date());
+    if (!elig.ok) {
+      failed += 1;
+      await WhatsAppMessageEvent.updateOne(
+        { _id: c.parentMessageEventId },
+        {
+          $set: {
+            retryEligible: false,
+            retryExclusionReason: RETRY_EXCLUSION_REASON.outsideReminderValidity,
+            retryExclusionAt: new Date(),
+            'retryExclusionMeta.nextAttempt': nextAttempt,
+            'retryExclusionMeta.attemptBatchId': attemptBatchId || null,
+            'retryExclusionMeta.note': elig.reason || 'outside_window'
           }
         }
       );

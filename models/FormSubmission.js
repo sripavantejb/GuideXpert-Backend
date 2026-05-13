@@ -146,6 +146,10 @@ const formSubmissionSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  /** Short-lived leases so overlapping cron workers cannot double-send WhatsApp for the same template */
+  waPre4hrCronClaimUntil: { type: Date, default: null, index: true },
+  waMeetCronClaimUntil: { type: Date, default: null, index: true },
+  wa30minCronClaimUntil: { type: Date, default: null, index: true },
   // WhatsApp (Gupshup) — reliability + ops dashboard
   whatsappRetryCount: {
     type: Number,

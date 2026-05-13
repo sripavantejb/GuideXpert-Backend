@@ -5,31 +5,19 @@
 const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');
 const WhatsAppRetryGroup = require('../models/WhatsAppRetryGroup');
 const FormSubmission = require('../models/FormSubmission');
+const {
+  istDayRangeFromIso,
+  annotateEventsWithSlotDayPipeline: annotateEventsWithSlotDayPipelineBase
+} = require('./whatsappOpsCohortShared');
+const { getReminderOffsetsMsForDiagnostics } = require('../utils/waReminderEligibility');
 
 const ALLOWED_MESSAGE_KINDS = ['slot_booked', 'pre4hr', 'meet', '30min'];
 const ALLOWED_SLOT_TIME_SUFFIXES = ['11AM', '3PM', '6PM', '7PM'];
-const IST_OFFSET_MINUTES = 330;
 const ACCEPTED_STATUSES = ['submitted', 'sent', 'delivered', 'read'];
 const SENT_PLUS = ['sent', 'delivered', 'read'];
 const DELIVERED_PLUS = ['delivered', 'read'];
 const TERMINAL_FAILURE = ['failed', 'retry_exhausted'];
 const IN_FLIGHT = ['queued', 'submitted', 'sent', 'retry_pending'];
-
-function parseIsoDateOnly(value) {
-  const s = String(value || '').trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
-  const [y, m, d] = s.split('-').map((x) => parseInt(x, 10));
-  if (!y || !m || !d) return null;
-  return { y, m, d, iso: s };
-}
-
-function istDayRangeFromIso(dateIso) {
-  const p = parseIsoDateOnly(dateIso);
-  if (!p) return null;
-  const startUtcMs = Date.UTC(p.y, p.m - 1, p.d, 0, 0, 0, 0) - IST_OFFSET_MINUTES * 60 * 1000;
-  const endUtcMs = startUtcMs + 24 * 60 * 60 * 1000 - 1;
-  return { from: new Date(startUtcMs), to: new Date(endUtcMs), isoDate: p.iso };
-}
 
 function divPct(num, den) {
   if (!den) return null;
@@ -57,75 +45,9 @@ function buildBookingCohortFilter(range, slotTimeNorm) {
   return q;
 }
 
-/** Annotate events with slotDayIst + lineageId + lookup slot from submission */
+/** Strict IST slot-day from submission only (no createdAt cohort fallback). */
 function annotateEventsWithSlotDayPipeline(messageKindFilter) {
-  const match = {};
-  if (messageKindFilter) match.messageKind = messageKindFilter;
-  return [
-    { $match: match },
-    {
-      $addFields: {
-        lineageId: {
-          $ifNull: ['$canonicalRetryGroupId', '$retryGroupId']
-        }
-      }
-    },
-    {
-      $lookup: {
-        from: 'formsubmissions',
-        localField: 'formSubmissionId',
-        foreignField: '_id',
-        pipeline: [{ $project: { step3Data: 1, phone: 1 } }],
-        as: 'subDoc'
-      }
-    },
-    {
-      $addFields: {
-        slotDateFromSub: {
-          $cond: [
-            { $gt: [{ $size: '$subDoc' }, 0] },
-            { $arrayElemAt: ['$subDoc.step3Data.slotDate', 0] },
-            null
-          ]
-        },
-        cohortFallback: {
-          $cond: [
-            {
-              $and: [
-                { $or: [{ $eq: ['$formSubmissionId', null] }, { $not: ['$formSubmissionId'] }] },
-                { $lte: [{ $size: '$subDoc' }, 0] }
-              ]
-            },
-            true,
-            false
-          ]
-        }
-      }
-    },
-    {
-      $addFields: {
-        slotDayIst: {
-          $cond: [
-            { $ne: ['$slotDateFromSub', null] },
-            {
-              $dateToString: {
-                format: '%Y-%m-%d',
-                date: '$slotDateFromSub',
-                timezone: 'Asia/Kolkata'
-              }
-            },
-            {
-              $dateToString: {
-                format: '%Y-%m-%d',
-                date: '$createdAt',
-                timezone: 'Asia/Kolkata'
-              }
-            }
-          ]
-        }
-      }
-    }
-  ];
+  return annotateEventsWithSlotDayPipelineBase(messageKindFilter, { strictSlotDay: true });
 }
 
 /**
@@ -163,7 +85,12 @@ async function computeRecipientDayOverview({ dateIso, messageKind = null, slotTi
     ? { lineageId: '$lineageId', phone: '$phone', messageKind: '$messageKind' }
     : { phone: '$phone' };
 
-  const baseAfterAnnotate = [...annotate, slotDayMatch, cohortMatch];
+  const baseAfterAnnotate = [
+    ...annotate,
+    { $match: { slotDayIst: { $ne: null } } },
+    slotDayMatch,
+    cohortMatch
+  ];
 
   const recipientRollupStages = [
     ...baseAfterAnnotate,
@@ -384,10 +311,11 @@ async function computeRecipientMonthTrend({ monthIso, messageKind = null }) {
   const dayMax = `${y}-${pad(m)}-${pad(lastD)}`;
 
   const annotate = annotateEventsWithSlotDayPipeline(messageKind);
-  const monthSlotMatch = { $match: { slotDayIst: { $gte: dayMin, $lte: dayMax } } };
+  const monthSlotMatch = { $match: { slotDayIst: { $gte: dayMin, $lte: dayMax, $ne: null } } };
 
   const simplified = await WhatsAppMessageEvent.aggregate([
     ...annotate,
+    { $match: { slotDayIst: { $ne: null } } },
     monthSlotMatch,
     {
       $group: {
@@ -453,10 +381,70 @@ async function computeRecipientMonthTrend({ monthIso, messageKind = null }) {
   return { data: { days: simplified } };
 }
 
-async function computeFailureReasonDistribution({ from, to, messageKind = null, formSubmissionIds = null }) {
+async function computeFailureReasonDistribution({
+  from,
+  to,
+  messageKind = null,
+  formSubmissionIds = null,
+  cohortSlotDayIso = null
+}) {
+  if (cohortSlotDayIso) {
+    const annotate = annotateEventsWithSlotDayPipeline(messageKind);
+    const cohortIdMatch =
+      formSubmissionIds && formSubmissionIds.length
+        ? [{ $match: { formSubmissionId: { $in: formSubmissionIds } } }]
+        : [];
+    const rows = await WhatsAppMessageEvent.aggregate([
+      ...annotate,
+      { $match: { slotDayIst: cohortSlotDayIso, status: { $in: TERMINAL_FAILURE } } },
+      ...cohortIdMatch,
+      {
+        $project: {
+          bucket: {
+            $switch: {
+              branches: [
+                {
+                  case: {
+                    $regexMatch: {
+                      input: { $ifNull: ['$webhookErrorReason', ''] },
+                      regex: /invalid|no whatsapp|not whatsapp|disabled/i
+                    }
+                  },
+                  then: 'invalid_whatsapp'
+                },
+                {
+                  case: {
+                    $regexMatch: {
+                      input: { $ifNull: ['$webhookErrorReason', ''] },
+                      regex: /blocked|opt.?out/i
+                    }
+                  },
+                  then: 'user_blocked'
+                },
+                {
+                  case: {
+                    $regexMatch: {
+                      input: { $ifNull: ['$errorMessage', ''] },
+                      regex: /timeout|network|temporar/i
+                    }
+                  },
+                  then: 'transient'
+                }
+              ],
+              default: 'other'
+            }
+          }
+        }
+      },
+      { $group: { _id: '$bucket', count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+    return rows;
+  }
+
   const match = {
     status: { $in: TERMINAL_FAILURE },
-    ...(from || to
+    ...(!(formSubmissionIds && formSubmissionIds.length) && (from || to)
       ? {
           createdAt: {
             ...(from ? { $gte: from } : {}),
@@ -517,7 +505,7 @@ async function computeFailureReasonDistribution({ from, to, messageKind = null, 
 
 async function computeTemplateReliabilityRanking({ from, to, formSubmissionIds = null }) {
   const match = {
-    ...(from || to
+    ...(!(formSubmissionIds && formSubmissionIds.length) && (from || to)
       ? {
           createdAt: {
             ...(from ? { $gte: from } : {}),
@@ -602,6 +590,131 @@ async function computeTemplateReliabilityRanking({ from, to, formSubmissionIds =
   }));
 }
 
+/**
+ * Data-quality counters for a slot-day cohort (IST). Intended for admin debug (`?debug=1`).
+ */
+async function computeCohortDayDiagnostics({ dateIso, messageKind = null, cohortSubmissionIds = [] }) {
+  const range = istDayRangeFromIso(dateIso);
+  if (!range) return { error: 'Invalid date format. Use YYYY-MM-DD' };
+  if (!Array.isArray(cohortSubmissionIds) || cohortSubmissionIds.length === 0) {
+    return {
+      data: {
+        cohortSlotDayIso: range.isoDate,
+        orphanSubmissionsMissingSlotDay: 0,
+        duplicateRetryAttemptKeys: 0,
+        sendsBeforeEligibility: 0,
+        sendsAtOrAfterSlotStart: 0,
+        note: 'empty_cohort'
+      }
+    };
+  }
+
+  const ids = cohortSubmissionIds.filter((id) => id != null);
+  const off = getReminderOffsetsMsForDiagnostics();
+  const pre4ms = Number(off.pre4hr) || 0;
+  const meetms = Number(off.meet) || 0;
+  const min30ms = Number(off.min30) || 0;
+  const kindMatch = messageKind ? { messageKind } : {};
+
+  const [orphanSubmissionsMissingSlotDay] = await WhatsAppMessageEvent.aggregate([
+    { $match: { ...kindMatch, formSubmissionId: { $in: ids } } },
+    ...annotateEventsWithSlotDayPipeline(messageKind),
+    { $match: { slotDayIst: null } },
+    { $count: 'c' }
+  ]);
+
+  const [duplicateRetryAttemptKeys] = await WhatsAppMessageEvent.aggregate([
+    {
+      $match: {
+        ...kindMatch,
+        retryGroupId: { $ne: null, $exists: true },
+        attemptNumber: { $gte: 1, $lte: 3 }
+      }
+    },
+    {
+      $group: {
+        _id: { g: '$retryGroupId', p: '$phone', a: '$attemptNumber' },
+        n: { $sum: 1 }
+      }
+    },
+    { $match: { n: { $gt: 1 } } },
+    { $count: 'c' }
+  ]);
+
+  const [timing] = await WhatsAppMessageEvent.aggregate([
+    { $match: { ...kindMatch, formSubmissionId: { $in: ids } } },
+    ...annotateEventsWithSlotDayPipeline(messageKind),
+    { $match: { slotDayIst: range.isoDate, slotDateFromSub: { $ne: null } } },
+    {
+      $addFields: {
+        earliestAllowedAt: {
+          $switch: {
+            branches: [
+              {
+                case: { $eq: ['$messageKind', 'pre4hr'] },
+                then: { $subtract: ['$slotDateFromSub', pre4ms] }
+              },
+              {
+                case: { $eq: ['$messageKind', 'meet'] },
+                then: { $subtract: ['$slotDateFromSub', meetms] }
+              },
+              {
+                case: { $eq: ['$messageKind', '30min'] },
+                then: { $subtract: ['$slotDateFromSub', min30ms] }
+              }
+            ],
+            default: null
+          }
+        }
+      }
+    },
+    {
+      $addFields: {
+        sendsBeforeEligibility: {
+          $cond: [
+            {
+              $and: [
+                { $ne: ['$earliestAllowedAt', null] },
+                { $lt: ['$createdAt', '$earliestAllowedAt'] }
+              ]
+            },
+            1,
+            0
+          ]
+        },
+        sendsAtOrAfterSlotStart: {
+          $cond: [
+            {
+              $and: [{ $ne: ['$slotDateFromSub', null] }, { $gte: ['$createdAt', '$slotDateFromSub'] }]
+            },
+            1,
+            0
+          ]
+        }
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        sendsBeforeEligibility: { $sum: '$sendsBeforeEligibility' },
+        sendsAtOrAfterSlotStart: { $sum: '$sendsAtOrAfterSlotStart' }
+      }
+    }
+  ]);
+
+  const t = timing && timing[0] ? timing[0] : {};
+  return {
+    data: {
+      cohortSlotDayIso: range.isoDate,
+      orphanSubmissionsMissingSlotDay: orphanSubmissionsMissingSlotDay?.c || 0,
+      duplicateRetryAttemptKeys: duplicateRetryAttemptKeys?.c || 0,
+      sendsBeforeEligibility: t.sendsBeforeEligibility || 0,
+      sendsAtOrAfterSlotStart: t.sendsAtOrAfterSlotStart || 0,
+      offsetsMsUsed: { pre4hr: pre4ms, meet: meetms, min30: min30ms }
+    }
+  };
+}
+
 module.exports = {
   ALLOWED_MESSAGE_KINDS,
   ALLOWED_SLOT_TIME_SUFFIXES,
@@ -610,6 +723,7 @@ module.exports = {
   computeRecipientMonthTrend,
   computeFailureReasonDistribution,
   computeTemplateReliabilityRanking,
+  computeCohortDayDiagnostics,
   istDayRangeFromIso,
   annotateEventsWithSlotDayPipeline
 };

@@ -70,7 +70,7 @@ async function debugReminders() {
       console.log('');
     });
 
-    // Match GET /api/cron/send-reminders (T−4h band, not rolling [now, now+4h])
+    // Match GET /api/cron/send-reminders (deadline-backward T−4h band)
     console.log('=== CRON JOB QUERY SIMULATION (send-reminders) ===');
     console.log(
       'Query: isRegistered=true, reminderSent!=true, step3Data.slotDate > now AND in [slotDateMin, slotDateMax]\n'

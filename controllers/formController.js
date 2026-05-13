@@ -27,6 +27,7 @@ const { listExams } = require('../services/rankPredictorService');
 const { buildSlotNotificationVariables } = require('../utils/slotNotificationFormatters');
 const gupshupService = require('../services/gupshupService');
 const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
+const { shouldSendCampaignReminderImmediately } = require('../utils/waReminderEligibility');
 
 /** Optional body.rankPredictorLead — validated snapshot for admin follow-up. */
 function parseRankPredictorLeadFromBody(body) {
@@ -721,25 +722,31 @@ exports.saveStep3 = async (req, res) => {
 
     console.log('[saveStep3] Attempting to save:', { phone: p, selectedSlot, slotDate });
 
-    // Immediate reminder / pre4hr WA path: only when the user books inside the last 4h before slot
-    // (late registration). Otherwise pre4hr is sent by GET /api/cron/send-reminders in a tight window
-    // around slotTime − 4h (see utils/pre4hrSchedule.js), not on a rolling [now, now+4h] slot filter.
+    // Immediate reminder / pre4hr WA: strict deadline-backward — eligible only when now >= slot−offset
+    // and now < slot (Case B catch-up after cron missed; Case C never after slot).
     const now = new Date();
     const hoursUntilSlot = (slotDateTime - now) / (1000 * 60 * 60);
 
-    const shouldSendReminderImmediately = hoursUntilSlot <= 4 && hoursUntilSlot > 0;
-    // Send meet link immediately if within 1 hour
-    const shouldSendMeetLinkImmediately = hoursUntilSlot <= 1 && hoursUntilSlot > 0;
-    // Send 30-min live reminder immediately if within 30 minutes (0.5 hours)
-    const shouldSendReminder30MinImmediately = hoursUntilSlot <= 0.5 && hoursUntilSlot > 0;
+    const shouldSendReminderImmediately =
+      hoursUntilSlot > 0 && shouldSendCampaignReminderImmediately('pre4hr', slotDateTime, now);
+    const shouldSendMeetLinkImmediately =
+      hoursUntilSlot > 0 && shouldSendCampaignReminderImmediately('meet', slotDateTime, now);
+    const shouldSendReminder30MinImmediately =
+      hoursUntilSlot > 0 && shouldSendCampaignReminderImmediately('30min', slotDateTime, now);
 
-    console.log('[saveStep3] Hours until slot:', hoursUntilSlot.toFixed(2), 
-      'Send reminder immediately:', shouldSendReminderImmediately,
-      'Send meet link immediately:', shouldSendMeetLinkImmediately,
-      'Send 30-min reminder immediately:', shouldSendReminder30MinImmediately);
+    console.log(
+      '[saveStep3] Hours until slot:',
+      hoursUntilSlot.toFixed(2),
+      'pre4hr immediate (>= T−4h & before slot):',
+      shouldSendReminderImmediately,
+      'meet immediate:',
+      shouldSendMeetLinkImmediately,
+      '30min immediate:',
+      shouldSendReminder30MinImmediately
+    );
     if (!shouldSendReminderImmediately) {
       console.log(
-        '[saveStep3] pre4hr immediate path skipped (scheduled cron will send near slot−4h):',
+        '[saveStep3] pre4hr immediate path skipped (before T−4h or after slot, or already sent):',
         `hoursUntilSlot=${hoursUntilSlot.toFixed(2)}`
       );
     }

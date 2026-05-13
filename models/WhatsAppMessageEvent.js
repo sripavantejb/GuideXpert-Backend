@@ -111,7 +111,8 @@ const whatsAppMessageEventSchema = new mongoose.Schema({
       'policy_non_retryable',
       'permanent_failure',
       'in_flight_timeout',
-      'promotion_superseded'
+      'promotion_superseded',
+      'outside_reminder_validity'
     ],
     default: null,
     index: true

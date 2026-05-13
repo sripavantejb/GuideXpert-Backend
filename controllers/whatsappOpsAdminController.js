@@ -41,11 +41,11 @@ function parseBoundaryDate(raw, mode) {
   if (!raw) return null;
   const value = String(raw).trim();
   if (!value) return null;
-  // HTML date inputs send YYYY-MM-DD without time. Treat them as full-day bounds.
+  // HTML date inputs: treat YYYY-MM-DD as Asia/Kolkata calendar days (matches month/day ops APIs).
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const iso = mode === 'start' ? `${value}T00:00:00.000Z` : `${value}T23:59:59.999Z`;
-    const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? null : d;
+    const r = istDayRangeFromIso(value);
+    if (!r) return null;
+    return mode === 'start' ? r.from : r.to;
   }
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? null : d;
@@ -165,9 +165,9 @@ exports.getOpsMeta = (_req, res) => {
       ],
       templateKinds: [
         { id: 'slot_booked', label: 'Slot booked', description: 'Immediate confirmation after slot booking', retryPolicy: getRetryPolicy('slot_booked') },
-        { id: 'pre4hr', label: '4hr reminder', description: 'Sent in a short cron window near 4h before slot; immediate WhatsApp if booked inside that window', retryPolicy: getRetryPolicy('pre4hr') },
-        { id: 'meet', label: 'Meet link (~1hr)', description: 'Sent in a short cron window near 1h before slot; immediate WhatsApp if booked inside that window', retryPolicy: getRetryPolicy('meet') },
-        { id: '30min', label: '30 min reminder', description: 'Sent in a short cron window near 30m before slot; immediate WhatsApp if booked inside that window', retryPolicy: getRetryPolicy('30min') }
+        { id: 'pre4hr', label: '4hr reminder', description: 'Cron + save_step3 use the same deadline-backward window near 4h before slot (see WA_PRE4HR_*).', retryPolicy: getRetryPolicy('pre4hr') },
+        { id: 'meet', label: 'Meet link (~1hr)', description: 'Same deadline-backward window near 1h before slot (see WA_MEET_*).', retryPolicy: getRetryPolicy('meet') },
+        { id: '30min', label: '30 min reminder', description: 'Same deadline-backward window near 30m before slot (see WA_30MIN_*).', retryPolicy: getRetryPolicy('30min') }
       ]
     }
   });
@@ -216,7 +216,7 @@ exports.getCalendarMonthOverview = async (req, res) => {
 };
 
 /**
- * Primary metrics: recipient-based cohort (IST slot day). Legacy attempt-row drill-down under legacyAttemptMetrics.
+ * Primary metrics: recipient-based cohort (IST slot day). Attempt rows use the same slot-day join under slotCohortAttemptMetrics.
  */
 exports.getCalendarDayOverview = async (req, res) => {
   try {
@@ -229,7 +229,7 @@ exports.getCalendarDayOverview = async (req, res) => {
         message: `Invalid slotTime. Use all, ${recipientAnalytics.ALLOWED_SLOT_TIME_SUFFIXES.join(', ')}.`
       });
     }
-    const [legacy, recipient] = await Promise.all([
+    const [attemptAgg, recipient] = await Promise.all([
       opsAggregates.computeDayOverview({ dateIso, messageKind: selectedKind }),
       recipientAnalytics.computeRecipientDayOverview({
         dateIso,
@@ -237,8 +237,8 @@ exports.getCalendarDayOverview = async (req, res) => {
         slotTime: slotTimeNorm
       })
     ]);
-    if (legacy.error) {
-      return res.status(400).json({ success: false, message: legacy.error });
+    if (attemptAgg.error) {
+      return res.status(400).json({ success: false, message: attemptAgg.error });
     }
     if (recipient.error) {
       return res.status(400).json({ success: false, message: recipient.error });
@@ -248,10 +248,10 @@ exports.getCalendarDayOverview = async (req, res) => {
     const rPublic = { ...r };
     delete rPublic._cohortSubmissionIds;
     const range = rPublic.range || {};
-    const [failureReasons, templateRank] = await Promise.all([
+    const debugOn = String(req.query.debug || '').trim() === '1';
+    const [failureReasons, templateRank, diagnostics] = await Promise.all([
       recipientAnalytics.computeFailureReasonDistribution({
-        from: range.from,
-        to: range.to,
+        cohortSlotDayIso: rPublic.filter?.date || dateIso,
         messageKind: selectedKind,
         formSubmissionIds: cohortIds.length ? cohortIds : null
       }),
@@ -261,7 +261,14 @@ exports.getCalendarDayOverview = async (req, res) => {
             from: range.from,
             to: range.to,
             formSubmissionIds: cohortIds.length ? cohortIds : null
+          }),
+      debugOn && cohortIds.length
+        ? recipientAnalytics.computeCohortDayDiagnostics({
+            dateIso: rPublic.filter?.date || dateIso,
+            messageKind: selectedKind,
+            cohortSubmissionIds: cohortIds
           })
+        : Promise.resolve(null)
     ]);
     return res.json({
       success: true,
@@ -279,15 +286,18 @@ exports.getCalendarDayOverview = async (req, res) => {
           failureReasons,
           templateReliability: templateRank
         },
-        legacyAttemptMetrics: {
-          overall: legacy.data.overall,
-          selectedKindMetrics: legacy.data.selectedKindMetrics,
-          byKind: legacy.data.byKind,
-          byStatus: legacy.data.byStatus,
-          byAttempt: legacy.data.byAttempt,
-          retry2Exclusions: legacy.data.retry2Exclusions,
-          uniqueRecipientsDeliveredRead: legacy.data.uniqueRecipientsDeliveredRead
-        }
+        slotCohortAttemptMetrics: {
+          overall: attemptAgg.data.overall,
+          selectedKindMetrics: attemptAgg.data.selectedKindMetrics,
+          byKind: attemptAgg.data.byKind,
+          byStatus: attemptAgg.data.byStatus,
+          byAttempt: attemptAgg.data.byAttempt,
+          retry2Exclusions: attemptAgg.data.retry2Exclusions,
+          uniqueRecipientsDeliveredRead: attemptAgg.data.uniqueRecipientsDeliveredRead
+        },
+        ...(debugOn && diagnostics && !diagnostics.error
+          ? { diagnostics: diagnostics.data }
+          : {})
       }
     });
   } catch (e) {
@@ -688,7 +698,8 @@ exports.manualResend = async (req, res) => {
       source: 'admin_manual',
       cronRunId: null,
       cronJobKey: null,
-      sendFn
+      sendFn,
+      skipSlotRelativeGuard: true
     });
 
     res.json({ success: !!r.success, data: r });
@@ -862,24 +873,25 @@ exports.getAttemptAnalytics = async (req, res) => {
       });
     }
     const dateIso = req.query.date ? String(req.query.date).trim().slice(0, 10) : new Date().toISOString().slice(0, 10);
-    const range = istDayRangeFromIso(dateIso);
-    if (!range) return res.status(400).json({ success: false, message: 'Invalid date. Use YYYY-MM-DD (IST anchor)' });
+    const prefix = opsAggregates.slotDayIstPrefixStages(dateIso, messageKind);
+    if (!prefix) return res.status(400).json({ success: false, message: 'Invalid date. Use YYYY-MM-DD (IST anchor)' });
 
-    const match = {
-      createdAt: { $gte: range.from, $lte: range.to },
-      messageKind
-    };
+    const { range, stages: prefixStages } = prefix;
 
+    const extraMatch = [];
     if (req.query.retryGroupId && mongoose.Types.ObjectId.isValid(String(req.query.retryGroupId))) {
-      match.retryGroupId = new mongoose.Types.ObjectId(String(req.query.retryGroupId));
+      extraMatch.push({
+        $match: { retryGroupId: new mongoose.Types.ObjectId(String(req.query.retryGroupId)) }
+      });
     }
     if (req.query.attemptNumber != null && req.query.attemptNumber !== '') {
       const an = parseInt(String(req.query.attemptNumber), 10);
-      if (an >= 1 && an <= 3) match.attemptNumber = an;
+      if (an >= 1 && an <= 3) extraMatch.push({ $match: { attemptNumber: an } });
     }
 
     const rows = await WhatsAppMessageEvent.aggregate([
-      { $match: match },
+      ...prefixStages,
+      ...extraMatch,
       {
         $facet: {
           perAttempt: [
@@ -940,12 +952,25 @@ exports.getAttemptAnalytics = async (req, res) => {
       };
     });
 
-    const retry2Exclusions = await computeRetry2Exclusions(match, byAttempt);
+    const retry2Exclusions = await opsAggregates.computeRetry2ExclusionsForPrefix(
+      prefixStages,
+      messageKind,
+      byAttempt
+    );
 
     return res.json({
       success: true,
       data: {
-        filter: { date: range.isoDate, messageKind, retryGroupId: match.retryGroupId || null, attemptNumber: match.attemptNumber || null },
+        cohortAnchor: 'booking_ist_slot_day',
+        filter: {
+          date: range.isoDate,
+          messageKind,
+          retryGroupId:
+            req.query.retryGroupId && mongoose.Types.ObjectId.isValid(String(req.query.retryGroupId))
+              ? String(req.query.retryGroupId)
+              : null,
+          attemptNumber: req.query.attemptNumber || null
+        },
         range: { from: range.from, to: range.to },
         retryPolicy: getRetryPolicy(messageKind),
         byAttempt,
@@ -1153,8 +1178,7 @@ exports.captureSnapshot = async (req, res) => {
           const range = r.range || {};
           const [failureReasons, templateRank] = await Promise.all([
             recipientAnalytics.computeFailureReasonDistribution({
-              from: range.from,
-              to: range.to,
+              cohortSlotDayIso: r.filter?.date || dateIso,
               messageKind,
               formSubmissionIds: cohortIds.length ? cohortIds : null
             }),
@@ -1180,7 +1204,7 @@ exports.captureSnapshot = async (req, res) => {
               retryFunnelByAttempt: r.retryFunnelByAttempt,
               retryQueue: r.retryQueue,
               charts: { failureReasons, templateReliability: templateRank },
-              legacyAttemptMetrics: {
+              slotCohortAttemptMetrics: {
                 overall: day.data.overall,
                 selectedKindMetrics: day.data.selectedKindMetrics,
                 byKind: day.data.byKind,

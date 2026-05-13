@@ -3,12 +3,13 @@
  *
  * Env:
  *   WA_PRE4HR_OFFSET_MS — ms from "now" until ideal slot start for this cron tick (default 4h).
- *   WA_PRE4HR_CRON_WINDOW_MS — total width of the slotDate band (default 10m).
+ *   WA_PRE4HR_CRON_WINDOW_MS — backward width before that deadline (default 10m). Slot must fall in
+ *     [now+offset−window, now+offset+WA_SLOT_CRON_DEADLINE_FORWARD_SLACK_MS] (see waSlotRelativeSchedule).
  */
 
 const {
   getReminderCronConfigFromEnv,
-  getSlotDateBoundsForCron,
+  getSlotDateDeadlineBackwardBoundsForCron,
   isSlotDateInCronWindow,
   MIN_WINDOW_MS,
   DEFAULT_CRON_WINDOW_MS,
@@ -28,7 +29,7 @@ function getPre4hrCronConfigFromEnv() {
 }
 
 function getPre4hrSlotDateBoundsForCron(now = new Date(), configOverride = null) {
-  return getSlotDateBoundsForCron(now, configOverride || getPre4hrCronConfigFromEnv());
+  return getSlotDateDeadlineBackwardBoundsForCron(now, configOverride || getPre4hrCronConfigFromEnv());
 }
 
 function isSlotDateInPre4hrCronWindow(slotDate, now = new Date(), configOverride = null) {

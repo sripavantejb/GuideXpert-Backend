@@ -13,21 +13,23 @@ const fixedNow = new Date('2026-05-12T07:00:00.000Z'); // anchor
 const cfg = { offsetMs: DEFAULT_OFFSET_MS, windowMs: DEFAULT_WINDOW_MS };
 
 describe('getPre4hrSlotDateBoundsForCron', () => {
-  test('band is centered on now + 4h with default 10m width', () => {
-    const { slotDateMin, slotDateMax, offsetMs, windowMs } = getPre4hrSlotDateBoundsForCron(fixedNow, cfg);
+  test('band is backward from now + 4h with default 10m width', () => {
+    const { slotDateMin, slotDateMax, offsetMs, windowMs, deadlineForwardSlackMs } = getPre4hrSlotDateBoundsForCron(
+      fixedNow,
+      cfg
+    );
     assert.equal(offsetMs, DEFAULT_OFFSET_MS);
     assert.equal(windowMs, DEFAULT_WINDOW_MS);
-    const center = fixedNow.getTime() + DEFAULT_OFFSET_MS;
-    const half = DEFAULT_WINDOW_MS / 2;
-    assert.equal(slotDateMin.getTime(), center - half);
-    assert.equal(slotDateMax.getTime(), center + half);
+    const deadline = fixedNow.getTime() + DEFAULT_OFFSET_MS;
+    assert.equal(slotDateMin.getTime(), deadline - DEFAULT_WINDOW_MS);
+    assert.equal(slotDateMax.getTime(), deadline + deadlineForwardSlackMs);
   });
 });
 
 describe('isSlotDateInPre4hrCronWindow', () => {
-  test('slot exactly at center is included', () => {
-    const center = new Date(fixedNow.getTime() + DEFAULT_OFFSET_MS);
-    assert.equal(isSlotDateInPre4hrCronWindow(center, fixedNow, cfg), true);
+  test('slot exactly at deadline is included', () => {
+    const deadline = new Date(fixedNow.getTime() + DEFAULT_OFFSET_MS);
+    assert.equal(isSlotDateInPre4hrCronWindow(deadline, fixedNow, cfg), true);
   });
 
   test('slot at min boundary inclusive', () => {

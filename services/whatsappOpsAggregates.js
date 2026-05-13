@@ -9,6 +9,7 @@ const MessagingCronRun = require('../models/MessagingCronRun');
 const WhatsAppWebhookEvent = require('../models/WhatsAppWebhookEvent');
 const FormSubmission = require('../models/FormSubmission');
 const WhatsAppManualRecoveryJob = require('../models/WhatsAppManualRecoveryJob');
+const cohortAgg = require('./whatsappOpsCohortShared');
 
 const ALLOWED_MESSAGE_KINDS = ['slot_booked', 'pre4hr', 'meet', '30min'];
 const IST_OFFSET_MINUTES = 330;
@@ -16,25 +17,6 @@ const TERMINAL_FAILURE_STATUSES = ['failed', 'retry_exhausted'];
 const SUCCESS_TERMINAL_STATUSES = ['delivered', 'read'];
 const IN_FLIGHT_STATUSES = ['queued', 'submitted', 'sent', 'retry_pending'];
 const ACCEPTED_PLUS_STATUSES = ['submitted', 'sent', 'delivered', 'read'];
-
-function parseBoundaryDate(raw, mode) {
-  if (!raw) return null;
-  const value = String(raw).trim();
-  if (!value) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const iso = mode === 'start' ? `${value}T00:00:00.000Z` : `${value}T23:59:59.999Z`;
-    const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? null : d;
-  }
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function dateRangeFromQuery(query = {}) {
-  const from = parseBoundaryDate(query.from, 'start');
-  const to = parseBoundaryDate(query.to, 'end') || new Date();
-  return { from, to };
-}
 
 function parseIsoDateOnly(value) {
   const s = String(value || '').trim();
@@ -60,6 +42,25 @@ function istDayRangeFromIso(dateIso) {
   return { from: new Date(startUtcMs), to: new Date(endUtcMs), isoDate: p.iso };
 }
 
+function parseBoundaryDate(raw, mode) {
+  if (!raw) return null;
+  const value = String(raw).trim();
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const r = istDayRangeFromIso(value);
+    if (!r) return null;
+    return mode === 'start' ? r.from : r.to;
+  }
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function dateRangeFromQuery(query = {}) {
+  const from = parseBoundaryDate(query.from, 'start');
+  const to = parseBoundaryDate(query.to, 'end') || new Date();
+  return { from, to };
+}
+
 function istMonthRangeFromIso(monthIso) {
   const p = parseIsoMonth(monthIso);
   if (!p) return null;
@@ -73,32 +74,41 @@ function istMonthRangeFromIso(monthIso) {
   };
 }
 
+const MESSAGE_EVENT_STATS_FACET = {
+  total: [{ $count: 'c' }],
+  byKind: [{ $group: { _id: '$messageKind', c: { $sum: 1 } } }],
+  byStatus: [{ $group: { _id: '$status', c: { $sum: 1 } } }],
+  submittedAccepted: [{
+    $match: { status: { $in: ['submitted', 'sent', 'delivered', 'read'] } }
+  }, { $count: 'c' }],
+  strictSubmitted: [{ $match: { status: 'submitted' } }, { $count: 'c' }],
+  sentCumulative: [{
+    $match: { status: { $in: ['sent', 'delivered', 'read'] } }
+  }, { $count: 'c' }],
+  deliveredCumulative: [{
+    $match: { status: { $in: ['delivered', 'read'] } }
+  }, { $count: 'c' }],
+  readStrict: [{ $match: { status: 'read' } }, { $count: 'c' }],
+  failed: [{ $match: { status: { $in: ['failed', 'retry_exhausted'] } } }, { $count: 'c' }],
+  retryExhausted: [{ $match: { status: 'retry_exhausted' } }, { $count: 'c' }],
+  retried: [{ $match: { retryCountSnapshot: { $gt: 0 } } }, { $count: 'c' }],
+  slotBookedAttempts: [{ $match: { messageKind: 'slot_booked' } }, { $count: 'c' }]
+};
+
 function facetStatsPipeline(match) {
-  return [
-    { $match: match },
-    {
-      $facet: {
-        total: [{ $count: 'c' }],
-        byKind: [{ $group: { _id: '$messageKind', c: { $sum: 1 } } }],
-        byStatus: [{ $group: { _id: '$status', c: { $sum: 1 } } }],
-        submittedAccepted: [{
-          $match: { status: { $in: ['submitted', 'sent', 'delivered', 'read'] } }
-        }, { $count: 'c' }],
-        strictSubmitted: [{ $match: { status: 'submitted' } }, { $count: 'c' }],
-        sentCumulative: [{
-          $match: { status: { $in: ['sent', 'delivered', 'read'] } }
-        }, { $count: 'c' }],
-        deliveredCumulative: [{
-          $match: { status: { $in: ['delivered', 'read'] } }
-        }, { $count: 'c' }],
-        readStrict: [{ $match: { status: 'read' } }, { $count: 'c' }],
-        failed: [{ $match: { status: { $in: ['failed', 'retry_exhausted'] } } }, { $count: 'c' }],
-        retryExhausted: [{ $match: { status: 'retry_exhausted' } }, { $count: 'c' }],
-        retried: [{ $match: { retryCountSnapshot: { $gt: 0 } } }, { $count: 'c' }],
-        slotBookedAttempts: [{ $match: { messageKind: 'slot_booked' } }, { $count: 'c' }]
-      }
-    }
-  ];
+  return [{ $match: match }, { $facet: MESSAGE_EVENT_STATS_FACET }];
+}
+
+function slotDayIstPrefixStages(dateIso, messageKind) {
+  const range = istDayRangeFromIso(dateIso);
+  if (!range) return null;
+  return {
+    range,
+    stages: [
+      ...cohortAgg.annotateEventsWithSlotDayPipeline(messageKind, { strictSlotDay: true }),
+      { $match: { slotDayIst: range.isoDate } }
+    ]
+  };
 }
 
 function facetStatsToTotals(facet) {
@@ -131,6 +141,35 @@ async function computeRetry2Exclusions(match, byAttempt) {
         retryExclusionReason: { $ne: null }
       }
     },
+    { $group: { _id: '$retryExclusionReason', count: { $sum: 1 } } }
+  ]);
+  const byReason = {};
+  rows.forEach((r) => {
+    byReason[r._id] = r.count || 0;
+  });
+  const trackedExcluded = Object.values(byReason).reduce((sum, n) => sum + (Number(n) || 0), 0);
+  const residualUnclassified = Math.max(0, expectedGap - trackedExcluded);
+  if (residualUnclassified > 0) {
+    byReason.unclassified = residualUnclassified;
+  }
+  return {
+    retry1Failed: failedAtRetry1,
+    retry2Targeted: targetedAtRetry2,
+    totalExcluded: expectedGap,
+    trackedExcluded,
+    byReason
+  };
+}
+
+async function computeRetry2ExclusionsForPrefix(prefixStages, messageKind, byAttempt) {
+  const failedAtRetry1 = Number((byAttempt?.[2] || byAttempt?.['2'] || {}).failed || 0);
+  const targetedAtRetry2 = Number((byAttempt?.[3] || byAttempt?.['3'] || {}).targeted || 0);
+  const expectedGap = Math.max(0, failedAtRetry1 - targetedAtRetry2);
+  const kindStages = messageKind ? [{ $match: { messageKind } }] : [];
+  const rows = await WhatsAppMessageEvent.aggregate([
+    ...prefixStages,
+    ...kindStages,
+    { $match: { attemptNumber: 2, retryExclusionReason: { $ne: null } } },
     { $group: { _id: '$retryExclusionReason', count: { $sum: 1 } } }
   ]);
   const byReason = {};
@@ -284,21 +323,27 @@ async function computeMonthOverview({ monthIso, messageKind = null }) {
   const range = istMonthRangeFromIso(monthIso);
   if (!range) return { error: 'Invalid month format. Use YYYY-MM' };
 
-  const eventMatch = {
-    createdAt: { $gte: range.from, $lte: range.to },
-    ...(messageKind ? { messageKind } : {})
-  };
   const bookingMatch = {
     'step3Data.slotDate': { $gte: range.from, $lte: range.to }
   };
 
+  const pad = (n) => String(n).padStart(2, '0');
+  const p = parseIsoMonth(monthIso);
+  if (!p) return { error: 'Invalid month format. Use YYYY-MM' };
+  const lastD = new Date(p.y, p.m, 0).getDate();
+  const dayMin = `${p.y}-${pad(p.m)}-01`;
+  const dayMax = `${p.y}-${pad(p.m)}-${pad(lastD)}`;
+
+  const monthAnnotate = cohortAgg.annotateEventsWithSlotDayPipeline(messageKind, { strictSlotDay: true });
+
   const [eventsByDay, bookingsByDay] = await Promise.all([
     WhatsAppMessageEvent.aggregate([
-      { $match: eventMatch },
+      ...monthAnnotate,
+      { $match: { slotDayIst: { $gte: dayMin, $lte: dayMax, $ne: null } } },
       {
         $group: {
           _id: {
-            day: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'Asia/Kolkata' } }
+            day: '$slotDayIst'
           },
           attempts: { $sum: 1 },
           failed: { $sum: { $cond: [{ $in: ['$status', ['failed', 'retry_exhausted']] }, 1, 0] } },
@@ -383,6 +428,7 @@ async function computeMonthOverview({ monthIso, messageKind = null }) {
 
   return {
     data: {
+      cohortAnchor: 'booking_ist_slot_day',
       filter: { month: range.isoMonth, messageKind: messageKind || null },
       range: { from: range.from, to: range.to },
       monthTotals,
@@ -395,14 +441,15 @@ async function computeDayOverview({ dateIso, messageKind = null }) {
   if (messageKind && !ALLOWED_MESSAGE_KINDS.includes(messageKind)) {
     return { error: `Invalid messageKind. Allowed: ${ALLOWED_MESSAGE_KINDS.join(', ')}` };
   }
-  const range = istDayRangeFromIso(dateIso);
-  if (!range) return { error: 'Invalid date format. Use YYYY-MM-DD' };
+  const prefix = slotDayIstPrefixStages(dateIso, messageKind);
+  if (!prefix) return { error: 'Invalid date format. Use YYYY-MM-DD' };
+  const { range, stages: prefixStages } = prefix;
 
-  const baseMatch = { createdAt: { $gte: range.from, $lte: range.to } };
-  const filteredMatch = { ...baseMatch, ...(messageKind ? { messageKind } : {}) };
+  const kindMatchStages = messageKind ? [{ $match: { messageKind } }] : [];
 
   const attemptFacet = [
-    { $match: filteredMatch },
+    ...prefixStages,
+    ...kindMatchStages,
     {
       $group: {
         _id: '$attemptNumber',
@@ -431,11 +478,17 @@ async function computeDayOverview({ dateIso, messageKind = null }) {
 
   const [bookedSlotsCount, allFacet, filteredFacet, filteredByAttempt, uniqDelivered] = await Promise.all([
     FormSubmission.countDocuments({ 'step3Data.slotDate': { $gte: range.from, $lte: range.to } }),
-    WhatsAppMessageEvent.aggregate(facetStatsPipeline(baseMatch)),
-    WhatsAppMessageEvent.aggregate(facetStatsPipeline(filteredMatch)),
+    WhatsAppMessageEvent.aggregate([...prefixStages, { $facet: MESSAGE_EVENT_STATS_FACET }]),
+    WhatsAppMessageEvent.aggregate([
+      ...prefixStages,
+      ...kindMatchStages,
+      { $facet: MESSAGE_EVENT_STATS_FACET }
+    ]),
     WhatsAppMessageEvent.aggregate(attemptFacet),
     WhatsAppMessageEvent.aggregate([
-      { $match: { ...filteredMatch, status: { $in: ['delivered', 'read'] } } },
+      ...prefixStages,
+      ...kindMatchStages,
+      { $match: { status: { $in: ['delivered', 'read'] } } },
       { $group: { _id: '$phone' } },
       { $count: 'c' }
     ])
@@ -461,11 +514,12 @@ async function computeDayOverview({ dateIso, messageKind = null }) {
     };
   });
   const retry2Exclusions = messageKind
-    ? await computeRetry2Exclusions(filteredMatch, byAttempt)
+    ? await computeRetry2ExclusionsForPrefix(prefixStages, messageKind, byAttempt)
     : { retry1Failed: 0, retry2Targeted: 0, totalExcluded: 0, trackedExcluded: 0, byReason: {} };
 
   return {
     data: {
+      cohortAnchor: 'booking_ist_slot_day',
       filter: { date: range.isoDate, messageKind: messageKind || null },
       range: { from: range.from, to: range.to },
       bookedSlotsCount,
@@ -1278,6 +1332,7 @@ module.exports = {
   facetStatsPipeline,
   facetStatsToTotals,
   computeRetry2Exclusions,
+  computeRetry2ExclusionsForPrefix,
   computeSummary,
   computeMonthOverview,
   computeDayOverview,
@@ -1285,5 +1340,6 @@ module.exports = {
   buildClosedWindow,
   computeOperationalHealth,
   computeUnresolvedRecipients,
-  classifyExclusionCategory
+  classifyExclusionCategory,
+  slotDayIstPrefixStages
 };

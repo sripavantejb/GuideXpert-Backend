@@ -1,13 +1,22 @@
 /**
  * Shared slot-relative WhatsApp reminder cron eligibility:
- * `step3Data.slotDate` in [now + offset − window/2, now + offset + window/2] (plus callers typically add $gt: now).
  *
- * Used for pre4hr (T−4h), meet (T−1h), 30min (T−30m) — not rolling [now, now+X] on slotDate.
+ * **Production crons** use a **deadline-backward** band so nothing sends before the true
+ * T−offset moment (e.g. pre4hr at slot−4h):
+ *   `step3Data.slotDate` ∈ [now + offset − windowMs, now + offset + deadlineForwardSlackMs]
+ * plus callers keep `step3Data.slotDate > now` so the session has not started.
+ *
+ * This replaces the older symmetric ±window/2 band around `now + offset`, which could
+ * match slots **before** the intended send time (e.g. pre4hr up to ~5m early).
  *
  * Env keys per kind:
  *   pre4hr:  WA_PRE4HR_OFFSET_MS, WA_PRE4HR_CRON_WINDOW_MS
  *   meet:    WA_MEET_OFFSET_MS, WA_MEET_CRON_WINDOW_MS
  *   30min:   WA_30MIN_OFFSET_MS, WA_30MIN_CRON_WINDOW_MS
+ *
+ * Optional (all kinds): WA_SLOT_CRON_DEADLINE_FORWARD_SLACK_MS — extra ms past `now+offset`
+ * for the upper bound only (default 0). Raise slightly if your scheduler often fires a few
+ * seconds after the exact deadline.
  */
 
 const MIN_WINDOW_MS = 60 * 1000;
@@ -22,6 +31,17 @@ function parsePositiveIntEnv(key, fallback) {
   if (raw == null || raw === '') return fallback;
   const n = parseInt(String(raw), 10);
   return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+function parseNonNegativeIntEnv(key, fallback) {
+  const raw = process.env[key];
+  if (raw == null || raw === '') return fallback;
+  const n = parseInt(String(raw), 10);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+function deadlineForwardSlackMs() {
+  return parseNonNegativeIntEnv('WA_SLOT_CRON_DEADLINE_FORWARD_SLACK_MS', 0);
 }
 
 /**
@@ -43,11 +63,12 @@ function getReminderCronConfigFromEnv({
 }
 
 /**
- * Mongo bounds for `step3Data.slotDate` on this cron tick.
+ * Legacy symmetric band (±window/2 around now+offset). Prefer
+ * {@link getSlotDateDeadlineBackwardBoundsForCron} for cron eligibility.
  * @param {Date} [now]
  * @param {{ offsetMs: number, windowMs: number }} config
  */
-function getSlotDateBoundsForCron(now = new Date(), config) {
+function getSlotDateSymmetricBoundsForCron(now = new Date(), config) {
   const { offsetMs, windowMs } = config;
   const nowMs = now.getTime();
   const targetMs = nowMs + offsetMs;
@@ -61,12 +82,34 @@ function getSlotDateBoundsForCron(now = new Date(), config) {
 }
 
 /**
+ * Mongo bounds for `step3Data.slotDate` on this cron tick (deadline-backward).
+ * Slot is eligible when it lies in the last `windowMs` before `now + offset`, optionally
+ * extending `deadlineForwardSlackMs` past that deadline for late ticks.
+ *
+ * @param {Date} [now]
+ * @param {{ offsetMs: number, windowMs: number }} config
+ */
+function getSlotDateDeadlineBackwardBoundsForCron(now = new Date(), config) {
+  const { offsetMs, windowMs } = config;
+  const nowMs = now.getTime();
+  const deadlineMs = nowMs + offsetMs;
+  const slackMs = deadlineForwardSlackMs();
+  return {
+    slotDateMin: new Date(deadlineMs - windowMs),
+    slotDateMax: new Date(deadlineMs + slackMs),
+    offsetMs,
+    windowMs,
+    deadlineForwardSlackMs: slackMs
+  };
+}
+
+/**
  * @param {Date|string|number} slotDate
  * @param {Date} [now]
  * @param {{ offsetMs: number, windowMs: number }} config
  */
 function isSlotDateInCronWindow(slotDate, now = new Date(), config) {
-  const { slotDateMin, slotDateMax } = getSlotDateBoundsForCron(now, config);
+  const { slotDateMin, slotDateMax } = getSlotDateDeadlineBackwardBoundsForCron(now, config);
   const t = new Date(slotDate).getTime();
   if (Number.isNaN(t)) return false;
   return t >= slotDateMin.getTime() && t <= slotDateMax.getTime();
@@ -82,7 +125,7 @@ function getMeetCronConfigFromEnv() {
 }
 
 function getMeetSlotDateBoundsForCron(now = new Date(), configOverride = null) {
-  return getSlotDateBoundsForCron(now, configOverride || getMeetCronConfigFromEnv());
+  return getSlotDateDeadlineBackwardBoundsForCron(now, configOverride || getMeetCronConfigFromEnv());
 }
 
 function get30MinCronConfigFromEnv() {
@@ -95,7 +138,7 @@ function get30MinCronConfigFromEnv() {
 }
 
 function get30MinSlotDateBoundsForCron(now = new Date(), configOverride = null) {
-  return getSlotDateBoundsForCron(now, configOverride || get30MinCronConfigFromEnv());
+  return getSlotDateDeadlineBackwardBoundsForCron(now, configOverride || get30MinCronConfigFromEnv());
 }
 
 module.exports = {
@@ -106,7 +149,9 @@ module.exports = {
   DEFAULT_30MIN_OFFSET_MS,
   parsePositiveIntEnv,
   getReminderCronConfigFromEnv,
-  getSlotDateBoundsForCron,
+  /** @deprecated Prefer getSlotDateDeadlineBackwardBoundsForCron for cron queries */
+  getSlotDateSymmetricBoundsForCron,
+  getSlotDateDeadlineBackwardBoundsForCron,
   isSlotDateInCronWindow,
   getMeetCronConfigFromEnv,
   getMeetSlotDateBoundsForCron,

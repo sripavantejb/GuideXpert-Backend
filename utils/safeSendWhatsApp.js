@@ -16,6 +16,7 @@ const {
   getRetryPolicy,
   RETRY_EXCLUSION_REASON
 } = require('./whatsappRetryRules');
+const { getCampaignReminderEligibility, CAMPAIGN_RELATIVE_KINDS } = require('./waReminderEligibility');
 
 function maskPhone(phone10) {
   const s = String(phone10 || '').replace(/\D/g, '');
@@ -173,6 +174,7 @@ async function persistAttemptEvent(payload) {
  * @param {import('mongoose').Types.ObjectId|null} [opts.parentMessageEventId]
  * @param {import('mongoose').Types.ObjectId|null} [opts.attemptBatchId]
  * @param {string|null} [opts.correlationId]
+ * @param {boolean} [opts.skipSlotRelativeGuard] when true, skip pre4hr/meet/30min slot-window guard (admin manual)
  * @returns {Promise<{ success: boolean, error?: string, retryGroupId?: import('mongoose').Types.ObjectId }>}
  */
 async function safeSendWhatsApp({
@@ -189,7 +191,8 @@ async function safeSendWhatsApp({
   parentMessageEventId,
   attemptBatchId: attemptBatchIdOpt,
   correlationId: correlationIdOpt,
-  canonicalRetryGroupId: canonicalRetryGroupIdOpt
+  canonicalRetryGroupId: canonicalRetryGroupIdOpt,
+  skipSlotRelativeGuard
 }) {
   const { templateIdEnvKey, templateId } = getTemplateMetaForKind(retryKind);
   const varSummary = summarizeVars(vars);
@@ -234,6 +237,22 @@ async function safeSendWhatsApp({
     const emptyKeys = varSummary.keys.filter((k) => (varSummary.lengths[k] || 0) === 0);
     if (emptyKeys.length > 0) {
       console.warn('[WhatsApp] empty var values', maskPhone(phone10), `type=${retryKind}`, emptyKeys.join(','));
+    }
+
+    if (!skipSlotRelativeGuard && CAMPAIGN_RELATIVE_KINDS.has(retryKind)) {
+      const subG = formSubmissionId
+        ? await FormSubmission.findById(formSubmissionId).select('step3Data.slotDate').lean()
+        : await FormSubmission.findOne({ phone: phone10 }).select('step3Data.slotDate').lean();
+      const slot = subG && subG.step3Data ? subG.step3Data.slotDate : null;
+      const elig = getCampaignReminderEligibility(retryKind, slot, new Date());
+      if (!elig.ok) {
+        console.warn('[WhatsApp] skipped_outside_validity', maskPhone(phone10), `type=${retryKind}`, elig.reason || '');
+        return {
+          success: false,
+          error: elig.reason || 'outside_reminder_validity',
+          skippedOutsideWindow: true
+        };
+      }
     }
 
     const result = await sendFn(phone10, vars);

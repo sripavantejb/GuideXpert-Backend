@@ -6,36 +6,54 @@ const SUCCESS_TERMINAL_STATUSES = ['delivered', 'read'];
 
 const IN_FLIGHT_PROMOTION_STATUSES = ['queued', 'submitted', 'sent', 'retry_pending'];
 
-const RETRY_POLICIES = {
-  slot_booked: {
-    strategy: 'immediate_only',
-    maxAttempts: 2,
-    immediateRetryDelaySeconds: parseInt(process.env.WA_SLOT_BOOKED_RETRY_DELAY_SECONDS || '15', 10) || 15,
-    retryTransientOnly: true,
-    cooldownMinutes: 0
-  },
-  pre4hr: {
-    strategy: 'multi_stage',
-    maxAttempts: 3,
-    retryDelayMinutes: [5, 15],
-    cooldownMinutes: parseInt(process.env.WA_PRE4HR_RETRY_COOLDOWN_MINUTES || '5', 10) || 5,
-    classifyPermanentFailures: true
-  },
-  meet: {
-    strategy: 'multi_stage',
-    maxAttempts: 3,
-    retryDelayMinutes: [5, 10],
-    cooldownMinutes: parseInt(process.env.WA_MEET_RETRY_COOLDOWN_MINUTES || '5', 10) || 5,
-    classifyPermanentFailures: true
-  },
-  '30min': {
-    strategy: 'time_sensitive',
-    maxAttempts: 2,
-    retryDelayMinutes: [2],
-    cooldownMinutes: parseInt(process.env.WA_30MIN_RETRY_COOLDOWN_MINUTES || '2', 10) || 2,
-    classifyPermanentFailures: true
-  }
-};
+function parseCommaSeparatedPositiveInts(raw, fallbackArr) {
+  if (raw == null || String(raw).trim() === '') return [...fallbackArr];
+  const parts = String(raw)
+    .split(',')
+    .map((s) => parseInt(s.trim(), 10))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  return parts.length ? parts : [...fallbackArr];
+}
+
+function parseCooldownMinutes(envKey, fallback) {
+  const n = parseInt(process.env[envKey] || '', 10);
+  if (Number.isFinite(n) && n >= 0) return n;
+  return fallback;
+}
+
+/** Built from env on each read so deploy-time env changes apply without restart in long-lived dev servers. */
+function buildRetryPolicies() {
+  return {
+    slot_booked: {
+      strategy: 'immediate_only',
+      maxAttempts: 2,
+      immediateRetryDelaySeconds: parseInt(process.env.WA_SLOT_BOOKED_RETRY_DELAY_SECONDS || '15', 10) || 15,
+      retryTransientOnly: true,
+      cooldownMinutes: 0
+    },
+    pre4hr: {
+      strategy: 'multi_stage',
+      maxAttempts: 3,
+      retryDelayMinutes: parseCommaSeparatedPositiveInts(process.env.WA_PRE4HR_RETRY_DELAY_MINUTES, [1, 2]),
+      cooldownMinutes: parseCooldownMinutes('WA_PRE4HR_RETRY_COOLDOWN_MINUTES', 0),
+      classifyPermanentFailures: true
+    },
+    meet: {
+      strategy: 'multi_stage',
+      maxAttempts: 3,
+      retryDelayMinutes: parseCommaSeparatedPositiveInts(process.env.WA_MEET_RETRY_DELAY_MINUTES, [1, 2]),
+      cooldownMinutes: parseCooldownMinutes('WA_MEET_RETRY_COOLDOWN_MINUTES', 0),
+      classifyPermanentFailures: true
+    },
+    '30min': {
+      strategy: 'time_sensitive',
+      maxAttempts: 2,
+      retryDelayMinutes: parseCommaSeparatedPositiveInts(process.env.WA_30MIN_RETRY_DELAY_MINUTES, [1]),
+      cooldownMinutes: parseCooldownMinutes('WA_30MIN_RETRY_COOLDOWN_MINUTES', 0),
+      classifyPermanentFailures: true
+    }
+  };
+}
 
 const TRANSIENT_FAILURE_PATTERNS = [
   /timeout/i,
@@ -78,17 +96,24 @@ const RETRY_EXCLUSION_REASON = {
   policyNonRetryable: 'policy_non_retryable',
   permanentFailure: 'permanent_failure',
   inFlightTimeout: 'in_flight_timeout',
-  promotionSuperseded: 'promotion_superseded'
+  promotionSuperseded: 'promotion_superseded',
+  outsideReminderValidity: 'outside_reminder_validity'
 };
 
 function getRetryPolicy(kind) {
-  return RETRY_POLICIES[kind] || {
-    strategy: 'multi_stage',
-    maxAttempts: 3,
-    retryDelayMinutes: [5, 15],
-    cooldownMinutes: parseInt(process.env.WHATSAPP_RETRY_COOLDOWN_MINUTES || '5', 10) || 5,
-    classifyPermanentFailures: true
-  };
+  const policies = buildRetryPolicies();
+  return (
+    policies[kind] || {
+      strategy: 'multi_stage',
+      maxAttempts: 3,
+      retryDelayMinutes: parseCommaSeparatedPositiveInts(
+        process.env.WHATSAPP_RETRY_DELAY_MINUTES,
+        [1, 2]
+      ),
+      cooldownMinutes: parseInt(process.env.WHATSAPP_RETRY_COOLDOWN_MINUTES || '0', 10) || 0,
+      classifyPermanentFailures: true
+    }
+  );
 }
 
 function isCampaignStrategy(kind) {
@@ -226,7 +251,10 @@ function retrySourceFromAttemptNumber(n) {
 }
 
 module.exports = {
-  RETRY_POLICIES,
+  /** @deprecated Use getRetryPolicy(); values are env-driven */
+  get RETRY_POLICIES() {
+    return buildRetryPolicies();
+  },
   TERMINAL_FAILURE_STATUSES,
   SUCCESS_TERMINAL_STATUSES,
   IN_FLIGHT_PROMOTION_STATUSES,

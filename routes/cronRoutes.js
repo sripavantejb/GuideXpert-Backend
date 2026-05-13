@@ -25,6 +25,15 @@ const {
   get30MinCronConfigFromEnv,
   get30MinSlotDateBoundsForCron
 } = require('../utils/waSlotRelativeSchedule');
+const {
+  claimSubmissionsForCronJob,
+  clearCronClaimForPhone,
+  clearCronClaimsForPhones
+} = require('../utils/waCronReminderClaims');
+
+const PRE4HR_CLAIM = 'waPre4hrCronClaimUntil';
+const MEET_CLAIM = 'waMeetCronClaimUntil';
+const MIN30_CLAIM = 'wa30minCronClaimUntil';
 
 function verifyCronSecret(req, res, next) {
   if (!hasCronSecretConfigured()) {
@@ -93,34 +102,40 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
 
     const now = new Date();
     const pre4hrCfg = getPre4hrCronConfigFromEnv();
-    const { slotDateMin, slotDateMax } = getPre4hrSlotDateBoundsForCron(now, pre4hrCfg);
-
-    console.log('[Cron] pre4hr slotDate window (T−4h band, not rolling [now, now+4h])', {
-      nowIso: now.toISOString(),
-      slotDateMinIso: slotDateMin.toISOString(),
-      slotDateMaxIso: slotDateMax.toISOString(),
-      offsetMs: pre4hrCfg.offsetMs,
-      windowMs: pre4hrCfg.windowMs
-    });
-
-    const usersToRemind = await FormSubmission.find({
-      isRegistered: true,
-      reminderSent: { $ne: true },
-      'step3Data.slotDate': {
-        $gt: now,
-        $gte: slotDateMin,
-        $lte: slotDateMax
-      }
-    }).lean();
-
-    console.log('[Cron] Found', usersToRemind.length, 'users to send reminders (pre4hr band)');
+    const { slotDateMin, slotDateMax, deadlineForwardSlackMs } = getPre4hrSlotDateBoundsForCron(now, pre4hrCfg);
 
     const pre4hrWindowStats = {
       pre4hrSlotDateMinIso: slotDateMin.toISOString(),
       pre4hrSlotDateMaxIso: slotDateMax.toISOString(),
       pre4hrOffsetMs: pre4hrCfg.offsetMs,
-      pre4hrWindowMs: pre4hrCfg.windowMs
+      pre4hrWindowMs: pre4hrCfg.windowMs,
+      pre4hrDeadlineForwardSlackMs: deadlineForwardSlackMs
     };
+
+    console.log('[Cron] pre4hr slotDate window (deadline-backward: last windowMs before now+offset)', {
+      nowIso: now.toISOString(),
+      slotDateMinIso: slotDateMin.toISOString(),
+      slotDateMaxIso: slotDateMax.toISOString(),
+      offsetMs: pre4hrCfg.offsetMs,
+      windowMs: pre4hrCfg.windowMs,
+      deadlineForwardSlackMs
+    });
+
+    const usersToRemind = await claimSubmissionsForCronJob(
+      FormSubmission,
+      {
+        isRegistered: true,
+        reminderSent: { $ne: true },
+        'step3Data.slotDate': {
+          $gt: now,
+          $gte: slotDateMin,
+          $lte: slotDateMax
+        }
+      },
+      PRE4HR_CLAIM
+    );
+
+    console.log('[Cron] Found', usersToRemind.length, 'users to send reminders (pre4hr band, claimed)');
 
     if (usersToRemind.length === 0) {
       await finishCronRun(cronRun, {
@@ -148,6 +163,12 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
     let whatsappReminderAttempted = 0;
     let whatsappReminderFailed = 0;
     let whatsappReminderSucceeded = 0;
+    let flagsUpdated = 0;
+
+    if (!smsResult.success) {
+      console.error('[Cron] Failed to send bulk SMS:', smsResult.error);
+      await clearCronClaimsForPhones(FormSubmission, phones, PRE4HR_CLAIM);
+    }
 
     if (smsResult.success) {
       const waRetryGroup = await WhatsAppRetryGroup.create({
@@ -172,24 +193,26 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
           attemptNumber: 1,
           attemptBatchId: cronRun._id
         });
-        if (wa.success) whatsappReminderSucceeded += 1;
-        else whatsappReminderFailed += 1;
+        if (wa.success) {
+          whatsappReminderSucceeded += 1;
+          await FormSubmission.updateOne(
+            { phone: user.phone },
+            {
+              $set: {
+                reminderSent: true,
+                reminderSentAt: new Date()
+              },
+              $unset: { [PRE4HR_CLAIM]: '' }
+            }
+          );
+          flagsUpdated += 1;
+        } else {
+          whatsappReminderFailed += 1;
+          await clearCronClaimForPhone(FormSubmission, user.phone, PRE4HR_CLAIM);
+        }
       }
 
-      const phoneList = usersToRemind.map((u) => u.phone);
-      await FormSubmission.updateMany(
-        { phone: { $in: phoneList } },
-        {
-          $set: {
-            reminderSent: true,
-            reminderSentAt: new Date()
-          }
-        }
-      );
-
-      console.log('[Cron] Successfully sent reminders and updated', phoneList.length, 'records');
-    } else {
-      console.error('[Cron] Failed to send bulk SMS:', smsResult.error);
+      console.log('[Cron] Successfully sent reminders; WA flags updated per user:', flagsUpdated);
     }
 
     await finishCronRun(cronRun, {
@@ -200,7 +223,7 @@ router.get('/send-reminders', verifyCronSecret, async (req, res) => {
       waSucceeded: whatsappReminderSucceeded,
       waFailed: whatsappReminderFailed,
       retriesAttempted: 0,
-      flagsUpdated: smsResult.success ? usersToRemind.length : 0,
+      flagsUpdated,
       ...pre4hrWindowStats
     }, { success: smsResult.success });
 
@@ -243,33 +266,40 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
 
     const now = new Date();
     const meetCfg = getMeetCronConfigFromEnv();
-    const { slotDateMin: meetSlotMin, slotDateMax: meetSlotMax } = getMeetSlotDateBoundsForCron(now, meetCfg);
+    const { slotDateMin: meetSlotMin, slotDateMax: meetSlotMax, deadlineForwardSlackMs: meetSlack } =
+      getMeetSlotDateBoundsForCron(now, meetCfg);
 
-    console.log('[Cron] meet slotDate window (T−1h band, not rolling [now, now+1h])', {
+    console.log('[Cron] meet slotDate window (deadline-backward)', {
       nowIso: now.toISOString(),
       slotDateMinIso: meetSlotMin.toISOString(),
       slotDateMaxIso: meetSlotMax.toISOString(),
       offsetMs: meetCfg.offsetMs,
-      windowMs: meetCfg.windowMs
+      windowMs: meetCfg.windowMs,
+      deadlineForwardSlackMs: meetSlack
     });
 
-    const usersToSendMeetLink = await FormSubmission.find({
-      isRegistered: true,
-      meetLinkSent: { $ne: true },
-      'step3Data.slotDate': {
-        $gt: now,
-        $gte: meetSlotMin,
-        $lte: meetSlotMax
-      }
-    }).lean();
+    const usersToSendMeetLink = await claimSubmissionsForCronJob(
+      FormSubmission,
+      {
+        isRegistered: true,
+        meetLinkSent: { $ne: true },
+        'step3Data.slotDate': {
+          $gt: now,
+          $gte: meetSlotMin,
+          $lte: meetSlotMax
+        }
+      },
+      MEET_CLAIM
+    );
 
-    console.log('[Cron] Found', usersToSendMeetLink.length, 'users to send meet links (meet band)');
+    console.log('[Cron] Found', usersToSendMeetLink.length, 'users to send meet links (meet band, claimed)');
 
     const meetWindowStats = {
       meetSlotDateMinIso: meetSlotMin.toISOString(),
       meetSlotDateMaxIso: meetSlotMax.toISOString(),
       meetOffsetMs: meetCfg.offsetMs,
-      meetWindowMs: meetCfg.windowMs
+      meetWindowMs: meetCfg.windowMs,
+      meetDeadlineForwardSlackMs: meetSlack
     };
 
     if (usersToSendMeetLink.length === 0) {
@@ -304,6 +334,12 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
     let whatsappMeetAttempted = 0;
     let whatsappMeetFailed = 0;
     let whatsappMeetSucceeded = 0;
+    let meetFlagsUpdated = 0;
+
+    if (!smsResult.success) {
+      console.error('[Cron] Failed to send bulk meet link SMS:', smsResult.error);
+      await clearCronClaimsForPhones(FormSubmission, phones, MEET_CLAIM);
+    }
 
     if (smsResult.success) {
       const waRetryGroup = await WhatsAppRetryGroup.create({
@@ -328,24 +364,26 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
           attemptNumber: 1,
           attemptBatchId: cronRun._id
         });
-        if (wa.success) whatsappMeetSucceeded += 1;
-        else whatsappMeetFailed += 1;
+        if (wa.success) {
+          whatsappMeetSucceeded += 1;
+          await FormSubmission.updateOne(
+            { phone: user.phone },
+            {
+              $set: {
+                meetLinkSent: true,
+                meetLinkSentAt: new Date()
+              },
+              $unset: { [MEET_CLAIM]: '' }
+            }
+          );
+          meetFlagsUpdated += 1;
+        } else {
+          whatsappMeetFailed += 1;
+          await clearCronClaimForPhone(FormSubmission, user.phone, MEET_CLAIM);
+        }
       }
 
-      const phoneList = usersToSendMeetLink.map((u) => u.phone);
-      await FormSubmission.updateMany(
-        { phone: { $in: phoneList } },
-        {
-          $set: {
-            meetLinkSent: true,
-            meetLinkSentAt: new Date()
-          }
-        }
-      );
-
-      console.log('[Cron] Successfully sent meet links and updated', phoneList.length, 'records');
-    } else {
-      console.error('[Cron] Failed to send bulk meet link SMS:', smsResult.error);
+      console.log('[Cron] Successfully sent meet links; WA flags updated per user:', meetFlagsUpdated);
     }
 
     await finishCronRun(cronRun, {
@@ -356,7 +394,7 @@ router.get('/send-meetlinks', verifyCronSecret, async (req, res) => {
       waSucceeded: whatsappMeetSucceeded,
       waFailed: whatsappMeetFailed,
       retriesAttempted: 0,
-      flagsUpdated: smsResult.success ? usersToSendMeetLink.length : 0,
+      flagsUpdated: meetFlagsUpdated,
       ...meetWindowStats
     }, { success: smsResult.success });
 
@@ -399,36 +437,40 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
 
     const now = new Date();
     const thirtyCfg = get30MinCronConfigFromEnv();
-    const { slotDateMin: thirtySlotMin, slotDateMax: thirtySlotMax } = get30MinSlotDateBoundsForCron(
-      now,
-      thirtyCfg
-    );
+    const { slotDateMin: thirtySlotMin, slotDateMax: thirtySlotMax, deadlineForwardSlackMs: thirtySlack } =
+      get30MinSlotDateBoundsForCron(now, thirtyCfg);
 
-    console.log('[Cron] 30min slotDate window (T−30m band, not rolling [now, now+30m])', {
+    console.log('[Cron] 30min slotDate window (deadline-backward)', {
       nowIso: now.toISOString(),
       slotDateMinIso: thirtySlotMin.toISOString(),
       slotDateMaxIso: thirtySlotMax.toISOString(),
       offsetMs: thirtyCfg.offsetMs,
-      windowMs: thirtyCfg.windowMs
+      windowMs: thirtyCfg.windowMs,
+      deadlineForwardSlackMs: thirtySlack
     });
 
-    const usersToSend30MinReminder = await FormSubmission.find({
-      isRegistered: true,
-      reminder30MinSent: { $ne: true },
-      'step3Data.slotDate': {
-        $gt: now,
-        $gte: thirtySlotMin,
-        $lte: thirtySlotMax
-      }
-    }).lean();
+    const usersToSend30MinReminder = await claimSubmissionsForCronJob(
+      FormSubmission,
+      {
+        isRegistered: true,
+        reminder30MinSent: { $ne: true },
+        'step3Data.slotDate': {
+          $gt: now,
+          $gte: thirtySlotMin,
+          $lte: thirtySlotMax
+        }
+      },
+      MIN30_CLAIM
+    );
 
-    console.log('[Cron] Found', usersToSend30MinReminder.length, 'users to send 30-min reminders (30min band)');
+    console.log('[Cron] Found', usersToSend30MinReminder.length, 'users to send 30-min reminders (30min band, claimed)');
 
     const thirtyMinWindowStats = {
       thirtyMinSlotDateMinIso: thirtySlotMin.toISOString(),
       thirtyMinSlotDateMaxIso: thirtySlotMax.toISOString(),
       thirtyMinOffsetMs: thirtyCfg.offsetMs,
-      thirtyMinWindowMs: thirtyCfg.windowMs
+      thirtyMinWindowMs: thirtyCfg.windowMs,
+      thirtyMinDeadlineForwardSlackMs: thirtySlack
     };
 
     if (usersToSend30MinReminder.length === 0) {
@@ -463,6 +505,12 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
     let whatsapp30Attempted = 0;
     let whatsapp30Failed = 0;
     let whatsapp30Succeeded = 0;
+    let min30FlagsUpdated = 0;
+
+    if (!smsResult.success) {
+      console.error('[Cron] Failed to send bulk 30-min reminder SMS:', smsResult.error);
+      await clearCronClaimsForPhones(FormSubmission, phones, MIN30_CLAIM);
+    }
 
     if (smsResult.success) {
       const waRetryGroup = await WhatsAppRetryGroup.create({
@@ -487,24 +535,26 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
           attemptNumber: 1,
           attemptBatchId: cronRun._id
         });
-        if (wa.success) whatsapp30Succeeded += 1;
-        else whatsapp30Failed += 1;
+        if (wa.success) {
+          whatsapp30Succeeded += 1;
+          await FormSubmission.updateOne(
+            { phone: user.phone },
+            {
+              $set: {
+                reminder30MinSent: true,
+                reminder30MinSentAt: new Date()
+              },
+              $unset: { [MIN30_CLAIM]: '' }
+            }
+          );
+          min30FlagsUpdated += 1;
+        } else {
+          whatsapp30Failed += 1;
+          await clearCronClaimForPhone(FormSubmission, user.phone, MIN30_CLAIM);
+        }
       }
 
-      const phoneList = usersToSend30MinReminder.map((u) => u.phone);
-      await FormSubmission.updateMany(
-        { phone: { $in: phoneList } },
-        {
-          $set: {
-            reminder30MinSent: true,
-            reminder30MinSentAt: new Date()
-          }
-        }
-      );
-
-      console.log('[Cron] Successfully sent 30-min reminders and updated', phoneList.length, 'records');
-    } else {
-      console.error('[Cron] Failed to send bulk 30-min reminder SMS:', smsResult.error);
+      console.log('[Cron] Successfully sent 30-min reminders; WA flags updated per user:', min30FlagsUpdated);
     }
 
     await finishCronRun(cronRun, {
@@ -515,7 +565,7 @@ router.get('/send-30min-reminders', verifyCronSecret, async (req, res) => {
       waSucceeded: whatsapp30Succeeded,
       waFailed: whatsapp30Failed,
       retriesAttempted: 0,
-      flagsUpdated: smsResult.success ? usersToSend30MinReminder.length : 0,
+      flagsUpdated: min30FlagsUpdated,
       ...thirtyMinWindowStats
     }, { success: smsResult.success });
 
