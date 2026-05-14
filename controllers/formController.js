@@ -87,7 +87,17 @@ const IIT_SUBMISSION_TYPE = 'iitCounselling';
 
 const IIT_ALLOWED_VALUES = {
   studentOrParent: ['Student', 'Parent'],
-  classStatus: ['12th Appearing', '12th Passed'],
+  // Keep in sync with GuideXpert-Frontend/src/pages/IitCounsellingPage.jsx CURRENT_STUDYING_OPTIONS and IitCounsellingSubmission schema.
+  classStatus: [
+    'Completed 12th/Intermediate 2nd Year',
+    'Studying 12th/Intermediate 2nd Year',
+    'Studying 11th/Intermediate 1st Year',
+    'Degree Completed',
+    'Degree Studying',
+    'Engineering Completed',
+    'Engineering Studying',
+    'Diploma',
+  ],
   stream: ['MPC', 'BiPC', 'Commerce', 'Others'],
   // Keep in sync with GuideXpert-Frontend/src/utils/weekendSlots.js getAvailableSlots() values.
   slotBooking: ['Wednesday 6PM', 'Saturday 6PM', 'Sunday 11AM'],

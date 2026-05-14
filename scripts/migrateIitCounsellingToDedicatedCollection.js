@@ -13,6 +13,22 @@ function hasFlag(flag) {
   return process.argv.includes(flag);
 }
 
+/** Map old class radio values to current enum (keep in sync with IitCounsellingSubmission.section1Data.classStatus). */
+function mapLegacyClassStatusToCurrent(classStatus) {
+  if (classStatus === '12th Appearing') return 'Studying 12th/Intermediate 2nd Year';
+  if (classStatus === '12th Passed') return 'Completed 12th/Intermediate 2nd Year';
+  return classStatus;
+}
+
+function normalizeSection1DataClassStatus(section1Data) {
+  if (!section1Data || typeof section1Data !== 'object') return section1Data;
+  const raw = section1Data.classStatus;
+  if (raw === '12th Appearing' || raw === '12th Passed') {
+    return { ...section1Data, classStatus: mapLegacyClassStatusToCurrent(raw) };
+  }
+  return section1Data;
+}
+
 function mapLegacyToIitSubmission(source) {
   const iit = source.iitCounselling || {};
   return {
@@ -27,7 +43,7 @@ function mapLegacyToIitSubmission(source) {
     iitCounselling: {
       currentStep: iit.currentStep || source.currentStep || 1,
       isCompleted: !!(iit.isCompleted || source.isCompleted),
-      section1Data: iit.section1Data || null,
+      section1Data: normalizeSection1DataClassStatus(iit.section1Data || null),
       section2Data: iit.section2Data || null,
       section3Data: iit.section3Data || null,
       lastUpdatedAt: iit.lastUpdatedAt || source.updatedAt || source.createdAt || new Date(),
