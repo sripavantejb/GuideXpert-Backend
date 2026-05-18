@@ -1,7 +1,10 @@
 /**
  * Gupshup message-event lifecycle: submitted (API accept / enqueued) < sent < delivered < read;
- * failed (webhook async) overrides only before device delivery; send-time failed uses WhatsAppMessageEvent.failed / retry_exhausted.
+ * awaiting_final_dlr is soft reconcile grace (same rank band as sent);
+ * failed (webhook async) overrides only before device delivery; reconcile-derived failed may recover on late DLR.
  */
+
+const { RECONCILE_PENDING_STATUSES } = require('./whatsappRetryRules');
 
 function rankSuccessStatus(status) {
   const s = status ? String(status).toLowerCase() : '';
@@ -9,6 +12,7 @@ function rankSuccessStatus(status) {
     queued: 1,
     retry_pending: 2,
     submitted: 3,
+    awaiting_final_dlr: 3,
     sent: 4,
     delivered: 5,
     read: 6
@@ -19,6 +23,10 @@ function rankSuccessStatus(status) {
 function isTerminalSendFailure(status) {
   const s = status ? String(status).toLowerCase() : '';
   return s === 'failed' || s === 'retry_exhausted';
+}
+
+function isReconcilePendingStatus(status) {
+  return RECONCILE_PENDING_STATUSES.includes(String(status || '').toLowerCase());
 }
 
 function mapStageToDbStatus(stage) {
@@ -32,23 +40,47 @@ function mapStageToDbStatus(stage) {
   return null;
 }
 
-function canApplyWebhookStatus(currentStatus, newStatus) {
+/**
+ * @param {string} currentStatus
+ * @param {string} newStatus
+ * @param {{ reconcileDerivedFailure?: boolean, terminalFailureKind?: string|null, retryExclusionReason?: string|null }} [opts]
+ */
+function canApplyWebhookStatus(currentStatus, newStatus, opts = {}) {
   if (!newStatus) return false;
   const cur = String(currentStatus || '').toLowerCase();
   const next = String(newStatus).toLowerCase();
+  const reconcileDerived = opts.reconcileDerivedFailure === true;
+  const permanentTerminal =
+    opts.terminalFailureKind === 'permanent' ||
+    opts.retryExclusionReason === 'permanent_failure';
+
   if (cur === 'retry_exhausted') return false;
+
   if (next === 'failed') {
     if (isTerminalSendFailure(cur)) return false;
     if (rankSuccessStatus(cur) >= 5) return false;
     return true;
   }
-  if (isTerminalSendFailure(cur)) return false;
+
+  if (isTerminalSendFailure(cur)) {
+    if (reconcileDerived && !permanentTerminal && rankSuccessStatus(next) >= 5) {
+      return true;
+    }
+    return false;
+  }
+
+  if (isReconcilePendingStatus(cur)) {
+    if (next === 'failed') return true;
+    return rankSuccessStatus(next) > rankSuccessStatus(cur);
+  }
+
   return rankSuccessStatus(next) > rankSuccessStatus(cur);
 }
 
 module.exports = {
   rankSuccessStatus,
   isTerminalSendFailure,
+  isReconcilePendingStatus,
   mapStageToDbStatus,
   canApplyWebhookStatus
 };

@@ -26,6 +26,9 @@ router.post('/snapshots/capture', ctrl.captureSnapshot);
 router.get('/snapshots/latest', ctrl.getLatestSnapshot);
 
 router.get('/operational-health', ctrl.getOperationalHealth);
+router.get('/reminder-jobs/summary', ctrl.getReminderJobsSummary);
+router.post('/reminder-jobs/repair', requireSuperAdmin, ctrl.repairReminderJobs);
+router.get('/recipients/timeline', ctrl.getRecipientReminderTimeline);
 router.get('/unresolved', ctrl.getUnresolvedRecipients);
 router.get('/unresolved/export', ctrl.exportUnresolvedCsv);
 

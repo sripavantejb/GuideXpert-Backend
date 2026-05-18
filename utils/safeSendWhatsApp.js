@@ -18,6 +18,12 @@ const {
   RETRY_EXCLUSION_REASON
 } = require('./whatsappRetryRules');
 const { getCampaignReminderEligibility, CAMPAIGN_RELATIVE_KINDS } = require('./waReminderEligibility');
+const {
+  resolveCampaignSlotInstant,
+  buildEligibilityTimingRecord,
+  logCampaignTimingBlocked,
+  logCampaignTimingInvariantViolation
+} = require('./waCampaignSendAssertion');
 const { reserveOutboundWhatsAppAttempt } = require('./waSendAttemptReservation');
 const { normalizeOutboundOpsProduct } = require('./whatsappOpsProduct');
 
@@ -113,7 +119,8 @@ function buildMessageEventPayload({
   retryExclusionReason,
   opsProduct,
   cohortSlotInstantUtc,
-  iitCounsellingSubmissionId
+  iitCounsellingSubmissionId,
+  eligibilityTiming
 }) {
   return {
     phone: phone10,
@@ -144,7 +151,8 @@ function buildMessageEventPayload({
     retryEligible,
     terminalFailureKind: terminalFailureKind || null,
     retryExclusionReason: retryExclusionReason || null,
-    correlationId: correlationId || null
+    correlationId: correlationId || null,
+    ...(eligibilityTiming && typeof eligibilityTiming === 'object' ? { eligibilityTiming } : {})
   };
 }
 
@@ -196,8 +204,7 @@ async function persistAttemptEvent(payload, reservedEventId) {
  * @param {Date|null} [opts.cohortSlotInstantUtc] booking instant for cohort analytics (IIT / non-FormSubmission)
  * @param {string|import('mongoose').Types.ObjectId|null} [opts.iitCounsellingSubmissionId]
  * @param {string|null} [opts.explicitTemplateEnvKey] process.env key name override (e.g. IIT slot_booked template)
- * @param {boolean} [opts.skipSlotRelativeGuard] when true, skip pre4hr/meet/30min slot-window guard (admin manual)
- * @returns {Promise<{ success: boolean, error?: string, retryGroupId?: import('mongoose').Types.ObjectId, idempotent?: boolean, duplicateInFlight?: boolean, skippedOutsideWindow?: boolean }>}
+ * @returns {Promise<{ success: boolean, error?: string, retryGroupId?: import('mongoose').Types.ObjectId, idempotent?: boolean, duplicateInFlight?: boolean, skippedOutsideWindow?: boolean, blockedPreSend?: boolean }>}
  */
 async function safeSendWhatsApp({
   phone10,
@@ -214,7 +221,6 @@ async function safeSendWhatsApp({
   attemptBatchId: attemptBatchIdOpt,
   correlationId: correlationIdOpt,
   canonicalRetryGroupId: canonicalRetryGroupIdOpt,
-  skipSlotRelativeGuard,
   opsProduct: opsProductOpt,
   cohortSlotInstantUtc,
   iitCounsellingSubmissionId,
@@ -244,6 +250,8 @@ async function safeSendWhatsApp({
   const gxSideEffects = outboundProduct === 'guidexpert';
   let resolvedGroupId = null;
   let reservedEventId = null;
+  /** Latest resolved slot instant for campaign eligibility + persisted diagnostics */
+  let slotCampaignForTiming = null;
 
   try {
     if (typeof sendFn !== 'function') {
@@ -281,17 +289,18 @@ async function safeSendWhatsApp({
       console.warn('[WhatsApp] empty var values', maskPhone(phone10), `type=${retryKind}`, emptyKeys.join(','));
     }
 
-    if (!skipSlotRelativeGuard && CAMPAIGN_RELATIVE_KINDS.has(retryKind)) {
-      const subG = formSubmissionId
-        ? await FormSubmission.findById(formSubmissionId).select('step3Data.slotDate').lean()
-        : await FormSubmission.findOne({ phone: phone10 }).select('step3Data.slotDate').lean();
-      const slot = subG && subG.step3Data ? subG.step3Data.slotDate : null;
-      const elig = getCampaignReminderEligibility(retryKind, slot, new Date());
-      if (!elig.ok) {
-        console.warn('[WhatsApp] skipped_outside_validity', maskPhone(phone10), `type=${retryKind}`, elig.reason || '');
+    if (CAMPAIGN_RELATIVE_KINDS.has(retryKind)) {
+      slotCampaignForTiming = await resolveCampaignSlotInstant({
+        formSubmissionId,
+        phone10,
+        cohortSlotInstantUtc: cohortSlotUtc
+      });
+      const eligFirst = getCampaignReminderEligibility(retryKind, slotCampaignForTiming, new Date());
+      if (!eligFirst.ok) {
+        console.warn('[WhatsApp] skipped_outside_validity', maskPhone(phone10), `type=${retryKind}`, eligFirst.reason || '');
         return {
           success: false,
-          error: elig.reason || 'outside_reminder_validity',
+          error: eligFirst.reason || 'outside_reminder_validity',
           skippedOutsideWindow: true,
           retryGroupId: resolvedGroupId
         };
@@ -345,6 +354,54 @@ async function safeSendWhatsApp({
     }
     reservedEventId = reserveResult.reservedEventId || null;
 
+    if (CAMPAIGN_RELATIVE_KINDS.has(retryKind)) {
+      slotCampaignForTiming = await resolveCampaignSlotInstant({
+        formSubmissionId: subId,
+        phone10,
+        cohortSlotInstantUtc: cohortSlotUtc
+      });
+      const nowGate = new Date();
+      const eligPre = getCampaignReminderEligibility(retryKind, slotCampaignForTiming, nowGate);
+      if (!eligPre.ok) {
+        const timingBlock = buildEligibilityTimingRecord(retryKind, slotCampaignForTiming, nowGate);
+        logCampaignTimingBlocked({
+          retryKind,
+          source,
+          attempt: attNum,
+          reason: eligPre.reason,
+          slotMs: slotCampaignForTiming ? new Date(slotCampaignForTiming).getTime() : null,
+          nowMs: nowGate.getTime(),
+          earliestMs: eligPre.earliestAt ? eligPre.earliestAt.getTime() : null,
+          reservedEventId: reservedEventId ? String(reservedEventId) : null,
+          maskPhone: maskPhone(phone10)
+        });
+        if (reservedEventId && mongoose.Types.ObjectId.isValid(String(reservedEventId))) {
+          await WhatsAppMessageEvent.updateOne(
+            { _id: new mongoose.Types.ObjectId(String(reservedEventId)) },
+            {
+              $set: {
+                status: 'failed',
+                errorMessage: `eligibility_timing_blocked_pre_send:${eligPre.reason || 'unknown'}`,
+                retryEligible: false,
+                retryExclusionReason: RETRY_EXCLUSION_REASON.eligibilityTimingBlocked,
+                retryExclusionAt: nowGate,
+                eligibilityTiming: timingBlock,
+                updatedAt: nowGate,
+                failedAt: nowGate
+              }
+            }
+          );
+        }
+        return {
+          success: false,
+          error: eligPre.reason || 'eligibility_timing_blocked_pre_send',
+          skippedOutsideWindow: true,
+          blockedPreSend: true,
+          retryGroupId: resolvedGroupId
+        };
+      }
+    }
+
     const result = await sendFn(phone10, vars, {
       correlationId,
       ...(trimTemplateKey ? { templateEnvKey: trimTemplateKey } : {})
@@ -364,6 +421,23 @@ async function safeSendWhatsApp({
 
     if (result && result.success) {
       let retrySnapOnSuccess = 0;
+      let eligibilityTimingPayload = null;
+      if (CAMPAIGN_RELATIVE_KINDS.has(retryKind)) {
+        eligibilityTimingPayload = buildEligibilityTimingRecord(retryKind, slotCampaignForTiming, now);
+        if (
+          eligibilityTimingPayload &&
+          (eligibilityTimingPayload.sentTooEarly || eligibilityTimingPayload.sentAfterExpiry)
+        ) {
+          logCampaignTimingInvariantViolation({
+            retryKind,
+            source,
+            attempt: attNum,
+            maskPhone: maskPhone(phone10),
+            correlationId,
+            eligibilityTiming: eligibilityTimingPayload
+          });
+        }
+      }
       if (gxSideEffects) {
         const prior = await FormSubmission.findOne({ phone: phone10 }).select('whatsappRetryCount').lean();
         retrySnapOnSuccess =
@@ -410,12 +484,21 @@ async function safeSendWhatsApp({
           retryExclusionReason: null,
           opsProduct: outboundProduct,
           cohortSlotInstantUtc: cohortSlotUtc,
-          iitCounsellingSubmissionId: iitSubOid
+          iitCounsellingSubmissionId: iitSubOid,
+          eligibilityTiming: eligibilityTimingPayload
         }),
         reservedEventId
       );
 
       console.log('[WhatsApp] success', maskPhone(phone10), `type=${retryKind}`);
+      if (CAMPAIGN_RELATIVE_KINDS.has(retryKind) && resolvedGroupId) {
+        try {
+          const { syncReminderJobFromRetryGroup } = require('../services/whatsappReminderJobSync');
+          await syncReminderJobFromRetryGroup(resolvedGroupId);
+        } catch {
+          /* non-fatal projection */
+        }
+      }
       return { success: true, retryGroupId: resolvedGroupId };
     }
 
@@ -473,6 +556,11 @@ async function safeSendWhatsApp({
       rowRetryEligible = attNum < maxA;
     }
 
+    const failEligibilityTiming =
+      CAMPAIGN_RELATIVE_KINDS.has(retryKind) && slotCampaignForTiming
+        ? buildEligibilityTimingRecord(retryKind, slotCampaignForTiming, now)
+        : null;
+
       await persistAttemptEvent(
         buildMessageEventPayload({
           phone10,
@@ -502,7 +590,8 @@ async function safeSendWhatsApp({
           retryExclusionReason: permExcl,
           opsProduct: outboundProduct,
           cohortSlotInstantUtc: cohortSlotUtc,
-          iitCounsellingSubmissionId: iitSubOid
+          iitCounsellingSubmissionId: iitSubOid,
+          eligibilityTiming: failEligibilityTiming
         }),
         reservedEventId
       );
@@ -514,6 +603,14 @@ async function safeSendWhatsApp({
       errText,
       providerDebug ? `provider=${providerDebug}` : ''
     );
+    if (CAMPAIGN_RELATIVE_KINDS.has(retryKind) && resolvedGroupId) {
+      try {
+        const { syncReminderJobFromRetryGroup } = require('../services/whatsappReminderJobSync');
+        await syncReminderJobFromRetryGroup(resolvedGroupId);
+      } catch {
+        /* non-fatal projection */
+      }
+    }
     return { success: false, error: errText, retryGroupId: resolvedGroupId };
   } catch (e) {
     const msg = e && e.message ? String(e.message) : 'unknown error';
@@ -588,6 +685,11 @@ async function safeSendWhatsApp({
         rowRetryEligible = attNum < maxA;
       }
 
+      const catchEligibilityTiming =
+        CAMPAIGN_RELATIVE_KINDS.has(retryKind) && slotCampaignForTiming
+          ? buildEligibilityTimingRecord(retryKind, slotCampaignForTiming, now)
+          : null;
+
       await persistAttemptEvent(
         buildMessageEventPayload({
           phone10,
@@ -617,7 +719,8 @@ async function safeSendWhatsApp({
           retryExclusionReason: permExcl,
           opsProduct: outboundProduct,
           cohortSlotInstantUtc: cohortSlotUtc,
-          iitCounsellingSubmissionId: iitSubOid
+          iitCounsellingSubmissionId: iitSubOid,
+          eligibilityTiming: catchEligibilityTiming
         }),
         reservedEventId
       );

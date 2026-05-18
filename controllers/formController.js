@@ -30,6 +30,10 @@ const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
 const { computeIitCounsellingSlotInstantUtc } = require('../utils/iitCounsellingSlotUtc');
 const { resolveIitSlotBookedTemplateEnvKey } = require('../utils/iitCounsellingWhatsApp');
 const { shouldSendCampaignReminderImmediately } = require('../utils/waReminderEligibility');
+const {
+  ensureReminderJobsForSubmission,
+  dispatchDueJobsForSubmission
+} = require('../services/whatsappReminderScheduler');
 
 /** Optional body.rankPredictorLead — validated snapshot for admin follow-up. */
 function parseRankPredictorLeadFromBody(body) {
@@ -777,13 +781,7 @@ exports.saveStep3 = async (req, res) => {
       applicationStatus: 'registered',
       isRegistered: true,
       registeredAt: new Date(),
-      updatedAt: new Date(),
-      reminderSent: shouldSendReminderImmediately,
-      reminderSentAt: shouldSendReminderImmediately ? new Date() : null,
-      meetLinkSent: shouldSendMeetLinkImmediately,
-      meetLinkSentAt: shouldSendMeetLinkImmediately ? new Date() : null,
-      reminder30MinSent: shouldSendReminder30MinImmediately,
-      reminder30MinSentAt: shouldSendReminder30MinImmediately ? new Date() : null
+      updatedAt: new Date()
     };
     // Slot booked: cancel any pending abandoned-apply OSVI call for this phone.
     Object.assign(setPayload, {
@@ -918,67 +916,17 @@ exports.saveStep3 = async (req, res) => {
       attemptNumber: 1
     });
 
-    if (shouldSendReminderImmediately) {
-      const pre4hrGroup = await WhatsAppRetryGroup.create({
-        messageKind: 'pre4hr',
-        cronRunId: null,
-        trigger: 'save_step3',
-        status: 'open'
+    let reminderJobStatus = { scheduled: [], dispatch: null };
+    try {
+      const ensureResult = await ensureReminderJobsForSubmission(submission, { now });
+      reminderJobStatus.scheduled = ensureResult.jobs || [];
+      reminderJobStatus.dispatch = await dispatchDueJobsForSubmission(submission._id, {
+        now,
+        cronJobKey: 'save_step3_catchup'
       });
-      await safeSendWhatsApp({
-        phone10: p,
-        formSubmissionId: submission._id,
-        vars: buildSlotNotificationVariables(submission),
-        retryKind: 'pre4hr',
-        source: 'save_step3',
-        cronRunId: null,
-        cronJobKey: null,
-        sendFn: gupshupService.sendPre4HrReminderWhatsApp,
-        retryGroupId: pre4hrGroup._id,
-        attemptNumber: 1
-      });
-    }
-
-    if (shouldSendMeetLinkImmediately) {
-      const meetGroup = await WhatsAppRetryGroup.create({
-        messageKind: 'meet',
-        cronRunId: null,
-        trigger: 'save_step3',
-        status: 'open'
-      });
-      await safeSendWhatsApp({
-        phone10: p,
-        formSubmissionId: submission._id,
-        vars: buildSlotNotificationVariables(submission, { withMeetingLink: true }),
-        retryKind: 'meet',
-        source: 'save_step3',
-        cronRunId: null,
-        cronJobKey: null,
-        sendFn: gupshupService.sendMeetLinkWhatsApp,
-        retryGroupId: meetGroup._id,
-        attemptNumber: 1
-      });
-    }
-
-    if (shouldSendReminder30MinImmediately) {
-      const thirtyGroup = await WhatsAppRetryGroup.create({
-        messageKind: '30min',
-        cronRunId: null,
-        trigger: 'save_step3',
-        status: 'open'
-      });
-      await safeSendWhatsApp({
-        phone10: p,
-        formSubmissionId: submission._id,
-        vars: buildSlotNotificationVariables(submission, { withMeetingLink: true }),
-        retryKind: '30min',
-        source: 'save_step3',
-        cronRunId: null,
-        cronJobKey: null,
-        sendFn: gupshupService.sendReminder30MinWhatsApp,
-        retryGroupId: thirtyGroup._id,
-        attemptNumber: 1
-      });
+    } catch (jobErr) {
+      console.error('[saveStep3] reminder job scheduling:', jobErr.message);
+      reminderJobStatus.error = jobErr.message;
     }
 
     otpStore.removeVerified(p);
@@ -993,7 +941,8 @@ exports.saveStep3 = async (req, res) => {
       smsStatus, // Slot confirmation SMS status
       reminderStatus, // Immediate reminder SMS status (only if slot within 4 hours)
       meetLinkStatus, // Immediate meet link SMS status (only if slot within 1 hour)
-      reminder30MinStatus // Immediate 30-min live reminder SMS status (only if slot within 30 min)
+      reminder30MinStatus, // Immediate 30-min live reminder SMS status (only if slot within 30 min)
+      reminderJobStatus // P3 durable scheduled reminder jobs + catch-up dispatch
     });
   } catch (error) {
     console.error('[saveStep3] Error:', error);

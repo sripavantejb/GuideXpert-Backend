@@ -17,7 +17,10 @@ const {
 } = require('../services/whatsappRetryOrchestrator');
 const {
   getRetryPolicy,
-  isCampaignStrategy
+  isCampaignStrategy,
+  RECONCILE_RECOVERY_RISK_WARNING,
+  isManualRecoveryBlocked,
+  isRiskyReconcileRecovery
 } = require('../utils/whatsappRetryRules');
 const { deriveSubmissionWaStatus } = require('../services/whatsappOpsStatus');
 const opsAggregates = require('../services/whatsappOpsAggregates');
@@ -214,8 +217,13 @@ exports.getCalendarMonthOverview = async (req, res) => {
       success: true,
       data: {
         ...legacy.data,
-        schemaVersion: 2,
-        recipientTrendDays: recipient.data.days || []
+        schemaVersion: recipient.data.schemaVersion || 3,
+        metricsMode: recipient.data.metricsMode || 'recipient_primary_v3',
+        metricDefinitions: recipient.data.metricDefinitions || null,
+        recipientTrendDays: recipient.data.days || [],
+        diagnostic: {
+          attemptLevelDays: legacy.data.days || []
+        }
       }
     });
   } catch (e) {
@@ -254,6 +262,15 @@ exports.getCalendarDayOverview = async (req, res) => {
     if (recipient.error) {
       return res.status(400).json({ success: false, message: recipient.error });
     }
+    let recipientSlotTimeBreakdown = null;
+    if (slotTimeNorm === 'all') {
+      const br = await recipientAnalytics.computeRecipientSlotTimeBreakdown({
+        dateIso,
+        messageKind: selectedKind,
+        opsProduct
+      });
+      if (!br.error) recipientSlotTimeBreakdown = br.data;
+    }
     const r = recipient.data;
     const cohortIds = Array.isArray(r._cohortSubmissionIds) ? [...r._cohortSubmissionIds] : [];
     const rPublic = { ...r };
@@ -289,7 +306,9 @@ exports.getCalendarDayOverview = async (req, res) => {
     return res.json({
       success: true,
       data: {
-        schemaVersion: 2,
+        schemaVersion: rPublic.schemaVersion || 3,
+        metricsMode: rPublic.metricsMode || 'recipient_primary_v3',
+        metricDefinitions: rPublic.metricDefinitions || null,
         cohortAnchor: rPublic.cohortAnchor,
         filter: rPublic.filter,
         range: rPublic.range,
@@ -297,11 +316,25 @@ exports.getCalendarDayOverview = async (req, res) => {
         recipientTotals: rPublic.recipientTotals,
         exclusionBreakdown: rPublic.exclusionBreakdown,
         retryFunnelByAttempt: rPublic.retryFunnelByAttempt,
+        retryFunnelReconciliation: rPublic.retryFunnelReconciliation || [],
+        integrityWarnings: rPublic.integrityWarnings || [],
         retryQueue: rPublic.retryQueue,
         charts: {
           failureReasons,
           templateReliability: templateRank
         },
+        attemptLevelMetrics: {
+          description:
+            'Internal diagnostic only — per WhatsAppMessageEvent row. Do not use for success-rate KPIs.',
+          overall: attemptAgg.data.overall,
+          selectedKindMetrics: attemptAgg.data.selectedKindMetrics,
+          byKind: attemptAgg.data.byKind,
+          byStatus: attemptAgg.data.byStatus,
+          byAttempt: attemptAgg.data.byAttempt,
+          retry2Exclusions: attemptAgg.data.retry2Exclusions,
+          uniqueRecipientsDeliveredRead: attemptAgg.data.uniqueRecipientsDeliveredRead
+        },
+        /** @deprecated Use attemptLevelMetrics */
         slotCohortAttemptMetrics: {
           overall: attemptAgg.data.overall,
           selectedKindMetrics: attemptAgg.data.selectedKindMetrics,
@@ -311,6 +344,7 @@ exports.getCalendarDayOverview = async (req, res) => {
           retry2Exclusions: attemptAgg.data.retry2Exclusions,
           uniqueRecipientsDeliveredRead: attemptAgg.data.uniqueRecipientsDeliveredRead
         },
+        ...(recipientSlotTimeBreakdown ? { recipientSlotTimeBreakdown } : {}),
         ...(debugOn && diagnostics && !diagnostics.error
           ? { diagnostics: diagnostics.data }
           : {})
@@ -691,7 +725,7 @@ function dispatchKindToSendFn(kind) {
 
 exports.manualResend = async (req, res) => {
   try {
-    const { phone, formSubmissionId, messageKind } = req.body || {};
+    const { phone, formSubmissionId, messageKind, confirmReconcileRisk } = req.body || {};
     let sub = null;
     if (formSubmissionId && mongoose.Types.ObjectId.isValid(String(formSubmissionId))) {
       sub = await FormSubmission.findById(formSubmissionId).lean();
@@ -704,6 +738,35 @@ exports.manualResend = async (req, res) => {
     const sendFn = dispatchKindToSendFn(kind);
     if (!sendFn) return res.status(400).json({ success: false, message: 'Invalid messageKind' });
 
+    const now = new Date();
+    const latestEvent = await WhatsAppMessageEvent.findOne({
+      messageKind: kind,
+      phone: sub.phone
+    })
+      .sort({ createdAt: -1 })
+      .select('status reconcileDerivedFailure reconcileFinalityUntil')
+      .lean();
+
+    if (latestEvent && isManualRecoveryBlocked(latestEvent, now)) {
+      return res.status(409).json({
+        success: false,
+        code: 'reconcile_grace_active',
+        message: 'Recipient is in delayed-DLR reconciliation grace and cannot be manually resent yet.'
+      });
+    }
+
+    if (latestEvent && isRiskyReconcileRecovery(latestEvent, now)) {
+      if (confirmReconcileRisk !== true) {
+        return res.status(409).json({
+          success: false,
+          code: 'reconcile_risk_confirmation_required',
+          message: RECONCILE_RECOVERY_RISK_WARNING,
+          requiresConfirmation: true,
+          riskWarning: RECONCILE_RECOVERY_RISK_WARNING
+        });
+      }
+    }
+
     const withMeetingLink = kind === 'meet' || kind === '30min';
     const vars = buildSlotNotificationVariables(sub, { withMeetingLink });
     const r = await safeSendWhatsApp({
@@ -714,8 +777,7 @@ exports.manualResend = async (req, res) => {
       source: 'admin_manual',
       cronRunId: null,
       cronJobKey: null,
-      sendFn,
-      skipSlotRelativeGuard: true
+      sendFn
     });
 
     res.json({ success: !!r.success, data: r });
@@ -1396,6 +1458,19 @@ exports.startManualRecovery = async (req, res) => {
       });
     }
 
+    const riskyCount = candidates.filter((c) => c.requiresConfirmation).length;
+    if (riskyCount > 0 && body.confirmRiskyRecovery !== true) {
+      return res.status(409).json({
+        success: false,
+        code: 'reconcile_risk_confirmation_required',
+        message: `${riskyCount} recipient(s) require explicit confirmation before bulk recovery.`,
+        riskyCount,
+        requiresConfirmation: true,
+        riskWarning: preview.data.warnings?.[0] || null,
+        warnings: preview.data.warnings || []
+      });
+    }
+
     const phones = candidates.map((c) => c.phone);
     const LINEAGE_CAP = 500;
     const candidateLineage = candidates.slice(0, LINEAGE_CAP).map((c) => ({
@@ -1422,6 +1497,9 @@ exports.startManualRecovery = async (req, res) => {
         skippedAlreadyDelivered: preview.data.skippedAlreadyDelivered || 0,
         skippedGlobalRecentSuccess: preview.data.skippedGlobalRecentSuccess || 0,
         skippedInFlightDuplicate: preview.data.skippedInFlightDuplicate || 0,
+        skippedReconcileGrace: preview.data.skippedReconcileGrace || 0,
+        skippedReconcilePending: preview.data.skippedReconcilePending || 0,
+        skippedAwaitingFinalDlr: preview.data.skippedAwaitingFinalDlr || 0,
         skippedPermanent: 0,
         excluded: 0,
         delivered: 0,
@@ -1440,7 +1518,9 @@ exports.startManualRecovery = async (req, res) => {
         targeted: phones.length,
         skippedAlreadyDelivered: preview.data.skippedAlreadyDelivered || 0,
         skippedGlobalRecentSuccess: preview.data.skippedGlobalRecentSuccess || 0,
-        skippedInFlightDuplicate: preview.data.skippedInFlightDuplicate || 0
+        skippedInFlightDuplicate: preview.data.skippedInFlightDuplicate || 0,
+        skippedReconcileGrace: preview.data.skippedReconcileGrace || 0,
+        riskyCount: preview.data.riskyCount || 0
       }
     });
   } catch (e) {
@@ -1593,6 +1673,181 @@ exports.getOperationalHealth = async (req, res) => {
  * Paginated unresolved recipients for the Recovery Console.
  * Returns rows + grouped totals so the UI can paint tab counters in one round-trip.
  */
+exports.getReminderJobsSummary = async (req, res) => {
+  try {
+    const slotDayIst = req.query.slotDayIst ? String(req.query.slotDayIst).trim() : null;
+    const messageKind = req.query.messageKind ? String(req.query.messageKind).trim() : null;
+    const { getReminderJobObservability } = require('../utils/waReminderJobObservability');
+    const data = await getReminderJobObservability({
+      ...(slotDayIst ? { slotDayIst } : {}),
+      ...(messageKind ? { messageKind } : {})
+    });
+    return res.json({ success: true, data });
+  } catch (e) {
+    console.error('[whatsapp-ops getReminderJobsSummary]', e);
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+exports.repairReminderJobs = async (req, res) => {
+  try {
+    const {
+      repairReminderJobLifecycle,
+      recoverStuckReminderJobs,
+      expireDueReminderJobs
+    } = require('../services/whatsappReminderJobLifecycle');
+    const messageKinds = req.body?.messageKinds || req.query?.messageKind
+      ? [String(req.query.messageKind || req.body.messageKinds[0]).trim()]
+      : null;
+    const now = new Date();
+    const [recover, expire, repair] = await Promise.all([
+      recoverStuckReminderJobs({ now, messageKinds, limit: 200 }),
+      expireDueReminderJobs({ now, messageKinds, limit: 500 }),
+      repairReminderJobLifecycle({ now, messageKinds, limit: 100 })
+    ]);
+    return res.json({ success: true, data: { recover, expire, repair } });
+  } catch (e) {
+    console.error('[whatsapp-ops repairReminderJobs]', e);
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+exports.getRecipientReminderTimeline = async (req, res) => {
+  try {
+    const FormSubmission = require('../models/FormSubmission');
+    const WhatsAppReminderJob = require('../models/WhatsAppReminderJob');
+    const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');
+    const WhatsAppWebhookEvent = require('../models/WhatsAppWebhookEvent');
+
+    const formSubmissionId = req.query.formSubmissionId
+      ? String(req.query.formSubmissionId).trim()
+      : null;
+    const phone = req.query.phone ? String(req.query.phone).replace(/\D/g, '').slice(-10) : null;
+
+    let submission = null;
+    if (formSubmissionId) {
+      submission = await FormSubmission.findById(formSubmissionId).lean();
+    } else if (phone) {
+      submission = await FormSubmission.findOne({ phone }).lean();
+    }
+    if (!submission) {
+      return res.status(404).json({ success: false, message: 'Submission not found' });
+    }
+
+    const subId = submission._id;
+    const timeline = [];
+
+    timeline.push({
+      at: submission.createdAt,
+      type: 'booking',
+      source: 'form_submission',
+      ids: { formSubmissionId: String(subId) },
+      summary: `Registration; slot ${submission.step3Data?.slotDate || 'n/a'}`
+    });
+
+    const jobs = await WhatsAppReminderJob.find({ formSubmissionId: subId })
+      .sort({ messageKind: 1 })
+      .lean();
+    for (const job of jobs) {
+      timeline.push({
+        at: job.createdAt,
+        type: 'reminder_job_created',
+        source: 'whatsapp_reminder_job',
+        ids: {
+          jobId: String(job._id),
+          retryGroupId: job.retryGroupId ? String(job.retryGroupId) : null,
+          messageKind: job.messageKind
+        },
+        summary: `Job ${job.messageKind} state=${job.state} scheduled=${job.scheduledSendAt}`
+      });
+      if (job.claimedAt) {
+        timeline.push({
+          at: job.claimedAt,
+          type: 'reminder_job_claimed',
+          source: 'whatsapp_reminder_job',
+          ids: { jobId: String(job._id), claimToken: job.claimToken },
+          summary: `Claimed by ${job.claimedBy || 'unknown'}`
+        });
+      }
+      if (job.dispatchedAt) {
+        timeline.push({
+          at: job.dispatchedAt,
+          type: 'reminder_job_dispatched',
+          source: 'whatsapp_reminder_job',
+          ids: {
+            jobId: String(job._id),
+            eventId: job.initialMessageEventId ? String(job.initialMessageEventId) : null
+          },
+          summary: `Dispatched attempt 1 (${job.messageKind})`
+        });
+      }
+      if (job.suppressionReason === 'expired' && job.expiredAt) {
+        timeline.push({
+          at: job.expiredAt,
+          type: 'reminder_job_expired',
+          source: 'whatsapp_reminder_job',
+          ids: { jobId: String(job._id) },
+          summary: 'Expired — no further dispatch'
+        });
+      }
+    }
+
+    const groupIds = jobs.map((j) => j.retryGroupId).filter(Boolean);
+    const events = groupIds.length
+      ? await WhatsAppMessageEvent.find({ retryGroupId: { $in: groupIds } })
+          .sort({ createdAt: 1 })
+          .lean()
+      : [];
+
+    for (const ev of events) {
+      timeline.push({
+        at: ev.createdAt,
+        type: 'whatsapp_event',
+        source: 'whatsapp_message_event',
+        ids: {
+          eventId: String(ev._id),
+          retryGroupId: ev.retryGroupId ? String(ev.retryGroupId) : null,
+          messageId: ev.gupshupMessageId || ev.messageId || null
+        },
+        summary: `Attempt ${ev.attemptNumber} status=${ev.status}${ev.source ? ` source=${ev.source}` : ''}`
+      });
+    }
+
+    const messageIds = events.map((e) => e.gupshupMessageId || e.messageId).filter(Boolean);
+    if (messageIds.length) {
+      const webhooks = await WhatsAppWebhookEvent.find({
+        $or: [{ messageId: { $in: messageIds } }, { phone: submission.phone }]
+      })
+        .sort({ receivedAt: 1 })
+        .limit(100)
+        .lean();
+      for (const wh of webhooks) {
+        timeline.push({
+          at: wh.receivedAt || wh.createdAt,
+          type: 'webhook',
+          source: 'whatsapp_webhook_event',
+          ids: { messageId: wh.messageId || null },
+          summary: `Webhook status=${wh.status || wh.eventType || 'update'}`
+        });
+      }
+    }
+
+    timeline.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+
+    return res.json({
+      success: true,
+      data: {
+        formSubmissionId: String(subId),
+        phone: submission.phone,
+        timeline
+      }
+    });
+  } catch (e) {
+    console.error('[whatsapp-ops getRecipientReminderTimeline]', e);
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
 exports.getUnresolvedRecipients = async (req, res) => {
   try {
     const params = req.query || {};
@@ -1604,6 +1859,12 @@ exports.getUnresolvedRecipients = async (req, res) => {
     const limit = parseInt(String(params.limit || '50'), 10) || 50;
     const q = params.q != null && String(params.q).trim() ? String(params.q).trim() : null;
 
+    const cohortDateIso = params.cohortDate
+      ? String(params.cohortDate).trim()
+      : params.cohortDateIso
+        ? String(params.cohortDateIso).trim()
+        : null;
+
     const result = await opsAggregates.computeUnresolvedRecipients({
       from,
       to,
@@ -1611,7 +1872,8 @@ exports.getUnresolvedRecipients = async (req, res) => {
       group,
       page,
       limit,
-      q
+      q,
+      cohortDateIso
     });
     if (result.error) {
       return res.status(400).json({ success: false, message: result.error });
@@ -1627,6 +1889,62 @@ exports.getUnresolvedRecipients = async (req, res) => {
  * CSV export grouped by reason for the Recovery Console "Final Unresolved" panel.
  * Streams a single text/csv response; safe for thousands of recipients.
  */
+/**
+ * CSV: one row per recipient for IST slot-day cohort (canonical buckets).
+ */
+exports.exportRecipientSummaryCsv = async (req, res) => {
+  try {
+    const dateIso = String(req.query.date || req.query.dateIso || '').trim();
+    const messageKind = req.query.messageKind ? String(req.query.messageKind).trim() : null;
+    const slotTime = req.query.slotTime ? String(req.query.slotTime).trim() : 'all';
+    const opsProduct = parseOpsProductQuery(req.query.opsProduct || req.query.tenant);
+
+    const result = await recipientAnalytics.computeRecipientSummaryExportRows({
+      dateIso,
+      messageKind,
+      slotTime,
+      opsProduct
+    });
+    if (result.error) {
+      return res.status(400).json({ success: false, message: result.error });
+    }
+
+    const escapeCell = (v) => {
+      if (v == null) return '';
+      const s = String(v);
+      const inner = s.replace(/"/g, '""');
+      const trimmed = s.trimStart();
+      const mustQuote = /[",\r\n\t]/.test(s) || /^[=+\-@]/.test(trimmed);
+      return mustQuote ? `"${inner}"` : inner;
+    };
+    const header =
+      'slotDayIst,phone,messageKind,lineageId,canonicalBucket,canonicalExclusionReason,canonicalFailureReason,everDelivered,finalPermanentFailed,reconcilePending,transientUnresolved';
+    const lines = (result.data.rows || []).map((r) =>
+      [
+        escapeCell(r.slotDayIst),
+        escapeCell(r.phone),
+        escapeCell(r.messageKind),
+        escapeCell(r.lineageId),
+        escapeCell(r.canonicalBucket),
+        escapeCell(r.canonicalExclusionReason),
+        escapeCell(r.canonicalFailureReason),
+        escapeCell(r.everDelivered ? '1' : '0'),
+        escapeCell(r.finalPermanentFailed ? '1' : '0'),
+        escapeCell(r.reconcilePending ? '1' : '0'),
+        escapeCell(r.transientUnresolved ? '1' : '0')
+      ].join(',')
+    );
+    const csvBody = [header, ...lines].join('\r\n');
+    const filename = `recipient-summary-${dateIso || 'day'}-${messageKind || 'all'}-${Date.now()}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/"/g, '')}"`);
+    return res.send(`\uFEFF${csvBody}`);
+  } catch (e) {
+    console.error('[whatsapp-ops exportRecipientSummaryCsv]', e);
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
 exports.exportUnresolvedCsv = async (req, res) => {
   try {
     const params = req.query || {};
@@ -1635,6 +1953,11 @@ exports.exportUnresolvedCsv = async (req, res) => {
     const from = opsAggregates.parseBoundaryDate(params.from, 'start');
     const to = opsAggregates.parseBoundaryDate(params.to, 'end');
     const q = params.q != null && String(params.q).trim() ? String(params.q).trim() : null;
+    const cohortDateIso = params.cohortDate
+      ? String(params.cohortDate).trim()
+      : params.cohortDateIso
+        ? String(params.cohortDateIso).trim()
+        : null;
 
     const result = await opsAggregates.computeUnresolvedRecipients({
       from,
@@ -1643,7 +1966,8 @@ exports.exportUnresolvedCsv = async (req, res) => {
       group,
       page: 1,
       limit: 200,
-      q
+      q,
+      cohortDateIso
     });
     if (result.error) {
       return res.status(400).json({ success: false, message: result.error });
@@ -1661,7 +1985,8 @@ exports.exportUnresolvedCsv = async (req, res) => {
         group,
         page: p,
         limit: 200,
-        q
+        q,
+        cohortDateIso
       });
       if (next?.data?.rows?.length) rows.push(...next.data.rows);
     }
@@ -1691,7 +2016,8 @@ exports.exportUnresolvedCsv = async (req, res) => {
       const mustQuote = /[",\r\n\t]/.test(s) || /^[=+\-@]/.test(trimmed);
       return mustQuote ? `"${inner}"` : inner;
     };
-    const header = 'phone,name,messageKind,retriesAttempted,retryGroupId,exclusionReason,operatorReason,eventRows';
+    const header =
+      'phone,name,messageKind,canonicalBucket,canonicalExclusionReason,retriesAttempted,retryGroupId,exclusionReason,operatorReason,eventRows';
     const seen = new Set();
     const lines = [];
     for (const r of rows) {
@@ -1710,6 +2036,8 @@ exports.exportUnresolvedCsv = async (req, res) => {
           escapeCell(phone),
           escapeCell(name),
           escapeCell(mk),
+          escapeCell(r.canonicalBucket || ''),
+          escapeCell(r.canonicalExclusionReason || opReason),
           escapeCell(attempts),
           escapeCell(rg),
           escapeCell(excl),

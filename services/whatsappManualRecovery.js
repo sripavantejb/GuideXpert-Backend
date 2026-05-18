@@ -27,7 +27,11 @@ const {
   TERMINAL_FAILURE_STATUSES,
   RETRY_TERMINAL_SUCCESS_STATUSES,
   DLR_DELIVERED_STATUSES,
-  IN_FLIGHT_PROMOTION_STATUSES
+  IN_FLIGHT_PROMOTION_STATUSES,
+  RECONCILE_PENDING_STATUSES,
+  RECONCILE_RECOVERY_RISK_WARNING,
+  isManualRecoveryBlocked,
+  isRiskyReconcileRecovery
 } = require('../utils/whatsappRetryRules');
 
 const ALLOWED_MESSAGE_KINDS = ['slot_booked', 'pre4hr', 'meet', '30min'];
@@ -116,6 +120,8 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
         attemptNumber: { $first: '$attemptNumber' },
         status: { $first: '$status' },
         retryExclusionReason: { $first: '$retryExclusionReason' },
+        reconcileDerivedFailure: { $first: '$reconcileDerivedFailure' },
+        reconcileFinalityUntil: { $first: '$reconcileFinalityUntil' },
         errorMessage: { $first: '$errorMessage' },
         formSubmissionId: { $first: '$formSubmissionId' },
         createdAt: { $first: '$createdAt' },
@@ -142,12 +148,29 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
         targeted: 0,
         skippedAlreadyDelivered: 0,
         skippedGlobalRecentSuccess: 0,
-        skippedInFlightDuplicate: 0
+        skippedInFlightDuplicate: 0,
+        skippedReconcileGrace: 0,
+        skippedReconcilePending: 0,
+        skippedAwaitingFinalDlr: 0,
+        riskyCount: 0
       }
     };
   }
 
   const allPhones = rowsFiltered.map((r) => r._id).filter(Boolean);
+  const now = new Date();
+
+  const reconcileBlockedPhones = allPhones.length
+    ? await WhatsAppMessageEvent.distinct('phone', {
+        messageKind,
+        phone: { $in: allPhones },
+        $or: [
+          { status: { $in: RECONCILE_PENDING_STATUSES } },
+          { reconcileFinalityUntil: { $gt: now } }
+        ]
+      })
+    : [];
+  const reconcileBlockedSet = new Set(reconcileBlockedPhones);
 
   /** Phones already resolved within the same UI window (window-scoped exclusion) */
   const windowSuccess = await WhatsAppMessageEvent.distinct('phone', {
@@ -195,11 +218,31 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
   let skippedAlreadyDelivered = 0;
   let skippedGlobalRecentSuccess = 0;
   let skippedInFlightDuplicate = 0;
+  let skippedReconcileGrace = 0;
+  let skippedReconcilePending = 0;
+  let skippedAwaitingFinalDlr = 0;
+  let riskyCount = 0;
   const candidatesByReason = {};
 
   rowsFiltered.forEach((r) => {
     const phone = r._id;
     if (!phone) return;
+
+    const rowDoc = {
+      status: r.status,
+      reconcileDerivedFailure: r.reconcileDerivedFailure,
+      reconcileFinalityUntil: r.reconcileFinalityUntil
+    };
+    if (reconcileBlockedSet.has(phone) || isManualRecoveryBlocked(rowDoc, now)) {
+      if (RECONCILE_PENDING_STATUSES.includes(String(r.status || '').toLowerCase())) {
+        skippedAwaitingFinalDlr += 1;
+      } else {
+        skippedReconcileGrace += 1;
+      }
+      skippedReconcilePending += 1;
+      return;
+    }
+
     if (windowSuccessSet.has(phone)) {
       skippedAlreadyDelivered += 1;
       return;
@@ -237,6 +280,9 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
           ? new mongoose.Types.ObjectId(String(r.retryGroupId))
           : null;
 
+    const risky = isRiskyReconcileRecovery(rowDoc, now);
+    if (risky) riskyCount += 1;
+
     candidates.push({
       phone,
       eventId: r.eventId,
@@ -246,10 +292,17 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
       attemptNumber: r.attemptNumber,
       status: r.status,
       retryExclusionReason: r.retryExclusionReason,
+      reconcileDerivedFailure: r.reconcileDerivedFailure === true,
       errorMessage: r.errorMessage,
       formSubmissionId: r.formSubmissionId,
       createdAt: r.createdAt,
-      reason
+      reason,
+      ...(risky
+        ? {
+            requiresConfirmation: true,
+            riskWarning: RECONCILE_RECOVERY_RISK_WARNING
+          }
+        : {})
     });
   });
 
@@ -258,9 +311,20 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
       candidates,
       candidatesByReason,
       targeted: candidates.length,
+      riskyCount,
+      requiresConfirmation: riskyCount > 0,
+      warnings:
+        riskyCount > 0
+          ? [
+              `${riskyCount} recipient(s) require explicit confirmation (${RECONCILE_RECOVERY_RISK_WARNING})`
+            ]
+          : [],
       skippedAlreadyDelivered,
       skippedGlobalRecentSuccess,
       skippedInFlightDuplicate,
+      skippedReconcileGrace,
+      skippedReconcilePending,
+      skippedAwaitingFinalDlr,
       lookbackDays: getGlobalLookbackDays(),
       inFlightStaleMinutes: Math.round(getInFlightStaleMs() / 60000)
     }
@@ -272,6 +336,21 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
  * (delivered/read globally within lookback, or in-flight row newer than candidate).
  */
 async function isStillUnresolved(messageKind, phone, candidateCreatedAt) {
+  const now = new Date();
+  const reconcileBlock = await WhatsAppMessageEvent.findOne({
+    messageKind,
+    phone,
+    $or: [
+      { status: { $in: RECONCILE_PENDING_STATUSES } },
+      { reconcileFinalityUntil: { $gt: now } }
+    ]
+  })
+    .select('_id status reconcileFinalityUntil reconcileDerivedFailure')
+    .lean();
+  if (reconcileBlock && isManualRecoveryBlocked(reconcileBlock, now)) {
+    return { ok: false, reason: 'reconcile_grace_active' };
+  }
+
   const lookbackStart = new Date(Date.now() - getGlobalLookbackDays() * 24 * 60 * 60 * 1000);
   const success = await WhatsAppMessageEvent.findOne({
     messageKind,
@@ -455,7 +534,9 @@ async function executeJob(jobId) {
       const guard = await isStillUnresolved(job.messageKind, phone, candidateCreatedAt);
       if (!guard.ok) {
         if (guard.reason === 'already_delivered_or_read') skippedAlreadyDelivered += 1;
-        else if (guard.reason === 'newer_in_flight') skippedInFlightDuplicate += 1;
+        else if (guard.reason === 'newer_in_flight' || guard.reason === 'reconcile_grace_active') {
+          skippedInFlightDuplicate += 1;
+        }
         await WhatsAppManualRecoveryJob.updateOne(
           { _id: jobId },
           {

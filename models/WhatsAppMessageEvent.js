@@ -98,6 +98,7 @@ const whatsAppMessageEventSchema = new mongoose.Schema({
       'queued',
       'submitted',
       'sent',
+      'awaiting_final_dlr',
       'failed',
       'delivered',
       'read',
@@ -128,10 +129,22 @@ const whatsAppMessageEventSchema = new mongoose.Schema({
       'permanent_failure',
       'in_flight_timeout',
       'promotion_superseded',
-      'outside_reminder_validity'
+      'outside_reminder_validity',
+      'eligibility_timing_blocked',
+      'dlr_failed_after_accept',
+      'webhook_stale_unresolved'
     ],
     default: null,
     index: true
+  },
+  /** Campaign sends only: persisted eligibility audit (firstEligibleAt, deltas, flags) */
+  eligibilityTiming: {
+    slotInstantUtc: { type: Date, default: null },
+    firstEligibleAt: { type: Date, default: null },
+    actualSentAt: { type: Date, default: null },
+    sentTooEarly: { type: Boolean, default: null },
+    sentAfterExpiry: { type: Boolean, default: null },
+    eligibilityViolationDeltaMs: { type: Number, default: null }
   },
   retryExclusionAt: { type: Date, default: null },
   retryExclusionMeta: {
@@ -143,6 +156,12 @@ const whatsAppMessageEventSchema = new mongoose.Schema({
   deliveredAt: { type: Date, default: null },
   readAt: { type: Date, default: null },
   failedAt: { type: Date, default: null },
+  /** Phase-1 reconcile: entered awaiting_final_dlr */
+  reconcilePendingAt: { type: Date, default: null, index: true },
+  /** Phase-2 eligible after this instant (grace window for late DLR) */
+  reconcileFinalityUntil: { type: Date, default: null, index: true },
+  /** Phase-2 failed set by reconcile (allows narrow late delivered override) */
+  reconcileDerivedFailure: { type: Boolean, default: false, index: true },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
@@ -163,6 +182,7 @@ whatsAppMessageEventSchema.index(
   { retryGroupId: 1, phone: 1, attemptNumber: 1 },
   { unique: true, partialFilterExpression: { retryGroupId: { $exists: true, $type: 'objectId' } } }
 );
+whatsAppMessageEventSchema.index({ status: 1, reconcileFinalityUntil: 1 });
 
 whatsAppMessageEventSchema.pre('save', function() {
   this.updatedAt = Date.now();

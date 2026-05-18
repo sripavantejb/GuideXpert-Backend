@@ -11,7 +11,18 @@ const {
   getRetryDelayMsAfterAttempt,
   retrySourceFromAttemptNumber,
   IN_FLIGHT_PROMOTION_STATUSES,
-  RETRY_TERMINAL_SUCCESS_STATUSES
+  RETRY_TERMINAL_SUCCESS_STATUSES,
+  PROMOTION_BLOCK_SUCCESS_STATUSES,
+  classifyCampaignFailure,
+  campaignRetryMaxWallMs,
+  dlrReconcileStaleMs,
+  dlrReconcileGraceMs,
+  RECONCILE_PENDING_STATUSES,
+  isReconcileDerivedTerminal,
+  isReconcileGraceActive,
+  isManualRecoveryBlocked,
+  isRiskyReconcileRecovery,
+  classifyReconcileFinalizeFailure
 } = require('../utils/whatsappRetryRules');
 
 describe('IN_FLIGHT_PROMOTION_STATUSES vs retry-terminal', () => {
@@ -144,5 +155,136 @@ describe('retrySourceFromAttemptNumber', () => {
   test('attempts beyond 3 map to manual_recovery', () => {
     assert.equal(retrySourceFromAttemptNumber(4), 'manual_recovery');
     assert.equal(retrySourceFromAttemptNumber(6), 'manual_recovery');
+  });
+});
+
+describe('PROMOTION_BLOCK_SUCCESS_STATUSES', () => {
+  test('blocks promotion only on delivered/read, not submitted/sent', () => {
+    assert.deepEqual(PROMOTION_BLOCK_SUCCESS_STATUSES, ['delivered', 'read']);
+    assert.equal(PROMOTION_BLOCK_SUCCESS_STATUSES.includes('submitted'), false);
+    assert.equal(PROMOTION_BLOCK_SUCCESS_STATUSES.includes('sent'), false);
+  });
+});
+
+describe('classifyCampaignFailure (DLR after provider accept)', () => {
+  test('permanent webhook failure after accept is not retryable', () => {
+    const r = classifyCampaignFailure(
+      'pre4hr',
+      { errorReason: 'invalid number not on whatsapp' },
+      { afterProviderAccept: true, attemptNumber: 1 }
+    );
+    assert.equal(r.retryable, false);
+    assert.equal(r.terminalFailureKind, 'permanent');
+    assert.equal(r.exclusionReason, RETRY_EXCLUSION_REASON.permanentFailure);
+  });
+
+  test('transient timeout after accept on attempt 1 is retryable', () => {
+    const r = classifyCampaignFailure(
+      'meet',
+      { errorText: 'network timeout from provider' },
+      { afterProviderAccept: true, attemptNumber: 1 }
+    );
+    assert.equal(r.retryable, true);
+    assert.equal(r.terminalFailureKind, 'transient');
+    assert.equal(r.exclusionReason, null);
+  });
+
+  test('ambiguous DLR failure after accept uses dlr_failed_after_accept', () => {
+    const r = classifyCampaignFailure(
+      '30min',
+      { errorReason: 'unknown delivery error code 999' },
+      { afterProviderAccept: true, attemptNumber: 2 }
+    );
+    assert.equal(r.retryable, false);
+    assert.equal(r.exclusionReason, RETRY_EXCLUSION_REASON.dlrFailedAfterAccept);
+  });
+});
+
+describe('reconcile pending lifecycle helpers', () => {
+  test('awaiting_final_dlr is reconcile pending not terminal success', () => {
+    assert.deepEqual(RECONCILE_PENDING_STATUSES, ['awaiting_final_dlr']);
+    assert.equal(isReconcileDerivedTerminal({ status: 'failed', reconcileDerivedFailure: true }), true);
+    assert.equal(isReconcileDerivedTerminal({ status: 'failed', reconcileDerivedFailure: false }), false);
+  });
+
+  test('default reconcile grace is 30 minutes', () => {
+    const prev = process.env.WA_DLR_RECONCILE_GRACE_MS;
+    delete process.env.WA_DLR_RECONCILE_GRACE_MS;
+    assert.equal(dlrReconcileGraceMs(), 30 * 60 * 1000);
+    if (prev != null) process.env.WA_DLR_RECONCILE_GRACE_MS = prev;
+  });
+});
+
+describe('manual recovery reconcile guards', () => {
+  const now = new Date('2026-05-18T12:00:00.000Z');
+
+  test('A: awaiting_final_dlr blocks manual recovery', () => {
+    assert.equal(
+      isManualRecoveryBlocked({ status: 'awaiting_final_dlr', reconcileFinalityUntil: new Date(now.getTime() + 60000) }, now),
+      true
+    );
+  });
+
+  test('grace until future blocks manual recovery', () => {
+    assert.equal(
+      isManualRecoveryBlocked({ status: 'failed', reconcileFinalityUntil: new Date(now.getTime() + 60000) }, now),
+      true
+    );
+  });
+
+  test('reconcile-derived failed after finality is risky not blocked', () => {
+    const row = {
+      status: 'failed',
+      reconcileDerivedFailure: true,
+      reconcileFinalityUntil: new Date(now.getTime() - 60000)
+    };
+    assert.equal(isManualRecoveryBlocked(row, now), false);
+    assert.equal(isRiskyReconcileRecovery(row, now), true);
+  });
+});
+
+describe('classifyReconcileFinalizeFailure', () => {
+  test('E: likely transient stale after accept at attempt 1 is retryable', () => {
+    const r = classifyReconcileFinalizeFailure(
+      'pre4hr',
+      {
+        attemptNumber: 1,
+        providerAcceptedAt: new Date(),
+        errorMessage: 'stale_dlr_no_resolution'
+      },
+      {}
+    );
+    assert.equal(r.retryable, true);
+    assert.equal(r.metaNote, 'reconcile_stale_likely_transient');
+  });
+
+  test('permanent webhook hay is not retryable', () => {
+    const r = classifyReconcileFinalizeFailure(
+      'pre4hr',
+      {
+        attemptNumber: 1,
+        providerAcceptedAt: new Date(),
+        errorReason: 'not whatsapp user'
+      },
+      {}
+    );
+    assert.equal(r.retryable, false);
+    assert.equal(r.terminalFailureKind, 'permanent');
+  });
+});
+
+describe('campaign retry wall and reconcile stale defaults', () => {
+  test('default retry wall is 15 minutes', () => {
+    const prev = process.env.WHATSAPP_CAMPAIGN_RETRY_MAX_WALL_MS;
+    delete process.env.WHATSAPP_CAMPAIGN_RETRY_MAX_WALL_MS;
+    assert.equal(campaignRetryMaxWallMs(), 900000);
+    if (prev != null) process.env.WHATSAPP_CAMPAIGN_RETRY_MAX_WALL_MS = prev;
+  });
+
+  test('default DLR reconcile stale is at least 45 minutes', () => {
+    const prev = process.env.WA_DLR_RECONCILE_STALE_MS;
+    delete process.env.WA_DLR_RECONCILE_STALE_MS;
+    assert.ok(dlrReconcileStaleMs() >= 45 * 60 * 1000);
+    if (prev != null) process.env.WA_DLR_RECONCILE_STALE_MS = prev;
   });
 });

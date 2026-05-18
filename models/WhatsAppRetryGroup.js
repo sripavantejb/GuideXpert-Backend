@@ -11,7 +11,7 @@ const whatsAppRetryGroupSchema = new mongoose.Schema({
   cronRunId: { type: mongoose.Schema.Types.ObjectId, ref: 'MessagingCronRun', default: null, index: true },
   trigger: {
     type: String,
-    enum: ['cron', 'save_step3', 'manual', 'retry_api'],
+    enum: ['cron', 'save_step3', 'manual', 'retry_api', 'scheduled_job'],
     default: 'cron',
     index: true
   },

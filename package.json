@@ -21,7 +21,11 @@
     "test:gupshup-webhook": "node --test test/gupshupWebhookFlow.test.js",
     "test:whatsapp-retry-rules": "node --test test/whatsappRetryRules.test.js",
     "test:demo-meet-live-windows": "node --test test/demoMeetLiveWindows.test.js",
-    "backfill:wa-retry-groups": "node scripts/backfillWhatsAppMessageEventRetryGroups.js"
+    "backfill:wa-retry-groups": "node scripts/backfillWhatsAppMessageEventRetryGroups.js",
+    "backfill:wa-reconcile-derived": "node scripts/backfillReconcileDerivedFailure.js",
+    "backfill:wa-reminder-jobs": "node scripts/backfillWhatsAppReminderJobs.js",
+    "test:whatsapp-reminder-p3": "node --test test/whatsappReminder*.test.js test/backfillWhatsAppReminderJobs.test.js",
+    "test:whatsapp-reminder-hardening": "node --test test/whatsappReminderJobHardening.test.js test/whatsappReminder*.test.js test/backfillWhatsAppReminderJobs.test.js"
   },
   "repository": {
     "type": "git",

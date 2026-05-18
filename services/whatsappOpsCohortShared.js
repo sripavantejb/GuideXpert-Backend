@@ -24,6 +24,13 @@ function istDayRangeFromIso(dateIso) {
   return { from: new Date(startUtcMs), to: new Date(endUtcMs), isoDate: p.iso };
 }
 
+/** IST calendar YYYY-MM-DD for a slot instant (matches analytics slotDayIst). */
+function slotDayIstFromInstant(slotDate) {
+  const t = new Date(slotDate);
+  if (Number.isNaN(t.getTime())) return null;
+  return t.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
+
 /**
  * @param {string|null|undefined} messageKindFilter
  * @param {{ strictSlotDay?: boolean }} [options] strictSlotDay default true — slotDayIst only when submission has slotDate
@@ -124,5 +131,6 @@ module.exports = {
   IST_OFFSET_MINUTES,
   parseIsoDateOnly,
   istDayRangeFromIso,
+  slotDayIstFromInstant,
   annotateEventsWithSlotDayPipeline
 };

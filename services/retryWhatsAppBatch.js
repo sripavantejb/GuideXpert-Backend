@@ -2,6 +2,7 @@ const {
   scanGroupsNeedingRetries,
   processSlotBookedImmediateRetries
 } = require('./whatsappRetryOrchestrator');
+const { reconcileStaleInFlightMessages } = require('./whatsappMessageReconciliation');
 
 /**
  * Cron / manual batch: promote open retry groups using message-row failure cohorts (not FormSubmission counters).
@@ -9,6 +10,7 @@ const {
  * @returns {Promise<{ attempted: number, succeeded: number, failed: number, found: number, groupsTouched: number }>}
  */
 async function executeRetryWhatsAppBatch(cronRunId) {
+  const reconcile = await reconcileStaleInFlightMessages({ limit: 200 });
   const [campaign, slotBooked] = await Promise.all([
     scanGroupsNeedingRetries(cronRunId),
     processSlotBookedImmediateRetries(cronRunId)
@@ -19,7 +21,8 @@ async function executeRetryWhatsAppBatch(cronRunId) {
     failed: (campaign.failed || 0) + (slotBooked.failed || 0),
     found: (campaign.foundCandidates || 0) + (slotBooked.considered || 0),
     groupsTouched: campaign.groupsTouched || 0,
-    slotBookedImmediate: slotBooked
+    slotBookedImmediate: slotBooked,
+    reconcileStale: reconcile
   };
 }
 

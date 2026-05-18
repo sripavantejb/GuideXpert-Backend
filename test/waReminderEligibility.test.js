@@ -59,4 +59,16 @@ describe('waReminderEligibility', () => {
     const now = ist('2026-05-13', '14:00');
     assert.doesNotThrow(() => assertCampaignSendNotEarly('pre4hr', SLOT, now));
   });
+
+  test('pre4hr 3PM IST slot: eligible from 11:00 same day', () => {
+    const slot = ist('2026-05-13', '15:00');
+    assert.equal(getCampaignReminderEligibility('pre4hr', slot, ist('2026-05-13', '10:59')).ok, false);
+    assert.equal(getCampaignReminderEligibility('pre4hr', slot, ist('2026-05-13', '11:00')).ok, true);
+  });
+
+  test('pre4hr 4PM IST slot: eligible from 12:00 same day', () => {
+    const slot = ist('2026-05-13', '16:00');
+    assert.equal(getCampaignReminderEligibility('pre4hr', slot, ist('2026-05-13', '11:59')).ok, false);
+    assert.equal(getCampaignReminderEligibility('pre4hr', slot, ist('2026-05-13', '12:00')).ok, true);
+  });
 });

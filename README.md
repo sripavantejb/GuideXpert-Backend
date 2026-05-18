@@ -83,7 +83,7 @@ Set `CRON_SECRET` / `GUIDEXPERT_CRON_SECRET` in the environment. Schedule HTTP c
 | | `/api/cron/retry-whatsapp` | Promote retry-eligible WhatsApp failures to Retry 1 / Retry 2 using existing retry orchestrator |
 | | `/api/cron/osvi-outbound-due` | OSVI outbound calls due for abandoned Apply flows (`?key=` or `x-cron-key` header) |
 
-Use the same `key` query param, `x-cron-key` header, or `Authorization: Bearer <CRON_SECRET>` (Vercel Cron uses the Bearer form when `CRON_SECRET` is set in the project). [`vercel.json`](vercel.json) schedules `/api/cron/retry-whatsapp` every minute; redeploy after changing cron config.
+Use the same `key` query param, `x-cron-key` header, or `Authorization: Bearer <CRON_SECRET>` (Vercel Cron uses the Bearer form when `CRON_SECRET` is set in the project). [`vercel.json`](vercel.json) schedules all four campaign routes every minute: `send-reminders`, `send-meetlinks`, `send-30min-reminders`, and `retry-whatsapp`. `WA_SLOT_CRON_DEADLINE_FORWARD_SLACK_MS` is ignored by design. Redeploy after changing cron config.
 
 ### Retry orchestration verification checklist
 

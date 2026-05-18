@@ -12,15 +12,18 @@ const {
 } = require('./gupshupService');
 const {
   TERMINAL_FAILURE_STATUSES,
-  RETRY_TERMINAL_SUCCESS_STATUSES,
+  PROMOTION_BLOCK_SUCCESS_STATUSES,
   IN_FLIGHT_PROMOTION_STATUSES,
+  RECONCILE_PENDING_STATUSES,
   RETRY_EXCLUSION_REASON,
   filterRetryPromotionRowsV2,
   isCampaignStrategy,
   getRetryPolicy,
   getRetryDelayMsAfterAttempt,
   inFlightPromotionStaleMsForKind,
-  isRetryableFailure
+  isRetryableFailure,
+  classifyCampaignFailure,
+  campaignRetryMaxWallMs
 } = require('../utils/whatsappRetryRules');
 const { getCampaignReminderEligibility } = require('../utils/waReminderEligibility');
 
@@ -115,6 +118,9 @@ function rowEligibleAtMs(groupKind, fromAttempt, row) {
   const delayMs = getRetryDelayMsAfterAttempt(groupKind, fromAttempt);
   const staleMs = inFlightPromotionStaleMsForKind(groupKind);
   const st = String(row.status || '').toLowerCase();
+  if (RECONCILE_PENDING_STATUSES.includes(st)) {
+    return Number.POSITIVE_INFINITY;
+  }
   const isTerminal = TERMINAL_FAILURE_STATUSES.includes(st);
   if (isTerminal) {
     const base = new Date(row.failedAt || row.updatedAt || row.createdAt || Date.now()).getTime();
@@ -141,7 +147,7 @@ async function computeRetryCandidates(retryGroupId, fromAttempt) {
   const [neverRetryPhones, alreadyNextPhones, rawRows] = await Promise.all([
     WhatsAppMessageEvent.distinct('phone', {
       retryGroupId: gid,
-      status: { $in: RETRY_TERMINAL_SUCCESS_STATUSES }
+      status: { $in: PROMOTION_BLOCK_SUCCESS_STATUSES }
     }),
     WhatsAppMessageEvent.distinct('phone', {
       retryGroupId: gid,
@@ -167,11 +173,18 @@ async function computeRetryCandidates(retryGroupId, fromAttempt) {
 
   for (const r of rawRows || []) {
     const st = String(r.status || '').toLowerCase();
-    if (TERMINAL_FAILURE_STATUSES.includes(st) && !isRetryableFailure(group.messageKind, {
-      errorCode: r.webhookErrorCode,
-      errorReason: r.webhookErrorReason,
-      errorText: r.errorMessage
-    })) {
+    if (RECONCILE_PENDING_STATUSES.includes(st)) {
+      continue;
+    }
+    if (
+      TERMINAL_FAILURE_STATUSES.includes(st) &&
+      (r.retryEligible === false ||
+        !classifyCampaignFailure(group.messageKind, {
+          errorCode: r.webhookErrorCode,
+          errorReason: r.webhookErrorReason,
+          errorText: r.errorMessage
+        }, { attemptNumber: fa }).retryable)
+    ) {
       permanentExcluded.push({
         _id: r._id,
         phone: r.phone,
@@ -352,16 +365,19 @@ async function executeRetryAttempt(opts) {
     return { noop: true, reason: 'max_attempts_policy_block' };
   }
 
-  const wallMs = Math.max(60_000, parseInt(process.env.WHATSAPP_CAMPAIGN_RETRY_MAX_WALL_MS || '300000', 10) || 300000);
+  const wallMs = campaignRetryMaxWallMs();
   const firstFailA1 = await WhatsAppMessageEvent.findOne({
     retryGroupId: gid,
     attemptNumber: 1,
     status: { $in: TERMINAL_FAILURE_STATUSES }
   })
-    .sort({ createdAt: 1 })
-    .select('createdAt')
+    .sort({ failedAt: 1, updatedAt: 1, createdAt: 1 })
+    .select('failedAt updatedAt createdAt')
     .lean();
-  if (firstFailA1 && Date.now() - new Date(firstFailA1.createdAt).getTime() > wallMs) {
+  const wallAnchorMs = firstFailA1
+    ? new Date(firstFailA1.failedAt || firstFailA1.updatedAt || firstFailA1.createdAt).getTime()
+    : null;
+  if (wallAnchorMs != null && Date.now() - wallAnchorMs > wallMs) {
     await WhatsAppRetryGroup.updateOne(
       { _id: gid },
       { $set: { status: 'exhausted', nextPromotionDueAt: null, updatedAt: new Date() } }
@@ -399,8 +415,7 @@ async function executeRetryAttempt(opts) {
   const casSet = {
     [batchField]: attemptBatchId,
     [timeField]: new Date(),
-    updatedAt: new Date(),
-    ...(nextAttempt === 3 && group.status === 'open' ? { status: 'exhausted' } : {})
+    updatedAt: new Date()
   };
 
   const cas = await WhatsAppRetryGroup.updateOne(casFilter, { $set: casSet });
@@ -542,6 +557,13 @@ async function executeRetryAttempt(opts) {
       }
     }
   );
+
+  if (nextAttempt === 3 && group.status === 'open') {
+    await WhatsAppRetryGroup.updateOne(
+      { _id: gid, status: 'open' },
+      { $set: { status: 'exhausted', updatedAt: new Date() } }
+    );
+  }
 
   await maybeSettleCampaignRetryGroup(gid);
 
@@ -826,5 +848,6 @@ module.exports = {
   previewRetryPromotion,
   scanGroupsNeedingRetries,
   cooldownMs,
-  processSlotBookedImmediateRetries
+  processSlotBookedImmediateRetries,
+  rowEligibleAtMs
 };

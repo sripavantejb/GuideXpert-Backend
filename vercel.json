@@ -21,6 +21,18 @@
   },
   "crons": [
     {
+      "path": "/api/cron/send-reminders",
+      "schedule": "*/1 * * * *"
+    },
+    {
+      "path": "/api/cron/send-meetlinks",
+      "schedule": "*/1 * * * *"
+    },
+    {
+      "path": "/api/cron/send-30min-reminders",
+      "schedule": "*/1 * * * *"
+    },
+    {
       "path": "/api/cron/retry-whatsapp",
       "schedule": "*/1 * * * *"
     }

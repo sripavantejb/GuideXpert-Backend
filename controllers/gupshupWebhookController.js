@@ -9,7 +9,12 @@ const {
   isLikelyWaMessageId
 } = require('../utils/gupshupMessageIds');
 const { mapStageToDbStatus, canApplyWebhookStatus, rankSuccessStatus } = require('../utils/gupshupWebhookMonotonic');
-const { isRetryableFailure, isCampaignStrategy, RETRY_EXCLUSION_REASON } = require('../utils/whatsappRetryRules');
+const {
+  isRetryableFailure,
+  isCampaignStrategy,
+  classifyCampaignFailure,
+  RETRY_EXCLUSION_REASON
+} = require('../utils/whatsappRetryRules');
 
 function sanitizeSnippet(raw, maxLen = 3800) {
   if (raw == null) return null;
@@ -386,7 +391,13 @@ async function applyWebhookToMessageEvent(doc, newStatus, opts) {
   } = opts;
 
   const idPatch = buildIdPatchFromWebhook(doc, { gsId, outerId, whatsappMessageFromInner });
-  const statusMayChange = newStatus && canApplyWebhookStatus(doc.status, newStatus);
+  const statusMayChange =
+    newStatus &&
+    canApplyWebhookStatus(doc.status, newStatus, {
+      reconcileDerivedFailure: doc.reconcileDerivedFailure === true,
+      terminalFailureKind: doc.terminalFailureKind,
+      retryExclusionReason: doc.retryExclusionReason
+    });
   const enqueuedIdOnly =
     String(stage || '').toLowerCase() === 'enqueued' &&
     newStatus === 'submitted' &&
@@ -416,13 +427,28 @@ async function applyWebhookToMessageEvent(doc, newStatus, opts) {
       };
       const wasProviderAccepted = rankSuccessStatus(doc.status) >= 3;
       if (isCampaignStrategy(doc.messageKind) && wasProviderAccepted) {
-        set.retryEligible = false;
-        set.terminalFailureKind = 'transient';
-        set.retryExclusionReason = null;
-        set.retryExclusionAt = null;
+        const classified = classifyCampaignFailure(doc.messageKind, failCtx, {
+          afterProviderAccept: true,
+          attemptNumber: doc.attemptNumber
+        });
+        set.retryEligible = classified.retryable;
+        set.terminalFailureKind = classified.terminalFailureKind;
+        set.retryExclusionReason = classified.exclusionReason;
+        set.retryExclusionAt = classified.exclusionReason ? receivedAt : null;
         set['retryExclusionMeta.nextAttempt'] = null;
         set['retryExclusionMeta.attemptBatchId'] = null;
-        set['retryExclusionMeta.note'] = 'webhook_failed_after_provider_accept';
+        set['retryExclusionMeta.note'] = classified.metaNote;
+        console.log(
+          JSON.stringify({
+            event: 'whatsapp_dlr_failed_after_accept',
+            messageEventId: String(doc._id),
+            messageKind: doc.messageKind,
+            attemptNumber: doc.attemptNumber,
+            retryable: classified.retryable,
+            terminalFailureKind: classified.terminalFailureKind,
+            exclusionReason: classified.exclusionReason
+          })
+        );
       } else if (isCampaignStrategy(doc.messageKind)) {
         const retryable = isRetryableFailure(doc.messageKind, failCtx);
         set.retryEligible = retryable;
@@ -452,10 +478,33 @@ async function applyWebhookToMessageEvent(doc, newStatus, opts) {
       if (failureReason) set.webhookErrorReason = failureReason;
     }
     if (newStatus === 'delivered' || newStatus === 'read') {
+      const cur = String(doc.status || '').toLowerCase();
+      const lateRecovery =
+        cur === 'awaiting_final_dlr' || doc.reconcileDerivedFailure === true;
       set.retryEligible = false;
-      set.retryExclusionReason = 'already_delivered_or_read';
+      set.retryExclusionReason = RETRY_EXCLUSION_REASON.alreadyDeliveredOrRead;
       set.retryExclusionAt = receivedAt;
-      set['retryExclusionMeta.note'] = 'webhook_recovery';
+      set.reconcileDerivedFailure = false;
+      set.reconcilePendingAt = null;
+      set.reconcileFinalityUntil = null;
+      set['retryExclusionMeta.note'] = lateRecovery ? 'late_dlr_recovery' : 'webhook_recovery';
+      if (lateRecovery) {
+        console.log(
+          JSON.stringify({
+            event: 'whatsapp_late_dlr_recovery',
+            messageEventId: String(doc._id),
+            messageKind: doc.messageKind,
+            attemptNumber: doc.attemptNumber,
+            fromStatus: cur,
+            toStatus: newStatus
+          })
+        );
+      }
+    }
+    if (newStatus === 'failed') {
+      set.reconcileDerivedFailure = false;
+      set.reconcilePendingAt = null;
+      set.reconcileFinalityUntil = null;
     }
   }
 
@@ -463,6 +512,14 @@ async function applyWebhookToMessageEvent(doc, newStatus, opts) {
     { _id: doc._id },
     { $set: set }
   );
+  if (doc.retryGroupId && (res.modifiedCount || 0) > 0) {
+    try {
+      const { syncReminderJobFromRetryGroup } = require('../services/whatsappReminderJobSync');
+      await syncReminderJobFromRetryGroup(doc.retryGroupId);
+    } catch {
+      /* non-fatal P3 projection */
+    }
+  }
   return { modified: (res.modifiedCount || 0) > 0, reason: 'updated' };
 }
 

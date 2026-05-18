@@ -7,6 +7,7 @@ const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');
 const {
   TERMINAL_FAILURE_STATUSES,
   RETRY_TERMINAL_SUCCESS_STATUSES,
+  RECONCILE_PENDING_STATUSES,
   inFlightPromotionStaleMsForKind
 } = require('./whatsappRetryRules');
 
@@ -122,6 +123,9 @@ async function reserveOutboundWhatsAppAttempt(p) {
         return { outcome: 'duplicate_in_flight', reservedEventId: d._id };
       }
       return { type: 'reclaim', doc: d };
+    }
+    if (RECONCILE_PENDING_STATUSES.includes(st)) {
+      return { outcome: 'blocked_duplicate_attempt', reservedEventId: d._id };
     }
     if (TERMINAL_FAILURE_STATUSES.includes(st)) {
       return { outcome: 'blocked_duplicate_attempt', reservedEventId: d._id };

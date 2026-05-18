@@ -21,6 +21,9 @@ const {
   matchWhatsAppEventsByOpsProduct,
   effectiveOverviewMessageKind
 } = require('../utils/whatsappOpsProduct');
+const recipientAnalytics = require('./whatsappOpsRecipientAnalytics');
+const canonical = require('./whatsappOpsCanonicalMetrics');
+const { validateRecipientAnalyticsInvariants } = require('../utils/waAnalyticsIntegrity');
 
 const ALLOWED_MESSAGE_KINDS = ['slot_booked', 'pre4hr', 'meet', '30min'];
 const IST_OFFSET_MINUTES = 330;
@@ -287,45 +290,81 @@ async function computeSummary({ from, to, messageKind = null, opsProduct = null 
       : {});
   }
 
+  const recipientRange = await recipientAnalytics.computeRecipientRangeSummary({
+    from,
+    to,
+    messageKind,
+    opsProduct
+  });
+
+  const recipientPrimary = recipientRange.error ? null : recipientRange.data;
+  const integrity = recipientPrimary
+    ? validateRecipientAnalyticsInvariants({
+        recipientTotals: recipientPrimary.recipientTotals,
+        outcomeBreakdown: null
+      })
+    : { ok: true, violations: [] };
+
   return {
     data: {
+      ...canonical.buildAnalyticsMeta(),
       meta: {
         selectedMessageKind: messageKind || null,
         opsProduct: parseOpsProductQuery(opsProduct),
-        attemptedRows: total,
-        cohortMode: 'event_time_utc',
-        cohortNote: 'Summary totals filter by message createdAt; use calendar month/day endpoints for slot-day cohorts.'
+        primaryCohortMode: canonical.COHORT_ANCHOR,
+        rangeNote: recipientPrimary?.rangeNote || null
       },
-      totals: {
-        whatsappAttempts: total,
-        whatsappSuccessApprox: successN,
-        providerAcceptedCount: acceptedN,
-        sentCount: sentN,
-        whatsappFailed: failedN,
-        deliveredCount: deliveredN,
-        readCount: readN,
-        retried: retriedN,
-        permanentlyFailedApprox: retryExN,
-        ...(messageKind ? {} : { webhookEvents: webhookN })
+      recipientTotals: recipientPrimary?.recipientTotals || null,
+      recipientTrendDays: recipientPrimary?.days || [],
+      integrityWarnings: integrity.violations,
+      diagnostic: {
+        eventTimeSummary: {
+          cohortMode: 'event_time_utc',
+          cohortNote: 'Diagnostic only — filters by message createdAt, not IST slot-day booking cohort.',
+          attemptedRows: total,
+          totals: {
+            whatsappAttempts: total,
+            whatsappSuccessApprox: successN,
+            providerAcceptedCount: acceptedN,
+            sentCount: sentN,
+            whatsappFailed: failedN,
+            deliveredCount: deliveredN,
+            readCount: readN,
+            retried: retriedN,
+            permanentlyFailedApprox: retryExN,
+            ...(messageKind ? {} : { webhookEvents: webhookN })
+          },
+          rates: {
+            deliveryRatePct: total ? Math.round((successN / total) * 1000) / 10 : null,
+            retryRatePct: total ? Math.round((retriedN / total) * 1000) / 10 : null
+          },
+          byKind: (msgAgg.byKind || []).map((x) => ({ kind: x._id, count: x.c })),
+          byStatus: (msgAgg.byStatus || []).map((x) => ({ status: x._id, count: x.c }))
+        },
+        ...(messageKind
+          ? {}
+          : {
+              cronRuns: {
+                runs: c?.runs || 0,
+                success: c?.ok || 0,
+                failure: c?.failed || 0
+              }
+            })
       },
-      rates: {
-        deliveryRatePct: total ? Math.round((successN / total) * 1000) / 10 : null,
-        retryRatePct: total ? Math.round((retriedN / total) * 1000) / 10 : null,
-        acceptedToDeliveredPct: acceptedN ? Math.round((deliveredN / acceptedN) * 1000) / 10 : null,
-        deliveredToReadPct: deliveredN ? Math.round((readN / deliveredN) * 1000) / 10 : null,
-        ...(messageKind ? {} : { cronSuccessRatePct: c.runs ? Math.round((c.ok / c.runs) * 1000) / 10 : null })
-      },
-      ...(messageKind
-        ? {}
+      /** @deprecated Use recipientTotals */
+      totals: recipientPrimary?.recipientTotals
+        ? {
+            whatsappAttempts: recipientPrimary.recipientTotals.totalRecipients,
+            deliveredCount: recipientPrimary.recipientTotals.delivered,
+            whatsappFailed: recipientPrimary.recipientTotals.finalPermanentFailed,
+            readCount: recipientPrimary.recipientTotals.read
+          }
         : {
-            cronRuns: {
-              runs: c?.runs || 0,
-              success: c?.ok || 0,
-              failure: c?.failed || 0
-            }
-          }),
-      byKind: (msgAgg.byKind || []).map((x) => ({ kind: x._id, count: x.c })),
-      byStatus: (msgAgg.byStatus || []).map((x) => ({ status: x._id, count: x.c })),
+            whatsappAttempts: total,
+            deliveredCount: deliveredN,
+            whatsappFailed: failedN,
+            readCount: readN
+          },
       filter: { messageKind: messageKind || null, opsProduct: parseOpsProductQuery(opsProduct) },
       range: from ? { from, to } : { from: null, to }
     }
@@ -1081,8 +1120,36 @@ async function computeOperationalHealth({ asOfDateIso, windowDays = 14, messageK
     computeUnresolvedHeader(win.stable.from, win.stable.to)
   ]);
 
+  const { getCronScheduleHealth } = require('../utils/waCronScheduleHealth');
+  const { getReconciliationObservability } = require('../utils/waReconcileObservability');
+  const { getReminderJobObservability } = require('../utils/waReminderJobObservability');
+  const [cronScheduleHealth, reconciliationHealth, recipientRange, reminderJobHealth] =
+    await Promise.all([
+      getCronScheduleHealth(),
+      getReconciliationObservability(),
+      recipientAnalytics.computeRecipientRangeSummary({
+        from: win.stable.from,
+        to: win.stable.to,
+        messageKind
+      }),
+      getReminderJobObservability(
+        messageKind ? { messageKind } : {}
+      )
+    ]);
+
+  const recipientTotals = recipientRange.error ? null : recipientRange.data?.recipientTotals;
+  const analyticsIntegrity = recipientTotals
+    ? validateRecipientAnalyticsInvariants({ recipientTotals })
+    : { ok: true, violations: [] };
+
   return {
     data: {
+      cronScheduleHealth,
+      reconciliationHealth,
+      reminderJobHealth,
+      analyticsIntegrity,
+      recipientPrimarySummary: recipientRange.error ? null : recipientRange.data,
+      metricDefinitions: canonical.METRIC_DEFINITIONS,
       filter: { asOfDateIso: dateIso, windowDays: win.stable.days, messageKind: messageKind || null },
       cohortSemantics: {
         dailyTrendTemplateReliabilityRetryFunnelTodayStripUnresolved:
@@ -1101,12 +1168,15 @@ async function computeOperationalHealth({ asOfDateIso, windowDays = 14, messageK
       headerKpis: {
         bookingsToday: todayLiveStrip.bookings,
         attemptsToday: todayLiveStrip.attempts,
-        deliveredToday: todayLiveStrip.delivered,
-        failedToday: todayLiveStrip.failed,
+        deliveredToday: recipientTotals?.delivered ?? todayLiveStrip.delivered,
+        failedToday: recipientTotals?.finalPermanentFailed ?? todayLiveStrip.failed,
+        transientUnresolvedWindow: recipientTotals?.transientUnresolved ?? null,
+        reconcilePendingWindow: recipientTotals?.reconcilePending ?? null,
         retryExhaustedToday: todayLiveStrip.retryExhausted,
         inFlightToday: todayLiveStrip.inFlight,
         unresolvedRecipientsWindow: unresolvedHeader,
-        activeRecoveryJobs
+        activeRecoveryJobs,
+        recipientTotalsWindow: recipientTotals
       },
       funnelStable,
       templateReliabilityStable,
@@ -1123,11 +1193,21 @@ async function computeOperationalHealth({ asOfDateIso, windowDays = 14, messageK
  * Unresolved recipients (paginated, grouped, with submission enrichment)
  * ========================================================================= */
 
-const UNRESOLVED_GROUPS = ['failed', 'excluded', 'exhausted', 'not_accepted', 'in_flight_stale', 'all'];
+const UNRESOLVED_GROUPS = [
+  'failed',
+  'excluded',
+  'exhausted',
+  'not_accepted',
+  'in_flight_stale',
+  'reconciliation_pending',
+  'all'
+];
 
 const EXCLUSION_CATEGORY_MAP = {
   policy_non_retryable: 'permanent_failure',
   permanent_failure: 'permanent_failure',
+  dlr_failed_after_accept: 'dlr_failed_after_accept',
+  webhook_stale_unresolved: 'webhook_stale_unresolved',
   in_flight_timeout: 'in_flight_timeout',
   promotion_superseded: 'promotion_superseded',
   missing_phone: 'invalid_recipient',
@@ -1160,11 +1240,24 @@ function classifyExclusionCategory(reason, status) {
  * }} opts
  */
 function reasonLabelFromAggRow(r) {
-  return r.lastExclusionReason
-    || (r.anyExhausted ? 'retry_exhausted'
-      : (r.anyTerminalFail ? 'failed'
-        : (r.anyNotAccepted ? 'not_accepted'
-          : (r.anyInFlightStale ? 'in_flight_stale' : 'unknown'))));
+  const canon = canonical.toCanonicalExclusionReason({
+    status: r.lastStatus,
+    retryExclusionReason: r.lastExclusionReason,
+    anyReconcilePending: r.anyReconcilePending
+  });
+  if (canon) return canon;
+  if (r.anyReconcilePending) return canonical.OPS_EXCLUSION_TAXONOMY.reconcile_pending;
+  if (r.anyReconcileDerived && r.anyTerminalFail) return 'reconcile_derived_failed';
+  if (r.anyTerminalFail && !r.anyPermanent && !r.anyReconcilePending) return 'transient_unresolved';
+  return r.anyExhausted
+    ? 'retry_exhausted'
+    : r.anyTerminalFail
+      ? 'failed'
+      : r.anyNotAccepted
+        ? 'not_accepted'
+        : r.anyInFlightStale
+          ? 'in_flight_stale'
+          : 'unknown';
 }
 
 /** After grouping, keep rows whose latest event time falls in [from, to] (inclusive). */
@@ -1185,6 +1278,7 @@ async function computeUnresolvedRecipients({
   page = 1,
   limit = 50,
   q = null,
+  cohortDateIso = null,
   inFlightStaleMinutes = parseInt(process.env.WHATSAPP_RECOVERY_INFLIGHT_STALE_MINUTES || '180', 10) || 180,
   notAcceptedThresholdMinutes = parseInt(process.env.WHATSAPP_NOT_ACCEPTED_THRESHOLD_MINUTES || '30', 10) || 30
 } = {}) {
@@ -1209,6 +1303,18 @@ async function computeUnresolvedRecipients({
 
   /** Collapse to one rep row per (phone, messageKind). Track per-group flags so the
    *  same dataset answers each tab without re-querying. */
+  let cohortKeyFilter = null;
+  if (cohortDateIso && /^\d{4}-\d{2}-\d{2}$/.test(String(cohortDateIso))) {
+    const cohortKeys = await WhatsAppMessageEvent.aggregate([
+      ...cohortAgg.annotateEventsWithSlotDayPipeline(messageKind, { strictSlotDay: true }),
+      { $match: { slotDayIst: String(cohortDateIso) } },
+      { $group: { _id: { phone: '$phone', messageKind: '$messageKind' } } }
+    ]);
+    cohortKeyFilter = new Set(
+      cohortKeys.map((r) => `${r._id?.phone || ''}|${r._id?.messageKind || ''}`)
+    );
+  }
+
   const baseRows = await WhatsAppMessageEvent.aggregate([
     { $match: match },
     {
@@ -1227,6 +1333,15 @@ async function computeUnresolvedRecipients({
             1,
             0
           ]
+        },
+        isReconcilePending: {
+          $cond: [{ $eq: ['$status', 'awaiting_final_dlr'] }, 1, 0]
+        },
+        isReconcileDerived: {
+          $cond: [{ $eq: ['$reconcileDerivedFailure', true] }, 1, 0]
+        },
+        isPermanent: {
+          $cond: [{ $eq: ['$terminalFailureKind', 'permanent'] }, 1, 0]
         },
         isNotAccepted: {
           $cond: [
@@ -1251,6 +1366,9 @@ async function computeUnresolvedRecipients({
         anyExhausted: { $max: '$isExhausted' },
         anyExcluded: { $max: '$isExcluded' },
         anyInFlightStale: { $max: '$isInFlightStale' },
+        anyReconcilePending: { $max: '$isReconcilePending' },
+        anyReconcileDerived: { $max: '$isReconcileDerived' },
+        anyPermanent: { $max: '$isPermanent' },
         anyNotAccepted: { $max: '$isNotAccepted' },
         anyDelivered: { $max: '$isDelivered' },
         deliveredAt: { $max: '$deliveredAt' },
@@ -1281,6 +1399,7 @@ async function computeUnresolvedRecipients({
                     { $eq: ['$anyTerminalFail', 1] },
                     { $eq: ['$anyExcluded', 1] },
                     { $eq: ['$anyInFlightStale', 1] },
+                    { $eq: ['$anyReconcilePending', 1] },
                     { $eq: ['$anyNotAccepted', 1] }
                   ]
                 }
@@ -1296,17 +1415,25 @@ async function computeUnresolvedRecipients({
     { $sort: { lastCreatedAt: -1 } }
   ]);
 
-  const windowRows = baseRows.filter((r) => lastEventInDateWindow(r, from, to));
+  let windowRows = baseRows.filter((r) => lastEventInDateWindow(r, from, to));
+  if (cohortKeyFilter) {
+    windowRows = windowRows.filter((r) =>
+      cohortKeyFilter.has(`${r._id?.phone || ''}|${r._id?.messageKind || ''}`)
+    );
+  }
 
   /** Group filter applied AFTER global totals so tab counters stay accurate when no text search. */
   let filtered = windowRows;
   if (grp !== 'all') {
     filtered = windowRows.filter((r) => {
-      if (grp === 'failed') return r.anyTerminalFail && !r.anyExhausted;
+      if (grp === 'failed') {
+        return r.anyTerminalFail && !r.anyExhausted && !r.anyReconcilePending;
+      }
       if (grp === 'excluded') return r.anyExcluded;
       if (grp === 'exhausted') return r.anyExhausted;
       if (grp === 'not_accepted') return r.anyNotAccepted;
-      if (grp === 'in_flight_stale') return r.anyInFlightStale;
+      if (grp === 'reconciliation_pending') return r.anyReconcilePending;
+      if (grp === 'in_flight_stale') return r.anyInFlightStale && !r.anyReconcilePending;
       return true;
     });
   }
@@ -1337,18 +1464,20 @@ async function computeUnresolvedRecipients({
     exhausted: 0,
     not_accepted: 0,
     in_flight_stale: 0,
+    reconciliation_pending: 0,
     all: qTrim ? filtered.length : windowRows.length
   };
   const totalsByExclusionReason = {};
   const totalsByExclusionCategory = {};
   const rowsForTotals = qTrim ? filtered : windowRows;
   rowsForTotals.forEach((r) => {
-    if (r.anyTerminalFail && r.anyExhausted !== 1) totalsByGroup.failed += 1;
+    if (r.anyTerminalFail && r.anyExhausted !== 1 && !r.anyReconcilePending) totalsByGroup.failed += 1;
     if (r.anyExcluded) totalsByGroup.excluded += 1;
     if (r.anyExhausted) totalsByGroup.exhausted += 1;
     if (r.anyNotAccepted) totalsByGroup.not_accepted += 1;
-    if (r.anyInFlightStale) totalsByGroup.in_flight_stale += 1;
-    const reason = r.lastExclusionReason || (r.anyExhausted ? 'retry_exhausted' : (r.anyTerminalFail ? 'failed' : (r.anyNotAccepted ? 'not_accepted' : (r.anyInFlightStale ? 'in_flight_stale' : 'unknown'))));
+    if (r.anyReconcilePending) totalsByGroup.reconciliation_pending += 1;
+    if (r.anyInFlightStale && !r.anyReconcilePending) totalsByGroup.in_flight_stale += 1;
+    const reason = reasonLabelFromAggRow(r);
     totalsByExclusionReason[reason] = (totalsByExclusionReason[reason] || 0) + 1;
     const category = classifyExclusionCategory(r.lastExclusionReason, r.lastStatus);
     totalsByExclusionCategory[category] = (totalsByExclusionCategory[category] || 0) + 1;
@@ -1370,10 +1499,22 @@ async function computeUnresolvedRecipients({
     const phone = r._id.phone;
     const fs = r.lastFormSubmissionId ? subMap[String(r.lastFormSubmissionId)] : null;
     const reasonLabel = reasonLabelFromAggRow(r);
+    const canonicalBucket = canonical.assignRecipientBucket({
+      everDelivered: r.anyDelivered,
+      finalPermanentFailed: r.anyPermanent || r.anyExhausted,
+      anyReconcilePending: r.anyReconcilePending,
+      finalUnresolved: 1,
+      anyExcluded: r.anyExcluded,
+      anyInFlight: r.anyInFlightStale,
+      lastExclusionReason: r.lastExclusionReason,
+      lastStatus: r.lastStatus
+    });
     return {
       phone,
       name: fs?.fullName || null,
       messageKind: r._id.messageKind,
+      canonicalBucket,
+      canonicalExclusionReason: reasonLabel,
       attemptStage: r.lastRetrySource || null,
       lastAttemptNumber: r.lastAttemptNumber || null,
       lifecycleState: r.lastStatus || null,
