@@ -110,6 +110,7 @@ const IIT_ALLOWED_VALUES = {
   collegeDecisionStakeholder: ['Self', 'Parents', 'Both'],
   expectedBudget: ['<1L', '1-3L', '3-6L', '6L+'],
   topCollegePriority: ['Placements', 'Brand', 'Fees', 'Skills', 'Abroad opportunities', 'All the above'],
+  preferredLanguage: ['Telugu', 'Hindi'],
   helpNeeded: ['Scholarship Test', 'Career Counseling with IITian', 'How to choose the right college', 'Not sure'],
   wantsOneToOneSession: ['Yes', 'Maybe', 'No'],
   biggestConfusion: ['Course', 'College', 'Placements', 'Parent pressure', 'Not sure'],
@@ -1364,6 +1365,7 @@ exports.saveIitSection2 = async (req, res) => {
       ['collegeDecisionStakeholder', IIT_ALLOWED_VALUES.collegeDecisionStakeholder],
       ['expectedBudget', IIT_ALLOWED_VALUES.expectedBudget],
       ['topCollegePriority', IIT_ALLOWED_VALUES.topCollegePriority],
+      ['preferredLanguage', IIT_ALLOWED_VALUES.preferredLanguage],
     ]) {
       const err = requireAllowedValue(payload[key], allowed, key);
       if (err) return res.status(400).json({ success: false, message: err });
@@ -1375,6 +1377,7 @@ exports.saveIitSection2 = async (req, res) => {
       collegeDecisionStakeholder: payload.collegeDecisionStakeholder.trim(),
       expectedBudget: payload.expectedBudget.trim(),
       topCollegePriority: payload.topCollegePriority.trim(),
+      preferredLanguage: payload.preferredLanguage.trim(),
       submittedAt: now,
     };
 

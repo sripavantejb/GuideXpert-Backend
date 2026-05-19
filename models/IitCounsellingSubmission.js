@@ -98,6 +98,8 @@ const iitCounsellingSubmissionSchema = new mongoose.Schema({
       collegeDecisionStakeholder: { type: String, enum: ['Self', 'Parents', 'Both'] },
       expectedBudget: { type: String, enum: ['<1L', '1-3L', '3-6L', '6L+'] },
       topCollegePriority: { type: String, enum: ['Placements', 'Brand', 'Fees', 'Skills', 'Abroad opportunities', 'All the above'] },
+      // Keep in sync with formController IIT_ALLOWED_VALUES.preferredLanguage and IitCounsellingPage.jsx
+      preferredLanguage: { type: String, enum: ['Telugu', 'Hindi'] },
       submittedAt: { type: Date },
     },
     section3Data: {
