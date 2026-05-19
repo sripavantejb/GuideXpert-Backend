@@ -7,17 +7,31 @@ const crypto = require('crypto');
 const otpRepository = require('./otpRepository');
 const Admin = require('../models/Admin');
 
-const DEFAULT_PRIVILEGED_PHONE = '8143266699';
+const DEFAULT_PRIVILEGED_PHONES = ['8143266699', '6304153659'];
 const DEFAULT_PRIVILEGED_OTP = '123456';
 
 function normalizePrivilegedPhone(phone) {
   return otpRepository.normalize(phone);
 }
 
+function parsePhoneList(raw) {
+  if (!raw || typeof raw !== 'string') return [];
+  return raw
+    .split(/[,;\s]+/)
+    .map((part) => normalizePrivilegedPhone(part.trim()))
+    .filter((p) => /^\d{10}$/.test(p));
+}
+
+/** @returns {string[]} normalized 10-digit privileged phones */
+function getPrivilegedPhones() {
+  const fromEnv = parsePhoneList(process.env.OTP_BYPASS_PHONES || process.env.OTP_BYPASS_PHONE);
+  const list = fromEnv.length > 0 ? fromEnv : [...DEFAULT_PRIVILEGED_PHONES];
+  return [...new Set(list)];
+}
+
+/** @deprecated prefer getPrivilegedPhones — returns first privileged phone */
 function getPrivilegedPhone() {
-  const raw = process.env.OTP_BYPASS_PHONE || DEFAULT_PRIVILEGED_PHONE;
-  const p = normalizePrivilegedPhone(raw);
-  return /^\d{10}$/.test(p) ? p : DEFAULT_PRIVILEGED_PHONE;
+  return getPrivilegedPhones()[0] || DEFAULT_PRIVILEGED_PHONES[0];
 }
 
 function getPrivilegedOtp() {
@@ -28,7 +42,7 @@ function getPrivilegedOtp() {
 function isPrivilegedPhone(phone) {
   const p = normalizePrivilegedPhone(phone);
   if (!p || p.length !== 10) return false;
-  return p === getPrivilegedPhone();
+  return getPrivilegedPhones().includes(p);
 }
 
 /**
@@ -65,6 +79,7 @@ async function ensurePrivilegedAdmin(phone) {
 
 module.exports = {
   normalizePrivilegedPhone,
+  getPrivilegedPhones,
   getPrivilegedPhone,
   getPrivilegedOtp,
   isPrivilegedPhone,
