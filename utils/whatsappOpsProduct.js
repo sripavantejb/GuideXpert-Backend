@@ -53,15 +53,12 @@ function normalizeOutboundOpsProduct(raw) {
 }
 
 /**
- * IIT Overview forces `slot_booked` cohort when caller omits template filter.
  * @param {unknown} opsProductRaw
  * @param {string|null} messageKind
  * @returns {string|null}
  */
 function effectiveOverviewMessageKind(opsProductRaw, messageKind) {
-  const slug = parseOpsProductQuery(opsProductRaw);
-  if (slug === 'iit_counselling' && !messageKind) return 'slot_booked';
-  return messageKind;
+  return messageKind || null;
 }
 
 module.exports = {

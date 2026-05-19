@@ -4,11 +4,17 @@
 const WhatsAppReminderJob = require('../models/WhatsAppReminderJob');
 
 /**
- * @param {{ cohortSubmissionIds: import('mongoose').Types.ObjectId[], slotDayIst: string, messageKind: string }} params
+ * @param {{ cohortSubmissionIds: import('mongoose').Types.ObjectId[], slotDayIst: string, messageKind: string, opsProduct?: string }} params
  */
-async function computeReminderJobCoverageForCohort({ cohortSubmissionIds, slotDayIst, messageKind }) {
+async function computeReminderJobCoverageForCohort({
+  cohortSubmissionIds,
+  slotDayIst,
+  messageKind,
+  opsProduct = null,
+}) {
   const ids = Array.isArray(cohortSubmissionIds) ? cohortSubmissionIds : [];
   const booked = ids.length;
+  const isIit = opsProduct === 'iit_counselling';
 
   if (!messageKind || !slotDayIst || !ids.length) {
     return {
@@ -30,11 +36,9 @@ async function computeReminderJobCoverageForCohort({ cohortSubmissionIds, slotDa
     };
   }
 
-  const baseMatch = {
-    formSubmissionId: { $in: ids },
-    slotDayIst,
-    messageKind
-  };
+  const baseMatch = isIit
+    ? { iitCounsellingSubmissionId: { $in: ids }, slotDayIst, messageKind }
+    : { formSubmissionId: { $in: ids }, slotDayIst, messageKind };
 
   const now = new Date();
   const overdueSlaMs = parseInt(process.env.WA_REMINDER_JOB_OVERDUE_SLA_MS || '120000', 10) || 120000;

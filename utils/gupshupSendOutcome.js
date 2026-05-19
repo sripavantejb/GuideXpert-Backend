@@ -3,7 +3,7 @@
  */
 const { parseGupshupTemplateSendResponse } = require('./gupshupMessageIds');
 const { dlrReconcileGraceMs } = require('./whatsappRetryRules');
-const { isIitSlotBookedTemplateEnvKey } = require('./iitCounsellingWhatsApp');
+const { isIitSlotBookedTemplateEnvKey, isIitReminderTemplateEnvKey } = require('./iitCounsellingWhatsApp');
 
 function isAmbiguousGupshupSendError(errText) {
   const s = String(errText || '').toLowerCase();
@@ -19,6 +19,15 @@ function isIitSlotBookedSend(retryKind, outboundProduct, templateIdEnvKey) {
   );
 }
 
+function isIitProductSend(retryKind, outboundProduct, templateIdEnvKey) {
+  return (
+    isIitSlotBookedSend(retryKind, outboundProduct, templateIdEnvKey) ||
+    outboundProduct === 'iit_counselling' ||
+    isIitReminderTemplateEnvKey(templateIdEnvKey) ||
+    /^iit_pre/.test(String(retryKind || ''))
+  );
+}
+
 /**
  * @param {{ success?: boolean, data?: unknown, error?: string, ambiguousAccept?: boolean }}|null|undefined result
  * @param {{ retryKind: string, outboundProduct: string, templateIdEnvKey?: string|null }} ctx
@@ -28,7 +37,7 @@ function classifyGupshupSendOutcome(result, ctx) {
   const hasId = Boolean(ids.canonicalMessageId);
   const errText = result && result.error ? String(result.error) : '';
   const explicitSuccess = Boolean(result && result.success);
-  const iitSlot = isIitSlotBookedSend(ctx.retryKind, ctx.outboundProduct, ctx.templateIdEnvKey);
+  const iitSlot = isIitProductSend(ctx.retryKind, ctx.outboundProduct, ctx.templateIdEnvKey);
 
   if (explicitSuccess || result?.ambiguousAccept || hasId) {
     return {

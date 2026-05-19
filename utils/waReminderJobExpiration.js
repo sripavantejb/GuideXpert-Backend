@@ -4,8 +4,9 @@
 const DEFAULT_30MIN_GRACE_MS = 15 * 60 * 1000;
 
 function expireGraceMsForKind(kind) {
-  if (kind === '30min') {
-    const v = parseInt(process.env.WA_30MIN_EXPIRE_GRACE_MS || String(DEFAULT_30MIN_GRACE_MS), 10);
+  if (kind === '30min' || kind === 'iit_pre15min') {
+    const envKey = kind === 'iit_pre15min' ? 'WA_IIT_PRE15MIN_EXPIRE_GRACE_MS' : 'WA_30MIN_EXPIRE_GRACE_MS';
+    const v = parseInt(process.env[envKey] || String(DEFAULT_30MIN_GRACE_MS), 10);
     return Number.isFinite(v) && v >= 0 ? v : DEFAULT_30MIN_GRACE_MS;
   }
   return 0;

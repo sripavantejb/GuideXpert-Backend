@@ -21,7 +21,16 @@ const { validateRecipientAnalyticsInvariants } = require('../utils/waAnalyticsIn
 const canonical = require('./whatsappOpsCanonicalMetrics');
 const { computeReminderJobCoverageForCohort } = require('./whatsappReminderJobAnalytics');
 
-const ALLOWED_MESSAGE_KINDS = ['slot_booked', 'pre4hr', 'meet', '30min'];
+const ALLOWED_MESSAGE_KINDS = [
+  'slot_booked',
+  'pre4hr',
+  'meet',
+  '30min',
+  'iit_pre2hr',
+  'iit_pre45min',
+  'iit_pre15min',
+];
+const IIT_LANGUAGE_BUCKETS = ['Telugu', 'Hindi', 'unknown'];
 const ALLOWED_SLOT_TIME_SUFFIXES = ['11AM', '3PM', '6PM', '7PM'];
 const ACCEPTED_STATUSES = canonical.ACCEPTED_STATUSES;
 const SENT_PLUS = canonical.SENT_PLUS;
@@ -190,7 +199,8 @@ async function computeRecipientDayOverview({
     const jobCoverage = await computeReminderJobCoverageForCohort({
       cohortSubmissionIds: cohortIds,
       slotDayIst: range.isoDate,
-      messageKind: effKind || messageKind
+      messageKind: effKind || messageKind,
+      opsProduct: opsSlug,
     });
     cohortFlow = {
       booked: cohortBookedCount,
@@ -1156,6 +1166,81 @@ async function computeRecipientSummaryExportRows({
   return { data: { filter, recipientTotals: overview.data?.recipientTotals, rows } };
 }
 
+/**
+ * IIT counselling: booked + delivery KPIs per preferred language (Telugu / Hindi / unknown).
+ */
+async function computeRecipientLanguageBreakdown({
+  dateIso,
+  messageKind = null,
+  slotTime = 'all',
+  opsProduct = null,
+} = {}) {
+  const opsSlug = parseOpsProductQuery(opsProduct);
+  if (opsSlug !== 'iit_counselling') {
+    return { data: { byLanguage: {} } };
+  }
+  const slotTimeNorm = normalizeSlotTimeParam(slotTime);
+  if (slotTimeNorm === null) {
+    return { error: `Invalid slotTime. Allowed: all, ${ALLOWED_SLOT_TIME_SUFFIXES.join(', ')}` };
+  }
+  const range = istDayRangeFromIso(dateIso);
+  if (!range) return { error: 'Invalid date format. Use YYYY-MM-DD' };
+
+  const effKind = effectiveOverviewMessageKind(opsProduct, messageKind);
+  const annotate = annotateEventsWithSlotDayPipeline(effKind, opsProduct);
+  const slotDayMatch = { $match: { slotDayIst: range.isoDate } };
+  const byLanguage = {};
+
+  for (const lang of IIT_LANGUAGE_BUCKETS) {
+    let cohortFilter = buildIitBookingCohortFilter(range, slotTimeNorm);
+    if (lang === 'Telugu' || lang === 'Hindi') {
+      cohortFilter = {
+        ...cohortFilter,
+        'iitCounselling.section2Data.preferredLanguage': lang,
+      };
+    } else {
+      cohortFilter = {
+        $and: [
+          cohortFilter,
+          {
+            $or: [
+              { 'iitCounselling.section2Data.preferredLanguage': { $exists: false } },
+              { 'iitCounselling.section2Data.preferredLanguage': null },
+              { 'iitCounselling.section2Data.preferredLanguage': '' },
+            ],
+          },
+        ],
+      };
+    }
+
+    const [booked, cohortIds] = await Promise.all([
+      IitCounsellingSubmission.countDocuments(cohortFilter),
+      IitCounsellingSubmission.distinct('_id', cohortFilter),
+    ]);
+
+    let recipientTotals = null;
+    if (messageKind && cohortIds.length > 0) {
+      const rows = await WhatsAppMessageEvent.aggregate([
+        ...annotate,
+        { $match: { slotDayIst: { $ne: null } } },
+        slotDayMatch,
+        { $match: { iitCounsellingSubmissionId: { $in: cohortIds } } },
+        ...canonical.buildRecipientRollupPipelineStages(true),
+      ]);
+      recipientTotals = canonical.rollupRecipientTotals(rows || []);
+    }
+
+    byLanguage[lang] = { booked, recipientTotals };
+  }
+
+  return {
+    data: {
+      byLanguage,
+      filter: { date: range.isoDate, slotTime: slotTimeNorm, messageKind: effKind || messageKind },
+    },
+  };
+}
+
 module.exports = {
   ALLOWED_MESSAGE_KINDS,
   ALLOWED_SLOT_TIME_SUFFIXES,
@@ -1169,6 +1254,8 @@ module.exports = {
   computeTemplateReliabilityRanking,
   computeCohortDayDiagnostics,
   computeRecipientSlotTimeBreakdown,
+  computeRecipientLanguageBreakdown,
+  IIT_LANGUAGE_BUCKETS,
   istDayRangeFromIso,
   annotateEventsWithSlotDayPipeline
 };

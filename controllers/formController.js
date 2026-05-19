@@ -1401,10 +1401,20 @@ exports.saveIitSection2 = async (req, res) => {
       return res.status(404).json({ success: false, message: 'IIT counselling submission not found' });
     }
 
+    const { ensureIitReminderJobsForSubmission } = require('../services/iitReminderScheduler');
+    const scheduleResult = await ensureIitReminderJobsForSubmission(updated);
+    if (scheduleResult.error) {
+      console.warn('[saveIitSection2] IIT reminder scheduling:', scheduleResult.error);
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Section 2 saved successfully.',
-      data: { submissionId: updated._id.toString(), currentStep: 2 },
+      data: {
+        submissionId: updated._id.toString(),
+        currentStep: 2,
+        reminderJobs: scheduleResult.jobs || [],
+      },
     });
   } catch (error) {
     console.error('[saveIitSection2] Error:', error);

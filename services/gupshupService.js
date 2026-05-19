@@ -19,6 +19,7 @@ const {
 const { buildTemplateField, buildImageMessageField } = require('../utils/gupshupTemplatePayload');
 const {
   isIitSlotBookedTemplateEnvKey,
+  isIitReminderTemplateEnvKey,
   resolveIitSlotBookedHeaderImageUrl,
   GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL
 } = require('../utils/iitCounsellingWhatsApp');
@@ -369,6 +370,20 @@ async function sendReminder30MinWhatsApp(phone10, vars, sendOpts = {}) {
   return sendTemplateMessage(formatPhoneE16491(phone10), tid, params, sendOpts);
 }
 
+/** IIT counselling reminders: template env key must be passed via sendOpts.templateEnvKey */
+async function sendIitReminderWhatsApp(phone10, vars, sendOpts = {}) {
+  const envKey =
+    typeof sendOpts.templateEnvKey === 'string' && sendOpts.templateEnvKey.trim()
+      ? sendOpts.templateEnvKey.trim()
+      : null;
+  const tid = envKey ? process.env[envKey] : null;
+  const params = buildParamsFromKeys(vars, SLOT_BOOKED_IIT_PARAM_KEYS);
+  return sendTemplateMessage(formatPhoneE16491(phone10), tid, params, {
+    ...sendOpts,
+    templateEnvKey: envKey,
+  });
+}
+
 module.exports = {
   isWhatsAppEnabled,
   formatPhoneE16491,
@@ -378,6 +393,8 @@ module.exports = {
   sendPre4HrReminderWhatsApp,
   sendMeetLinkWhatsApp,
   sendReminder30MinWhatsApp,
+  sendIitReminderWhatsApp,
+  isIitReminderTemplateEnvKey,
   resetIntegrationStubCallCount,
   getIntegrationStubCallCount,
   setIntegrationStubFailNext,

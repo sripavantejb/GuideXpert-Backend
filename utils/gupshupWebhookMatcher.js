@@ -100,7 +100,9 @@ function buildPhoneFallbackMatchQuery(phone10, receivedAt, opts = {}) {
  */
 function inferOpsProductFromWebhookSnippet(rawPayloadSnippet) {
   const s = String(rawPayloadSnippet || '');
-  if (/GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED|iit_counselling|iitcounselling/i.test(s)) {
+  if (
+    /GUPSHUP_TEMPLATE_IIT_(SLOT_BOOKED|PRE|SUNDAY_PRE)|iit_counselling|iitcounselling/i.test(s)
+  ) {
     return 'iit_counselling';
   }
   return null;

@@ -64,6 +64,27 @@ function buildRetryPolicies() {
       retryDelayMinutes: parseCommaSeparatedPositiveInts(process.env.WA_30MIN_RETRY_DELAY_MINUTES, [1]),
       cooldownMinutes: parseCooldownMinutes('WA_30MIN_RETRY_COOLDOWN_MINUTES', 0),
       classifyPermanentFailures: true
+    },
+    iit_pre2hr: {
+      strategy: 'time_sensitive',
+      maxAttempts: 2,
+      retryDelayMinutes: parseCommaSeparatedPositiveInts(process.env.WA_IIT_PRE2HR_RETRY_DELAY_MINUTES, [1]),
+      cooldownMinutes: parseCooldownMinutes('WA_IIT_PRE2HR_RETRY_COOLDOWN_MINUTES', 0),
+      classifyPermanentFailures: true
+    },
+    iit_pre45min: {
+      strategy: 'time_sensitive',
+      maxAttempts: 2,
+      retryDelayMinutes: parseCommaSeparatedPositiveInts(process.env.WA_IIT_PRE45MIN_RETRY_DELAY_MINUTES, [1]),
+      cooldownMinutes: parseCooldownMinutes('WA_IIT_PRE45MIN_RETRY_COOLDOWN_MINUTES', 0),
+      classifyPermanentFailures: true
+    },
+    iit_pre15min: {
+      strategy: 'time_sensitive',
+      maxAttempts: 2,
+      retryDelayMinutes: parseCommaSeparatedPositiveInts(process.env.WA_IIT_PRE15MIN_RETRY_DELAY_MINUTES, [1]),
+      cooldownMinutes: parseCooldownMinutes('WA_IIT_PRE15MIN_RETRY_COOLDOWN_MINUTES', 0),
+      classifyPermanentFailures: true
     }
   };
 }

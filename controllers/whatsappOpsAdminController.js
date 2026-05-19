@@ -166,6 +166,18 @@ exports.getOpsMeta = (_req, res) => {
         'GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED_SATURDAY',
         'GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED_SUNDAY',
         'GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED',
+        'GUPSHUP_TEMPLATE_IIT_PRE2HR_TELUGU',
+        'GUPSHUP_TEMPLATE_IIT_PRE2HR_HINDI',
+        'GUPSHUP_TEMPLATE_IIT_PRE45MIN_TELUGU',
+        'GUPSHUP_TEMPLATE_IIT_PRE45MIN_HINDI',
+        'GUPSHUP_TEMPLATE_IIT_PRE15MIN_TELUGU',
+        'GUPSHUP_TEMPLATE_IIT_PRE15MIN_HINDI',
+        'GUPSHUP_TEMPLATE_IIT_SUNDAY_PRE2HR_TELUGU',
+        'GUPSHUP_TEMPLATE_IIT_SUNDAY_PRE2HR_HINDI',
+        'GUPSHUP_TEMPLATE_IIT_SUNDAY_PRE45MIN_TELUGU',
+        'GUPSHUP_TEMPLATE_IIT_SUNDAY_PRE45MIN_HINDI',
+        'GUPSHUP_TEMPLATE_IIT_SUNDAY_PRE15MIN_TELUGU',
+        'GUPSHUP_TEMPLATE_IIT_SUNDAY_PRE15MIN_HINDI',
         'GUPSHUP_TEMPLATE_PRE4HR',
         'GUPSHUP_TEMPLATE_MEET',
         'GUPSHUP_TEMPLATE_30MIN',
@@ -173,10 +185,13 @@ exports.getOpsMeta = (_req, res) => {
       ],
       opsProductsAllowed: [...listAllowedOpsProducts()],
       templateKinds: [
-        { id: 'slot_booked', label: 'Slot booked', description: 'Immediate confirmation after slot booking', retryPolicy: getRetryPolicy('slot_booked') },
-        { id: 'pre4hr', label: '4hr reminder', description: 'Cron + save_step3 use the same deadline-backward window near 4h before slot (see WA_PRE4HR_*).', retryPolicy: getRetryPolicy('pre4hr') },
-        { id: 'meet', label: 'Meet link (~1hr)', description: 'Same deadline-backward window near 1h before slot (see WA_MEET_*).', retryPolicy: getRetryPolicy('meet') },
-        { id: '30min', label: '30 min reminder', description: 'Same deadline-backward window near 30m before slot (see WA_30MIN_*).', retryPolicy: getRetryPolicy('30min') }
+        { id: 'slot_booked', label: 'Slot booked', description: 'Immediate confirmation after slot booking', retryPolicy: getRetryPolicy('slot_booked'), opsProducts: ['guidexpert', 'iit_counselling'] },
+        { id: 'pre4hr', label: '4hr reminder', description: 'Cron + save_step3 use the same deadline-backward window near 4h before slot (see WA_PRE4HR_*).', retryPolicy: getRetryPolicy('pre4hr'), opsProducts: ['guidexpert'] },
+        { id: 'meet', label: 'Meet link (~1hr)', description: 'Same deadline-backward window near 1h before slot (see WA_MEET_*).', retryPolicy: getRetryPolicy('meet'), opsProducts: ['guidexpert'] },
+        { id: '30min', label: '30 min reminder', description: 'Same deadline-backward window near 30m before slot (see WA_30MIN_*).', retryPolicy: getRetryPolicy('30min'), opsProducts: ['guidexpert'] },
+        { id: 'iit_pre2hr', label: 'IIT 2hr before', description: 'Language-specific template 2 hours before IIT demo (Wed/Sat vs Sun).', retryPolicy: getRetryPolicy('iit_pre2hr'), opsProducts: ['iit_counselling'] },
+        { id: 'iit_pre45min', label: 'IIT 45 min before', description: 'Language-specific template 45 minutes before IIT demo.', retryPolicy: getRetryPolicy('iit_pre45min'), opsProducts: ['iit_counselling'] },
+        { id: 'iit_pre15min', label: 'IIT 15 min before', description: 'Language-specific template 15 minutes before IIT demo.', retryPolicy: getRetryPolicy('iit_pre15min'), opsProducts: ['iit_counselling'] },
       ]
     }
   });
@@ -263,6 +278,7 @@ exports.getCalendarDayOverview = async (req, res) => {
       return res.status(400).json({ success: false, message: recipient.error });
     }
     let recipientSlotTimeBreakdown = null;
+    let recipientLanguageBreakdown = null;
     if (slotTimeNorm === 'all') {
       const br = await recipientAnalytics.computeRecipientSlotTimeBreakdown({
         dateIso,
@@ -270,6 +286,15 @@ exports.getCalendarDayOverview = async (req, res) => {
         opsProduct
       });
       if (!br.error) recipientSlotTimeBreakdown = br.data;
+    }
+    if (cohortIsIit) {
+      const langBr = await recipientAnalytics.computeRecipientLanguageBreakdown({
+        dateIso,
+        messageKind: selectedKind,
+        slotTime: slotTimeNorm,
+        opsProduct,
+      });
+      if (!langBr.error) recipientLanguageBreakdown = langBr.data;
     }
     const r = recipient.data;
     const cohortIds = Array.isArray(r._cohortSubmissionIds) ? [...r._cohortSubmissionIds] : [];
@@ -345,6 +370,7 @@ exports.getCalendarDayOverview = async (req, res) => {
           uniqueRecipientsDeliveredRead: attemptAgg.data.uniqueRecipientsDeliveredRead
         },
         ...(recipientSlotTimeBreakdown ? { recipientSlotTimeBreakdown } : {}),
+        ...(recipientLanguageBreakdown ? { recipientLanguageBreakdown } : {}),
         ...(debugOn && diagnostics && !diagnostics.error
           ? { diagnostics: diagnostics.data }
           : {})
