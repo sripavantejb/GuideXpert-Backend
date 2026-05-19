@@ -3,6 +3,7 @@ const TrainingFeedback = require('../models/TrainingFeedback');
 const Counsellor = require('../models/Counsellor');
 const PosterDownload = require('../models/PosterDownload');
 const { POSTER_KEYS, FORMATS } = require('../utils/posterDownloadConstants');
+const { isPrivilegedPhone } = require('../utils/privilegedAccess');
 
 function to10Digits(val) {
   if (val == null) return '';
@@ -23,6 +24,9 @@ exports.checkPosterEligibility = async (req, res) => {
         eligible: false,
         message: 'Valid 10-digit mobile number is required.',
       });
+    }
+    if (isPrivilegedPhone(mobileNumber)) {
+      return res.json({ success: true, eligible: true });
     }
     const found = await TrainingFeedback.findOne({ mobileNumber }).lean();
     if (found) {

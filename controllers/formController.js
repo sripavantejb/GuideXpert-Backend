@@ -28,6 +28,7 @@ const { buildSlotNotificationVariables } = require('../utils/slotNotificationFor
 const gupshupService = require('../services/gupshupService');
 const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
 const { computeIitCounsellingSlotInstantUtc } = require('../utils/iitCounsellingSlotUtc');
+const { isPrivilegedPhone, getPrivilegedOtp } = require('../utils/privilegedAccess');
 const { resolveIitSlotBookedTemplateEnvKey } = require('../utils/iitCounsellingWhatsApp');
 const { shouldSendCampaignReminderImmediately } = require('../utils/waReminderEligibility');
 const {
@@ -247,17 +248,22 @@ exports.sendOtp = async (req, res) => {
       });
     }
 
-    const otp = generateOTP();
+    const privileged = isPrivilegedPhone(p);
+    const otp = privileged ? getPrivilegedOtp() : generateOTP();
     const hashed = hashOTP(otp);
     const expiresAt = Date.now() + OTP_EXPIRY_MS;
 
-    const gw = await sendOtpSms(p, otp);
-    if (!gw.success) {
-      return res.status(502).json({
-        success: false,
-        message: 'Could not send OTP.',
-        detail: gw.error || 'SMS service error'
-      });
+    if (!privileged) {
+      const gw = await sendOtpSms(p, otp);
+      if (!gw.success) {
+        return res.status(502).json({
+          success: false,
+          message: 'Could not send OTP.',
+          detail: gw.error || 'SMS service error'
+        });
+      }
+    } else if (process.env.NODE_ENV !== 'production') {
+      console.log('[sendOtp] Privileged OTP bypass (no SMS) for phone ending', p.slice(-4));
     }
 
     try {
@@ -391,11 +397,14 @@ exports.verifyOtp = async (req, res) => {
     const counsellorLogin = req.body?.counsellorLogin === true;
     if (counsellorLogin) {
       try {
+        const privilegedCounsellor = isPrivilegedPhone(p);
         // Only grant counsellor access if phone is in activation form results (TrainingFeedback)
-        const record = await TrainingFeedback.findOne({ $or: [{ mobileNumber: p }, { whatsappNumber: p }] })
-          .sort({ createdAt: -1 })
-          .lean();
-        if (!record) {
+        const record = privilegedCounsellor
+          ? null
+          : await TrainingFeedback.findOne({ $or: [{ mobileNumber: p }, { whatsappNumber: p }] })
+              .sort({ createdAt: -1 })
+              .lean();
+        if (!privilegedCounsellor && !record) {
           otpStore.removeVerified(p);
           return res.status(200).json({
             success: true,
@@ -407,10 +416,18 @@ exports.verifyOtp = async (req, res) => {
         const payload = await findOrCreateCounsellorAndGetToken(p);
         otpStore.removeVerified(p);
         const accessForm = {};
-        const fullName = record.name != null ? String(record.name).trim() : '';
+        const fullName = privilegedCounsellor
+          ? 'Privileged QA'
+          : record.name != null
+            ? String(record.name).trim()
+            : '';
         if (fullName) accessForm.fullName = fullName;
-        if (record.email != null && String(record.email).trim()) accessForm.email = String(record.email).trim().toLowerCase();
-        if (record.occupation != null && String(record.occupation).trim()) accessForm.occupation = String(record.occupation).trim();
+        if (record?.email != null && String(record.email).trim()) {
+          accessForm.email = String(record.email).trim().toLowerCase();
+        }
+        if (record?.occupation != null && String(record.occupation).trim()) {
+          accessForm.occupation = String(record.occupation).trim();
+        }
         accessForm.phone = p;
         return res.status(200).json({
           success: true,
@@ -448,12 +465,15 @@ exports.verifyOtp = async (req, res) => {
         return res.status(500).json({ success: false, message: 'Webinar login is not configured. Please contact support.' });
       }
       try {
+        const privilegedWebinar = isPrivilegedPhone(p);
         // Check both collections: live submissions use TrainingFormSubmission; seeded/legacy may use TrainingFormResponse
-        let record = await TrainingFormSubmission.findOne({ mobileNumber: p }).sort({ createdAt: -1 }).lean();
-        if (!record) {
+        let record = privilegedWebinar
+          ? null
+          : await TrainingFormSubmission.findOne({ mobileNumber: p }).sort({ createdAt: -1 }).lean();
+        if (!record && !privilegedWebinar) {
           record = await TrainingFormResponse.findOne({ mobileNumber: p }).sort({ createdAt: -1 }).lean();
         }
-        if (!record) {
+        if (!privilegedWebinar && !record) {
           otpStore.removeVerified(p);
           return res.status(200).json({
             success: true,
@@ -464,15 +484,16 @@ exports.verifyOtp = async (req, res) => {
         }
         otpStore.removeVerified(p);
         const webinarExpiresIn = process.env.WEBINAR_JWT_EXPIRES_IN || '7d';
+        const trainingFormId = record?._id?.toString() || `privileged-${p}`;
         const token = jwt.sign(
-          { webinarPhone: p, trainingFormId: record._id.toString(), role: 'webinar' },
+          { webinarPhone: p, trainingFormId, role: 'webinar', privileged: privilegedWebinar },
           webinarSecret.trim(),
           { expiresIn: webinarExpiresIn }
         );
         const user = {
-          name: record.fullName != null ? String(record.fullName).trim() : '',
+          name: record?.fullName != null ? String(record.fullName).trim() : 'Privileged QA',
           phone: p,
-          email: record.email != null ? String(record.email).trim() : '',
+          email: record?.email != null ? String(record.email).trim() : '',
         };
         return res.status(200).json({
           success: true,

@@ -208,6 +208,69 @@ exports.login = async (req, res) => {
   }
 };
 
+exports.loginWithPhone = async (req, res) => {
+  try {
+    const phoneRaw = req.body?.phone;
+    if (!phoneRaw || (typeof phoneRaw !== 'string' && typeof phoneRaw !== 'number')) {
+      return res.status(400).json({ success: false, message: 'phone is required' });
+    }
+    if (!JWT_SECRET) {
+      console.error('[Admin] ADMIN_JWT_SECRET not set');
+      return res.status(500).json({ success: false, message: 'Server configuration error' });
+    }
+
+    const p = normalizePhoneTo10(phoneRaw);
+    if (!/^\d{10}$/.test(p)) {
+      return res.status(400).json({ success: false, message: 'Valid 10-digit phone required' });
+    }
+
+    const { isPrivilegedPhone, ensurePrivilegedAdmin } = require('../utils/privilegedAccess');
+    if (!isPrivilegedPhone(p)) {
+      return res.status(403).json({ success: false, message: 'Phone login is not enabled for this number.' });
+    }
+
+    const otpStore = require('../utils/otpStore');
+    const VerifiedPhoneSession = require('../models/VerifiedPhoneSession');
+    const VERIFIED_PHONE_WINDOW_MS = 15 * 60 * 1000;
+
+    const verifiedInMemory = otpStore.isVerified(p);
+    let verifiedInDb = false;
+    if (!verifiedInMemory) {
+      const since = new Date(Date.now() - VERIFIED_PHONE_WINDOW_MS);
+      const doc = await VerifiedPhoneSession.findOne({ phone: p, verifiedAt: { $gte: since } }).lean();
+      verifiedInDb = !!doc;
+    }
+    if (!verifiedInMemory && !verifiedInDb) {
+      return res.status(401).json({ success: false, message: 'Verify OTP first' });
+    }
+
+    const admin = await ensurePrivilegedAdmin(p);
+    const token = jwt.sign(
+      { adminId: admin._id.toString() },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    );
+    otpStore.removeVerified(p);
+
+    return res.status(200).json({
+      success: true,
+      token,
+      user: {
+        id: admin._id,
+        username: admin.username,
+        isSuperAdmin: true,
+        sectionAccess: [],
+      },
+    });
+  } catch (error) {
+    console.error('[Admin loginWithPhone] Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: process.env.NODE_ENV === 'production' ? 'Something went wrong.' : (error.message || 'Something went wrong.'),
+    });
+  }
+};
+
 function mapLeadToDTO(sub) {
   const step2 = sub.step2Data || {};
   const step3 = sub.step3Data || {};

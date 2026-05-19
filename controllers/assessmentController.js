@@ -1,4 +1,5 @@
 const otpStore = require('../utils/otpStore');
+const { isPrivilegedPhone } = require('../utils/privilegedAccess');
 const otpRepository = require('../utils/otpRepository');
 const AssessmentSubmission = require('../models/AssessmentSubmission');
 const AssessmentSubmission2 = require('../models/AssessmentSubmission2');
@@ -379,7 +380,7 @@ exports.checkAssessment3Eligibility = async (req, res) => {
       });
     }
 
-    const exists = !!(await AssessmentSubmission3.exists({ phone: p }));
+    const exists = isPrivilegedPhone(p) || !!(await AssessmentSubmission3.exists({ phone: p }));
     return res.status(200).json({
       success: true,
       eligible: exists,
@@ -398,7 +399,7 @@ exports.checkActivationEligibility = async (req, res) => {
     if (!/^\d{10}$/.test(p)) {
       return res.status(400).json({ success: false, message: 'Valid 10-digit phone required' });
     }
-    const exists = !!(await TrainingFeedback.exists({ mobileNumber: p }));
+    const exists = isPrivilegedPhone(p) || !!(await TrainingFeedback.exists({ mobileNumber: p }));
     return res.status(200).json({ success: true, eligible: exists, data: { exists, phone: p } });
   } catch (err) {
     console.error('[checkActivationEligibility]', err.message);

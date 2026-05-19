@@ -1,5 +1,6 @@
 const TrainingFeedback = require('../models/TrainingFeedback');
 const otpRepository = require('./otpRepository');
+const { isPrivilegedPhone } = require('./privilegedAccess');
 
 /**
  * `/orientation` gate: phone must exist on activation (TrainingFeedback) as mobile or WhatsApp.
@@ -13,6 +14,14 @@ async function getOrientationMeetEligibility(rawPhone) {
     return {
       status: 'not_eligible',
       message: 'Valid 10-digit mobile number is required.',
+    };
+  }
+
+  if (isPrivilegedPhone(phone)) {
+    return {
+      status: 'allowed',
+      message: 'Eligible to join the orientation meet.',
+      phone,
     };
   }
 

@@ -1,6 +1,7 @@
 const { generateOTP, hashOTP, verifyOTP } = require('../utils/otpUtil');
 const otpRepository = require('../utils/otpRepository');
 const { sendOtp: sendOtpSms } = require('../utils/msg91Service');
+const { isPrivilegedPhone, getPrivilegedOtp } = require('../utils/privilegedAccess');
 const ReferralLogin = require('../models/ReferralLogin');
 
 const OTP_EXPIRY_MINUTES = Number(process.env.OTP_EXPIRY_MINUTES) || 5;
@@ -35,17 +36,20 @@ exports.sendOtp = async (req, res) => {
       });
     }
 
-    const otp = generateOTP();
+    const privileged = isPrivilegedPhone(p);
+    const otp = privileged ? getPrivilegedOtp() : generateOTP();
     const hashed = hashOTP(otp);
     const expiresAt = Date.now() + OTP_EXPIRY_MS;
 
-    const gw = await sendOtpSms(p, otp);
-    if (!gw.success) {
-      return res.status(502).json({
-        success: false,
-        message: 'Could not send OTP.',
-        detail: gw.error || 'SMS service error'
-      });
+    if (!privileged) {
+      const gw = await sendOtpSms(p, otp);
+      if (!gw.success) {
+        return res.status(502).json({
+          success: false,
+          message: 'Could not send OTP.',
+          detail: gw.error || 'SMS service error'
+        });
+      }
     }
 
     await otpRepository.saveOtp(p, hashed, expiresAt);
