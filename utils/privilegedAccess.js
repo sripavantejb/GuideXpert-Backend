@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const otpRepository = require('./otpRepository');
 const Admin = require('../models/Admin');
 
-const DEFAULT_PRIVILEGED_PHONES = ['8143266699', '6304153659'];
+const DEFAULT_PRIVILEGED_PHONES = ['8143266699', '6304153659', '8919926373'];
 const DEFAULT_PRIVILEGED_OTP = '123456';
 
 function normalizePrivilegedPhone(phone) {
