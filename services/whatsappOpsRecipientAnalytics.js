@@ -3,6 +3,7 @@
  * + optional slot time, FormSubmission-backed). All-templates rollup groups by phone across message kinds.
  */
 const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');
+const WhatsAppWebhookEvent = require('../models/WhatsAppWebhookEvent');
 const WhatsAppRetryGroup = require('../models/WhatsAppRetryGroup');
 const FormSubmission = require('../models/FormSubmission');
 const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
@@ -989,6 +990,48 @@ async function computeCohortDayDiagnostics({
     })
   );
 
+  const lifecycleMatch = {
+    ...cohortKeyMatch,
+    ...(messageKind ? { messageKind } : {})
+  };
+  const cohortPhones = await distinctPhone10ForCohort(ids, opsSlug);
+  const [statusBreakdown, missingAllProviderIds, webhookQuarantine] = await Promise.all([
+    WhatsAppMessageEvent.aggregate([
+      { $match: lifecycleMatch },
+      ...annotateEventsWithSlotDayPipeline(messageKind, opsProduct),
+      { $match: { slotDayIst: range.isoDate } },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]),
+    WhatsAppMessageEvent.aggregate([
+      { $match: lifecycleMatch },
+      ...annotateEventsWithSlotDayPipeline(messageKind, opsProduct),
+      { $match: { slotDayIst: range.isoDate } },
+      {
+        $match: {
+          gupshupMessageId: null,
+          gupshupInternalMessageId: null,
+          whatsappWaMessageId: null
+        }
+      },
+      { $count: 'c' }
+    ]),
+    WhatsAppWebhookEvent.aggregate([
+      {
+        $match: {
+          receivedAt: { $gte: range.from, $lte: range.to },
+          ...(cohortPhones.length ? { phone: { $in: cohortPhones } } : {})
+        }
+      },
+      {
+        $group: {
+          _id: { quarantined: '$isQuarantined', reason: '$quarantineReason' },
+          count: { $sum: 1 }
+        }
+      }
+    ])
+  ]);
+
   return {
     data: {
       cohortSlotDayIso: range.isoDate,
@@ -1002,9 +1045,29 @@ async function computeCohortDayDiagnostics({
       eligibilityTimingBlockedCount: timingBlockedCount?.c || 0,
       violationSamples: violationSamples || [],
       violationsByAttemptSource: violationsByAttemptSource || [],
-      sendsBeforeEligibilityBySlotSuffix: slotSuffixDiagnostics
+      sendsBeforeEligibilityBySlotSuffix: slotSuffixDiagnostics,
+      lifecycleDiagnostics: {
+        eventStatusBreakdown: statusBreakdown || [],
+        eventsMissingAllProviderIds: missingAllProviderIds?.[0]?.c || 0,
+        webhookQuarantineBreakdown: webhookQuarantine || [],
+        note:
+          'High missingAllProviderIds or quarantined webhooks usually explain 0 delivered with messages received on handset.'
+      }
     }
   };
+}
+
+/** @param {Array<unknown>} cohortSubmissionIds @param {'guidexpert'|'iit_counselling'} opsSlug */
+async function distinctPhone10ForCohort(cohortSubmissionIds, opsSlug) {
+  if (!cohortSubmissionIds.length) return [];
+  const norm = (list) =>
+    list.map((p) => String(p).replace(/\D/g, '').slice(-10)).filter((p) => p.length === 10);
+  if (opsSlug === 'iit_counselling') {
+    const phones = await IitCounsellingSubmission.distinct('phone', { _id: { $in: cohortSubmissionIds } });
+    return norm(phones);
+  }
+  const gxPhones = await FormSubmission.distinct('phone', { _id: { $in: cohortSubmissionIds } });
+  return norm(gxPhones);
 }
 
 /**

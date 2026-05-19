@@ -32,6 +32,17 @@ describe('gupshupWebhookMonotonic reconcile-aware', () => {
     );
   });
 
+  test('send-time failed → delivered allowed when not permanent', () => {
+    assert.equal(
+      canApplyWebhookStatus('failed', 'delivered', {
+        reconcileDerivedFailure: false,
+        terminalFailureKind: null,
+        retryExclusionReason: null
+      }),
+      true
+    );
+  });
+
   test('G: permanent failed → delivered blocked', () => {
     assert.equal(
       canApplyWebhookStatus('failed', 'delivered', {
@@ -57,5 +68,13 @@ describe('gupshupWebhookMonotonic reconcile-aware', () => {
 
   test('failed webhook allowed from awaiting_final_dlr', () => {
     assert.equal(canApplyWebhookStatus('awaiting_final_dlr', 'failed'), true);
+  });
+
+  test('retry_exhausted → delivered allowed for repair recovery', () => {
+    assert.equal(
+      canApplyWebhookStatus('retry_exhausted', 'delivered', { allowTerminalRecovery: true }),
+      true
+    );
+    assert.equal(canApplyWebhookStatus('retry_exhausted', 'delivered'), false);
   });
 });

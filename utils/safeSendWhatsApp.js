@@ -28,6 +28,12 @@ const { reserveOutboundWhatsAppAttempt } = require('./waSendAttemptReservation')
 const { maybeCrash } = require('./waTestCrash');
 const { normalizeOutboundOpsProduct } = require('./whatsappOpsProduct');
 const { isIitSlotBookedTemplateEnvKey } = require('./iitCounsellingWhatsApp');
+const {
+  classifyGupshupSendOutcome,
+  buildAwaitingReconcileFields,
+  isAmbiguousGupshupSendError,
+  isIitSlotBookedSend
+} = require('./gupshupSendOutcome');
 
 function maskPhone(phone10) {
   const s = String(phone10 || '').replace(/\D/g, '');
@@ -415,22 +421,28 @@ async function safeSendWhatsApp({
       ...(trimTemplateKey ? { templateEnvKey: trimTemplateKey } : {})
     });
     const now = nowBase;
-    if (result && result.success) {
+    const sendOutcome = classifyGupshupSendOutcome(result, {
+      retryKind,
+      outboundProduct,
+      templateIdEnvKey
+    });
+    if (sendOutcome.treatAsAccepted) {
       maybeCrash('after_provider_accept');
     }
-    const ids = parseGupshupTemplateSendResponse(result && result.data);
-    const messageId = ids.canonicalMessageId || null;
+    const ids = sendOutcome.ids;
+    const messageId = sendOutcome.messageId;
     const payloadSnippet = providerPayloadSnippet(result);
-    if (result && result.success && !messageId) {
+    if (sendOutcome.treatAsAccepted && !messageId) {
       console.warn('[WhatsApp] send_ok_but_no_provider_id', {
         mask: maskPhone(phone10),
         type: retryKind,
         templateId: templateId || null,
-        templateKey: templateIdEnvKey || null
+        templateKey: templateIdEnvKey || null,
+        reason: sendOutcome.reason
       });
     }
 
-    if (result && result.success) {
+    if (sendOutcome.treatAsAccepted) {
       let retrySnapOnSuccess = 0;
       let eligibilityTimingPayload = null;
       if (CAMPAIGN_RELATIVE_KINDS.has(retryKind)) {
@@ -466,42 +478,49 @@ async function safeSendWhatsApp({
         await FormSubmission.updateOne({ phone: phone10 }, { $set: setDoc });
       }
 
-      await persistAttemptEvent(
-        buildMessageEventPayload({
-          phone10,
-          subId,
-          retryKind,
-          cronRunId,
-          cronJobKey,
-          source,
-          templateIdEnvKey,
-          templateId,
-          messageId,
-          ids,
-          payloadSnippet,
-          now,
-          status: 'submitted',
-          retrySnap: retrySnapOnSuccess,
-          errText: null,
-          retryGroupId: resolvedGroupId,
-          attemptNumber: attNum,
-          parentOid,
-          attemptBatchOid,
-          retrySourceLabel,
-          retryEligible: false,
-          correlationId,
-          canonicalRetryGroupId: canonicalOid,
-          terminalFailureKind: null,
-          retryExclusionReason: null,
-          opsProduct: outboundProduct,
-          cohortSlotInstantUtc: cohortSlotUtc,
-          iitCounsellingSubmissionId: iitSubOid,
-          eligibilityTiming: eligibilityTimingPayload
-        }),
-        reservedEventId
-      );
+      const successPayload = buildMessageEventPayload({
+        phone10,
+        subId,
+        retryKind,
+        cronRunId,
+        cronJobKey,
+        source,
+        templateIdEnvKey,
+        templateId,
+        messageId,
+        ids,
+        payloadSnippet,
+        now,
+        status: sendOutcome.useAwaitingReconcile ? 'awaiting_final_dlr' : 'submitted',
+        retrySnap: retrySnapOnSuccess,
+        errText: sendOutcome.useAwaitingReconcile ? sendOutcome.errText : null,
+        retryGroupId: resolvedGroupId,
+        attemptNumber: attNum,
+        parentOid,
+        attemptBatchOid,
+        retrySourceLabel,
+        retryEligible: false,
+        correlationId,
+        canonicalRetryGroupId: canonicalOid,
+        terminalFailureKind: null,
+        retryExclusionReason: null,
+        opsProduct: outboundProduct,
+        cohortSlotInstantUtc: cohortSlotUtc,
+        iitCounsellingSubmissionId: iitSubOid,
+        eligibilityTiming: eligibilityTimingPayload
+      });
+      if (sendOutcome.useAwaitingReconcile) {
+        Object.assign(successPayload, buildAwaitingReconcileFields(now));
+      }
+      await persistAttemptEvent(successPayload, reservedEventId);
 
-      console.log('[WhatsApp] success', maskPhone(phone10), `type=${retryKind}`);
+      console.log(
+        '[WhatsApp] success',
+        maskPhone(phone10),
+        `type=${retryKind}`,
+        sendOutcome.useAwaitingReconcile ? 'awaiting_dlr' : 'submitted',
+        sendOutcome.reason || ''
+      );
       if (CAMPAIGN_RELATIVE_KINDS.has(retryKind) && resolvedGroupId) {
         try {
           const { syncReminderJobFromRetryGroup } = require('../services/whatsappReminderJobSync');
@@ -514,7 +533,7 @@ async function safeSendWhatsApp({
       return { success: true, retryGroupId: resolvedGroupId };
     }
 
-    const errText = result && result.error ? String(result.error) : 'send failed';
+    const errText = sendOutcome.errText || (result && result.error ? String(result.error) : 'send failed');
     const providerDebug = providerPayloadSnippet(result, 500) || '';
 
     let snap = attNum > 1 ? attNum - 1 : null;
@@ -583,7 +602,7 @@ async function safeSendWhatsApp({
           source,
           templateIdEnvKey,
           templateId,
-          messageId: null,
+          messageId: ids.canonicalMessageId || null,
           ids,
           payloadSnippet: providerDebug || null,
           now,
@@ -627,6 +646,51 @@ async function safeSendWhatsApp({
   } catch (e) {
     const msg = e && e.message ? String(e.message) : 'unknown error';
     const now = new Date();
+    if (
+      isIitSlotBookedSend(retryKind, outboundProduct, templateIdEnvKey) &&
+      isAmbiguousGupshupSendError(msg) &&
+      reservedEventId
+    ) {
+      try {
+        const ambiguousPayload = buildMessageEventPayload({
+          phone10,
+          subId: formSubmissionId,
+          retryKind,
+          cronRunId,
+          cronJobKey,
+          source,
+          templateIdEnvKey,
+          templateId,
+          messageId: null,
+          ids: {},
+          payloadSnippet: null,
+          now,
+          status: 'awaiting_final_dlr',
+          retrySnap: null,
+          errText: msg.slice(0, 2000),
+          retryGroupId: resolvedGroupId,
+          attemptNumber: attNum,
+          parentOid: toOidMaybe(parentMessageEventId),
+          attemptBatchOid: toOidMaybe(attemptBatchIdOpt),
+          retrySourceLabel,
+          retryEligible: false,
+          correlationId,
+          canonicalRetryGroupId: canonicalOid,
+          terminalFailureKind: null,
+          retryExclusionReason: null,
+          opsProduct: outboundProduct,
+          cohortSlotInstantUtc: cohortSlotUtc,
+          iitCounsellingSubmissionId: iitSubOid,
+          eligibilityTiming: null
+        });
+        Object.assign(ambiguousPayload, buildAwaitingReconcileFields(now));
+        await persistAttemptEvent(ambiguousPayload, reservedEventId);
+        console.warn('[WhatsApp] IIT ambiguous exception — awaiting DLR', maskPhone(phone10), msg);
+        return { success: true, retryGroupId: resolvedGroupId, ambiguousAwaitingDlr: true };
+      } catch (ambigPersistErr) {
+        console.warn('[WhatsApp] ambiguous persist failed', ambigPersistErr.message);
+      }
+    }
     try {
       if (!resolvedGroupId) {
         resolvedGroupId = await resolveRetryGroupId({

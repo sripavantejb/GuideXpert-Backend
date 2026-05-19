@@ -22,6 +22,8 @@ const {
   resolveIitSlotBookedHeaderImageUrl,
   GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL
 } = require('../utils/iitCounsellingWhatsApp');
+const { parseGupshupTemplateSendResponse } = require('../utils/gupshupMessageIds');
+const { isAmbiguousGupshupSendError } = require('../utils/gupshupSendOutcome');
 
 const GUPSHUP_TEMPLATE_URL = 'https://api.gupshup.io/wa/api/v1/template/msg';
 
@@ -231,17 +233,28 @@ async function sendTemplateMessage(phoneE164, templateId, params, opts = {}) {
     });
   }
 
+  const timeoutMs = isIitTemplate
+    ? Math.min(
+        Math.max(parseInt(process.env.GUPSHUP_IIT_SEND_TIMEOUT_MS || '', 10) || 60000, 15000),
+        120000
+      )
+    : Math.min(
+        Math.max(parseInt(process.env.GUPSHUP_SEND_TIMEOUT_MS || '', 10) || 20000, 5000),
+        120000
+      );
+
   try {
     const res = await axios.post(GUPSHUP_TEMPLATE_URL, outboundBodyString, {
       headers: {
         apikey: apiKey,
         'Content-Type': 'application/x-www-form-urlencoded'
       },
-      timeout: 20000,
+      timeout: timeoutMs,
       validateStatus: () => true
     });
 
     const data = res.data;
+    const parsedIds = parseGupshupTemplateSendResponse(data);
 
     if (correlationId) {
       console.log('[Gupshup] correlationId', correlationId, 'mask', mask, 'template', templateId);
@@ -249,12 +262,20 @@ async function sendTemplateMessage(phoneE164, templateId, params, opts = {}) {
 
     if (res.status >= 400) {
       const errMsg = (data && (data.message || data.error)) || `HTTP ${res.status}`;
+      if (parsedIds.canonicalMessageId) {
+        console.warn('[Gupshup] Template HTTP error but message id present', mask, errMsg);
+        return { success: true, data, ambiguousAccept: true };
+      }
       console.error('[Gupshup] Template send failed', mask, errMsg, data);
       return { success: false, error: String(errMsg), data };
     }
 
     if (data && (data.status === 'error' || data.success === false)) {
       const errMsg = data.message || data.error || 'Gupshup API error';
+      if (parsedIds.canonicalMessageId) {
+        console.warn('[Gupshup] Template rejected in body but message id present', mask, errMsg);
+        return { success: true, data, ambiguousAccept: true };
+      }
       console.error('[Gupshup] Template send rejected', mask, errMsg, data);
       return { success: false, error: String(errMsg), data };
     }
@@ -262,11 +283,22 @@ async function sendTemplateMessage(phoneE164, templateId, params, opts = {}) {
     console.log('[Gupshup] Template submitted', mask, templateId);
     return { success: true, data };
   } catch (e) {
-    const msg = e.response && e.response.data
-      ? (e.response.data.message || e.response.data.error || e.message)
+    const responseData = e.response && e.response.data ? e.response.data : null;
+    const parsedIds = parseGupshupTemplateSendResponse(responseData);
+    const msg = responseData
+      ? responseData.message || responseData.error || e.message
       : e.message;
-    console.error('[Gupshup] Template send exception', maskPhoneTail(destination), msg);
-    return { success: false, error: msg || 'Gupshup request failed' };
+    if (parsedIds.canonicalMessageId) {
+      console.warn('[Gupshup] Template exception but message id in response', maskPhoneTail(destination), msg);
+      return { success: true, data: responseData, ambiguousAccept: true };
+    }
+    const errText = msg || 'Gupshup request failed';
+    if (isIitTemplate && isAmbiguousGupshupSendError(errText)) {
+      console.warn('[Gupshup] IIT template ambiguous network error', maskPhoneTail(destination), errText);
+    } else {
+      console.error('[Gupshup] Template send exception', maskPhoneTail(destination), errText);
+    }
+    return { success: false, error: errText, data: responseData || null };
   }
 }
 

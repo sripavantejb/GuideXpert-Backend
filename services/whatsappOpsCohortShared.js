@@ -61,10 +61,26 @@ function annotateEventsWithSlotDayPipeline(messageKindFilter, options = {}) {
       }
     },
     {
+      $lookup: {
+        from: 'iitcounsellingsubmissions',
+        localField: 'iitCounsellingSubmissionId',
+        foreignField: '_id',
+        pipeline: [{ $project: { counsellingSlotInstantUtc: 1, phone: 1 } }],
+        as: 'iitSubDoc'
+      }
+    },
+    {
       $addFields: {
         slotDateFromSub: {
           $ifNull: [
             '$cohortSlotInstantUtc',
+            {
+              $cond: [
+                { $gt: [{ $size: '$iitSubDoc' }, 0] },
+                { $arrayElemAt: ['$iitSubDoc.counsellingSlotInstantUtc', 0] },
+                null
+              ]
+            },
             {
               $cond: [
                 { $gt: [{ $size: '$subDoc' }, 0] },
@@ -82,7 +98,8 @@ function annotateEventsWithSlotDayPipeline(messageKindFilter, options = {}) {
         cohortFallback: {
           $and: [
             { $eq: [{ $ifNull: ['$cohortSlotInstantUtc', null] }, null] },
-            { $lte: [{ $size: '$subDoc' }, 0] }
+            { $lte: [{ $size: '$subDoc' }, 0] },
+            { $lte: [{ $size: '$iitSubDoc' }, 0] }
           ]
         }
       }

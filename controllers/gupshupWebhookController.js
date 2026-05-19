@@ -15,6 +15,11 @@ const {
   classifyCampaignFailure,
   RETRY_EXCLUSION_REASON
 } = require('../utils/whatsappRetryRules');
+const {
+  pickBestWebhookMatchCandidate,
+  buildPhoneFallbackMatchQuery,
+  inferOpsProductFromWebhookSnippet
+} = require('../utils/gupshupWebhookMatcher');
 
 function sanitizeSnippet(raw, maxLen = 3800) {
   if (raw == null) return null;
@@ -134,6 +139,61 @@ function tryParseMessageEventBody(body) {
 }
 
 /**
+ * Meta Cloud API DLR: entry[].changes[].value.statuses[] (recipient_id + message id).
+ * @param {object} body
+ */
+function extractMetaWabaStatusFields(body) {
+  let root = body;
+  if (body && typeof body.payload === 'string') {
+    try {
+      root = JSON.parse(body.payload);
+    } catch {
+      root = body;
+    }
+  }
+  if (!root || typeof root !== 'object' || !Array.isArray(root.entry)) return null;
+
+  const providerIds = [];
+  let phone10 = null;
+  let stage = null;
+  let failureCode = null;
+  let failureReason = null;
+
+  for (const entry of root.entry) {
+    const changes = entry && Array.isArray(entry.changes) ? entry.changes : [];
+    for (const ch of changes) {
+      const statuses = ch && ch.value && Array.isArray(ch.value.statuses) ? ch.value.statuses : [];
+      for (const st of statuses) {
+        if (!st || typeof st !== 'object') continue;
+        if (st.id) providerIds.push(String(st.id).trim());
+        const recipDigits = String(st.recipient_id || '').replace(/\D/g, '');
+        if (recipDigits.length >= 10) phone10 = recipDigits.slice(-10);
+        const stNorm = normalizeEventType(st.status) || mapStageToDbStatus(st.status);
+        if (stNorm) stage = stNorm;
+        if (Array.isArray(st.errors) && st.errors.length > 0) {
+          const err = st.errors[0];
+          if (err.code != null) failureCode = String(err.code).slice(0, 32);
+          const msg =
+            err.message ||
+            err.title ||
+            (err.error_data && err.error_data.details ? String(err.error_data.details) : null);
+          if (msg) failureReason = String(msg).slice(0, 2000);
+        }
+      }
+    }
+  }
+
+  if (!providerIds.length && !phone10 && !stage) return null;
+  return {
+    providerIds: [...new Set(providerIds.filter(Boolean))],
+    phone10,
+    stage,
+    failureCode,
+    failureReason
+  };
+}
+
+/**
  * Extract message id, recipient phone (10-digit IN), inbound status text from heterogeneous Gupshup payloads.
  */
 function extractWebhookFields(body) {
@@ -147,6 +207,8 @@ function extractWebhookFields(body) {
       parseError = 'payload_json_parse_failed';
     }
   }
+
+  const metaHints = extractMetaWabaStatusFields(body);
 
   const gsIdCandidates = [];
   const payloadIdCandidates = [];
@@ -293,13 +355,29 @@ function extractWebhookFields(body) {
   }
 
   visit(root, 0);
+
+  if (metaHints) {
+    for (const id of metaHints.providerIds) {
+      pushGsId(id, 12);
+      pushPayloadId(id, 12);
+    }
+    if (metaHints.phone10) pushPhone(metaHints.phone10, 12);
+    if (metaHints.stage) {
+      pushEventType(metaHints.stage, 12);
+      pushStatus(metaHints.stage, 12);
+    }
+  }
+
   const best = (arr) => (arr.length ? arr.sort((a, b) => b.score - a.score)[0].value : null);
   const gsId = best(gsIdCandidates);
   const payloadId = best(payloadIdCandidates);
-  const phone10 = best(phoneCandidates);
+  const phone10 = metaHints && metaHints.phone10 ? metaHints.phone10 : best(phoneCandidates);
   const status = best(statusCandidates);
-  const eventType = best(eventTypeCandidates);
-  const providerIds = [...new Set([gsId, payloadId].filter(Boolean))];
+  const eventType =
+    metaHints && metaHints.stage ? metaHints.stage : best(eventTypeCandidates);
+  const providerIds = [
+    ...new Set([...(metaHints && metaHints.providerIds ? metaHints.providerIds : []), gsId, payloadId].filter(Boolean))
+  ];
   const deliveryHint = eventType ? normalizeDeliveryHint(eventType) : (normalizeDeliveryHint(status) || null);
   const metaErrors = extractMetaStatusErrors(body);
   return {
@@ -312,8 +390,9 @@ function extractWebhookFields(body) {
     deliveryHint,
     status,
     parseError,
-    failureCode: metaErrors.failureCode,
-    failureReason: metaErrors.failureReason
+    failureCode: metaHints && metaHints.failureCode ? metaHints.failureCode : metaErrors.failureCode,
+    failureReason:
+      metaHints && metaHints.failureReason ? metaHints.failureReason : metaErrors.failureReason
   };
 }
 
@@ -443,7 +522,8 @@ async function applyWebhookToMessageEvent(doc, newStatus, opts) {
     canApplyWebhookStatus(doc.status, newStatus, {
       reconcileDerivedFailure: doc.reconcileDerivedFailure === true,
       terminalFailureKind: doc.terminalFailureKind,
-      retryExclusionReason: doc.retryExclusionReason
+      retryExclusionReason: doc.retryExclusionReason,
+      allowTerminalRecovery: opts.allowTerminalRecovery === true
     });
   const enqueuedIdOnly =
     String(stage || '').toLowerCase() === 'enqueued' &&
@@ -540,7 +620,9 @@ async function applyWebhookToMessageEvent(doc, newStatus, opts) {
     if (newStatus === 'delivered' || newStatus === 'read') {
       const cur = String(doc.status || '').toLowerCase();
       const lateRecovery =
-        cur === 'awaiting_final_dlr' || doc.reconcileDerivedFailure === true;
+        cur === 'awaiting_final_dlr' ||
+        doc.reconcileDerivedFailure === true ||
+        (cur === 'failed' && doc.terminalFailureKind !== 'permanent');
       set.retryEligible = false;
       set.retryExclusionReason = RETRY_EXCLUSION_REASON.alreadyDeliveredOrRead;
       set.retryExclusionAt = receivedAt;
@@ -585,6 +667,104 @@ async function applyWebhookToMessageEvent(doc, newStatus, opts) {
 
 exports.applyWebhookToMessageEvent = applyWebhookToMessageEvent;
 exports.extractMetaStatusErrors = extractMetaStatusErrors;
+exports.extractWebhookFields = extractWebhookFields;
+exports.tryParseMessageEventBody = tryParseMessageEventBody;
+exports.mergeExplicitAndExtracted = mergeExplicitAndExtracted;
+exports.inferredStatusFromDeliveryHint = inferredStatusFromDeliveryHint;
+
+/**
+ * Apply DLR payload to WhatsAppMessageEvent rows (repair / replay; no HTTP).
+ * @param {object} body parsed Gupshup webhook JSON
+ * @param {Date} [receivedAt]
+ * @returns {Promise<{ updatedEventCount: number, updatePath: string, resolvedMatchId: string|null }>}
+ */
+async function replayGupshupWebhookBody(body, receivedAt = new Date()) {
+  const explicit = tryParseMessageEventBody(body);
+  const extracted = extractWebhookFields(body);
+  const merged = mergeExplicitAndExtracted(explicit, extracted);
+  const {
+    providerIds,
+    phone10,
+    gsId,
+    payloadId,
+    stage,
+    dbStatusFromStage,
+    deliveryHint,
+    failureCode,
+    failureReason,
+    whatsappMessageFromInner
+  } = merged;
+
+  const transitionTs = transitionTimestamp(explicit, receivedAt);
+  const newStatus = dbStatusFromStage || inferredStatusFromDeliveryHint(deliveryHint);
+  let updatePath = 'none';
+  let updatedEventCount = 0;
+  let resolvedMatchId = null;
+
+  const applyToDoc = async (d) => {
+    if (!newStatus || !d) return false;
+    const r = await applyWebhookToMessageEvent(d, newStatus, {
+      receivedAt,
+      transitionTs,
+      failureCode,
+      failureReason,
+      gsId,
+      outerId: payloadId,
+      whatsappMessageFromInner,
+      stage
+    });
+    if (r.modified) {
+      resolvedMatchId = String(d._id);
+      return true;
+    }
+    return false;
+  };
+
+  const tryUpdateDocs = async (query, matchLabel) => {
+    const docs = await WhatsAppMessageEvent.find(query).limit(25).lean();
+    const picked = pickBestWebhookMatchCandidate(docs);
+    if (!picked) return 0;
+    if (docs.length > 1) {
+      console.log(
+        JSON.stringify({
+          event: 'provider_id_multi_match_resolved',
+          matchLabel: matchLabel || 'provider_id',
+          pickedEventId: String(picked._id),
+          candidateCount: docs.length,
+          replay: true
+        })
+      );
+    }
+    const ok = await applyToDoc(picked);
+    return ok ? 1 : 0;
+  };
+
+  if (newStatus && providerIds.length > 0) {
+    const idClause = messageEventIdMatchClause(providerIds);
+    if (idClause) {
+      const n = await tryUpdateDocs(idClause, 'provider_id');
+      updatedEventCount = n;
+      if (n > 0) updatePath = 'providerIds';
+    }
+  }
+
+  if (newStatus && updatedEventCount === 0 && phone10) {
+    const inferredOps = inferOpsProductFromWebhookSnippet(JSON.stringify(body || {}));
+    const phoneQuery = buildPhoneFallbackMatchQuery(phone10, receivedAt, {
+      opsProduct: inferredOps || null,
+      messageKind: 'slot_booked'
+    });
+    const nPhone = await tryUpdateDocs(phoneQuery, 'phone_fallback');
+    if (nPhone > 0) {
+      updatedEventCount = nPhone;
+      updatePath = 'phone_fallback';
+    }
+  }
+
+  return { updatedEventCount, updatePath, resolvedMatchId };
+}
+
+exports.replayGupshupWebhookBody = replayGupshupWebhookBody;
 
 exports.ingestGupshupWebhook = async (req, res) => {
   const receivedAt =
@@ -669,48 +849,73 @@ exports.ingestGupshupWebhook = async (req, res) => {
     let resolvedMatchId = null;
 
     let quarantineCandidateEventIds = [];
-    const tryUpdateDocs = async (query) => {
+    const applyToDoc = async (d) => {
+      if (!newStatus || !d) return false;
+      const r = await applyWebhookToMessageEvent(d, newStatus, {
+        receivedAt,
+        transitionTs,
+        failureCode,
+        failureReason,
+        gsId,
+        outerId: payloadId,
+        whatsappMessageFromInner,
+        stage
+      });
+      if (r.modified) {
+        resolvedMatchId = String(d._id);
+        return true;
+      }
+      return false;
+    };
+
+    const tryUpdateDocs = async (query, matchLabel) => {
       const docs = await WhatsAppMessageEvent.find(query).limit(25).lean();
       quarantineCandidateEventIds = docs.map((d) => d._id).slice(0, 25);
       if (docs.length > 1) {
         console.warn('[Gupshup webhook] provider_id_multi_match', {
           count: docs.length,
+          matchLabel: matchLabel || 'provider_id',
           eventIds: docs.map((d) => String(d._id)).slice(0, 12),
           attemptNumbers: docs.map((d) => d.attemptNumber).filter((x) => x != null)
         });
       }
+      const picked = pickBestWebhookMatchCandidate(docs);
+      if (!picked) return 0;
       if (docs.length > 1) {
-        return 0;
+        console.log(
+          JSON.stringify({
+            event: 'provider_id_multi_match_resolved',
+            matchLabel: matchLabel || 'provider_id',
+            pickedEventId: String(picked._id),
+            candidateCount: docs.length
+          })
+        );
       }
-      let n = 0;
-      for (const d of docs) {
-        if (!newStatus) continue;
-        const r = await applyWebhookToMessageEvent(d, newStatus, {
-          receivedAt,
-          transitionTs,
-          failureCode,
-          failureReason,
-          gsId,
-          outerId: payloadId,
-          whatsappMessageFromInner,
-          stage
-        });
-        if (r.modified) {
-          n += 1;
-          resolvedMatchId = String(d._id);
-        }
-      }
-      return n;
+      const ok = await applyToDoc(picked);
+      return ok ? 1 : 0;
     };
 
     if (newStatus && providerIds.length > 0) {
       const idClause = messageEventIdMatchClause(providerIds);
       if (idClause) {
-        const n = await tryUpdateDocs(idClause);
+        const n = await tryUpdateDocs(idClause, 'provider_id');
         updatedEventCount = n;
         if (n > 0) {
           updatePath = 'providerIds';
         }
+      }
+    }
+
+    if (newStatus && updatedEventCount === 0 && phone10) {
+      const inferredOps = inferOpsProductFromWebhookSnippet(rawPayloadSnippet);
+      const phoneQuery = buildPhoneFallbackMatchQuery(phone10, receivedAt, {
+        opsProduct: inferredOps || null,
+        messageKind: 'slot_booked'
+      });
+      const nPhone = await tryUpdateDocs(phoneQuery, 'phone_fallback');
+      if (nPhone > 0) {
+        updatedEventCount = nPhone;
+        updatePath = 'phone_fallback';
       }
     }
 
@@ -748,7 +953,7 @@ exports.ingestGupshupWebhook = async (req, res) => {
             resolvedMessageEventId: resolvedMatchId && mongoose.Types.ObjectId.isValid(String(resolvedMatchId))
               ? new mongoose.Types.ObjectId(String(resolvedMatchId))
               : null,
-            resolvedBy: 'providerIds'
+            resolvedBy: updatePath === 'phone_fallback' ? 'phone_fallback' : 'providerIds'
           }
         }
       );

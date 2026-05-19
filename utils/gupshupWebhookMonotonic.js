@@ -54,7 +54,16 @@ function canApplyWebhookStatus(currentStatus, newStatus, opts = {}) {
     opts.terminalFailureKind === 'permanent' ||
     opts.retryExclusionReason === 'permanent_failure';
 
-  if (cur === 'retry_exhausted') return false;
+  if (cur === 'retry_exhausted') {
+    if (
+      opts.allowTerminalRecovery === true &&
+      rankSuccessStatus(next) >= 5 &&
+      !permanentTerminal
+    ) {
+      return true;
+    }
+    return false;
+  }
 
   if (next === 'failed') {
     if (isTerminalSendFailure(cur)) return false;
@@ -63,9 +72,10 @@ function canApplyWebhookStatus(currentStatus, newStatus, opts = {}) {
   }
 
   if (isTerminalSendFailure(cur)) {
-    if (reconcileDerived && !permanentTerminal && rankSuccessStatus(next) >= 5) {
-      return true;
-    }
+    if (permanentTerminal) return false;
+    // Handset DLR (delivered/read) overrides send-time `failed` when failure was not permanent.
+    if (rankSuccessStatus(next) >= 5) return true;
+    if (reconcileDerived && rankSuccessStatus(next) > rankSuccessStatus(cur)) return true;
     return false;
   }
 

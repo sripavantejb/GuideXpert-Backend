@@ -11,6 +11,9 @@ const {
   RETRY_EXCLUSION_REASON
 } = require('../utils/whatsappRetryRules');
 
+/** Message kinds that participate in two-phase DLR reconciliation */
+const RECONCILE_MESSAGE_KINDS = ['slot_booked', 'pre4hr', 'meet', '30min'];
+/** @deprecated use RECONCILE_MESSAGE_KINDS — kept for existing imports */
 const CAMPAIGN_KINDS = ['pre4hr', 'meet', '30min'];
 const STALE_SOURCE_STATUSES = ['submitted', 'sent'];
 const AWAITING_STATUS = RECONCILE_PENDING_STATUSES[0];
@@ -41,7 +44,7 @@ async function markStaleAwaitingFinalDlr(opts = {}) {
   const finalityUntil = new Date(now.getTime() + graceMs);
 
   const query = {
-    messageKind: { $in: CAMPAIGN_KINDS },
+    messageKind: { $in: RECONCILE_MESSAGE_KINDS },
     status: { $in: STALE_SOURCE_STATUSES },
     deliveredAt: null,
     readAt: null,
@@ -107,7 +110,7 @@ async function finalizeAwaitingReconcile(opts = {}) {
   const limit = reconcileBatchLimit(opts);
 
   const query = {
-    messageKind: { $in: CAMPAIGN_KINDS },
+    messageKind: { $in: RECONCILE_MESSAGE_KINDS },
     status: AWAITING_STATUS,
     reconcileFinalityUntil: { $lte: now }
   };
@@ -215,6 +218,7 @@ module.exports = {
   markStaleAwaitingFinalDlr,
   finalizeAwaitingReconcile,
   reconcileStaleInFlightMessages,
+  RECONCILE_MESSAGE_KINDS,
   CAMPAIGN_KINDS,
   STALE_SOURCE_STATUSES,
   AWAITING_STATUS,
