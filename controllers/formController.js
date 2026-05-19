@@ -1189,6 +1189,33 @@ exports.saveIitSection1 = async (req, res) => {
       try {
         const slotIdForTpl = IIT_BOOKING_LABEL_TO_SELECTED_SLOT_ID[slotBookingTrimmed];
         const iitTplKey = resolveIitSlotBookedTemplateEnvKey(slotBookingTrimmed);
+        console.log(
+          JSON.stringify({
+            event: 'iit_wa_send_trace',
+            stage: 'saveIitSection1_before_safeSendWhatsApp',
+            slotBooking: slotBookingTrimmed,
+            resolvedIitTemplateEnvKey: iitTplKey,
+            explicitTemplateEnvKey: iitTplKey || null,
+            willFallBackToReminder: !iitTplKey,
+            envWedSet: Boolean(process.env.GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED_WEDNESDAY),
+            envSatSet: Boolean(process.env.GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED_SATURDAY),
+            envSunSet: Boolean(process.env.GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED_SUNDAY),
+            envHeaderImageSet: Boolean(process.env.GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL),
+            envReminderSet: Boolean(process.env.GUPSHUP_TEMPLATE_REMINDER)
+          })
+        );
+
+        if (!iitTplKey) {
+          whatsappSlotBooked = {
+            attempted: false,
+            skippedReason: 'iit_template_env_missing',
+            error: 'IIT slot_booked Gupshup template env not configured for this slot',
+          };
+          console.warn(
+            '[saveIitSection1] WhatsApp skipped: IIT template env missing for slot',
+            slotBookingTrimmed
+          );
+        } else {
         const slotBookedGroup = await WhatsAppRetryGroup.create({
           messageKind: 'slot_booked',
           cronRunId: null,
@@ -1238,6 +1265,7 @@ exports.saveIitSection1 = async (req, res) => {
             ...(skippedReason ? { skippedReason } : {}),
           };
           console.warn('[saveIitSection1] WhatsApp slot_booked unsuccessful:', errText);
+        }
         }
       } catch (waErr) {
         const msg = String(waErr?.message || waErr || 'exception').slice(0, 240);

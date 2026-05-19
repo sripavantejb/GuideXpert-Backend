@@ -28,6 +28,16 @@ const GUPSHUP_TEMPLATE_URL = 'https://api.gupshup.io/wa/api/v1/template/msg';
 const IIT_HEADER_MISSING_ERROR =
   `IIT slot_booked header image URL missing (set ${GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL})`;
 
+/** Set WA_IIT_SEND_TRACE=0 to disable verbose IIT outbound payload logs. */
+function isIitSendTraceEnabled() {
+  return String(process.env.WA_IIT_SEND_TRACE || '1').trim() !== '0';
+}
+
+function logWaSendTrace(payload) {
+  if (!isIitSendTraceEnabled()) return;
+  console.log(JSON.stringify({ event: 'iit_wa_send_trace', ...payload }));
+}
+
 let integrationStubCallCount = 0;
 let integrationStubFailNext = false;
 
@@ -73,7 +83,7 @@ function formatPhoneE16491(phone10OrMore) {
 
 /**
  * Build urlencoded form fields for Gupshup template/msg (exported for unit tests).
- * @param {{ templateId: string, params?: string[], headerImageLink?: string|null, source: string, destination: string, srcName?: string|null }} p
+ * @param {{ templateId: string, params?: string[], headerImageLink?: string|null, source: string, destination: string, srcName?: string|null, logOutbound?: boolean }} p
  * @returns {Record<string, string>}
  */
 function buildTemplateRequestFields(p) {
@@ -83,6 +93,7 @@ function buildTemplateRequestFields(p) {
     p.headerImageLink && String(p.headerImageLink).trim()
       ? buildImageMessageField({ link: String(p.headerImageLink).trim() })
       : null;
+  const appendMessage = Boolean(messagePayload);
 
   const body = new URLSearchParams();
   body.append('source', String(p.source).replace(/\D/g, ''));
@@ -95,7 +106,21 @@ function buildTemplateRequestFields(p) {
   if (p.srcName) {
     body.append('src.name', p.srcName);
   }
-  return Object.fromEntries(body.entries());
+  const fields = Object.fromEntries(body.entries());
+
+  if (p.logOutbound && isIitSendTraceEnabled()) {
+    logWaSendTrace({
+      stage: 'buildTemplateRequestFields',
+      appendMessage,
+      fieldsKeys: Object.keys(fields),
+      hasMessageField: Object.prototype.hasOwnProperty.call(fields, 'message'),
+      messageField: fields.message || null,
+      templateField: fields.template || null,
+      bodyString: body.toString()
+    });
+  }
+
+  return fields;
 }
 
 /**
@@ -151,16 +176,19 @@ async function sendTemplateMessage(phoneE164, templateId, params, opts = {}) {
   }
 
   const destination = String(phoneE164).replace(/\D/g, '');
+  const traceOutbound = isIitTemplate || isIitSendTraceEnabled();
   const fields = buildTemplateRequestFields({
     templateId,
     params,
     headerImageLink,
     source,
     destination,
-    srcName: process.env.GUPSHUP_SRC_NAME || null
+    srcName: process.env.GUPSHUP_SRC_NAME || null,
+    logOutbound: traceOutbound
   });
   const body = new URLSearchParams();
   Object.entries(fields).forEach(([k, v]) => body.append(k, v));
+  const outboundBodyString = body.toString();
 
   const templatePayloadObj = { id: templateId, params: params || [] };
   const messagePayloadObj =
@@ -175,16 +203,36 @@ async function sendTemplateMessage(phoneE164, templateId, params, opts = {}) {
       mask,
       templateEnvKey: templateEnvKeyNorm,
       templateId,
-      headerType: messagePayload ? 'image' : null,
+      isIitTemplate: Boolean(isIitTemplate),
+      isIitSlotBookedEnvKey: templateEnvKeyNorm ? isIitSlotBookedTemplateEnvKey(templateEnvKeyNorm) : false,
+      headerType: messagePayloadObj ? 'image' : null,
       headerImageLink: messagePayloadObj ? messagePayloadObj.image.link : null,
       templatePayload: templatePayloadObj,
       messagePayload: messagePayloadObj,
+      hasMessageInOutboundBody: outboundBodyString.includes('message='),
       correlationId: correlationId || null
     })
   );
 
+  if (traceOutbound) {
+    logWaSendTrace({
+      stage: 'sendTemplateMessage_before_axios',
+      mask,
+      templateEnvKey: templateEnvKeyNorm,
+      templateId,
+      isIitSlotBookedTemplateEnvKey: templateEnvKeyNorm
+        ? isIitSlotBookedTemplateEnvKey(templateEnvKeyNorm)
+        : false,
+      headerImageLink: headerImageLink || null,
+      messagePayload: messagePayloadObj,
+      fieldsKeys: Object.keys(fields),
+      hasMessageField: Object.prototype.hasOwnProperty.call(fields, 'message'),
+      outboundBodyString
+    });
+  }
+
   try {
-    const res = await axios.post(GUPSHUP_TEMPLATE_URL, body.toString(), {
+    const res = await axios.post(GUPSHUP_TEMPLATE_URL, outboundBodyString, {
       headers: {
         apikey: apiKey,
         'Content-Type': 'application/x-www-form-urlencoded'
@@ -223,16 +271,18 @@ async function sendTemplateMessage(phoneE164, templateId, params, opts = {}) {
 }
 
 async function sendSlotBookedWhatsApp(phone10, vars, sendOpts = {}) {
-  const envKey =
+  const explicitTemplateEnvKey =
     typeof sendOpts.templateEnvKey === 'string' && sendOpts.templateEnvKey.trim()
       ? sendOpts.templateEnvKey.trim()
-      : 'GUPSHUP_TEMPLATE_REMINDER';
+      : null;
+  const envKey = explicitTemplateEnvKey || 'GUPSHUP_TEMPLATE_REMINDER';
   const tid = process.env[envKey];
-  const paramKeys = isIitSlotBookedTemplateEnvKey(envKey) ? SLOT_BOOKED_IIT_PARAM_KEYS : SLOT_BOOKED_PARAM_KEYS;
+  const isIitEnvKey = isIitSlotBookedTemplateEnvKey(envKey);
+  const paramKeys = isIitEnvKey ? SLOT_BOOKED_IIT_PARAM_KEYS : SLOT_BOOKED_PARAM_KEYS;
   const params = buildParamsFromKeys(vars, paramKeys);
 
   let headerImageLink = null;
-  if (isIitSlotBookedTemplateEnvKey(envKey)) {
+  if (isIitEnvKey) {
     headerImageLink = resolveIitSlotBookedHeaderImageUrl();
     if (!headerImageLink && !isIntegrationStub()) {
       console.warn(
@@ -249,6 +299,18 @@ async function sendSlotBookedWhatsApp(phone10, vars, sendOpts = {}) {
       headerImageLink = 'https://example.com/iit-stub-header.png';
     }
   }
+
+  logWaSendTrace({
+    stage: 'sendSlotBookedWhatsApp_before_sendTemplateMessage',
+    mask: maskPhoneTail(phone10),
+    explicitTemplateEnvKey,
+    finalTemplateEnvKey: envKey,
+    templateId: tid || null,
+    isIitSlotBookedTemplateEnvKey: isIitEnvKey,
+    headerImageLink: headerImageLink || null,
+    paramCount: params.length,
+    fellBackToReminder: !explicitTemplateEnvKey
+  });
 
   return sendTemplateMessage(formatPhoneE16491(phone10), tid, params, {
     ...sendOpts,

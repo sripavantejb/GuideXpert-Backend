@@ -94,6 +94,52 @@ describe('buildTemplateRequestFields', () => {
     const tpl = JSON.parse(fields.template);
     assert.equal(tpl.params.length, 2);
   });
+
+  test('logOutbound trace bodyString contains urlencoded message= for IIT header', () => {
+    const logs = [];
+    const origLog = console.log;
+    console.log = (...args) => {
+      logs.push(args.join(' '));
+    };
+    try {
+      buildTemplateRequestFields({
+        templateId: 'tpl-wed',
+        params: ['Raj'],
+        headerImageLink: HEADER_URL,
+        source: '919999999999',
+        destination: '919876543210',
+        logOutbound: true
+      });
+      const traceLine = logs.find((l) => l.includes('buildTemplateRequestFields'));
+      assert.ok(traceLine, 'expected iit_wa_send_trace log');
+      const parsed = JSON.parse(traceLine);
+      assert.equal(parsed.appendMessage, true);
+      assert.equal(parsed.hasMessageField, true);
+      assert.ok(parsed.bodyString.includes('message='));
+      assert.ok(parsed.bodyString.includes(encodeURIComponent(HEADER_URL)));
+    } finally {
+      console.log = origLog;
+    }
+  });
+});
+
+describe('gupshup_template_send log payload', () => {
+  test('JSON.stringify does not ReferenceError (messagePayloadObj not messagePayload)', () => {
+    const messagePayloadObj = { type: 'image', image: { link: HEADER_URL } };
+    const templatePayloadObj = { id: 'tpl-wed-id', params: ['Test'] };
+    assert.doesNotThrow(() => {
+      const line = JSON.stringify({
+        event: 'gupshup_template_send',
+        headerType: messagePayloadObj ? 'image' : null,
+        messagePayload: messagePayloadObj,
+        templatePayload: templatePayloadObj,
+        hasMessageInOutboundBody: true
+      });
+      const parsed = JSON.parse(line);
+      assert.equal(parsed.headerType, 'image');
+      assert.equal(parsed.messagePayload.image.link, HEADER_URL);
+    });
+  });
 });
 
 describe('sendSlotBookedWhatsApp IIT fail-fast', () => {
