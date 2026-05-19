@@ -16,7 +16,12 @@
     "backfill:student-createdby": "node scripts/backfillStudentCreatedBy.js",
     "migrate:iit-counselling": "node scripts/migrateIitCounsellingToDedicatedCollection.js",
     "migrate:iit-counselling:delete-source": "node scripts/migrateIitCounsellingToDedicatedCollection.js --delete-source",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run test:whatsapp-all",
+    "test:integration": "node --test --test-concurrency=1 test/integration/suites/*.test.js",
+    "test:integration:race": "node --test --test-concurrency=1 test/integration/suites/lateWebhookReconcile.test.js test/integration/suites/cronOverlap.test.js test/integration/suites/dispatchCrashRecovery.test.js test/integration/suites/retryPromotion.test.js test/integration/suites/manualRecoveryOverlap.test.js",
+    "test:integration:reconcile": "node --test test/integration/suites/lateWebhookReconcile.test.js",
+    "test:integration:stress": "WA_INTEGRATION_STRESS=1 node --test test/integration/stress/*.test.js",
+    "test:whatsapp-all": "node --test test/*.test.js test/integration/suites/*.test.js",
     "test:poster-track": "node scripts/testPosterTrackKeys.js",
     "test:gupshup-webhook": "node --test test/gupshupWebhookFlow.test.js",
     "test:whatsapp-retry-rules": "node --test test/whatsappRetryRules.test.js",
@@ -51,5 +56,8 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^9.1.5",
     "nodemon": "^3.1.11"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "^10.4.3"
   }
 }

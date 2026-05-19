@@ -54,8 +54,9 @@ async function reserveOutboundWhatsAppAttempt(p) {
   const attNum = Math.min(6, Math.max(1, parseInt(String(attemptNumber || 1), 10) || 1));
   const key = { retryGroupId: gid, phone: phone10, attemptNumber: attNum };
   const staleMs = inFlightPromotionStaleMsForKind(messageKind);
-  const staleBefore = new Date(Date.now() - staleMs);
-  const now = new Date();
+  const now = p.now instanceof Date ? p.now : new Date();
+  const nowMs = now.getTime();
+  const staleBefore = new Date(nowMs - staleMs);
   const parentOid = parentMessageEventId && mongoose.Types.ObjectId.isValid(String(parentMessageEventId))
     ? new mongoose.Types.ObjectId(String(parentMessageEventId))
     : null;
@@ -119,7 +120,7 @@ async function reserveOutboundWhatsAppAttempt(p) {
     }
     if (st === 'queued') {
       const created = new Date(d.createdAt || 0).getTime();
-      if (Date.now() - created < staleMs) {
+      if (nowMs - created < staleMs) {
         return { outcome: 'duplicate_in_flight', reservedEventId: d._id };
       }
       return { type: 'reclaim', doc: d };

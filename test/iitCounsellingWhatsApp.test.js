@@ -3,7 +3,12 @@
 const { test, describe, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { resolveIitSlotBookedTemplateEnvKey, isIitSlotBookedTemplateEnvKey } = require('../utils/iitCounsellingWhatsApp');
+const {
+  resolveIitSlotBookedTemplateEnvKey,
+  isIitSlotBookedTemplateEnvKey,
+  resolveIitSlotBookedHeaderImageUrl,
+  GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL
+} = require('../utils/iitCounsellingWhatsApp');
 const { buildParamsFromKeys, SLOT_BOOKED_IIT_PARAM_KEYS, SLOT_BOOKED_PARAM_KEYS } = require('../utils/gupshupWhatsAppTemplateParams');
 
 const ENV_KEYS = [
@@ -76,6 +81,29 @@ describe('isIitSlotBookedTemplateEnvKey', () => {
     assert.equal(isIitSlotBookedTemplateEnvKey('GUPSHUP_TEMPLATE_REMINDER'), false);
     assert.equal(isIitSlotBookedTemplateEnvKey(''), false);
     assert.equal(isIitSlotBookedTemplateEnvKey(null), false);
+  });
+});
+
+describe('resolveIitSlotBookedHeaderImageUrl', () => {
+  const snapshot = {};
+
+  beforeEach(() => {
+    snapshot[GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL] = process.env[GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL];
+    delete process.env[GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL];
+  });
+
+  afterEach(() => {
+    if (snapshot[GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL] === undefined) {
+      delete process.env[GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL];
+    } else {
+      process.env[GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL] = snapshot[GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL];
+    }
+  });
+
+  test('requires https env URL', () => {
+    process.env[GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL] =
+      'https://res.cloudinary.com/dfqdb1xws/image/upload/v1779169268/image_1_opyelz.png';
+    assert.ok(resolveIitSlotBookedHeaderImageUrl());
   });
 });
 

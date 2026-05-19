@@ -25,7 +25,9 @@ const {
   logCampaignTimingInvariantViolation
 } = require('./waCampaignSendAssertion');
 const { reserveOutboundWhatsAppAttempt } = require('./waSendAttemptReservation');
+const { maybeCrash } = require('./waTestCrash');
 const { normalizeOutboundOpsProduct } = require('./whatsappOpsProduct');
+const { isIitSlotBookedTemplateEnvKey } = require('./iitCounsellingWhatsApp');
 
 function maskPhone(phone10) {
   const s = String(phone10 || '').replace(/\D/g, '');
@@ -224,8 +226,10 @@ async function safeSendWhatsApp({
   opsProduct: opsProductOpt,
   cohortSlotInstantUtc,
   iitCounsellingSubmissionId,
-  explicitTemplateEnvKey
+  explicitTemplateEnvKey,
+  now: nowOpt
 }) {
+  const nowBase = nowOpt instanceof Date ? nowOpt : new Date();
   const outboundProduct = normalizeOutboundOpsProduct(opsProductOpt);
   const trimTemplateKey = typeof explicitTemplateEnvKey === 'string' ? explicitTemplateEnvKey.trim() : '';
   let templateIdEnvKey;
@@ -271,6 +275,7 @@ async function safeSendWhatsApp({
       attemptBatchOid = toOidMaybe(cronRunId);
     }
 
+    const iitImageHeader = isIitSlotBookedTemplateEnvKey(templateIdEnvKey);
     console.log(
       '[WhatsApp] attempt',
       maskPhone(phone10),
@@ -279,6 +284,8 @@ async function safeSendWhatsApp({
       `group=${String(resolvedGroupId)}`,
       `templateKey=${templateIdEnvKey || 'n/a'}`,
       `templateId=${templateId || 'missing'}`,
+      `headerType=${iitImageHeader ? 'image' : 'none'}`,
+      `hasImageHeader=${iitImageHeader}`,
       `vars=${JSON.stringify(varSummary)}`
     );
     if (!templateId) {
@@ -295,7 +302,7 @@ async function safeSendWhatsApp({
         phone10,
         cohortSlotInstantUtc: cohortSlotUtc
       });
-      const eligFirst = getCampaignReminderEligibility(retryKind, slotCampaignForTiming, new Date());
+      const eligFirst = getCampaignReminderEligibility(retryKind, slotCampaignForTiming, nowBase);
       if (!eligFirst.ok) {
         console.warn('[WhatsApp] skipped_outside_validity', maskPhone(phone10), `type=${retryKind}`, eligFirst.reason || '');
         return {
@@ -331,7 +338,8 @@ async function safeSendWhatsApp({
       correlationId,
       opsProduct: outboundProduct,
       cohortSlotInstantUtc: cohortSlotUtc,
-      iitCounsellingSubmissionId: iitSubOid
+      iitCounsellingSubmissionId: iitSubOid,
+      now: nowBase
     });
 
     if (reserveResult.outcome === 'already_terminal') {
@@ -360,7 +368,7 @@ async function safeSendWhatsApp({
         phone10,
         cohortSlotInstantUtc: cohortSlotUtc
       });
-      const nowGate = new Date();
+      const nowGate = nowBase;
       const eligPre = getCampaignReminderEligibility(retryKind, slotCampaignForTiming, nowGate);
       if (!eligPre.ok) {
         const timingBlock = buildEligibilityTimingRecord(retryKind, slotCampaignForTiming, nowGate);
@@ -406,7 +414,10 @@ async function safeSendWhatsApp({
       correlationId,
       ...(trimTemplateKey ? { templateEnvKey: trimTemplateKey } : {})
     });
-    const now = new Date();
+    const now = nowBase;
+    if (result && result.success) {
+      maybeCrash('after_provider_accept');
+    }
     const ids = parseGupshupTemplateSendResponse(result && result.data);
     const messageId = ids.canonicalMessageId || null;
     const payloadSnippet = providerPayloadSnippet(result);
@@ -499,6 +510,7 @@ async function safeSendWhatsApp({
           /* non-fatal projection */
         }
       }
+      maybeCrash('after_db_write');
       return { success: true, retryGroupId: resolvedGroupId };
     }
 

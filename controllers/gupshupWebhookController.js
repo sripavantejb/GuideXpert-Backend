@@ -42,6 +42,50 @@ function normalizeEventType(raw) {
 }
 
 /**
+ * Meta WABA webhooks: failure details live under entry[].changes[].value.statuses[].errors[].
+ * @param {object} body
+ * @returns {{ failureCode: string|null, failureReason: string|null }}
+ */
+function extractMetaStatusErrors(body) {
+  let failureCode = null;
+  let failureReason = null;
+
+  function visit(node) {
+    if (!node || failureCode) return;
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+    if (typeof node !== 'object') return;
+    if (Array.isArray(node.statuses)) {
+      for (const st of node.statuses) {
+        if (!st || !Array.isArray(st.errors) || st.errors.length === 0) continue;
+        const err = st.errors[0];
+        if (err.code != null) failureCode = String(err.code).slice(0, 32);
+        const msg =
+          err.message ||
+          err.title ||
+          (err.error_data && err.error_data.details ? String(err.error_data.details) : null);
+        if (msg) failureReason = String(msg).slice(0, 2000);
+        return;
+      }
+    }
+    Object.values(node).forEach(visit);
+  }
+
+  let root = body;
+  if (body && typeof body.payload === 'string') {
+    try {
+      root = JSON.parse(body.payload);
+    } catch {
+      root = body;
+    }
+  }
+  visit(root);
+  return { failureCode, failureReason };
+}
+
+/**
  * Gupshup V2 message-event: outer `type` === `message-event`, inner stage in `payload.type`.
  * @see https://docs.gupshup.io/docs/message-events
  */
@@ -257,6 +301,7 @@ function extractWebhookFields(body) {
   const eventType = best(eventTypeCandidates);
   const providerIds = [...new Set([gsId, payloadId].filter(Boolean))];
   const deliveryHint = eventType ? normalizeDeliveryHint(eventType) : (normalizeDeliveryHint(status) || null);
+  const metaErrors = extractMetaStatusErrors(body);
   return {
     gsId,
     payloadId,
@@ -266,7 +311,9 @@ function extractWebhookFields(body) {
     eventType: eventType || null,
     deliveryHint,
     status,
-    parseError
+    parseError,
+    failureCode: metaErrors.failureCode,
+    failureReason: metaErrors.failureReason
   };
 }
 
@@ -333,8 +380,8 @@ function mergeExplicitAndExtracted(explicit, extracted) {
     'unknown';
   const statusRaw = stage || extracted?.statusRaw || null;
   const parseError = extracted?.parseError || null;
-  const failureCode = explicit?.failureCode || null;
-  const failureReason = explicit?.failureReason || null;
+  const failureCode = explicit?.failureCode || extracted?.failureCode || null;
+  const failureReason = explicit?.failureReason || extracted?.failureReason || null;
   const whatsappMessageFromInner = explicit?.whatsappMessageFromInner || null;
   return {
     providerIds,
@@ -475,7 +522,20 @@ async function applyWebhookToMessageEvent(doc, newStatus, opts) {
         set['retryExclusionMeta.note'] = null;
       }
       if (failureCode) set.webhookErrorCode = failureCode;
-      if (failureReason) set.webhookErrorReason = failureReason;
+      if (failureReason) {
+        set.webhookErrorReason = failureReason;
+        set.errorMessage = failureReason;
+      }
+      console.log(
+        JSON.stringify({
+          event: 'whatsapp_webhook_failed',
+          messageEventId: String(doc._id),
+          messageKind: doc.messageKind,
+          attemptNumber: doc.attemptNumber,
+          failureCode: failureCode || null,
+          failureReason: failureReason || null
+        })
+      );
     }
     if (newStatus === 'delivered' || newStatus === 'read') {
       const cur = String(doc.status || '').toLowerCase();
@@ -523,8 +583,12 @@ async function applyWebhookToMessageEvent(doc, newStatus, opts) {
   return { modified: (res.modifiedCount || 0) > 0, reason: 'updated' };
 }
 
+exports.applyWebhookToMessageEvent = applyWebhookToMessageEvent;
+exports.extractMetaStatusErrors = extractMetaStatusErrors;
+
 exports.ingestGupshupWebhook = async (req, res) => {
-  const receivedAt = new Date();
+  const receivedAt =
+    req && req._testReceivedAt instanceof Date ? req._testReceivedAt : new Date();
   try {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const explicit = tryParseMessageEventBody(body);

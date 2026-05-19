@@ -28,6 +28,7 @@ const {
   expireDueReminderJobs
 } = require('./whatsappReminderJobLifecycle');
 const { overdueSlaMs } = require('../utils/waReminderJobObservability');
+const { maybeCrash } = require('../utils/waTestCrash');
 const {
   computeFairClaimLimits,
   isOverdueForFairness,
@@ -196,6 +197,7 @@ async function claimOneJob(opts) {
     { sort: { scheduledSendAt: 1 }, new: true }
   ).lean();
 
+  if (doc) maybeCrash('after_claim');
   return doc;
 }
 
@@ -212,8 +214,7 @@ async function releaseJobClaim(jobId, claimToken) {
   return res;
 }
 
-async function transitionToDispatching(jobId, claimToken) {
-  const now = new Date();
+async function transitionToDispatching(jobId, claimToken, now = new Date()) {
   const res = await WhatsAppReminderJob.updateOne(
     { _id: jobId, claimToken, state: 'claimed' },
     { $set: { state: 'dispatching', updatedAt: now } }
@@ -227,9 +228,10 @@ function clearLeaseUpdate(extra = {}) {
 
 /**
  * @param {object} job lean doc (must include claimToken from claim)
+ * @param {{ now?: Date }} [execOpts]
  */
-async function executeReminderJob(job, cronRunId, cronJobKey) {
-  const now = new Date();
+async function executeReminderJob(job, cronRunId, cronJobKey, execOpts = {}) {
+  const now = execOpts.now instanceof Date ? execOpts.now : new Date();
   const fresh = await WhatsAppReminderJob.findById(job._id).lean();
   if (!fresh || fresh.claimToken !== job.claimToken) {
     return { outcome: 'deferred', reason: 'claim_token_mismatch' };
@@ -284,10 +286,12 @@ async function executeReminderJob(job, cronRunId, cronJobKey) {
     return { outcome: 'error', reason: 'unknown_kind' };
   }
 
-  const dispatchingOk = await transitionToDispatching(job._id, job.claimToken);
+  const dispatchingOk = await transitionToDispatching(job._id, job.claimToken, now);
   if (!dispatchingOk) {
     return { outcome: 'deferred', reason: 'dispatching_transition_failed' };
   }
+
+  maybeCrash('before_send');
 
   await sendSmsForKind(job.messageKind, job.phone, submission).catch(() => {});
 
@@ -302,7 +306,8 @@ async function executeReminderJob(job, cronRunId, cronJobKey) {
     sendFn,
     retryGroupId: job.retryGroupId,
     attemptNumber: 1,
-    attemptBatchId: cronRunId || null
+    attemptBatchId: cronRunId || null,
+    now
   });
 
   const attempts = (job.attempts || 0) + 1;
@@ -357,7 +362,9 @@ async function executeReminderJob(job, cronRunId, cronJobKey) {
     rootMessageEventId: initialMessageEventId,
     providerMessageId,
     cronRunId: cronRunId || null,
-    'executionMetadata.lastDispatch': { at: now, source: cronJobKey },
+    executionMetadata: {
+      lastDispatch: { at: now, source: cronJobKey || cronJobKeyForKind(job.messageKind) }
+    },
     ...clearLeaseUpdate({ lastError: wa.success ? null : wa.error || 'send_failed' })
   };
 
@@ -477,7 +484,7 @@ async function dispatchDueReminderJobs(opts) {
 
   for (const job of claimed) {
     // eslint-disable-next-line no-await-in-loop
-    const r = await executeReminderJob(job, opts.cronRunId, opts.cronJobKey);
+    const r = await executeReminderJob(job, opts.cronRunId, opts.cronJobKey, { now });
     stats.dispatchThroughput += 1;
     if (r.outcome === 'dispatched') stats.jobsDispatched += 1;
     else if (r.outcome === 'failed') stats.jobsFailed += 1;

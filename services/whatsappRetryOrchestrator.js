@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');
 const WhatsAppRetryGroup = require('../models/WhatsAppRetryGroup');
 const FormSubmission = require('../models/FormSubmission');
+const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
 const { buildSlotNotificationVariables } = require('../utils/slotNotificationFormatters');
 const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
 const {
@@ -688,7 +689,9 @@ async function processSlotBookedImmediateRetries(cronRunId) {
     retryEligible: true,
     createdAt: { $lte: dueBefore }
   })
-    .select('_id phone retryGroupId formSubmissionId errorMessage webhookErrorCode webhookErrorReason')
+    .select(
+      '_id phone retryGroupId formSubmissionId iitCounsellingSubmissionId cohortSlotInstantUtc opsProduct templateIdEnvKey errorMessage webhookErrorCode webhookErrorReason'
+    )
     .sort({ createdAt: 1 })
     .limit(parseInt(process.env.WA_SLOT_BOOKED_IMMEDIATE_RETRY_MAX_ROWS || '200', 10) || 200)
     .lean();
@@ -768,18 +771,59 @@ async function processSlotBookedImmediateRetries(cronRunId) {
       continue;
     }
 
-    const sub = await FormSubmission.findOne({ phone: row.phone, isRegistered: true }).lean();
-    if (!sub) {
-      failed += 1;
-      await WhatsAppMessageEvent.updateOne(
-        { _id: row._id, immediateRetryLockToken: lockToken },
-        {
-          $set: { retryEligible: false },
-          $unset: { immediateRetryLockToken: '', immediateRetryLockedAt: '', immediateRetryLockUntil: '' }
-        }
-      );
-      continue;
+    const isIitRetry = row.opsProduct === 'iit_counselling';
+    let sub = null;
+    let iitSub = null;
+    if (isIitRetry) {
+      if (row.iitCounsellingSubmissionId) {
+        iitSub = await IitCounsellingSubmission.findById(row.iitCounsellingSubmissionId).lean();
+      }
+      if (!iitSub) {
+        iitSub = await IitCounsellingSubmission.findOne({ phone: row.phone }).lean();
+      }
+      if (!iitSub) {
+        failed += 1;
+        await WhatsAppMessageEvent.updateOne(
+          { _id: row._id, immediateRetryLockToken: lockToken },
+          {
+            $set: { retryEligible: false },
+            $unset: { immediateRetryLockToken: '', immediateRetryLockedAt: '', immediateRetryLockUntil: '' }
+          }
+        );
+        continue;
+      }
+    } else {
+      sub = await FormSubmission.findOne({ phone: row.phone, isRegistered: true }).lean();
+      if (!sub) {
+        failed += 1;
+        await WhatsAppMessageEvent.updateOne(
+          { _id: row._id, immediateRetryLockToken: lockToken },
+          {
+            $set: { retryEligible: false },
+            $unset: { immediateRetryLockToken: '', immediateRetryLockedAt: '', immediateRetryLockUntil: '' }
+          }
+        );
+        continue;
+      }
     }
+
+    const IIT_LABEL_TO_SLOT_ID = {
+      'Wednesday 6PM': 'WEDNESDAY_6PM',
+      'Saturday 6PM': 'SATURDAY_6PM',
+      'Sunday 11AM': 'SUNDAY_11AM'
+    };
+    const slotBookingLabel = iitSub?.iitCounselling?.section1Data?.slotBooking;
+    const slotIdForTpl = slotBookingLabel ? IIT_LABEL_TO_SLOT_ID[slotBookingLabel] : null;
+    const vars = isIitRetry
+      ? buildSlotNotificationVariables({
+          fullName: iitSub.fullName,
+          step3Data: {
+            slotDate: iitSub.counsellingSlotInstantUtc || row.cohortSlotInstantUtc,
+            selectedSlot: slotIdForTpl
+          }
+        })
+      : buildSlotNotificationVariables(sub);
+
     const reserveResult = await WhatsAppMessageEvent.updateOne(
       { retryGroupId: row.retryGroupId, phone: row.phone, attemptNumber: 2 },
       {
@@ -787,7 +831,10 @@ async function processSlotBookedImmediateRetries(cronRunId) {
           retryGroupId: row.retryGroupId,
           attemptNumber: 2,
           phone: row.phone,
-          formSubmissionId: sub._id || row.formSubmissionId || null,
+          formSubmissionId: sub ? sub._id : row.formSubmissionId || null,
+          iitCounsellingSubmissionId: iitSub ? iitSub._id : row.iitCounsellingSubmissionId || null,
+          cohortSlotInstantUtc: iitSub?.counsellingSlotInstantUtc || row.cohortSlotInstantUtc || null,
+          opsProduct: isIitRetry ? 'iit_counselling' : 'guidexpert',
           messageKind: 'slot_booked',
           source: 'retry_cron',
           retrySource: 'retry1',
@@ -810,11 +857,10 @@ async function processSlotBookedImmediateRetries(cronRunId) {
       );
       continue;
     }
-    const vars = buildSlotNotificationVariables(sub);
     attempted += 1;
     const r = await safeSendWhatsApp({
       phone10: row.phone,
-      formSubmissionId: sub._id || row.formSubmissionId || null,
+      formSubmissionId: sub ? sub._id : row.formSubmissionId || null,
       vars,
       retryKind: 'slot_booked',
       source: 'retry_cron',
@@ -825,7 +871,11 @@ async function processSlotBookedImmediateRetries(cronRunId) {
       attemptNumber: 2,
       parentMessageEventId: row._id,
       attemptBatchId: null,
-      correlationId: null
+      correlationId: null,
+      opsProduct: isIitRetry ? 'iit_counselling' : 'guidexpert',
+      cohortSlotInstantUtc: iitSub?.counsellingSlotInstantUtc || row.cohortSlotInstantUtc || null,
+      iitCounsellingSubmissionId: iitSub ? iitSub._id : row.iitCounsellingSubmissionId || null,
+      ...(row.templateIdEnvKey ? { explicitTemplateEnvKey: row.templateIdEnvKey } : {})
     });
     await WhatsAppMessageEvent.updateOne(
       { _id: row._id, immediateRetryLockToken: lockToken },

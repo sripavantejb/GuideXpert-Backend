@@ -4,6 +4,7 @@
  * Env: ENABLE_WHATSAPP, GUPSHUP_API_KEY, GUPSHUP_SOURCE,
  * GUPSHUP_TEMPLATE_REMINDER, GUPSHUP_TEMPLATE_PRE4HR, GUPSHUP_TEMPLATE_MEET,
  * GUPSHUP_TEMPLATE_30MIN, IIT slot_booked templates (see utils/iitCounsellingWhatsApp.js),
+ * GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL (IIT IMAGE header),
  * optional GUPSHUP_SRC_NAME
  */
 const axios = require('axios');
@@ -15,9 +16,37 @@ const {
   REMINDER_30MIN_PARAM_KEYS,
   buildParamsFromKeys
 } = require('../utils/gupshupWhatsAppTemplateParams');
-const { isIitSlotBookedTemplateEnvKey } = require('../utils/iitCounsellingWhatsApp');
+const { buildTemplateField, buildImageMessageField } = require('../utils/gupshupTemplatePayload');
+const {
+  isIitSlotBookedTemplateEnvKey,
+  resolveIitSlotBookedHeaderImageUrl,
+  GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL
+} = require('../utils/iitCounsellingWhatsApp');
 
 const GUPSHUP_TEMPLATE_URL = 'https://api.gupshup.io/wa/api/v1/template/msg';
+
+const IIT_HEADER_MISSING_ERROR =
+  `IIT slot_booked header image URL missing (set ${GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL})`;
+
+let integrationStubCallCount = 0;
+let integrationStubFailNext = false;
+
+function isIntegrationStub() {
+  return String(process.env.WA_INTEGRATION_STUB || '').trim() === '1';
+}
+
+function resetIntegrationStubCallCount() {
+  integrationStubCallCount = 0;
+  integrationStubFailNext = false;
+}
+
+function getIntegrationStubCallCount() {
+  return integrationStubCallCount;
+}
+
+function setIntegrationStubFailNext(fail = true) {
+  integrationStubFailNext = !!fail;
+}
 
 function isWhatsAppEnabled() {
   const v = process.env.ENABLE_WHATSAPP;
@@ -43,14 +72,70 @@ function formatPhoneE16491(phone10OrMore) {
 }
 
 /**
+ * Build urlencoded form fields for Gupshup template/msg (exported for unit tests).
+ * @param {{ templateId: string, params?: string[], headerImageLink?: string|null, source: string, destination: string, srcName?: string|null }} p
+ * @returns {Record<string, string>}
+ */
+function buildTemplateRequestFields(p) {
+  const templatePayloadObj = { id: p.templateId, params: p.params || [] };
+  const templatePayload = buildTemplateField(templatePayloadObj);
+  const messagePayload =
+    p.headerImageLink && String(p.headerImageLink).trim()
+      ? buildImageMessageField({ link: String(p.headerImageLink).trim() })
+      : null;
+
+  const body = new URLSearchParams();
+  body.append('source', String(p.source).replace(/\D/g, ''));
+  body.append('destination', String(p.destination).replace(/\D/g, ''));
+  body.append('channel', 'whatsapp');
+  body.append('template', templatePayload);
+  if (messagePayload) {
+    body.append('message', messagePayload);
+  }
+  if (p.srcName) {
+    body.append('src.name', p.srcName);
+  }
+  return Object.fromEntries(body.entries());
+}
+
+/**
  * @param {string} phoneE164 - destination already 91XXXXXXXXXX
  * @param {string} templateId - Gupshup template id
  * @param {string[]} params - ordered body variable values
- * @param {{ correlationId?: string|null }} [opts] — logged for traceability (Gupshup template API has no idempotency field)
+ * @param {{ correlationId?: string|null, templateEnvKey?: string|null, headerImageLink?: string|null }} [opts]
  * @returns {Promise<{ success: boolean, data?: unknown, error?: string }>}
  */
 async function sendTemplateMessage(phoneE164, templateId, params, opts = {}) {
-  const { correlationId } = opts;
+  const { correlationId, templateEnvKey, headerImageLink } = opts;
+  const templateEnvKeyNorm =
+    typeof templateEnvKey === 'string' && templateEnvKey.trim() ? templateEnvKey.trim() : null;
+  const isIitTemplate = templateEnvKeyNorm && isIitSlotBookedTemplateEnvKey(templateEnvKeyNorm);
+
+  if (isIitTemplate && !headerImageLink && !isIntegrationStub()) {
+    console.warn(
+      JSON.stringify({
+        event: 'gupshup_iit_header_blocked',
+        templateEnvKey: templateEnvKeyNorm,
+        templateId: templateId || null,
+        reason: 'missing_header_image_url'
+      })
+    );
+    return { success: false, error: IIT_HEADER_MISSING_ERROR };
+  }
+
+  if (isIntegrationStub()) {
+    integrationStubCallCount += 1;
+    if (integrationStubFailNext) {
+      integrationStubFailNext = false;
+      return { success: false, error: 'integration_stub_failure' };
+    }
+    const crypto = require('crypto');
+    const messageId = `test-gs-${crypto.randomUUID()}`;
+    return {
+      success: true,
+      data: { messageId, status: 'submitted', id: messageId }
+    };
+  }
   if (!isWhatsAppEnabled()) {
     return { success: false, error: 'WhatsApp disabled (ENABLE_WHATSAPP)' };
   }
@@ -66,17 +151,37 @@ async function sendTemplateMessage(phoneE164, templateId, params, opts = {}) {
   }
 
   const destination = String(phoneE164).replace(/\D/g, '');
-  const templatePayload = JSON.stringify({ id: templateId, params: params || [] });
-
+  const fields = buildTemplateRequestFields({
+    templateId,
+    params,
+    headerImageLink,
+    source,
+    destination,
+    srcName: process.env.GUPSHUP_SRC_NAME || null
+  });
   const body = new URLSearchParams();
-  body.append('source', source.replace(/\D/g, ''));
-  body.append('destination', destination);
-  body.append('channel', 'whatsapp');
-  body.append('template', templatePayload);
-  const srcName = process.env.GUPSHUP_SRC_NAME;
-  if (srcName) {
-    body.append('src.name', srcName);
-  }
+  Object.entries(fields).forEach(([k, v]) => body.append(k, v));
+
+  const templatePayloadObj = { id: templateId, params: params || [] };
+  const messagePayloadObj =
+    headerImageLink && String(headerImageLink).trim()
+      ? { type: 'image', image: { link: String(headerImageLink).trim() } }
+      : null;
+
+  const mask = maskPhoneTail(destination);
+  console.log(
+    JSON.stringify({
+      event: 'gupshup_template_send',
+      mask,
+      templateEnvKey: templateEnvKeyNorm,
+      templateId,
+      headerType: messagePayload ? 'image' : null,
+      headerImageLink: messagePayloadObj ? messagePayloadObj.image.link : null,
+      templatePayload: templatePayloadObj,
+      messagePayload: messagePayloadObj,
+      correlationId: correlationId || null
+    })
+  );
 
   try {
     const res = await axios.post(GUPSHUP_TEMPLATE_URL, body.toString(), {
@@ -89,7 +194,6 @@ async function sendTemplateMessage(phoneE164, templateId, params, opts = {}) {
     });
 
     const data = res.data;
-    const mask = maskPhoneTail(destination);
 
     if (correlationId) {
       console.log('[Gupshup] correlationId', correlationId, 'mask', mask, 'template', templateId);
@@ -126,7 +230,31 @@ async function sendSlotBookedWhatsApp(phone10, vars, sendOpts = {}) {
   const tid = process.env[envKey];
   const paramKeys = isIitSlotBookedTemplateEnvKey(envKey) ? SLOT_BOOKED_IIT_PARAM_KEYS : SLOT_BOOKED_PARAM_KEYS;
   const params = buildParamsFromKeys(vars, paramKeys);
-  return sendTemplateMessage(formatPhoneE16491(phone10), tid, params, sendOpts);
+
+  let headerImageLink = null;
+  if (isIitSlotBookedTemplateEnvKey(envKey)) {
+    headerImageLink = resolveIitSlotBookedHeaderImageUrl();
+    if (!headerImageLink && !isIntegrationStub()) {
+      console.warn(
+        JSON.stringify({
+          event: 'gupshup_iit_header_blocked',
+          templateEnvKey: envKey,
+          templateId: tid || null,
+          reason: 'missing_header_image_url'
+        })
+      );
+      return { success: false, error: IIT_HEADER_MISSING_ERROR };
+    }
+    if (isIntegrationStub() && !headerImageLink) {
+      headerImageLink = 'https://example.com/iit-stub-header.png';
+    }
+  }
+
+  return sendTemplateMessage(formatPhoneE16491(phone10), tid, params, {
+    ...sendOpts,
+    templateEnvKey: envKey,
+    headerImageLink
+  });
 }
 
 async function sendPre4HrReminderWhatsApp(phone10, vars, sendOpts = {}) {
@@ -150,9 +278,15 @@ async function sendReminder30MinWhatsApp(phone10, vars, sendOpts = {}) {
 module.exports = {
   isWhatsAppEnabled,
   formatPhoneE16491,
+  buildTemplateRequestFields,
   sendTemplateMessage,
   sendSlotBookedWhatsApp,
   sendPre4HrReminderWhatsApp,
   sendMeetLinkWhatsApp,
-  sendReminder30MinWhatsApp
+  sendReminder30MinWhatsApp,
+  resetIntegrationStubCallCount,
+  getIntegrationStubCallCount,
+  setIntegrationStubFailNext,
+  isIntegrationStub,
+  IIT_HEADER_MISSING_ERROR
 };

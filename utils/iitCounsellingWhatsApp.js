@@ -12,6 +12,9 @@ const IIT_BOOKING_LABEL_TO_TEMPLATE_ENV_KEY = {
 /** Legacy single-template override when per-day env is unset */
 const IIT_SLOT_BOOKED_TEMPLATE_ENV_LEGACY = 'GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED';
 
+/** Env key for IMAGE header URL (required when sending IIT slot_booked). */
+const GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL = 'GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL';
+
 /** Env key names for IIT slot_booked templates (single body var: name only). */
 const IIT_SLOT_BOOKED_TEMPLATE_ENV_KEYS = new Set([
   ...Object.values(IIT_BOOKING_LABEL_TO_TEMPLATE_ENV_KEY),
@@ -42,10 +45,25 @@ function resolveIitSlotBookedTemplateEnvKey(slotBookingTrimmed) {
   return null;
 }
 
+/**
+ * Resolve HTTPS URL for IIT slot_booked template IMAGE header (env-only, no code default).
+ * @returns {string|null}
+ */
+function resolveIitSlotBookedHeaderImageUrl() {
+  const raw = process.env[GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL];
+  const url = typeof raw === 'string' ? raw.trim() : '';
+  if (!url || !/^https:\/\//i.test(url)) {
+    return null;
+  }
+  return url;
+}
+
 module.exports = {
   IIT_BOOKING_LABEL_TO_TEMPLATE_ENV_KEY,
   IIT_SLOT_BOOKED_TEMPLATE_ENV_LEGACY,
   IIT_SLOT_BOOKED_TEMPLATE_ENV_KEYS,
+  GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL,
   isIitSlotBookedTemplateEnvKey,
   resolveIitSlotBookedTemplateEnvKey,
+  resolveIitSlotBookedHeaderImageUrl,
 };
