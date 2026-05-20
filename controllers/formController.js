@@ -1185,7 +1185,7 @@ exports.saveIitSection1 = async (req, res) => {
           updatedAt: now,
         },
       },
-      { upsert: true, new: true, runValidators: true }
+      { upsert: true, new: true, runValidators: true, validateModifiedOnly: true }
     );
 
     const visitorFingerprint =
@@ -1394,17 +1394,22 @@ exports.saveIitSection2 = async (req, res) => {
           updatedAt: now,
         },
       },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true, validateModifiedOnly: true }
     );
 
     if (!updated) {
       return res.status(404).json({ success: false, message: 'IIT counselling submission not found' });
     }
 
-    const { ensureIitReminderJobsForSubmission } = require('../services/iitReminderScheduler');
-    const scheduleResult = await ensureIitReminderJobsForSubmission(updated);
-    if (scheduleResult.error) {
-      console.warn('[saveIitSection2] IIT reminder scheduling:', scheduleResult.error);
+    let scheduleResult = { jobs: [] };
+    try {
+      const { ensureIitReminderJobsForSubmission } = require('../services/iitReminderScheduler');
+      scheduleResult = await ensureIitReminderJobsForSubmission(updated);
+      if (scheduleResult.error) {
+        console.warn('[saveIitSection2] IIT reminder scheduling:', scheduleResult.error);
+      }
+    } catch (scheduleErr) {
+      console.error('[saveIitSection2] IIT reminder scheduling failed:', scheduleErr);
     }
 
     return res.status(200).json({
@@ -1418,6 +1423,12 @@ exports.saveIitSection2 = async (req, res) => {
     });
   } catch (error) {
     console.error('[saveIitSection2] Error:', error);
+    if (error?.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: error.message || 'Validation failed.',
+      });
+    }
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
@@ -1461,7 +1472,7 @@ exports.saveIitSection3 = async (req, res) => {
           updatedAt: now,
         },
       },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true, validateModifiedOnly: true }
     );
 
     if (!updated) {
