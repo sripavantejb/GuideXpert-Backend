@@ -34,6 +34,7 @@
     "requeue:iit-reminder-jobs:dispatch": "node scripts/requeueIitReminderJobs.js --dispatch",
     "repair:iit-retry-funnel": "node scripts/repairIitRetryFunnel.js",
     "repair:iit-retry-funnel:execute": "node scripts/repairIitRetryFunnel.js --execute",
+    "replay:iit-webhook-dlr": "node scripts/replayIitWebhookDlr.js",
     "sync:wa-reminder-indexes": "node -e \"require('dotenv').config();const m=require('mongoose');const J=require('./models/WhatsAppReminderJob');m.connect(process.env.MONGODB_URI).then(()=>J.syncIndexes()).then(()=>{console.log('synced');return m.disconnect();});\"",
     "test:whatsapp-reminder-p3": "node --test test/whatsappReminder*.test.js test/backfillWhatsAppReminderJobs.test.js",
     "test:whatsapp-reminder-hardening": "node --test test/whatsappReminderJobHardening.test.js test/whatsappReminder*.test.js test/backfillWhatsAppReminderJobs.test.js"

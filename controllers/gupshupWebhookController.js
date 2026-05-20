@@ -165,6 +165,9 @@ function extractMetaWabaStatusFields(body) {
       const statuses = ch && ch.value && Array.isArray(ch.value.statuses) ? ch.value.statuses : [];
       for (const st of statuses) {
         if (!st || typeof st !== 'object') continue;
+        if (st.gs_id) providerIds.push(String(st.gs_id).trim());
+        if (st.gsId) providerIds.push(String(st.gsId).trim());
+        if (st.meta_msg_id) providerIds.push(String(st.meta_msg_id).trim());
         if (st.id) providerIds.push(String(st.id).trim());
         const recipDigits = String(st.recipient_id || '').replace(/\D/g, '');
         if (recipDigits.length >= 10) phone10 = recipDigits.slice(-10);
@@ -358,8 +361,9 @@ function extractWebhookFields(body) {
 
   if (metaHints) {
     for (const id of metaHints.providerIds) {
-      pushGsId(id, 12);
-      pushPayloadId(id, 12);
+      if (isLikelyGupshupInternalId(id)) pushGsId(id, 12);
+      else if (isLikelyWaMessageId(id)) pushPayloadId(id, 12);
+      else pushPayloadId(id, 12);
     }
     if (metaHints.phone10) pushPhone(metaHints.phone10, 12);
     if (metaHints.stage) {
@@ -376,7 +380,15 @@ function extractWebhookFields(body) {
   const eventType =
     metaHints && metaHints.stage ? metaHints.stage : best(eventTypeCandidates);
   const providerIds = [
-    ...new Set([...(metaHints && metaHints.providerIds ? metaHints.providerIds : []), gsId, payloadId].filter(Boolean))
+    ...new Set(
+      [
+        ...(metaHints && metaHints.providerIds ? metaHints.providerIds : []),
+        ...gsIdCandidates.map((c) => c.value),
+        ...payloadIdCandidates.map((c) => c.value),
+        gsId,
+        payloadId
+      ].filter(Boolean)
+    )
   ];
   const deliveryHint = eventType ? normalizeDeliveryHint(eventType) : (normalizeDeliveryHint(status) || null);
   const metaErrors = extractMetaStatusErrors(body);
@@ -751,8 +763,7 @@ async function replayGupshupWebhookBody(body, receivedAt = new Date()) {
   if (newStatus && updatedEventCount === 0 && phone10) {
     const inferredOps = inferOpsProductFromWebhookSnippet(JSON.stringify(body || {}));
     const phoneQuery = buildPhoneFallbackMatchQuery(phone10, receivedAt, {
-      opsProduct: inferredOps || null,
-      messageKind: 'slot_booked'
+      opsProduct: inferredOps || null
     });
     const nPhone = await tryUpdateDocs(phoneQuery, 'phone_fallback');
     if (nPhone > 0) {
@@ -909,8 +920,7 @@ exports.ingestGupshupWebhook = async (req, res) => {
     if (newStatus && updatedEventCount === 0 && phone10) {
       const inferredOps = inferOpsProductFromWebhookSnippet(rawPayloadSnippet);
       const phoneQuery = buildPhoneFallbackMatchQuery(phone10, receivedAt, {
-        opsProduct: inferredOps || null,
-        messageKind: 'slot_booked'
+        opsProduct: inferredOps || null
       });
       const nPhone = await tryUpdateDocs(phoneQuery, 'phone_fallback');
       if (nPhone > 0) {

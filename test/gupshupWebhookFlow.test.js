@@ -9,6 +9,7 @@ const {
   mapStageToDbStatus,
   canApplyWebhookStatus
 } = require('../utils/gupshupWebhookMonotonic');
+const { extractWebhookFields } = require('../controllers/gupshupWebhookController');
 
 describe('gupshupMessageIds', () => {
   test('parses Gupshup UUID from template send response', () => {
@@ -60,5 +61,35 @@ describe('gupshupWebhookMonotonic', () => {
 
   test('webhook failed allowed after submitted', () => {
     assert.equal(canApplyWebhookStatus('submitted', 'failed'), true);
+  });
+});
+
+describe('extractWebhookFields Meta DLR', () => {
+  test('includes gs_id and Meta message id for provider matching', () => {
+    const body = {
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                statuses: [
+                  {
+                    gs_id: '30d8a270-ec64-45f4-8c8e-1f951c41a3a7',
+                    id: '1820c269-268e-4190-bc09-5dab899c9446',
+                    meta_msg_id: 'wamid.HBgMTEST',
+                    recipient_id: '916304153659',
+                    status: 'delivered'
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    };
+    const ext = extractWebhookFields(body);
+    assert.ok(ext.providerIds.includes('30d8a270-ec64-45f4-8c8e-1f951c41a3a7'));
+    assert.ok(ext.providerIds.includes('1820c269-268e-4190-bc09-5dab899c9446'));
+    assert.equal(ext.eventType, 'delivered');
   });
 });
