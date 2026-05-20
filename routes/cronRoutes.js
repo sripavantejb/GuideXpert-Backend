@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const FormSubmission = require('../models/FormSubmission');
 const MessagingCronRun = require('../models/MessagingCronRun');
+const { CRON_JOB_KEYS } = MessagingCronRun;
 const { executeRetryWhatsAppBatch } = require('../services/retryWhatsAppBatch');
 const { isOsviConfigured } = require('../utils/osviService');
 const { processOsviOutboundForPhone } = require('../utils/osviOutboundProcessor');
@@ -146,7 +147,7 @@ router.get('/send-30min-reminders', verifyCronSecret, (req, res) =>
 
 router.get('/send-iit-reminders', verifyCronSecret, async (req, res) => {
   let cronRun = null;
-  const jobKey = 'send_iit_reminders';
+  const jobKey = CRON_JOB_KEYS.SEND_IIT_REMINDERS;
   const { IIT_REMINDER_MESSAGE_KINDS } = require('../models/WhatsAppReminderJob');
   try {
     cronRun = await startCronRun(jobKey);

@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 const FormSubmission = require('../models/FormSubmission');
 const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
 const WhatsAppReminderJob = require('../models/WhatsAppReminderJob');
+const { CRON_JOB_KEYS } = require('../models/MessagingCronRun');
 const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');
 const {
   sendBulkReminderSms,
@@ -65,13 +66,13 @@ function sleep(ms) {
 }
 
 function cronJobKeyForKind(kind) {
-  if (kind === 'pre4hr') return 'send_reminders';
-  if (kind === 'meet') return 'send_meetlinks';
-  if (kind === '30min') return 'send_30min_reminders';
-  if (kind === 'iit_pre2hr') return 'send_iit_reminders';
-  if (kind === 'iit_pre45min') return 'send_iit_reminders';
-  if (kind === 'iit_pre15min') return 'send_iit_reminders';
-  return 'send_reminders';
+  if (kind === 'pre4hr') return CRON_JOB_KEYS.SEND_REMINDERS;
+  if (kind === 'meet') return CRON_JOB_KEYS.SEND_MEETLINKS;
+  if (kind === '30min') return CRON_JOB_KEYS.SEND_30MIN_REMINDERS;
+  if (kind === 'iit_pre2hr') return CRON_JOB_KEYS.SEND_IIT_REMINDERS;
+  if (kind === 'iit_pre45min') return CRON_JOB_KEYS.SEND_IIT_REMINDERS;
+  if (kind === 'iit_pre15min') return CRON_JOB_KEYS.SEND_IIT_REMINDERS;
+  return CRON_JOB_KEYS.SEND_REMINDERS;
 }
 
 function sendFnForKind(kind) {

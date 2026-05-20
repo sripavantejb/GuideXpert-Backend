@@ -2,12 +2,18 @@
  * Campaign cron schedule health — last successful MessagingCronRun per jobKey.
  */
 const MessagingCronRun = require('../models/MessagingCronRun');
+const { CRON_JOB_KEYS } = MessagingCronRun;
 
 const REQUIRED_CAMPAIGN_CRONS = [
-  { jobKey: 'send_reminders', path: '/api/cron/send-reminders', label: 'pre4hr reminders' },
-  { jobKey: 'send_meetlinks', path: '/api/cron/send-meetlinks', label: 'meet links' },
-  { jobKey: 'send_30min_reminders', path: '/api/cron/send-30min-reminders', label: '30min reminders' },
-  { jobKey: 'retry_whatsapp', path: '/api/cron/retry-whatsapp', label: 'retry WhatsApp' }
+  { jobKey: CRON_JOB_KEYS.SEND_REMINDERS, path: '/api/cron/send-reminders', label: 'pre4hr reminders' },
+  { jobKey: CRON_JOB_KEYS.SEND_MEETLINKS, path: '/api/cron/send-meetlinks', label: 'meet links' },
+  { jobKey: CRON_JOB_KEYS.SEND_30MIN_REMINDERS, path: '/api/cron/send-30min-reminders', label: '30min reminders' },
+  {
+    jobKey: CRON_JOB_KEYS.SEND_IIT_REMINDERS,
+    path: '/api/cron/send-iit-reminders',
+    label: 'IIT counselling reminders',
+  },
+  { jobKey: CRON_JOB_KEYS.RETRY_WHATSAPP, path: '/api/cron/retry-whatsapp', label: 'retry WhatsApp' },
 ];
 
 function cronMaxAgeMs() {

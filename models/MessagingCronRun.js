@@ -1,5 +1,16 @@
 const mongoose = require('mongoose');
 
+/** Single source of truth for MessagingCronRun.jobKey — keep in sync with cron routes and dispatcher. */
+const CRON_JOB_KEYS = Object.freeze({
+  SEND_REMINDERS: 'send_reminders',
+  SEND_MEETLINKS: 'send_meetlinks',
+  SEND_30MIN_REMINDERS: 'send_30min_reminders',
+  RETRY_WHATSAPP: 'retry_whatsapp',
+  SEND_IIT_REMINDERS: 'send_iit_reminders',
+});
+
+const CRON_JOB_KEY_LIST = Object.freeze(Object.values(CRON_JOB_KEYS));
+
 const statsSchema = new mongoose.Schema(
   {
     found: { type: Number, default: 0 },
@@ -18,7 +29,7 @@ const messagingCronRunSchema = new mongoose.Schema({
   jobKey: {
     type: String,
     required: true,
-    enum: ['send_reminders', 'send_meetlinks', 'send_30min_reminders', 'retry_whatsapp']
+    enum: CRON_JOB_KEY_LIST
   },
   startedAt: { type: Date, required: true, default: Date.now },
   finishedAt: { type: Date, default: null },
@@ -38,3 +49,5 @@ messagingCronRunSchema.index({ jobKey: 1, startedAt: -1 });
 messagingCronRunSchema.index({ startedAt: -1 });
 
 module.exports = mongoose.model('MessagingCronRun', messagingCronRunSchema);
+module.exports.CRON_JOB_KEYS = CRON_JOB_KEYS;
+module.exports.CRON_JOB_KEY_LIST = CRON_JOB_KEY_LIST;
