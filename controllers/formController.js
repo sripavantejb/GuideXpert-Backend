@@ -1352,6 +1352,42 @@ exports.trackIitCounsellingVisit = async (req, res) => {
   }
 };
 
+function buildIitReminderScheduleWarnings(scheduleResult) {
+  const warnings = [];
+  if (!scheduleResult) return warnings;
+
+  if (scheduleResult.error) {
+    warnings.push({
+      code: scheduleResult.error,
+      message:
+        scheduleResult.detail ||
+        `Reminder scheduling failed (${scheduleResult.error})`,
+      messageKind: scheduleResult.messageKind || null,
+    });
+  }
+
+  const jobs = scheduleResult.jobs || [];
+  const missingTemplate = jobs.filter((j) => j.state === 'skipped' && !j.templateIdEnvKey);
+  if (missingTemplate.length) {
+    warnings.push({
+      code: 'iit_template_env_missing',
+      message: `Gupshup template env missing for: ${missingTemplate.map((j) => j.messageKind).join(', ')}`,
+      messageKinds: missingTemplate.map((j) => j.messageKind),
+    });
+  }
+
+  const pendingCount = jobs.filter((j) => j.state === 'pending').length;
+  if (!scheduleResult.error && jobs.length > 0 && pendingCount === 0) {
+    warnings.push({
+      code: 'no_pending_reminder_jobs',
+      message:
+        'All IIT reminder jobs were skipped; WhatsApp reminders will not be sent for this submission.',
+    });
+  }
+
+  return warnings;
+}
+
 exports.saveIitSection2 = async (req, res) => {
   try {
     const payload = req.body || {};
@@ -1402,14 +1438,43 @@ exports.saveIitSection2 = async (req, res) => {
     }
 
     let scheduleResult = { jobs: [] };
+    let reminderScheduleWarnings = [];
+    let reminderDispatch = null;
     try {
-      const { ensureIitReminderJobsForSubmission } = require('../services/iitReminderScheduler');
+      const {
+        ensureIitReminderJobsForSubmission,
+        dispatchDueJobsForIitSubmission,
+      } = require('../services/iitReminderScheduler');
       scheduleResult = await ensureIitReminderJobsForSubmission(updated);
+      reminderScheduleWarnings = buildIitReminderScheduleWarnings(scheduleResult);
       if (scheduleResult.error) {
-        console.warn('[saveIitSection2] IIT reminder scheduling:', scheduleResult.error);
+        console.warn(
+          '[saveIitSection2] IIT reminder scheduling:',
+          scheduleResult.error,
+          scheduleResult.detail || ''
+        );
+      } else if (reminderScheduleWarnings.length) {
+        console.warn('[saveIitSection2] IIT reminder scheduling warnings:', reminderScheduleWarnings);
+      }
+
+      try {
+        reminderDispatch = await dispatchDueJobsForIitSubmission(updated._id, {
+          now: new Date(),
+          cronJobKey: 'save_iit_section2_catchup',
+        });
+      } catch (dispatchErr) {
+        console.warn('[saveIitSection2] IIT reminder dispatch:', dispatchErr.message);
+        reminderScheduleWarnings.push({
+          code: 'reminder_dispatch_failed',
+          message: dispatchErr.message || 'Reminder dispatch failed',
+        });
       }
     } catch (scheduleErr) {
       console.error('[saveIitSection2] IIT reminder scheduling failed:', scheduleErr);
+      reminderScheduleWarnings.push({
+        code: 'reminder_schedule_failed',
+        message: scheduleErr.message || 'Reminder scheduling failed',
+      });
     }
 
     return res.status(200).json({
@@ -1419,6 +1484,8 @@ exports.saveIitSection2 = async (req, res) => {
         submissionId: updated._id.toString(),
         currentStep: 2,
         reminderJobs: scheduleResult.jobs || [],
+        ...(reminderDispatch ? { reminderDispatch } : {}),
+        ...(reminderScheduleWarnings.length ? { reminderScheduleWarnings } : {}),
       },
     });
   } catch (error) {

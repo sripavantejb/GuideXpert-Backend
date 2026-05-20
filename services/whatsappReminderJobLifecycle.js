@@ -78,12 +78,29 @@ async function applyJobStateMonotonic(jobId, nextState, fields = {}) {
   return { jobId, state: nextState, skipped: false };
 }
 
+const { isInfrastructureSendFailure } = require('../utils/whatsappRetryRules');
+
 function deriveProjectionState(events, currentState) {
+  const infraOnly =
+    events.length > 0 &&
+    events.every(
+      (e) =>
+        isInfrastructureSendFailure({ errorText: e.errorMessage }) ||
+        (e.status === 'failed' && !e.terminalFailureKind)
+    ) &&
+    !events.some((e) => DELIVERED_PLUS.includes(e.status));
+  if (infraOnly && !['claimed', 'dispatching'].includes(currentState)) {
+    return 'pending';
+  }
+
   const anyDelivered = events.some((e) => DELIVERED_PLUS.includes(e.status));
   const anyReconcile = events.some((e) => RECONCILE_PENDING_STATUSES.includes(e.status));
   const anyExhausted = events.some((e) => e.status === 'retry_exhausted');
   const anyPermanentFail = events.some(
-    (e) => e.status === 'failed' && e.terminalFailureKind === 'permanent'
+    (e) =>
+      e.status === 'failed' &&
+      e.terminalFailureKind === 'permanent' &&
+      !isInfrastructureSendFailure({ errorText: e.errorMessage })
   );
 
   if (anyDelivered) {
@@ -179,14 +196,19 @@ async function recoverStuckReminderJobs(opts = {}) {
   const now = opts.now || new Date();
   const limit = opts.limit != null ? opts.limit : 100;
   const kinds = opts.messageKinds;
+  const staleClaimMs =
+    parseInt(process.env.WA_REMINDER_JOB_STALE_CLAIM_MS || '180000', 10) || 180000;
+  const staleClaimBefore = new Date(now.getTime() - staleClaimMs);
 
   const stuckFilter = {
     state: { $in: ['claimed', 'dispatching'] },
     $or: [
       { leaseExpiresAt: { $lt: now } },
       { claimedUntil: { $lt: now } },
-      { leaseExpiresAt: null, claimedUntil: { $lt: now } }
-    ]
+      { leaseExpiresAt: null, claimedUntil: { $lt: now } },
+      { claimedAt: { $lt: staleClaimBefore } },
+      { state: 'dispatching', updatedAt: { $lt: staleClaimBefore } },
+    ],
   };
   if (kinds && kinds.length) stuckFilter.messageKind = { $in: kinds };
 

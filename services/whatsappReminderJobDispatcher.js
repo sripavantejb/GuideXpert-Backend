@@ -20,6 +20,8 @@ const {
   sendIitReminderWhatsApp
 } = require('../services/gupshupService');
 const { isIitReminderMessageKind, resolveIitReminderTemplateEnvKey } = require('../utils/iitCounsellingWhatsApp');
+const { isInfrastructureSendFailure } = require('../utils/whatsappRetryRules');
+const { isGupshupConfigured } = require('../services/gupshupService');
 const { getIitReminderEligibility } = require('../utils/iitReminderEligibility');
 const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
 const { markCampaignSentFlag } = require('../utils/waCampaignSentFlags');
@@ -403,7 +405,7 @@ async function executeIitReminderJob(job, cronRunId, cronJobKey, execOpts = {}) 
     rootMessageEventId: initialMessageEventId,
     providerMessageId,
     cronRunId: cronRunId || null,
-    templateIdEnvKey,
+    templateIdEnvKey: templateEnvKey,
     executionMetadata: {
       lastDispatch: { at: now, source: cronJobKey || cronJobKeyForKind(job.messageKind) },
     },
@@ -419,6 +421,22 @@ async function executeIitReminderJob(job, cronRunId, cronJobKey, execOpts = {}) 
       await syncReminderJobFromRetryGroup(job.retryGroupId).catch(() => {});
     }
     return { outcome: 'dispatched' };
+  }
+
+  if (isInfrastructureSendFailure({ errorText: wa.error })) {
+    await WhatsAppReminderJob.updateOne(
+      { _id: job._id, claimToken: job.claimToken },
+      {
+        $set: {
+          state: 'pending',
+          attempts,
+          lastError: wa.error || 'infrastructure_not_ready',
+          updatedAt: now,
+          ...clearLeaseUpdate(),
+        },
+      }
+    );
+    return { outcome: 'deferred', reason: 'infrastructure_not_ready' };
   }
 
   await WhatsAppReminderJob.updateOne(
@@ -657,14 +675,46 @@ async function claimDueReminderJobs(opts) {
 /**
  * @param {{ messageKinds: string[], now?: Date, cronRunId?: object, cronJobKey?: string, limit?: number, submissionIdFilter?: object, skipRecovery?: boolean }} opts
  */
+async function requeueBlockedReminderJobs(now, kinds) {
+  const iitKinds = (kinds || []).filter((k) => String(k).startsWith('iit_'));
+  if (!iitKinds.length) return { requeued: 0 };
+
+  const res = await WhatsAppReminderJob.updateMany(
+    {
+      messageKind: { $in: iitKinds },
+      state: { $in: ['exhausted', 'failed', 'dispatched'] },
+      slotDate: { $gt: now },
+      $or: [
+        { lastError: { $regex: /WhatsApp disabled|Gupshup not configured|template id missing|ENABLE_WHATSAPP/i } },
+        {
+          state: 'exhausted',
+          scheduledSendAt: { $lte: now },
+          attempts: { $lte: 2 },
+        },
+      ],
+    },
+    { $set: { state: 'pending', updatedAt: now, ...clearLeaseFields() } }
+  );
+  return { requeued: res.modifiedCount || 0 };
+}
+
 async function dispatchDueReminderJobs(opts) {
   const now = opts.now || new Date();
   const kinds = Array.isArray(opts.messageKinds) ? opts.messageKinds : [];
   const limit = opts.limit != null ? opts.limit : maxDispatchPerRun();
   const delayMs = interSendDelayMs();
 
+  if (!isGupshupConfigured()) {
+    console.warn(
+      '[dispatchDueReminderJobs] Gupshup not configured — set ENABLE_WHATSAPP, GUPSHUP_API_KEY, GUPSHUP_SOURCE. Jobs will stay pending.'
+    );
+  }
+
   let jobsExpired = 0;
+  let jobsRequeued = 0;
   if (!opts.skipRecovery) {
+    const requeue = await requeueBlockedReminderJobs(now, kinds);
+    jobsRequeued = requeue.requeued || 0;
     await recoverStuckReminderJobs({ now, messageKinds: kinds, limit: 100 });
     const expireRes = await expireDueReminderJobs({ now, messageKinds: kinds, limit: 2000 });
     jobsExpired = expireRes.expired || 0;
@@ -682,6 +732,7 @@ async function dispatchDueReminderJobs(opts) {
     jobsSkipped: 0,
     jobsDeferred: 0,
     jobsExpired,
+    jobsRequeued,
     backlogDepth: backlog.overdueCount + backlog.freshDueCount,
     overdueBacklog: backlog.overdueCount,
     freshDueBacklog: backlog.freshDueCount,
@@ -692,13 +743,28 @@ async function dispatchDueReminderJobs(opts) {
   };
 
   for (const job of claimed) {
-    // eslint-disable-next-line no-await-in-loop
-    const r = await executeReminderJob(job, opts.cronRunId, opts.cronJobKey, { now });
-    stats.dispatchThroughput += 1;
-    if (r.outcome === 'dispatched') stats.jobsDispatched += 1;
-    else if (r.outcome === 'failed') stats.jobsFailed += 1;
-    else if (r.outcome === 'skipped') stats.jobsSkipped += 1;
-    else if (r.outcome === 'deferred') stats.jobsDeferred += 1;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const r = await executeReminderJob(job, opts.cronRunId, opts.cronJobKey, { now });
+      stats.dispatchThroughput += 1;
+      if (r.outcome === 'dispatched') stats.jobsDispatched += 1;
+      else if (r.outcome === 'failed') stats.jobsFailed += 1;
+      else if (r.outcome === 'skipped') stats.jobsSkipped += 1;
+      else if (r.outcome === 'deferred') stats.jobsDeferred += 1;
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          event: 'reminder_job_execute_error',
+          jobId: String(job._id),
+          messageKind: job.messageKind,
+          error: err && err.message ? String(err.message).slice(0, 500) : 'unknown',
+        })
+      );
+      // eslint-disable-next-line no-await-in-loop
+      await releaseJobClaim(job._id, job.claimToken).catch(() => {});
+      stats.jobsFailed += 1;
+      stats.dispatchThroughput += 1;
+    }
     if (delayMs > 0) {
       // eslint-disable-next-line no-await-in-loop
       await sleep(delayMs);

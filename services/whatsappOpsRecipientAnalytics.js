@@ -23,6 +23,8 @@ const canonical = require('./whatsappOpsCanonicalMetrics');
 const { computeReminderJobCoverageForCohort } = require('./whatsappReminderJobAnalytics');
 
 const IIT_LANGUAGE_BUCKETS = ['Telugu', 'Hindi', 'unknown'];
+const IIT_PREFERRED_LANGUAGES = ['Telugu', 'Hindi'];
+const IIT_REMINDER_MESSAGE_KINDS = ['iit_pre2hr', 'iit_pre45min', 'iit_pre15min'];
 const ALLOWED_SLOT_TIME_SUFFIXES = ['11AM', '3PM', '6PM', '7PM'];
 const ACCEPTED_STATUSES = canonical.ACCEPTED_STATUSES;
 const SENT_PLUS = canonical.SENT_PLUS;
@@ -44,6 +46,26 @@ function normalizeSlotTimeParam(raw) {
   return null;
 }
 
+/**
+ * @param {unknown} raw
+ * @returns {'Telugu'|'Hindi'|null|undefined} null = unset; undefined = invalid
+ */
+function normalizePreferredLanguageParam(raw) {
+  if (raw == null || raw === '') return null;
+  const s = String(raw).trim();
+  if (IIT_PREFERRED_LANGUAGES.includes(s)) return s;
+  return undefined;
+}
+
+/** @param {object} filter @param {'Telugu'|'Hindi'|null} lang */
+function applyIitLanguageToCohortFilter(filter, lang) {
+  if (!lang) return filter;
+  return {
+    ...filter,
+    'iitCounselling.section2Data.preferredLanguage': lang
+  };
+}
+
 function buildBookingCohortFilter(range, slotTimeNorm) {
   const q = {
     isRegistered: true,
@@ -56,10 +78,11 @@ function buildBookingCohortFilter(range, slotTimeNorm) {
 }
 
 /** Strict IST slot-day from submission only (no createdAt cohort fallback). */
-function annotateEventsWithSlotDayPipeline(messageKindFilter, opsProductRaw = null) {
+function annotateEventsWithSlotDayPipeline(messageKindFilter, opsProductRaw = null, preferredLanguage = null) {
   return annotateEventsWithSlotDayPipelineBase(messageKindFilter, {
     strictSlotDay: true,
-    opsProduct: opsProductRaw
+    opsProduct: opsProductRaw,
+    preferredLanguage
   });
 }
 
@@ -86,10 +109,15 @@ async function computeRecipientDayOverview({
   dateIso,
   messageKind = null,
   slotTime = 'all',
-  opsProduct = null
+  opsProduct = null,
+  preferredLanguage = null
 } = {}) {
   if (messageKind && !ALLOWED_MESSAGE_KINDS.includes(messageKind)) {
     return { error: `Invalid messageKind. Allowed: ${ALLOWED_MESSAGE_KINDS.join(', ')}` };
+  }
+  const langNorm = normalizePreferredLanguageParam(preferredLanguage);
+  if (langNorm === undefined) {
+    return { error: 'Invalid preferredLanguage. Use Telugu or Hindi.' };
   }
   const slotTimeNorm = normalizeSlotTimeParam(slotTime);
   if (slotTimeNorm === null) {
@@ -100,10 +128,13 @@ async function computeRecipientDayOverview({
 
   const opsSlug = parseOpsProductQuery(opsProduct);
   const effKind = effectiveOverviewMessageKind(opsProduct, messageKind);
-  const cohortFilter =
+  let cohortFilter =
     opsSlug === 'iit_counselling'
       ? buildIitBookingCohortFilter(range, slotTimeNorm)
       : buildBookingCohortFilter(range, slotTimeNorm);
+  if (opsSlug === 'iit_counselling' && langNorm) {
+    cohortFilter = applyIitLanguageToCohortFilter(cohortFilter, langNorm);
+  }
   const [cohortBookedCount, cohortIds] = await Promise.all([
     opsSlug === 'iit_counselling'
       ? IitCounsellingSubmission.countDocuments(cohortFilter)
@@ -130,7 +161,11 @@ async function computeRecipientDayOverview({
     opsSlug === 'iit_counselling'
       ? { $match: { iitCounsellingSubmissionId: { $in: cohortIds } } }
       : { $match: { formSubmissionId: { $in: cohortIds } } };
-  const annotate = annotateEventsWithSlotDayPipeline(effKind, opsProduct);
+  const annotate = annotateEventsWithSlotDayPipeline(
+    effKind,
+    opsProduct,
+    opsSlug === 'iit_counselling' ? langNorm : null
+  );
 
   const baseAfterAnnotate = [
     ...annotate,
@@ -193,6 +228,7 @@ async function computeRecipientDayOverview({
       slotDayIst: range.isoDate,
       messageKind: effKind || messageKind,
       opsProduct: opsSlug,
+      preferredLanguage: langNorm
     });
     cohortFlow = {
       booked: cohortBookedCount,
@@ -200,6 +236,9 @@ async function computeRecipientDayOverview({
       coverageGap: jobCoverage.coverageGap,
       scheduledJobFunnel: jobCoverage.scheduledJobFunnel,
       scheduledJobByState: jobCoverage.byState,
+      ...(jobCoverage.suppressionByReason
+        ? { suppressionByReason: jobCoverage.suppressionByReason }
+        : {}),
       withTemplateEventBookings: withWaIds.length,
       withoutTemplateEventBookings: bookedWithoutAnyWaEvent,
       effectiveMessageKind: effKind || messageKind,
@@ -254,7 +293,13 @@ async function computeRecipientDayOverview({
         attemptMetricsNote:
           'Primary KPIs count unique recipients (lineage+phone+template). Attempt-level rows are diagnostic only.'
       }),
-      filter: { date: range.isoDate, messageKind: messageKind || null, slotTime: slotTimeNorm, opsProduct: opsSlug },
+      filter: {
+        date: range.isoDate,
+        messageKind: messageKind || null,
+        slotTime: slotTimeNorm,
+        opsProduct: opsSlug,
+        preferredLanguage: langNorm
+      },
       range: { from: range.from, to: range.to },
       bookedSlotsCount: cohortBookedCount,
       recipientTotals,
@@ -277,17 +322,31 @@ async function computeRecipientDayOverview({
   };
 }
 
-async function computeRecipientMonthTrend({ monthIso, messageKind = null, opsProduct = null }) {
+async function computeRecipientMonthTrend({
+  monthIso,
+  messageKind = null,
+  opsProduct = null,
+  preferredLanguage = null
+} = {}) {
   const s = String(monthIso || '').trim();
   if (!/^\d{4}-\d{2}$/.test(s)) return { error: 'Invalid month YYYY-MM' };
+  const langNorm = normalizePreferredLanguageParam(preferredLanguage);
+  if (langNorm === undefined) {
+    return { error: 'Invalid preferredLanguage. Use Telugu or Hindi.' };
+  }
   const [y, m] = s.split('-').map((x) => parseInt(x, 10));
   const pad = (n) => String(n).padStart(2, '0');
   const lastD = new Date(y, m, 0).getDate();
   const dayMin = `${y}-${pad(m)}-01`;
   const dayMax = `${y}-${pad(m)}-${pad(lastD)}`;
 
+  const opsSlug = parseOpsProductQuery(opsProduct);
   const effKind = effectiveOverviewMessageKind(opsProduct, messageKind);
-  const annotate = annotateEventsWithSlotDayPipeline(effKind, opsProduct);
+  const annotate = annotateEventsWithSlotDayPipeline(
+    effKind,
+    opsProduct,
+    opsSlug === 'iit_counselling' ? langNorm : null
+  );
   const monthSlotMatch = { $match: { slotDayIst: { $gte: dayMin, $lte: dayMax, $ne: null } } };
 
   const perRecipientDay = await WhatsAppMessageEvent.aggregate([
@@ -405,7 +464,8 @@ async function computeRecipientRangeSummary({
   from,
   to,
   messageKind = null,
-  opsProduct = null
+  opsProduct = null,
+  preferredLanguage = null
 } = {}) {
   if (!from || !to) return { error: 'from and to dates required' };
   const fromIso = from.toISOString().slice(0, 10);
@@ -420,7 +480,13 @@ async function computeRecipientRangeSummary({
 
   const dayResults = await Promise.all(
     days.map((dateIso) =>
-      computeRecipientDayOverview({ dateIso, messageKind, slotTime: 'all', opsProduct })
+      computeRecipientDayOverview({
+        dateIso,
+        messageKind,
+        slotTime: 'all',
+        opsProduct,
+        preferredLanguage
+      })
     )
   );
 
@@ -1075,7 +1141,12 @@ async function distinctPhone10ForCohort(cohortSubmissionIds, opsSlug) {
 /**
  * Side-by-side recipient KPIs per wall-clock slot suffix (same IST booking day).
  */
-async function computeRecipientSlotTimeBreakdown({ dateIso, messageKind = null, opsProduct = null }) {
+async function computeRecipientSlotTimeBreakdown({
+  dateIso,
+  messageKind = null,
+  opsProduct = null,
+  preferredLanguage = null
+} = {}) {
   const slots = [...ALLOWED_SLOT_TIME_SUFFIXES];
   const entries = await Promise.all(
     slots.map(async (suffix) => {
@@ -1083,7 +1154,8 @@ async function computeRecipientSlotTimeBreakdown({ dateIso, messageKind = null, 
         dateIso,
         messageKind,
         slotTime: suffix,
-        opsProduct
+        opsProduct,
+        preferredLanguage
       });
       if (r.error) return { slotTime: suffix, error: r.error };
       const d = r.data;
@@ -1110,26 +1182,44 @@ async function computeRecipientSummaryExportRows({
   dateIso,
   messageKind = null,
   slotTime = 'all',
-  opsProduct = null
+  opsProduct = null,
+  preferredLanguage = null
 } = {}) {
-  const overview = await computeRecipientDayOverview({ dateIso, messageKind, slotTime, opsProduct });
+  const overview = await computeRecipientDayOverview({
+    dateIso,
+    messageKind,
+    slotTime,
+    opsProduct,
+    preferredLanguage
+  });
   if (overview.error) return overview;
   const filter = overview.data?.filter || {};
   const range = istDayRangeFromIso(dateIso);
   if (!range) return { error: 'Invalid date format. Use YYYY-MM-DD' };
   const slotTimeNorm = normalizeSlotTimeParam(slotTime);
+  const langNorm = normalizePreferredLanguageParam(preferredLanguage);
+  if (langNorm === undefined) {
+    return { error: 'Invalid preferredLanguage. Use Telugu or Hindi.' };
+  }
   const opsSlug = parseOpsProductQuery(opsProduct);
   const effKind = effectiveOverviewMessageKind(opsProduct, messageKind);
-  const cohortFilter =
+  let cohortFilter =
     opsSlug === 'iit_counselling'
       ? buildIitBookingCohortFilter(range, slotTimeNorm)
       : buildBookingCohortFilter(range, slotTimeNorm);
+  if (opsSlug === 'iit_counselling' && langNorm) {
+    cohortFilter = applyIitLanguageToCohortFilter(cohortFilter, langNorm);
+  }
   const cohortIds =
     opsSlug === 'iit_counselling'
       ? await IitCounsellingSubmission.distinct('_id', cohortFilter)
       : await FormSubmission.distinct('_id', cohortFilter);
   const idField = opsSlug === 'iit_counselling' ? 'iitCounsellingSubmissionId' : 'formSubmissionId';
-  const annotate = annotateEventsWithSlotDayPipeline(effKind, opsProduct);
+  const annotate = annotateEventsWithSlotDayPipeline(
+    effKind,
+    opsProduct,
+    opsSlug === 'iit_counselling' ? langNorm : null
+  );
   const recipientRows = await WhatsAppMessageEvent.aggregate([
     ...annotate,
     { $match: { slotDayIst: { $ne: null } } },
@@ -1228,7 +1318,12 @@ async function computeRecipientLanguageBreakdown({
   return {
     data: {
       byLanguage,
-      filter: { date: range.isoDate, slotTime: slotTimeNorm, messageKind: effKind || messageKind },
+      filter: {
+        date: range.isoDate,
+        slotTime: slotTimeNorm,
+        messageKind: effKind || messageKind,
+        preferredLanguage: null
+      },
     },
   };
 }
@@ -1236,7 +1331,11 @@ async function computeRecipientLanguageBreakdown({
 module.exports = {
   ALLOWED_MESSAGE_KINDS,
   ALLOWED_SLOT_TIME_SUFFIXES,
+  IIT_PREFERRED_LANGUAGES,
+  IIT_REMINDER_MESSAGE_KINDS,
   normalizeSlotTimeParam,
+  normalizePreferredLanguageParam,
+  applyIitLanguageToCohortFilter,
   buildRecipientOutcomeBreakdown,
   computeRecipientDayOverview,
   computeRecipientMonthTrend,

@@ -29,6 +29,12 @@
     "backfill:wa-retry-groups": "node scripts/backfillWhatsAppMessageEventRetryGroups.js",
     "backfill:wa-reconcile-derived": "node scripts/backfillReconcileDerivedFailure.js",
     "backfill:wa-reminder-jobs": "node scripts/backfillWhatsAppReminderJobs.js",
+    "backfill:iit-reminder-jobs": "node scripts/backfillIitReminderJobs.js",
+    "requeue:iit-reminder-jobs": "node scripts/requeueIitReminderJobs.js",
+    "requeue:iit-reminder-jobs:dispatch": "node scripts/requeueIitReminderJobs.js --dispatch",
+    "repair:iit-retry-funnel": "node scripts/repairIitRetryFunnel.js",
+    "repair:iit-retry-funnel:execute": "node scripts/repairIitRetryFunnel.js --execute",
+    "sync:wa-reminder-indexes": "node -e \"require('dotenv').config();const m=require('mongoose');const J=require('./models/WhatsAppReminderJob');m.connect(process.env.MONGODB_URI).then(()=>J.syncIndexes()).then(()=>{console.log('synced');return m.disconnect();});\"",
     "test:whatsapp-reminder-p3": "node --test test/whatsappReminder*.test.js test/backfillWhatsAppReminderJobs.test.js",
     "test:whatsapp-reminder-hardening": "node --test test/whatsappReminderJobHardening.test.js test/whatsappReminder*.test.js test/backfillWhatsAppReminderJobs.test.js"
   },

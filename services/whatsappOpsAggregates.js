@@ -628,13 +628,19 @@ function buildScopeKey(parts) {
   const kind = parts.messageKind || 'all';
   const prod = parseOpsProductQuery(parts.opsProduct);
   const prodSeg = prod === 'iit_counselling' ? 'iitc' : 'gx';
-  if (scope === 'month') return `month:${prodSeg}:${kind}:${parts.monthIso || ''}`;
+  const langSeg =
+    parts.preferredLanguage === 'Telugu' || parts.preferredLanguage === 'Hindi'
+      ? `:${parts.preferredLanguage}`
+      : '';
+  if (scope === 'month') return `month:${prodSeg}:${kind}:${parts.monthIso || ''}${langSeg}`;
   if (scope === 'day') {
     const date = parts.dateIso || '';
     const st = parts.slotTime && String(parts.slotTime) !== 'all' ? String(parts.slotTime) : '';
-    return st ? `day:${prodSeg}:${kind}:${date}:${st}` : `day:${prodSeg}:${kind}:${date}`;
+    return st
+      ? `day:${prodSeg}:${kind}:${date}:${st}${langSeg}`
+      : `day:${prodSeg}:${kind}:${date}${langSeg}`;
   }
-  return `summary:${prodSeg}:${kind}:${parts.fromIso || ''}:${parts.toIso || ''}`;
+  return `summary:${prodSeg}:${kind}:${parts.fromIso || ''}:${parts.toIso || ''}${langSeg}`;
 }
 
 /* ============================================================================

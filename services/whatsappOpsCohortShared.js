@@ -36,13 +36,19 @@ function slotDayIstFromInstant(slotDate) {
  * @param {{ strictSlotDay?: boolean }} [options] strictSlotDay default true — slotDayIst only when submission has slotDate
  * @returns {object[]}
  */
+const IIT_PREFERRED_LANGUAGE_VALUES = ['Telugu', 'Hindi'];
+
 function annotateEventsWithSlotDayPipeline(messageKindFilter, options = {}) {
   const strictSlotDay = options.strictSlotDay !== false;
+  const preferredLanguage =
+    typeof options.preferredLanguage === 'string' && IIT_PREFERRED_LANGUAGE_VALUES.includes(options.preferredLanguage)
+      ? options.preferredLanguage
+      : null;
   const match = {
     ...(messageKindFilter ? { messageKind: messageKindFilter } : {}),
     ...matchWhatsAppEventsByOpsProduct(parseOpsProductQuery(options.opsProduct))
   };
-  return [
+  const stages = [
     { $match: match },
     {
       $addFields: {
@@ -65,7 +71,15 @@ function annotateEventsWithSlotDayPipeline(messageKindFilter, options = {}) {
         from: 'iitcounsellingsubmissions',
         localField: 'iitCounsellingSubmissionId',
         foreignField: '_id',
-        pipeline: [{ $project: { counsellingSlotInstantUtc: 1, phone: 1 } }],
+        pipeline: [
+          {
+            $project: {
+              counsellingSlotInstantUtc: 1,
+              phone: 1,
+              'iitCounselling.section2Data.preferredLanguage': 1
+            }
+          }
+        ],
         as: 'iitSubDoc'
       }
     },
@@ -142,10 +156,28 @@ function annotateEventsWithSlotDayPipeline(messageKindFilter, options = {}) {
       }
     }
   ];
+
+  if (preferredLanguage) {
+    stages.push({
+      $match: {
+        $expr: {
+          $eq: [
+            {
+              $arrayElemAt: ['$iitSubDoc.iitCounselling.section2Data.preferredLanguage', 0]
+            },
+            preferredLanguage
+          ]
+        }
+      }
+    });
+  }
+
+  return stages;
 }
 
 module.exports = {
   IST_OFFSET_MINUTES,
+  IIT_PREFERRED_LANGUAGE_VALUES,
   parseIsoDateOnly,
   istDayRangeFromIso,
   slotDayIstFromInstant,

@@ -6,10 +6,12 @@ Set these on the **API server** (Vercel/host dashboard). No leading/trailing spa
 
 | Variable | Purpose |
 |----------|---------|
-| `ENABLE_WHATSAPP` | `true` |
+| `ENABLE_WHATSAPP` | Must be `true` — without it, `safeSendWhatsApp` skips all sends (jobs may still schedule) |
 | `GUPSHUP_API_KEY` | Provider auth |
 | `GUPSHUP_SOURCE` | Sender number |
-| `GUIDEXPERT_CRON_SECRET` | Protects `/api/cron/*` |
+| `GUIDEXPERT_CRON_SECRET` or `CRON_SECRET` | Protects `/api/cron/*` |
+
+Local/staging: if reminders show as scheduled in ops but **0 recipients**, confirm `ENABLE_WHATSAPP=true` and Gupshup keys are set in `.env`, then restart the API process.
 
 ## Slot confirmation (Section 1 — unchanged)
 
@@ -53,7 +55,9 @@ Reminders are **scheduled when Section 2 saves** (`preferredLanguage` = Telugu o
 | `GUPSHUP_TEMPLATE_IIT_SUNDAY_PRE15MIN_TELUGU` | 15 minutes before, Telugu |
 | `GUPSHUP_TEMPLATE_IIT_SUNDAY_PRE15MIN_HINDI` | 15 minutes before, Hindi |
 
-Set each value to the Gupshup template UUID from your dashboard.
+Set each value to the Gupshup template UUID from your dashboard (UUID only — no extra characters).
+
+**Common misconfiguration:** `GUPSHUP_TEMPLATE_IIT_PRE45MIN_HINDI` must be a clean UUID. Values copied with stray suffixes (e.g. `₹=`) cause Hindi Wed/Sat 45-minute sends to fail template resolution.
 
 ## Optional tuning
 
@@ -77,6 +81,34 @@ GET /api/cron/send-iit-reminders?key=<CRON_SECRET or GUIDEXPERT_CRON_SECRET>
 ```
 
 Same auth as other cron routes (`?key=`, `x-cron-key`, or `Authorization: Bearer`).
+
+After deploy, verify the route manually (replace host and secret):
+
+```bash
+curl -s "https://<API_HOST>/api/cron/send-iit-reminders?key=$GUIDEXPERT_CRON_SECRET"
+```
+
+Expect JSON with `jobsClaimed` / `jobsDispatched` ≥ 1 when pending IIT reminder jobs are due. If always zero, check the external scheduler URL, secret, and that Section 2 created jobs (or run `npm run backfill:iit-reminder-jobs -- --execute`).
+
+## One-time index repair (if backfill fails with duplicate `formSubmissionId: null`)
+
+Older deployments may have a non-partial unique index on `(formSubmissionId, messageKind)` that blocks multiple IIT jobs. Sync indexes once:
+
+```bash
+npm run sync:wa-reminder-indexes
+```
+
+Then run the IIT backfill again.
+
+## Backfill (existing Section 2 bookings)
+
+For submissions that completed Section 2 **before** the retry-group enum fix:
+
+```bash
+cd GuideXpert-Backend
+npm run backfill:iit-reminder-jobs              # dry-run
+npm run backfill:iit-reminder-jobs -- --execute # write jobs
+```
 
 ## Verify
 

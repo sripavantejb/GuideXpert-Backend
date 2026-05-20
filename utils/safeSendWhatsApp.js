@@ -634,12 +634,20 @@ async function safeSendWhatsApp({
       errText,
       providerDebug ? `provider=${providerDebug}` : ''
     );
-    if (CAMPAIGN_RELATIVE_KINDS.has(retryKind) && resolvedGroupId) {
+    if (isCampaignStrategy(retryKind) && resolvedGroupId) {
       try {
         const { syncReminderJobFromRetryGroup } = require('../services/whatsappReminderJobSync');
         await syncReminderJobFromRetryGroup(resolvedGroupId);
       } catch {
         /* non-fatal projection */
+      }
+      if (derivedStatus === 'failed' && rowRetryEligible && attNum === 1) {
+        try {
+          const { scheduleAttempt1RetryPromotion } = require('../services/whatsappRetryOrchestrator');
+          await scheduleAttempt1RetryPromotion(resolvedGroupId, retryKind, now);
+        } catch {
+          /* non-fatal promotion schedule */
+        }
       }
     }
     return { success: false, error: errText, retryGroupId: resolvedGroupId };

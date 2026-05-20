@@ -9,8 +9,14 @@ const {
   sendSlotBookedWhatsApp,
   sendPre4HrReminderWhatsApp,
   sendMeetLinkWhatsApp,
-  sendReminder30MinWhatsApp
+  sendReminder30MinWhatsApp,
+  sendIitReminderWhatsApp
 } = require('./gupshupService');
+const {
+  isIitReminderMessageKind,
+  resolveIitReminderTemplateEnvKey
+} = require('../utils/iitCounsellingWhatsApp');
+const { getIitReminderEligibility } = require('../utils/iitReminderEligibility');
 const {
   TERMINAL_FAILURE_STATUSES,
   PROMOTION_BLOCK_SUCCESS_STATUSES,
@@ -43,9 +49,32 @@ function sendFnForKind(kind) {
       return sendMeetLinkWhatsApp;
     case '30min':
       return sendReminder30MinWhatsApp;
+    case 'iit_pre2hr':
+    case 'iit_pre45min':
+    case 'iit_pre15min':
+      return sendIitReminderWhatsApp;
     default:
       return null;
   }
+}
+
+/**
+ * After retryable attempt-1 failure, arm nextPromotionDueAt so scanGroupsNeedingRetries can promote.
+ */
+async function scheduleAttempt1RetryPromotion(retryGroupId, messageKind, failedAt = new Date()) {
+  if (!isCampaignStrategy(messageKind)) return;
+  const gid = new mongoose.Types.ObjectId(String(retryGroupId));
+  const delayMs = getRetryDelayMsAfterAttempt(messageKind, 1);
+  if (!Number.isFinite(delayMs) || delayMs < 0) return;
+  await WhatsAppRetryGroup.updateOne(
+    { _id: gid, status: 'open', attempt2BatchId: null },
+    {
+      $set: {
+        nextPromotionDueAt: new Date(failedAt.getTime() + delayMs),
+        updatedAt: new Date()
+      }
+    }
+  );
 }
 
 function mapReasonCounts(rows = []) {
@@ -163,7 +192,7 @@ async function computeRetryCandidates(retryGroupId, fromAttempt) {
       ]
     })
       .select(
-        'phone formSubmissionId failedAt updatedAt createdAt retryEligible _id status errorMessage webhookErrorCode webhookErrorReason'
+        'phone formSubmissionId iitCounsellingSubmissionId cohortSlotInstantUtc failedAt updatedAt createdAt retryEligible _id status errorMessage webhookErrorCode webhookErrorReason'
       )
       .lean()
   ]);
@@ -222,33 +251,88 @@ async function computeRetryCandidates(retryGroupId, fromAttempt) {
     alreadyPromotedPhones: alreadyNextPhones
   });
 
-  const phonesForSlot = [...new Set(includedRows.map((r) => r.phone).filter(Boolean))];
-  const subsByPhone = {};
-  if (phonesForSlot.length) {
-    const subs = await FormSubmission.find({ phone: { $in: phonesForSlot }, isRegistered: true })
-      .select('phone step3Data.slotDate')
-      .lean();
-    subs.forEach((s) => {
-      if (s && s.phone) subsByPhone[s.phone] = s;
-    });
-  }
   const slotOutsideExcluded = [];
   const includedAfterSlot = [];
   const nowSlot = new Date();
-  includedRows.forEach((r) => {
-    const sub = subsByPhone[r.phone];
-    const slot = sub && sub.step3Data ? sub.step3Data.slotDate : null;
-    const elig = getCampaignReminderEligibility(group.messageKind, slot, nowSlot);
-    if (!elig.ok) {
-      slotOutsideExcluded.push({
-        phone: r.phone,
-        parentMessageEventId: r._id,
-        reason: RETRY_EXCLUSION_REASON.outsideReminderValidity
+  const isIitKind = isIitReminderMessageKind(group.messageKind);
+
+  if (isIitKind) {
+    const parentIds = includedRows.map((r) => r._id).filter(Boolean);
+    const parents = parentIds.length
+      ? await WhatsAppMessageEvent.find({ _id: { $in: parentIds } })
+          .select('iitCounsellingSubmissionId cohortSlotInstantUtc')
+          .lean()
+      : [];
+    const parentById = Object.fromEntries(parents.map((p) => [String(p._id), p]));
+    const iitIds = [
+      ...new Set(
+        includedRows
+          .map((r) => {
+            const p = parentById[String(r._id)];
+            return (
+              (p && p.iitCounsellingSubmissionId) ||
+              r.iitCounsellingSubmissionId ||
+              null
+            );
+          })
+          .filter((id) => id && mongoose.Types.ObjectId.isValid(String(id)))
+      )
+    ].map((id) => new mongoose.Types.ObjectId(String(id)));
+    const iitSubsById = {};
+    if (iitIds.length) {
+      const iitSubs = await IitCounsellingSubmission.find({ _id: { $in: iitIds } })
+        .select('counsellingSlotInstantUtc')
+        .lean();
+      iitSubs.forEach((s) => {
+        if (s && s._id) iitSubsById[String(s._id)] = s;
       });
-    } else {
-      includedAfterSlot.push(r);
     }
-  });
+    includedRows.forEach((r) => {
+      const p = parentById[String(r._id)];
+      const iitId = (p && p.iitCounsellingSubmissionId) || r.iitCounsellingSubmissionId;
+      const iitSub = iitId ? iitSubsById[String(iitId)] : null;
+      const slot =
+        (iitSub && iitSub.counsellingSlotInstantUtc) ||
+        (p && p.cohortSlotInstantUtc) ||
+        r.cohortSlotInstantUtc ||
+        null;
+      const elig = getIitReminderEligibility(group.messageKind, slot, nowSlot);
+      if (!elig.ok) {
+        slotOutsideExcluded.push({
+          phone: r.phone,
+          parentMessageEventId: r._id,
+          reason: RETRY_EXCLUSION_REASON.outsideReminderValidity
+        });
+      } else {
+        includedAfterSlot.push(r);
+      }
+    });
+  } else {
+    const phonesForSlot = [...new Set(includedRows.map((r) => r.phone).filter(Boolean))];
+    const subsByPhone = {};
+    if (phonesForSlot.length) {
+      const subs = await FormSubmission.find({ phone: { $in: phonesForSlot }, isRegistered: true })
+        .select('phone step3Data.slotDate')
+        .lean();
+      subs.forEach((s) => {
+        if (s && s.phone) subsByPhone[s.phone] = s;
+      });
+    }
+    includedRows.forEach((r) => {
+      const sub = subsByPhone[r.phone];
+      const slot = sub && sub.step3Data ? sub.step3Data.slotDate : null;
+      const elig = getCampaignReminderEligibility(group.messageKind, slot, nowSlot);
+      if (!elig.ok) {
+        slotOutsideExcluded.push({
+          phone: r.phone,
+          parentMessageEventId: r._id,
+          reason: RETRY_EXCLUSION_REASON.outsideReminderValidity
+        });
+      } else {
+        includedAfterSlot.push(r);
+      }
+    });
+  }
   slotOutsideExcluded.forEach((row) => {
     exclusionCounts[row.reason] = (exclusionCounts[row.reason] || 0) + 1;
   });
@@ -365,20 +449,43 @@ async function executeRetryAttempt(opts) {
   if (nextAttempt > policy.maxAttempts) {
     return { noop: true, reason: 'max_attempts_policy_block' };
   }
+  const isIitKind = isIitReminderMessageKind(group.messageKind);
 
-  const wallMs = campaignRetryMaxWallMs();
   const firstFailA1 = await WhatsAppMessageEvent.findOne({
     retryGroupId: gid,
     attemptNumber: 1,
     status: { $in: TERMINAL_FAILURE_STATUSES }
   })
     .sort({ failedAt: 1, updatedAt: 1, createdAt: 1 })
-    .select('failedAt updatedAt createdAt')
+    .select('failedAt updatedAt createdAt cohortSlotInstantUtc iitCounsellingSubmissionId')
     .lean();
   const wallAnchorMs = firstFailA1
     ? new Date(firstFailA1.failedAt || firstFailA1.updatedAt || firstFailA1.createdAt).getTime()
     : null;
-  if (wallAnchorMs != null && Date.now() - wallAnchorMs > wallMs) {
+
+  let wallExceeded = false;
+  if (isIitKind) {
+    let slotMs = firstFailA1?.cohortSlotInstantUtc
+      ? new Date(firstFailA1.cohortSlotInstantUtc).getTime()
+      : NaN;
+    if (Number.isNaN(slotMs) && firstFailA1?.iitCounsellingSubmissionId) {
+      const iitSub = await IitCounsellingSubmission.findById(firstFailA1.iitCounsellingSubmissionId)
+        .select('counsellingSlotInstantUtc')
+        .lean();
+      slotMs = iitSub?.counsellingSlotInstantUtc
+        ? new Date(iitSub.counsellingSlotInstantUtc).getTime()
+        : NaN;
+    }
+    if (!Number.isNaN(slotMs)) {
+      wallExceeded = Date.now() >= slotMs;
+    } else if (wallAnchorMs != null) {
+      wallExceeded = Date.now() - wallAnchorMs > campaignRetryMaxWallMs(group.messageKind);
+    }
+  } else if (wallAnchorMs != null) {
+    wallExceeded = Date.now() - wallAnchorMs > campaignRetryMaxWallMs();
+  }
+
+  if (wallExceeded) {
     await WhatsAppRetryGroup.updateOne(
       { _id: gid },
       { $set: { status: 'exhausted', nextPromotionDueAt: null, updatedAt: new Date() } }
@@ -462,53 +569,6 @@ async function executeRetryAttempt(opts) {
 
   /* eslint-disable no-await-in-loop */
   for (const c of resolved) {
-    const subFull = await FormSubmission.findOne(
-      requireRegistered ? { phone: c.phone, isRegistered: true } : { phone: c.phone }
-    ).lean();
-
-    if (!subFull) {
-      failed += 1;
-      await WhatsAppMessageEvent.updateOne(
-        { _id: c.parentMessageEventId },
-        {
-          $set: {
-            retryEligible: false,
-            retryExclusionReason: RETRY_EXCLUSION_REASON.missingRegisteredSubmission,
-            retryExclusionAt: new Date(),
-            'retryExclusionMeta.nextAttempt': nextAttempt,
-            'retryExclusionMeta.attemptBatchId': attemptBatchId || null,
-            'retryExclusionMeta.note': 'missing_registered_submission'
-          }
-        }
-      );
-      continue;
-    }
-
-    const slotDate = subFull.step3Data && subFull.step3Data.slotDate ? subFull.step3Data.slotDate : null;
-    const elig = getCampaignReminderEligibility(group.messageKind, slotDate, new Date());
-    if (!elig.ok) {
-      failed += 1;
-      await WhatsAppMessageEvent.updateOne(
-        { _id: c.parentMessageEventId },
-        {
-          $set: {
-            retryEligible: false,
-            retryExclusionReason: RETRY_EXCLUSION_REASON.outsideReminderValidity,
-            retryExclusionAt: new Date(),
-            'retryExclusionMeta.nextAttempt': nextAttempt,
-            'retryExclusionMeta.attemptBatchId': attemptBatchId || null,
-            'retryExclusionMeta.note': elig.reason || 'outside_window'
-          }
-        }
-      );
-      continue;
-    }
-
-    attempted += 1;
-
-    const withMeetingLink = group.messageKind === 'meet' || group.messageKind === '30min';
-    const vars = buildSlotNotificationVariables(subFull, { withMeetingLink });
-
     if (c._staleInFlight) {
       await WhatsAppMessageEvent.updateOne(
         { _id: c.parentMessageEventId },
@@ -526,10 +586,139 @@ async function executeRetryAttempt(opts) {
       );
     }
 
+    let sendPayload;
+    if (isIitKind) {
+      const parentEv = await WhatsAppMessageEvent.findById(c.parentMessageEventId)
+        .select('iitCounsellingSubmissionId templateIdEnvKey cohortSlotInstantUtc')
+        .lean();
+      let iitSub = null;
+      if (parentEv?.iitCounsellingSubmissionId) {
+        iitSub = await IitCounsellingSubmission.findById(parentEv.iitCounsellingSubmissionId)
+          .select(
+            'phone counsellingSlotInstantUtc fullName iitCounselling.section1Data.slotBooking iitCounselling.section1Data.fullName iitCounselling.section2Data.preferredLanguage'
+          )
+          .lean();
+      }
+      if (!iitSub) {
+        iitSub = await IitCounsellingSubmission.findOne({ phone: c.phone })
+          .select(
+            'phone counsellingSlotInstantUtc fullName iitCounselling.section1Data.slotBooking iitCounselling.section1Data.fullName iitCounselling.section2Data.preferredLanguage'
+          )
+          .lean();
+      }
+      if (!iitSub) {
+        failed += 1;
+        await WhatsAppMessageEvent.updateOne(
+          { _id: c.parentMessageEventId },
+          {
+            $set: {
+              retryEligible: false,
+              retryExclusionReason: RETRY_EXCLUSION_REASON.missingRegisteredSubmission,
+              retryExclusionAt: new Date(),
+              'retryExclusionMeta.nextAttempt': nextAttempt,
+              'retryExclusionMeta.attemptBatchId': attemptBatchId || null,
+              'retryExclusionMeta.note': 'missing_iit_submission'
+            }
+          }
+        );
+        continue;
+      }
+      const slotDate =
+        iitSub.counsellingSlotInstantUtc || parentEv?.cohortSlotInstantUtc || null;
+      const elig = getIitReminderEligibility(group.messageKind, slotDate, new Date());
+      if (!elig.ok) {
+        failed += 1;
+        await WhatsAppMessageEvent.updateOne(
+          { _id: c.parentMessageEventId },
+          {
+            $set: {
+              retryEligible: false,
+              retryExclusionReason: RETRY_EXCLUSION_REASON.outsideReminderValidity,
+              retryExclusionAt: new Date(),
+              'retryExclusionMeta.nextAttempt': nextAttempt,
+              'retryExclusionMeta.attemptBatchId': attemptBatchId || null,
+              'retryExclusionMeta.note': elig.reason || 'outside_window'
+            }
+          }
+        );
+        continue;
+      }
+      const slotBooking = iitSub.iitCounselling?.section1Data?.slotBooking || '';
+      const preferredLanguage = iitSub.iitCounselling?.section2Data?.preferredLanguage || '';
+      const templateEnvKey =
+        parentEv?.templateIdEnvKey ||
+        resolveIitReminderTemplateEnvKey({
+          slotBooking,
+          preferredLanguage,
+          reminderKind: group.messageKind
+        });
+      const fullName =
+        iitSub.fullName || iitSub.iitCounselling?.section1Data?.fullName || 'Student';
+      sendPayload = {
+        phone10: c.phone,
+        formSubmissionId: null,
+        iitCounsellingSubmissionId: iitSub._id,
+        vars: { name: fullName },
+        opsProduct: 'iit_counselling',
+        cohortSlotInstantUtc: slotDate,
+        explicitTemplateEnvKey: templateEnvKey || undefined
+      };
+    } else {
+      const subFull = await FormSubmission.findOne(
+        requireRegistered ? { phone: c.phone, isRegistered: true } : { phone: c.phone }
+      ).lean();
+
+      if (!subFull) {
+        failed += 1;
+        await WhatsAppMessageEvent.updateOne(
+          { _id: c.parentMessageEventId },
+          {
+            $set: {
+              retryEligible: false,
+              retryExclusionReason: RETRY_EXCLUSION_REASON.missingRegisteredSubmission,
+              retryExclusionAt: new Date(),
+              'retryExclusionMeta.nextAttempt': nextAttempt,
+              'retryExclusionMeta.attemptBatchId': attemptBatchId || null,
+              'retryExclusionMeta.note': 'missing_registered_submission'
+            }
+          }
+        );
+        continue;
+      }
+
+      const slotDate =
+        subFull.step3Data && subFull.step3Data.slotDate ? subFull.step3Data.slotDate : null;
+      const elig = getCampaignReminderEligibility(group.messageKind, slotDate, new Date());
+      if (!elig.ok) {
+        failed += 1;
+        await WhatsAppMessageEvent.updateOne(
+          { _id: c.parentMessageEventId },
+          {
+            $set: {
+              retryEligible: false,
+              retryExclusionReason: RETRY_EXCLUSION_REASON.outsideReminderValidity,
+              retryExclusionAt: new Date(),
+              'retryExclusionMeta.nextAttempt': nextAttempt,
+              'retryExclusionMeta.attemptBatchId': attemptBatchId || null,
+              'retryExclusionMeta.note': elig.reason || 'outside_window'
+            }
+          }
+        );
+        continue;
+      }
+
+      const withMeetingLink = group.messageKind === 'meet' || group.messageKind === '30min';
+      sendPayload = {
+        phone10: c.phone,
+        formSubmissionId: subFull._id,
+        vars: buildSlotNotificationVariables(subFull, { withMeetingLink })
+      };
+    }
+
+    attempted += 1;
+
     const r = await safeSendWhatsApp({
-      phone10: c.phone,
-      formSubmissionId: subFull._id,
-      vars,
+      ...sendPayload,
       retryKind: group.messageKind,
       source,
       cronRunId,
@@ -656,7 +845,7 @@ async function scanGroupsNeedingRetries(cronRunId) {
       source: 'retry_cron',
       cronRunId,
       cronJobKey: 'retry_whatsapp',
-      requireRegistered: true
+      requireRegistered: !isIitReminderMessageKind(g.messageKind)
     });
     if (ex.noop) continue;
     groupsTouched += 1;
@@ -899,5 +1088,8 @@ module.exports = {
   scanGroupsNeedingRetries,
   cooldownMs,
   processSlotBookedImmediateRetries,
-  rowEligibleAtMs
+  rowEligibleAtMs,
+  scheduleAttempt1RetryPromotion,
+  sendFnForKind,
+  maybeSettleCampaignRetryGroup
 };

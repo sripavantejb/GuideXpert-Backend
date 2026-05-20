@@ -47,7 +47,15 @@ const whatsAppManualRecoveryJobSchema = new mongoose.Schema({
   messageKind: {
     type: String,
     required: true,
-    enum: ['slot_booked', 'pre4hr', 'meet', '30min'],
+    enum: [
+      'slot_booked',
+      'pre4hr',
+      'meet',
+      '30min',
+      'iit_pre2hr',
+      'iit_pre45min',
+      'iit_pre15min',
+    ],
     index: true
   },
   /** UI filter window applied when computing candidates */

@@ -68,6 +68,16 @@ function isWhatsAppEnabled() {
   return !['0', 'false', 'no', 'off'].includes(lower);
 }
 
+function isGupshupConfigured() {
+  return (
+    isWhatsAppEnabled() &&
+    typeof process.env.GUPSHUP_API_KEY === 'string' &&
+    process.env.GUPSHUP_API_KEY.trim().length > 0 &&
+    typeof process.env.GUPSHUP_SOURCE === 'string' &&
+    process.env.GUPSHUP_SOURCE.trim().length > 0
+  );
+}
+
 function maskPhoneTail(digits) {
   const d = String(digits).replace(/\D/g, '');
   const last4 = d.slice(-4);
@@ -386,6 +396,7 @@ async function sendIitReminderWhatsApp(phone10, vars, sendOpts = {}) {
 
 module.exports = {
   isWhatsAppEnabled,
+  isGupshupConfigured,
   formatPhoneE16491,
   buildTemplateRequestFields,
   sendTemplateMessage,

@@ -228,6 +228,19 @@ const startServer = async () => {
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
       console.log(`MongoDB connection established. Server ready to accept requests.`);
+
+      if (String(process.env.DEV_IIT_CRON_LOOP || '').trim() === '1') {
+        const secret = process.env.CRON_SECRET || process.env.GUIDEXPERT_CRON_SECRET;
+        const cronBase = `http://127.0.0.1:${PORT}`;
+        const tickMs = Math.max(30_000, parseInt(process.env.DEV_IIT_CRON_INTERVAL_MS || '60000', 10) || 60_000);
+        console.log(`[dev] IIT reminder cron loop every ${tickMs}ms → ${cronBase}/api/cron/send-iit-reminders`);
+        setInterval(() => {
+          if (!secret) return;
+          fetch(`${cronBase}/api/cron/send-iit-reminders?key=${encodeURIComponent(secret)}`).catch((err) => {
+            console.warn('[dev] IIT cron tick failed:', err.message);
+          });
+        }, tickMs);
+      }
     });
   } catch (error) {
     console.error('Failed to start server:', error);

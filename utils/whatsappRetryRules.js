@@ -102,6 +102,23 @@ const TRANSIENT_FAILURE_PATTERNS = [
   /rate.?limit/i
 ];
 
+/** Send blocked by missing env / provider config — must not be classified as user permanent failure. */
+const INFRASTRUCTURE_SEND_FAILURE_PATTERNS = [
+  /WhatsApp disabled/i,
+  /ENABLE_WHATSAPP/i,
+  /Gupshup not configured/i,
+  /template id missing/i,
+  /missing.*template/i,
+  /IIT slot_booked header image URL missing/i,
+];
+
+function isInfrastructureSendFailure(failCtx = {}) {
+  const hay = [failCtx.errorCode, failCtx.errorReason, failCtx.errorText, failCtx.errorMessage]
+    .filter(Boolean)
+    .join(' | ');
+  return hay.length > 0 && INFRASTRUCTURE_SEND_FAILURE_PATTERNS.some((rx) => rx.test(hay));
+}
+
 const PERMANENT_FAILURE_PATTERNS = [
   /invalid/i,
   /not whatsapp/i,
@@ -183,6 +200,15 @@ function classifyCampaignFailure(kind, failCtx = {}, opts = {}) {
   const att = Number(attemptNumber) || 1;
   const hasAttemptsLeft = att < maxA;
 
+  if (isInfrastructureSendFailure(failCtx)) {
+    return {
+      retryable: true,
+      terminalFailureKind: null,
+      exclusionReason: null,
+      metaNote: 'infrastructure_not_ready',
+    };
+  }
+
   if (hay && PERMANENT_FAILURE_PATTERNS.some((rx) => rx.test(hay))) {
     return {
       retryable: false,
@@ -246,6 +272,9 @@ function classifyCampaignFailure(kind, failCtx = {}, opts = {}) {
 }
 
 function isRetryableFailure(kind, { errorCode, errorReason, errorText } = {}) {
+  if (isInfrastructureSendFailure({ errorCode, errorReason, errorText })) {
+    return true;
+  }
   const policy = getRetryPolicy(kind);
   const hay = [errorCode, errorReason, errorText].filter(Boolean).join(' | ');
   if (policy.retryTransientOnly) {
@@ -492,12 +521,21 @@ function classifyReconcileFinalizeFailure(messageKind, row = {}, opts = {}) {
   });
 }
 
+const IIT_RETRY_KINDS = new Set(['iit_pre2hr', 'iit_pre45min', 'iit_pre15min']);
+
 /** Max wall clock from first attempt-1 terminal failure before group exhausted */
-function campaignRetryMaxWallMs() {
-  return Math.max(
+function campaignRetryMaxWallMs(kind) {
+  const base = Math.max(
     5 * 60 * 1000,
     parseInt(process.env.WHATSAPP_CAMPAIGN_RETRY_MAX_WALL_MS || '', 10) || 900000
   );
+  if (kind && IIT_RETRY_KINDS.has(kind)) {
+    return Math.max(
+      base,
+      parseInt(process.env.WA_IIT_CAMPAIGN_RETRY_MAX_WALL_MS || '', 10) || 6 * 60 * 60 * 1000
+    );
+  }
+  return base;
 }
 
 function retrySourceFromAttemptNumber(n) {
@@ -529,6 +567,7 @@ module.exports = {
   isRiskyReconcileRecovery,
   classifyReconcileFinalizeFailure,
   classifyCampaignFailure,
+  isInfrastructureSendFailure,
   filterRetryPromotionRows,
   filterRetryPromotionRowsV2,
   retrySourceFromAttemptNumber,

@@ -3,6 +3,7 @@ const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');
 const MessagingCronRun = require('../models/MessagingCronRun');
 const WhatsAppWebhookEvent = require('../models/WhatsAppWebhookEvent');
 const FormSubmission = require('../models/FormSubmission');
+const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
 const WhatsAppRetryGroup = require('../models/WhatsAppRetryGroup');
 const WhatsAppOpsChartSnapshot = require('../models/WhatsAppOpsChartSnapshot');
 const WhatsAppManualRecoveryJob = require('../models/WhatsAppManualRecoveryJob');
@@ -26,13 +27,31 @@ const { deriveSubmissionWaStatus } = require('../services/whatsappOpsStatus');
 const opsAggregates = require('../services/whatsappOpsAggregates');
 const recipientAnalytics = require('../services/whatsappOpsRecipientAnalytics');
 const manualRecoveryService = require('../services/whatsappManualRecovery');
-const { parseOpsProductQuery, listAllowedOpsProducts } = require('../utils/whatsappOpsProduct');
+const {
+  parseOpsProductQuery,
+  listAllowedOpsProducts,
+  matchWhatsAppEventsByOpsProduct
+} = require('../utils/whatsappOpsProduct');
 const IST_OFFSET_MINUTES = 330;
 
 function clampInt(v, dflt, max) {
   const n = parseInt(v, 10);
   if (!Number.isFinite(n)) return dflt;
   return Math.min(Math.max(n, 1), max);
+}
+
+/** @param {import('express').Request} req @param {string|null|undefined} opsProduct */
+function parsePreferredLanguageFromQuery(req, opsProduct) {
+  const raw = req.query.preferredLanguage;
+  if (raw == null || raw === '') return { preferredLanguage: null };
+  const norm = recipientAnalytics.normalizePreferredLanguageParam(raw);
+  if (norm === undefined) {
+    return { error: 'Invalid preferredLanguage. Use Telugu or Hindi.' };
+  }
+  if (parseOpsProductQuery(opsProduct) !== 'iit_counselling') {
+    return { preferredLanguage: null };
+  }
+  return { preferredLanguage: norm };
 }
 
 function dateRange(query) {
@@ -218,9 +237,19 @@ exports.getCalendarMonthOverview = async (req, res) => {
     const monthIso = req.query.month || new Date().toISOString().slice(0, 7);
     const messageKind = req.query.messageKind ? String(req.query.messageKind).trim() : null;
     const opsProduct = parseOpsProductQuery(req.query.opsProduct ?? req.query.tenant);
+    const langParse = parsePreferredLanguageFromQuery(req, opsProduct);
+    if (langParse.error) {
+      return res.status(400).json({ success: false, message: langParse.error });
+    }
+    const preferredLanguage = langParse.preferredLanguage;
     const [legacy, recipient] = await Promise.all([
       opsAggregates.computeMonthOverview({ monthIso, messageKind, opsProduct }),
-      recipientAnalytics.computeRecipientMonthTrend({ monthIso, messageKind, opsProduct })
+      recipientAnalytics.computeRecipientMonthTrend({
+        monthIso,
+        messageKind,
+        opsProduct,
+        preferredLanguage
+      })
     ]);
     if (legacy.error) {
       return res.status(400).json({ success: false, message: legacy.error });
@@ -262,13 +291,19 @@ exports.getCalendarDayOverview = async (req, res) => {
         message: `Invalid slotTime. Use all, ${recipientAnalytics.ALLOWED_SLOT_TIME_SUFFIXES.join(', ')}.`
       });
     }
+    const langParse = parsePreferredLanguageFromQuery(req, opsProduct);
+    if (langParse.error) {
+      return res.status(400).json({ success: false, message: langParse.error });
+    }
+    const preferredLanguage = langParse.preferredLanguage;
     const [attemptAgg, recipient] = await Promise.all([
       opsAggregates.computeDayOverview({ dateIso, messageKind: selectedKind, opsProduct }),
       recipientAnalytics.computeRecipientDayOverview({
         dateIso,
         messageKind: selectedKind,
         slotTime: slotTimeNorm,
-        opsProduct
+        opsProduct,
+        preferredLanguage
       })
     ]);
     if (attemptAgg.error) {
@@ -283,11 +318,12 @@ exports.getCalendarDayOverview = async (req, res) => {
       const br = await recipientAnalytics.computeRecipientSlotTimeBreakdown({
         dateIso,
         messageKind: selectedKind,
-        opsProduct
+        opsProduct,
+        preferredLanguage
       });
       if (!br.error) recipientSlotTimeBreakdown = br.data;
     }
-    if (cohortIsIit) {
+    if (cohortIsIit && !preferredLanguage) {
       const langBr = await recipientAnalytics.computeRecipientLanguageBreakdown({
         dateIso,
         messageKind: selectedKind,
@@ -460,6 +496,44 @@ exports.listMessages = async (req, res) => {
     if (req.query.retryEligible === 'true') base.retryEligible = true;
     if (req.query.retryEligible === 'false') base.retryEligible = false;
     if (req.query.gupshupMessageId) base.gupshupMessageId = req.query.gupshupMessageId;
+
+    const opsProduct = parseOpsProductQuery(req.query.opsProduct ?? req.query.tenant);
+    const langParse = parsePreferredLanguageFromQuery(req, opsProduct);
+    if (langParse.error) {
+      return res.status(400).json({ success: false, message: langParse.error });
+    }
+    if (langParse.preferredLanguage) {
+      Object.assign(base, matchWhatsAppEventsByOpsProduct('iit_counselling'));
+      let iitFilter = {
+        'iitCounselling.section2Data.preferredLanguage': langParse.preferredLanguage
+      };
+      const dateIso =
+        typeof req.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date.trim())
+          ? req.query.date.trim()
+          : null;
+      if (dateIso) {
+        const range = istDayRangeFromIso(dateIso);
+        if (range) {
+          iitFilter = {
+            ...iitFilter,
+            counsellingSlotInstantUtc: { $gte: range.from, $lte: range.to }
+          };
+        }
+      }
+      const iitIds = await IitCounsellingSubmission.distinct('_id', iitFilter);
+      if (!iitIds.length) {
+        return res.json({
+          success: true,
+          data: [],
+          page,
+          limit,
+          total: 0,
+          totalPages: 0
+        });
+      }
+      base.iitCounsellingSubmissionId = { $in: iitIds };
+    }
+
     if (Object.keys(base).length) clauses.push(base);
 
     if (req.query.name && String(req.query.name).trim()) {
@@ -1179,6 +1253,14 @@ exports.captureSnapshot = async (req, res) => {
     const messageKind = params.messageKind ? String(params.messageKind).trim() : null;
     const opsProduct = parseOpsProductQuery(params.opsProduct ?? params.tenant);
     const cohortIsIit = opsProduct === 'iit_counselling';
+    const snapLangNorm = recipientAnalytics.normalizePreferredLanguageParam(params.preferredLanguage);
+    if (snapLangNorm === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid preferredLanguage. Use Telugu or Hindi.'
+      });
+    }
+    const preferredLanguage = cohortIsIit ? snapLangNorm : null;
     const username = req.admin?.username || null;
     const captures = [];
     const errors = [];
@@ -1244,13 +1326,24 @@ exports.captureSnapshot = async (req, res) => {
       const monthIso = params.month || new Date().toISOString().slice(0, 7);
       const [month, recipient] = await Promise.all([
         opsAggregates.computeMonthOverview({ monthIso, messageKind, opsProduct }),
-        recipientAnalytics.computeRecipientMonthTrend({ monthIso, messageKind, opsProduct })
+        recipientAnalytics.computeRecipientMonthTrend({
+          monthIso,
+          messageKind,
+          opsProduct,
+          preferredLanguage
+        })
       ]);
       if (month.error) {
         errors.push({ scope: 'month', message: month.error });
       } else {
         await captureOne({
-          scopeKey: opsAggregates.buildScopeKey({ scope: 'month', messageKind, monthIso, opsProduct }),
+          scopeKey: opsAggregates.buildScopeKey({
+            scope: 'month',
+            messageKind,
+            monthIso,
+            opsProduct,
+            preferredLanguage
+          }),
           scope: 'month',
           payload: {
             ...month.data,
@@ -1273,7 +1366,13 @@ exports.captureSnapshot = async (req, res) => {
       } else {
         const [day, recipient] = await Promise.all([
           opsAggregates.computeDayOverview({ dateIso, messageKind, opsProduct }),
-          recipientAnalytics.computeRecipientDayOverview({ dateIso, messageKind, slotTime: slotT, opsProduct })
+          recipientAnalytics.computeRecipientDayOverview({
+            dateIso,
+            messageKind,
+            slotTime: slotT,
+            opsProduct,
+            preferredLanguage
+          })
         ]);
         if (day.error) {
           errors.push({ scope: 'day', message: day.error });
@@ -1309,7 +1408,8 @@ exports.captureSnapshot = async (req, res) => {
               messageKind,
               dateIso,
               slotTime: slotT,
-              opsProduct
+              opsProduct,
+              preferredLanguage
             }),
             scope: 'day',
             payload: {
@@ -1369,6 +1469,14 @@ exports.getLatestSnapshot = async (req, res) => {
     const params = req.query || {};
     const messageKind = params.messageKind ? String(params.messageKind).trim() : null;
     const opsProduct = parseOpsProductQuery(params.opsProduct ?? params.tenant);
+    const snapLangNorm = recipientAnalytics.normalizePreferredLanguageParam(params.preferredLanguage);
+    if (snapLangNorm === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid preferredLanguage. Use Telugu or Hindi.'
+      });
+    }
+    const preferredLanguage = opsProduct === 'iit_counselling' ? snapLangNorm : null;
 
     if (params.scopeKey) {
       const doc = await WhatsAppOpsChartSnapshot.findOne({ scopeKey: String(params.scopeKey) }).lean();
@@ -1391,11 +1499,18 @@ exports.getLatestSnapshot = async (req, res) => {
           messageKind,
           opsProduct,
           fromIso: from ? from.toISOString() : '',
-          toIso: to ? to.toISOString() : ''
+          toIso: to ? to.toISOString() : '',
+          preferredLanguage
         });
       } else if (s === 'month') {
         const monthIso = params.month || new Date().toISOString().slice(0, 7);
-        scopeKey = opsAggregates.buildScopeKey({ scope: 'month', messageKind, monthIso, opsProduct });
+        scopeKey = opsAggregates.buildScopeKey({
+          scope: 'month',
+          messageKind,
+          monthIso,
+          opsProduct,
+          preferredLanguage
+        });
       } else if (s === 'day') {
         const dateIso = params.date || new Date().toISOString().slice(0, 10);
         const slotT = recipientAnalytics.normalizeSlotTimeParam(params.slotTime);
@@ -1405,7 +1520,8 @@ exports.getLatestSnapshot = async (req, res) => {
           messageKind,
           dateIso,
           slotTime: slotForKey,
-          opsProduct
+          opsProduct,
+          preferredLanguage
         });
       }
       if (!scopeKey) {
