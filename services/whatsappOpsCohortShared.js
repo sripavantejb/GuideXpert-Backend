@@ -5,6 +5,8 @@
  */
 
 const { parseOpsProductQuery, matchWhatsAppEventsByOpsProduct } = require('../utils/whatsappOpsProduct');
+const FormSubmission = require('../models/FormSubmission');
+const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
 
 const IST_OFFSET_MINUTES = 330;
 
@@ -59,7 +61,7 @@ function annotateEventsWithSlotDayPipeline(messageKindFilter, options = {}) {
     },
     {
       $lookup: {
-        from: 'formsubmissions',
+        from: FormSubmission.collection.name,
         localField: 'formSubmissionId',
         foreignField: '_id',
         pipeline: [{ $project: { step3Data: 1, phone: 1 } }],
@@ -68,7 +70,7 @@ function annotateEventsWithSlotDayPipeline(messageKindFilter, options = {}) {
     },
     {
       $lookup: {
-        from: 'iitcounsellingsubmissions',
+        from: IitCounsellingSubmission.collection.name,
         localField: 'iitCounsellingSubmissionId',
         foreignField: '_id',
         pipeline: [

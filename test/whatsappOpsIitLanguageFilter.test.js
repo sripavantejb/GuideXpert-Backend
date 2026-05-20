@@ -41,6 +41,14 @@ describe('applyIitLanguageToCohortFilter', () => {
   });
 });
 
+describe('IIT ops lookup collections', () => {
+  test('IitCounsellingSubmission uses camelCase collection (not lowercase plural)', () => {
+    const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
+    assert.equal(IitCounsellingSubmission.collection.name, 'iitCounsellingSubmissions');
+    assert.notEqual(IitCounsellingSubmission.collection.name, 'iitcounsellingsubmissions');
+  });
+});
+
 describe('IIT_REMINDER_MESSAGE_KINDS', () => {
   test('includes expected reminder kinds', () => {
     assert.deepEqual(IIT_REMINDER_MESSAGE_KINDS, ['iit_pre2hr', 'iit_pre45min', 'iit_pre15min']);
