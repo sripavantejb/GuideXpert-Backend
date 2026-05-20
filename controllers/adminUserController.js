@@ -13,6 +13,11 @@ function toAdminDTO(admin) {
   };
 }
 
+function normalizeSectionAccessList(sectionAccess) {
+  if (!Array.isArray(sectionAccess)) return [];
+  return sectionAccess.filter((k) => typeof k === 'string' && ALLOWED_SECTION_KEYS.includes(k));
+}
+
 /**
  * GET /admin/admins — list all admins (super admin only). No passwords.
  */
@@ -48,16 +53,20 @@ exports.createAdmin = async (req, res) => {
     if (existing) {
       return res.status(400).json({ success: false, message: 'Username already exists' });
     }
-    let sectionList = [];
-    if (Array.isArray(sectionAccess)) {
-      sectionList = sectionAccess.filter((k) => typeof k === 'string' && ALLOWED_SECTION_KEYS.includes(k));
+    const sectionList = normalizeSectionAccessList(sectionAccess);
+    const makeSuperAdmin = !!isSuperAdmin;
+    if (!makeSuperAdmin && sectionList.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Select at least one section for a non–super admin.',
+      });
     }
     const admin = await Admin.create({
       username: normalizedUsername,
       password: trimmedPassword,
       name: typeof name === 'string' ? name.trim().slice(0, 100) : '',
-      isSuperAdmin: !!isSuperAdmin,
-      sectionAccess: sectionList,
+      isSuperAdmin: makeSuperAdmin,
+      sectionAccess: makeSuperAdmin ? [] : sectionList,
     });
     console.log('[createAdmin] Admin created:', normalizedUsername);
     return res.status(201).json({
@@ -69,6 +78,67 @@ exports.createAdmin = async (req, res) => {
     if (error.code === 11000) {
       return res.status(400).json({ success: false, message: 'Username already exists' });
     }
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * PATCH /admin/admins/:id — update admin role and section access (super admin only).
+ * Body: { name?, isSuperAdmin?, sectionAccess? }
+ */
+exports.updateAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, isSuperAdmin, sectionAccess } = req.body || {};
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ success: false, message: 'Admin not found.' });
+    }
+    const admin = await Admin.findById(id);
+    if (!admin) {
+      return res.status(404).json({ success: false, message: 'Admin not found.' });
+    }
+
+    const currentAdminId = req.admin._id.toString();
+    const isSelf = currentAdminId === id;
+
+    if (typeof name === 'string') {
+      admin.name = name.trim().slice(0, 100);
+    }
+
+    if (typeof isSuperAdmin === 'boolean') {
+      if (isSelf && admin.isSuperAdmin && !isSuperAdmin) {
+        return res.status(403).json({
+          success: false,
+          message: 'You cannot remove your own super admin role.',
+        });
+      }
+      admin.isSuperAdmin = isSuperAdmin;
+    }
+
+    if (admin.isSuperAdmin) {
+      admin.sectionAccess = [];
+    } else if (sectionAccess !== undefined) {
+      admin.sectionAccess = normalizeSectionAccessList(sectionAccess);
+    }
+
+    if (!admin.isSuperAdmin) {
+      const access = Array.isArray(admin.sectionAccess) ? admin.sectionAccess : [];
+      if (access.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Select at least one section for a non–super admin.',
+        });
+      }
+    }
+
+    await admin.save();
+    return res.status(200).json({
+      success: true,
+      data: toAdminDTO(admin),
+    });
+  } catch (error) {
+    console.error('[updateAdmin] Error:', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };

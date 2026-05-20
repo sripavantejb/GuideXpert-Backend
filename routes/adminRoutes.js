@@ -32,7 +32,7 @@ const {
 const requireAdmin = require('../middleware/requireAdmin');
 const requireSuperAdmin = require('../middleware/requireSuperAdmin');
 const requireOsviAdminToken = require('../middleware/requireOsviAdminToken');
-const { listAdmins, createAdmin, deleteAdmin, resetAdminPassword, changeMyPassword } = require('../controllers/adminUserController');
+const { listAdmins, createAdmin, updateAdmin, deleteAdmin, resetAdminPassword, changeMyPassword } = require('../controllers/adminUserController');
 const { adminListProgress, adminProgressStats, adminProgressDetail, adminAssessmentDetail, adminUpdateProgress, adminBulkProgress, adminProgressExport } = require('../controllers/webinarProgressController');
 const {
   listPosters,
@@ -60,6 +60,7 @@ router.get('/admins', requireAdmin, requireSuperAdmin, listAdmins);
 router.post('/admins', requireAdmin, requireSuperAdmin, createAdmin);
 router.delete('/admins/:id', requireAdmin, requireSuperAdmin, deleteAdmin);
 router.patch('/admins/:id/password', requireAdmin, requireSuperAdmin, resetAdminPassword);
+router.patch('/admins/:id', requireAdmin, requireSuperAdmin, updateAdmin);
 router.patch('/me/password', requireAdmin, changeMyPassword);
 router.get('/leads', requireAdmin, getAdminLeads);
 router.get('/leads/:id', requireAdmin, getLeadById);
