@@ -3,6 +3,7 @@
  * + optional slot time, FormSubmission-backed). All-templates rollup groups by phone across message kinds.
  */
 const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');
+const { WHATSAPP_MESSAGE_KINDS: ALLOWED_MESSAGE_KINDS } = WhatsAppMessageEvent;
 const WhatsAppWebhookEvent = require('../models/WhatsAppWebhookEvent');
 const WhatsAppRetryGroup = require('../models/WhatsAppRetryGroup');
 const FormSubmission = require('../models/FormSubmission');
@@ -21,15 +22,6 @@ const { validateRecipientAnalyticsInvariants } = require('../utils/waAnalyticsIn
 const canonical = require('./whatsappOpsCanonicalMetrics');
 const { computeReminderJobCoverageForCohort } = require('./whatsappReminderJobAnalytics');
 
-const ALLOWED_MESSAGE_KINDS = [
-  'slot_booked',
-  'pre4hr',
-  'meet',
-  '30min',
-  'iit_pre2hr',
-  'iit_pre45min',
-  'iit_pre15min',
-];
 const IIT_LANGUAGE_BUCKETS = ['Telugu', 'Hindi', 'unknown'];
 const ALLOWED_SLOT_TIME_SUFFIXES = ['11AM', '3PM', '6PM', '7PM'];
 const ACCEPTED_STATUSES = canonical.ACCEPTED_STATUSES;

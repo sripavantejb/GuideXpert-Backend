@@ -151,7 +151,7 @@ function mapEventStatusToDeliveryStatus(status) {
   return s || null;
 }
 
-const ALLOWED_MESSAGE_KINDS = ['slot_booked', 'pre4hr', 'meet', '30min'];
+const { WHATSAPP_MESSAGE_KINDS: ALLOWED_MESSAGE_KINDS } = WhatsAppMessageEvent;
 
 exports.getOpsMeta = (_req, res) => {
   res.json({

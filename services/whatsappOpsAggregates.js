@@ -5,6 +5,7 @@
  * (legacy live endpoints) or persist into WhatsAppOpsChartSnapshot for stable charts.
  */
 const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');
+const { WHATSAPP_MESSAGE_KINDS: ALLOWED_MESSAGE_KINDS } = WhatsAppMessageEvent;
 const MessagingCronRun = require('../models/MessagingCronRun');
 const WhatsAppWebhookEvent = require('../models/WhatsAppWebhookEvent');
 const FormSubmission = require('../models/FormSubmission');
@@ -25,7 +26,6 @@ const recipientAnalytics = require('./whatsappOpsRecipientAnalytics');
 const canonical = require('./whatsappOpsCanonicalMetrics');
 const { validateRecipientAnalyticsInvariants } = require('../utils/waAnalyticsIntegrity');
 
-const ALLOWED_MESSAGE_KINDS = ['slot_booked', 'pre4hr', 'meet', '30min'];
 const IST_OFFSET_MINUTES = 330;
 const IN_FLIGHT_STATUSES = IN_FLIGHT_PROMOTION_STATUSES;
 const ACCEPTED_PLUS_STATUSES = ['submitted', 'sent', 'delivered', 'read'];

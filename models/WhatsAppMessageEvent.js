@@ -1,5 +1,16 @@
 const mongoose = require('mongoose');
 
+/** Keep in sync with ops analytics filters and WhatsAppOpsOverview template chips. */
+const WHATSAPP_MESSAGE_KINDS = Object.freeze([
+  'slot_booked',
+  'pre4hr',
+  'meet',
+  '30min',
+  'iit_pre2hr',
+  'iit_pre45min',
+  'iit_pre15min',
+]);
+
 const whatsAppMessageEventSchema = new mongoose.Schema({
   /** Batch lineage — all attempts for same cohort share one group _id */
   retryGroupId: {
@@ -70,7 +81,7 @@ const whatsAppMessageEventSchema = new mongoose.Schema({
   messageKind: {
     type: String,
     required: true,
-    enum: ['slot_booked', 'pre4hr', 'meet', '30min', 'iit_pre2hr', 'iit_pre45min', 'iit_pre15min']
+    enum: WHATSAPP_MESSAGE_KINDS
   },
   cronRunId: { type: mongoose.Schema.Types.ObjectId, ref: 'MessagingCronRun', default: null, index: true },
   cronJobKey: {
@@ -189,3 +200,4 @@ whatsAppMessageEventSchema.pre('save', function() {
 });
 
 module.exports = mongoose.model('WhatsAppMessageEvent', whatsAppMessageEventSchema);
+module.exports.WHATSAPP_MESSAGE_KINDS = WHATSAPP_MESSAGE_KINDS;
