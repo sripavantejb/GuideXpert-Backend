@@ -1,22 +1,5 @@
 const Admin = require('../models/Admin');
-
-/** Section keys allowed for sectionAccess. Must match frontend nav. */
-const ALLOWED_SECTION_KEYS = [
-  'dashboard',
-  'certified-counsellors',
-  'leads',
-  'analytics',
-  'meeting-attendance',
-  'iit-meet-attendance',
-  'export',
-  'slots',
-  'training-form-responses',
-  'training-feedback',
-  'influencer-tracking',
-  'assessment-results',
-  'settings',
-  'poster-automation',
-];
+const { ADMIN_SECTION_KEYS: ALLOWED_SECTION_KEYS } = require('../constants/adminSectionKeys');
 
 function toAdminDTO(admin) {
   return {
