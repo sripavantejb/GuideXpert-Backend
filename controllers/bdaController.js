@@ -11,6 +11,7 @@ const {
 } = require('../services/bdaStatsService');
 const { fetchAssignedLeadsForBda } = require('../services/bdaAssignedLeadsService');
 const { resolveStatsDateRange } = require('../utils/statsDateRange');
+const { BDA_LANGUAGES } = require('../constants/bdaLanguage');
 
 function mapBdaRow(bda, extra = {}) {
   const id = String(bda._id);
@@ -21,6 +22,7 @@ function mapBdaRow(bda, extra = {}) {
     phone: bda.phone || '',
     email: bda.email || '',
     role: bda.role || 'BDA',
+    language: bda.language || '',
     status: bda.status,
     joinedAt: bda.joinedAt || bda.createdAt,
     createdAt: bda.createdAt,
@@ -32,9 +34,11 @@ function mapBdaRow(bda, extra = {}) {
 exports.listBdas = async (req, res) => {
   try {
     const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
+    const language = typeof req.query.language === 'string' ? req.query.language.trim() : '';
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const filter = {};
     if (status === 'active' || status === 'inactive') filter.status = status;
+    if (BDA_LANGUAGES.includes(language)) filter.language = language;
     if (q) {
       const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       filter.$or = [
@@ -68,7 +72,7 @@ exports.listBdas = async (req, res) => {
 
 exports.createBda = async (req, res) => {
   try {
-    const { name, phone, email, password, status, joinedAt } = req.body || {};
+    const { name, phone, email, password, status, joinedAt, language } = req.body || {};
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (trimmedName.length < 2) {
       return res.status(400).json({ success: false, message: 'Name is required' });
@@ -79,6 +83,10 @@ exports.createBda = async (req, res) => {
     }
     if (!password || typeof password !== 'string' || password.length < 6) {
       return res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
+    }
+    const languageVal = typeof language === 'string' ? language.trim() : '';
+    if (!BDA_LANGUAGES.includes(languageVal)) {
+      return res.status(400).json({ success: false, message: 'BDA language must be Hindi or Telugu' });
     }
     const phoneRaw = typeof phone === 'string' ? phone.replace(/\D/g, '').slice(-10) : '';
     let phoneVal = '';
@@ -97,6 +105,7 @@ exports.createBda = async (req, res) => {
       email: emailVal,
       password,
       role: 'BDA',
+      language: languageVal,
       status: status === 'inactive' ? 'inactive' : 'active',
       joinedAt: joinedAt ? new Date(joinedAt) : new Date(),
       createdBy: req.admin?._id || null,
@@ -163,7 +172,7 @@ exports.updateBda = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(404).json({ success: false, message: 'BDA not found' });
     }
-    const { name, phone, email, status, joinedAt } = req.body || {};
+    const { name, phone, email, status, joinedAt, language } = req.body || {};
     const $set = {};
     if (name !== undefined) {
       const trimmedName = typeof name === 'string' ? name.trim() : '';
@@ -185,6 +194,13 @@ exports.updateBda = async (req, res) => {
     }
     if (email !== undefined) $set.email = typeof email === 'string' ? email.trim().toLowerCase() : '';
     if (status === 'active' || status === 'inactive') $set.status = status;
+    if (language !== undefined) {
+      const languageVal = typeof language === 'string' ? language.trim() : '';
+      if (!BDA_LANGUAGES.includes(languageVal)) {
+        return res.status(400).json({ success: false, message: 'BDA language must be Hindi or Telugu' });
+      }
+      $set.language = languageVal;
+    }
     if (joinedAt !== undefined) {
       const d = new Date(joinedAt);
       if (!Number.isNaN(d.getTime())) $set.joinedAt = d;

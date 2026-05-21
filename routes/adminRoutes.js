@@ -75,6 +75,8 @@ const {
   reassignBda,
   bulkAssignBda,
   getAssignmentHistory,
+  getAutoAssignPreview,
+  autoAssignLeadsByLanguage,
 } = require('../controllers/iitCounsellingLeadsController');
 router.post('/login', login);
 router.post('/login-with-phone', loginWithPhone);
@@ -150,6 +152,8 @@ router.patch('/bdas/:id', requireAdmin, updateBda);
 router.patch('/bdas/:id/status', requireAdmin, patchBdaStatus);
 router.patch('/bdas/:id/reset-password', requireAdmin, resetBdaPassword);
 router.get('/iit-counselling-leads', requireAdmin, listIitCounsellingLeads);
+router.get('/iit-counselling-leads/auto-assign-preview', requireAdmin, getAutoAssignPreview);
+router.post('/iit-counselling-leads/auto-assign-by-language', requireAdmin, autoAssignLeadsByLanguage);
 router.patch('/iit-counselling-leads/bulk-assign', requireAdmin, bulkAssignBda);
 router.get('/iit-counselling-leads/:id/assignment-history', requireAdmin, getAssignmentHistory);
 router.patch('/iit-counselling-leads/:id/crm', requireAdmin, patchIitCounsellingLeadCrm);

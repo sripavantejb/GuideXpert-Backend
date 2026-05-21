@@ -22,6 +22,12 @@ const {
   getAdminActorName,
 } = require('../services/iitCounsellingLeadAssignmentService');
 const { formatActivityRow } = require('../services/bdaStatsService');
+const {
+  getAutoAssignPreview,
+  autoAssignUnassignedByLanguage,
+  autoAssignAllLanguages,
+} = require('../services/bdaLanguageAssignmentService');
+const { BDA_LANGUAGES } = require('../constants/bdaLanguage');
 
 async function attachVisits(rows) {
   const submissionIds = rows.map((r) => r._id).filter(Boolean);
@@ -49,8 +55,14 @@ exports.listIitCounsellingLeads = async (req, res) => {
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const assignedBdaId = typeof req.query.assignedBdaId === 'string' ? req.query.assignedBdaId.trim() : '';
     const unassignedOnly = req.query.unassignedOnly === 'true' || req.query.unassignedOnly === '1';
+    const preferredLanguage =
+      typeof req.query.preferredLanguage === 'string' ? req.query.preferredLanguage.trim() : '';
 
     const filter = { submissionType: 'iitCounselling' };
+
+    if (BDA_LANGUAGES.includes(preferredLanguage)) {
+      filter['iitCounselling.section2Data.preferredLanguage'] = preferredLanguage;
+    }
 
     if (unassignedOnly) {
       filter.$or = [{ assignedBdaId: null }, { assignedBdaId: { $exists: false } }];
@@ -336,6 +348,45 @@ exports.bulkAssignBda = async (req, res) => {
     return res.status(200).json({ success: true, data: out.results });
   } catch (error) {
     console.error('[bulkAssignBda]', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.getAutoAssignPreview = async (req, res) => {
+  try {
+    const preview = await getAutoAssignPreview();
+    return res.status(200).json({ success: true, data: preview });
+  } catch (error) {
+    console.error('[getAutoAssignPreview]', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.autoAssignLeadsByLanguage = async (req, res) => {
+  try {
+    const { language, reason } = req.body || {};
+    const lang = typeof language === 'string' ? language.trim() : '';
+
+    if (lang === 'all') {
+      const results = await autoAssignAllLanguages({ admin: req.admin, reason });
+      const hasError = Object.values(results).some((r) => r?.error);
+      if (hasError) {
+        return res.status(400).json({ success: false, message: 'One or more languages failed', data: results });
+      }
+      return res.status(200).json({ success: true, data: results });
+    }
+
+    const out = await autoAssignUnassignedByLanguage({
+      language: lang,
+      admin: req.admin,
+      reason,
+    });
+    if (out.error) {
+      return res.status(out.status || 400).json({ success: false, message: out.error });
+    }
+    return res.status(200).json({ success: true, data: out });
+  } catch (error) {
+    console.error('[autoAssignLeadsByLanguage]', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };

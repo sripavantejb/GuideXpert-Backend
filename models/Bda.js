@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const { BDA_LANGUAGES } = require('../constants/bdaLanguage');
 
 const bdaSchema = new mongoose.Schema({
   name: {
@@ -33,6 +34,11 @@ const bdaSchema = new mongoose.Schema({
     type: String,
     enum: ['BDA'],
     default: 'BDA',
+  },
+  language: {
+    type: String,
+    enum: BDA_LANGUAGES,
+    index: true,
   },
   status: {
     type: String,

@@ -58,6 +58,7 @@ function mapIitCounsellingLeadToDTO(sub, visit) {
     parentName: iit.section1Data?.parentName || '',
     city: iit.section1Data?.city || iit.section1Data?.location || '',
     alternatePhone: iit.section1Data?.alternateMobile || iit.section1Data?.alternatePhone || '',
+    preferredLanguage: iit.section2Data?.preferredLanguage || '',
   };
 }
 
