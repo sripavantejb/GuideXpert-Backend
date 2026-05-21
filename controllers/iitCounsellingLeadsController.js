@@ -28,6 +28,13 @@ const {
   autoAssignAllLanguages,
 } = require('../services/bdaLanguageAssignmentService');
 const { BDA_LANGUAGES } = require('../constants/bdaLanguage');
+const {
+  parseBdaLeadFilterQuery,
+  buildLeadMatchWithMeet,
+  aggregateDedupedLeads,
+  getMeetFlagsForPhones,
+  enrichDtoWithMeetFlags,
+} = require('../services/bdaLeadFilterService');
 
 async function attachVisits(rows) {
   const submissionIds = rows.map((r) => r._id).filter(Boolean);
@@ -51,65 +58,55 @@ exports.listIitCounsellingLeads = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 25));
-    const skip = (page - 1) * limit;
-    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const assignedBdaId = typeof req.query.assignedBdaId === 'string' ? req.query.assignedBdaId.trim() : '';
     const unassignedOnly = req.query.unassignedOnly === 'true' || req.query.unassignedOnly === '1';
-    const preferredLanguage =
-      typeof req.query.preferredLanguage === 'string' ? req.query.preferredLanguage.trim() : '';
+    const filtersApplied = req.query.filtersApplied === 'true' || req.query.filtersApplied === '1';
 
-    const filter = { submissionType: 'iitCounselling' };
+    const parsed = parseBdaLeadFilterQuery(req.query);
+    let match;
 
-    if (BDA_LANGUAGES.includes(preferredLanguage)) {
-      filter['iitCounselling.section2Data.preferredLanguage'] = preferredLanguage;
-    }
-
-    if (unassignedOnly) {
-      filter.$or = [{ assignedBdaId: null }, { assignedBdaId: { $exists: false } }];
-    } else if (assignedBdaId && mongoose.Types.ObjectId.isValid(assignedBdaId)) {
-      filter.assignedBdaId = new mongoose.Types.ObjectId(assignedBdaId);
-    }
-
-    const funnelFields = ['callStatus', 'leadStatus', 'demoStatus', 'niatStatus', 'paymentStatus'];
-    for (const field of funnelFields) {
-      const val = req.query[field];
-      if (typeof val === 'string' && val.trim()) {
-        filter[field] = val.trim();
-      }
-    }
-
-    if (q) {
-      const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      filter.$and = filter.$and || [];
-      filter.$and.push({
-        $or: [
-          { fullName: { $regex: escaped, $options: 'i' } },
-          { phone: { $regex: escaped } },
-        ],
+    if (unassignedOnly && !filtersApplied) {
+      return res.status(200).json({
+        success: true,
+        data: [],
+        pagination: { page, limit, total: 0, totalPages: 1 },
+        filtersApplied: false,
       });
     }
 
-    const dedupePipeline = [
-      { $match: filter },
-      IIT_SUB_DEDUP_PHONE_ADD_FIELDS,
-      { $sort: { _demoSortKey: -1, updatedAt: -1, createdAt: -1, _id: -1 } },
-      { $group: { _id: '$phoneKey', doc: { $first: '$$ROOT' } } },
-      { $replaceRoot: { newRoot: '$doc' } },
-      { $project: { phoneKey: 0, _demoSortKey: 0 } },
-      { $sort: { updatedAt: -1, createdAt: -1, _id: -1 } },
-      {
-        $facet: {
-          data: [{ $skip: skip }, { $limit: limit }],
-          meta: [{ $count: 'total' }],
-        },
-      },
-    ];
+    if (unassignedOnly) {
+      const built = await buildLeadMatchWithMeet(parsed, { unassignedOnly: true });
+      match = built.match;
+    } else {
+      const filter = { submissionType: 'iitCounselling' };
+      if (assignedBdaId && mongoose.Types.ObjectId.isValid(assignedBdaId)) {
+        filter.assignedBdaId = new mongoose.Types.ObjectId(assignedBdaId);
+      }
+      if (BDA_LANGUAGES.includes(parsed.preferredLanguage)) {
+        filter['iitCounselling.section2Data.preferredLanguage'] = parsed.preferredLanguage;
+      }
+      const funnelFields = ['callStatus', 'leadStatus', 'demoStatus', 'niatStatus', 'paymentStatus'];
+      for (const field of funnelFields) {
+        const val = req.query[field];
+        if (typeof val === 'string' && val.trim()) filter[field] = val.trim();
+      }
+      if (parsed.q) {
+        const escaped = parsed.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        filter.$and = filter.$and || [];
+        filter.$and.push({
+          $or: [
+            { fullName: { $regex: escaped, $options: 'i' } },
+            { phone: { $regex: escaped } },
+          ],
+        });
+      }
+      match = filter;
+    }
 
-    const aggOut = await IitCounsellingSubmission.aggregate(dedupePipeline);
-    const facet = Array.isArray(aggOut) && aggOut[0] ? aggOut[0] : { data: [], meta: [] };
-    const rows = facet.data || [];
-    const total = facet.meta?.[0]?.total ?? 0;
-    const data = await attachVisits(rows);
+    const { rows, total } = await aggregateDedupedLeads({ match, page, limit });
+    const dtos = await attachVisits(rows);
+    const meetFlags = await getMeetFlagsForPhones(dtos.map((d) => d.phone));
+    const data = dtos.map((d) => enrichDtoWithMeetFlags(d, meetFlags));
 
     return res.status(200).json({
       success: true,
@@ -120,6 +117,7 @@ exports.listIitCounsellingLeads = async (req, res) => {
         total,
         totalPages: Math.max(1, Math.ceil(total / limit)),
       },
+      filtersApplied: unassignedOnly ? filtersApplied : true,
     });
   } catch (error) {
     console.error('[listIitCounsellingLeads]', error);
@@ -354,7 +352,7 @@ exports.bulkAssignBda = async (req, res) => {
 
 exports.getAutoAssignPreview = async (req, res) => {
   try {
-    const preview = await getAutoAssignPreview();
+    const preview = await getAutoAssignPreview(req.query);
     return res.status(200).json({ success: true, data: preview });
   } catch (error) {
     console.error('[getAutoAssignPreview]', error);
@@ -364,11 +362,20 @@ exports.getAutoAssignPreview = async (req, res) => {
 
 exports.autoAssignLeadsByLanguage = async (req, res) => {
   try {
+    const filtersApplied =
+      req.query.filtersApplied === 'true' || req.query.filtersApplied === '1';
+    if (!filtersApplied) {
+      return res.status(400).json({
+        success: false,
+        message: 'Apply lead filters on BDA Management before auto-assigning.',
+      });
+    }
+
     const { language, reason } = req.body || {};
     const lang = typeof language === 'string' ? language.trim() : '';
 
     if (lang === 'all') {
-      const results = await autoAssignAllLanguages({ admin: req.admin, reason });
+      const results = await autoAssignAllLanguages({ admin: req.admin, reason, filterQuery: req.query });
       const hasError = Object.values(results).some((r) => r?.error);
       if (hasError) {
         return res.status(400).json({ success: false, message: 'One or more languages failed', data: results });
@@ -380,6 +387,7 @@ exports.autoAssignLeadsByLanguage = async (req, res) => {
       language: lang,
       admin: req.admin,
       reason,
+      filterQuery: req.query,
     });
     if (out.error) {
       return res.status(out.status || 400).json({ success: false, message: out.error });

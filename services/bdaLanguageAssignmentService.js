@@ -1,75 +1,66 @@
-const mongoose = require('mongoose');
 const Bda = require('../models/Bda');
-const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
-const { IIT_SUB_DEDUP_PHONE_ADD_FIELDS } = require('../utils/iitCounsellingLeadDto');
 const { assignLeadToBda } = require('./iitCounsellingLeadAssignmentService');
 const { BDA_LANGUAGES } = require('../constants/bdaLanguage');
+const {
+  parseBdaLeadFilterQuery,
+  fetchDedupedUnassignedLeadIds: fetchFilteredUnassignedIds,
+} = require('./bdaLeadFilterService');
 
 function getLeadPreferredLanguage(sub) {
   const lang = sub?.iitCounselling?.section2Data?.preferredLanguage;
   return typeof lang === 'string' && BDA_LANGUAGES.includes(lang) ? lang : null;
 }
 
-const UNASSIGNED_MATCH = {
-  submissionType: 'iitCounselling',
-  $or: [{ assignedBdaId: null }, { assignedBdaId: { $exists: false } }],
-};
-
-async function fetchDedupedUnassignedLeadIds(language = null) {
-  const match = { ...UNASSIGNED_MATCH };
-  if (language) {
-    if (!BDA_LANGUAGES.includes(language)) return [];
-    match['iitCounselling.section2Data.preferredLanguage'] = language;
-  }
-
-  const pipeline = [
-    { $match: match },
-    IIT_SUB_DEDUP_PHONE_ADD_FIELDS,
-    { $sort: { updatedAt: -1, createdAt: -1, _id: -1 } },
-    { $group: { _id: '$phoneKey', doc: { $first: '$$ROOT' } } },
-    { $replaceRoot: { newRoot: '$doc' } },
-    { $project: { _id: 1 } },
-  ];
-
-  const rows = await IitCounsellingSubmission.aggregate(pipeline);
-  return rows.map((r) => r._id).filter(Boolean);
+async function fetchDedupedUnassignedLeadIds(language = null, filterQuery = {}) {
+  const lang = language && BDA_LANGUAGES.includes(language) ? language : null;
+  return fetchFilteredUnassignedIds(lang, filterQuery);
 }
 
 /** Unassigned leads with no Hindi/Telugu preferredLanguage (Section 2 incomplete or other value). */
-async function fetchDedupedUnassignedOtherLanguageIds() {
-  const pipeline = [
-    {
-      $match: {
-        $and: [
-          UNASSIGNED_MATCH,
-          {
-            $or: [
-              { 'iitCounselling.section2Data.preferredLanguage': { $exists: false } },
-              { 'iitCounselling.section2Data.preferredLanguage': null },
-              { 'iitCounselling.section2Data.preferredLanguage': '' },
-              { 'iitCounselling.section2Data.preferredLanguage': { $nin: BDA_LANGUAGES } },
-            ],
-          },
-        ],
-      },
-    },
-    IIT_SUB_DEDUP_PHONE_ADD_FIELDS,
-    { $sort: { updatedAt: -1, createdAt: -1, _id: -1 } },
-    { $group: { _id: '$phoneKey', doc: { $first: '$$ROOT' } } },
-    { $replaceRoot: { newRoot: '$doc' } },
-    { $project: { _id: 1 } },
-  ];
-  const rows = await IitCounsellingSubmission.aggregate(pipeline);
-  return rows.map((r) => r._id).filter(Boolean);
+async function fetchDedupedUnassignedOtherLanguageIds(filterQuery = {}) {
+  const q = { ...filterQuery, hasPreferredLanguage: 'false' };
+  return fetchFilteredUnassignedIds(null, q);
 }
 
-async function getAutoAssignPreview() {
+function emptyLangPreview(language) {
+  return {
+    language,
+    unassignedLeads: 0,
+    activeBdas: 0,
+    bdas: [],
+    perBdaEstimate: 0,
+    remainder: 0,
+  };
+}
+
+async function getAutoAssignPreview(filterQuery = {}) {
+  const filtersApplied =
+    filterQuery.filtersApplied === 'true' || filterQuery.filtersApplied === '1';
+
+  if (!filtersApplied) {
+    const preview = {};
+    for (const language of BDA_LANGUAGES) {
+      preview[language] = emptyLangPreview(language);
+    }
+    preview.summary = {
+      totalInPool: 0,
+      hindiTeluguUnassigned: 0,
+      otherOrMissingLanguage: 0,
+      filtersApplied: false,
+      hasMeetFilter: false,
+    };
+    return preview;
+  }
+
+  const parsed = parseBdaLeadFilterQuery(filterQuery);
+  const effectiveQuery = { ...filterQuery, filtersApplied: 'true' };
+
   const [allLeadIds, otherLeadIds, ...langResults] = await Promise.all([
-    fetchDedupedUnassignedLeadIds(),
-    fetchDedupedUnassignedOtherLanguageIds(),
+    fetchDedupedUnassignedLeadIds(null, effectiveQuery),
+    fetchDedupedUnassignedOtherLanguageIds(effectiveQuery),
     ...BDA_LANGUAGES.map(async (language) => {
       const [leadIds, bdas] = await Promise.all([
-        fetchDedupedUnassignedLeadIds(language),
+        fetchDedupedUnassignedLeadIds(language, effectiveQuery),
         Bda.find({ status: 'active', language }).sort({ name: 1 }).lean(),
       ]);
       const count = leadIds.length;
@@ -97,6 +88,8 @@ async function getAutoAssignPreview() {
     totalInPool: allLeadIds.length,
     hindiTeluguUnassigned: hindiTeluguTotal,
     otherOrMissingLanguage: otherLeadIds.length,
+    filtersApplied: true,
+    hasMeetFilter: Boolean(parsed.meetVariant || parsed.meetFrom || parsed.meetTo || parsed.meetPresence),
   };
 
   return preview;
@@ -105,7 +98,7 @@ async function getAutoAssignPreview() {
 /**
  * Round-robin assign all unassigned leads for a language across active BDAs with that language.
  */
-async function autoAssignUnassignedByLanguage({ language, admin, reason }) {
+async function autoAssignUnassignedByLanguage({ language, admin, reason, filterQuery = {} }) {
   if (!BDA_LANGUAGES.includes(language)) {
     return { error: 'Invalid language. Use Hindi or Telugu.', status: 400 };
   }
@@ -118,7 +111,10 @@ async function autoAssignUnassignedByLanguage({ language, admin, reason }) {
     };
   }
 
-  const leadIds = await fetchDedupedUnassignedLeadIds(language);
+  const leadIds = await fetchDedupedUnassignedLeadIds(language, {
+    ...filterQuery,
+    filtersApplied: 'true',
+  });
   if (leadIds.length === 0) {
     return {
       language,
@@ -170,10 +166,15 @@ async function autoAssignUnassignedByLanguage({ language, admin, reason }) {
   };
 }
 
-async function autoAssignAllLanguages({ admin, reason }) {
+async function autoAssignAllLanguages({ admin, reason, filterQuery = {} }) {
   const results = {};
   for (const language of BDA_LANGUAGES) {
-    results[language] = await autoAssignUnassignedByLanguage({ language, admin, reason });
+    results[language] = await autoAssignUnassignedByLanguage({
+      language,
+      admin,
+      reason,
+      filterQuery,
+    });
   }
   return results;
 }
