@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const sharp = require('sharp');
 const { formatCertificateExpiryDate } = require('../utils/certificateFormatUtils');
 
 const LOCAL_SVG_PATH = path.join(__dirname, '../assets/certificate.svg');
@@ -18,6 +19,7 @@ const NAME_CONFIG = {
   y: 300,
   fontSize: 48,
   fillStyle: '#1f2937',
+  fontFamily: 'cursive, Georgia, serif',
 };
 
 const ISSUED_DATE_CONFIG = {
@@ -25,6 +27,7 @@ const ISSUED_DATE_CONFIG = {
   y: 464,
   fontSize: 13,
   fillStyle: '#1a1a1a',
+  fontFamily: 'Georgia, serif',
 };
 
 const EXPIRY_DATE_CONFIG = {
@@ -32,6 +35,7 @@ const EXPIRY_DATE_CONFIG = {
   y: 488,
   fontSize: 13,
   fillStyle: '#1a1a1a',
+  fontFamily: 'Georgia, serif',
 };
 
 const CERTIFICATE_ID_CONFIG = {
@@ -39,12 +43,23 @@ const CERTIFICATE_ID_CONFIG = {
   y: 505,
   fontSize: 11,
   fillStyle: '#1a1a1a',
+  fontFamily: 'Georgia, serif',
+};
+
+/** Mobile shown on certificate (value only, label is in template area). */
+const MOBILE_CONFIG = {
+  x: 652,
+  y: 522,
+  fontSize: 10,
+  fillStyle: '#1a1a1a',
+  fontFamily: 'Georgia, serif',
 };
 
 let cachedSvgTemplate = null;
 let svgTemplatePromise = null;
 let resvgInitPromise = null;
 let ResvgClass = null;
+let cachedBasePng = null;
 
 function formatCertificateDate(d = new Date()) {
   const date = d instanceof Date ? d : new Date(d);
@@ -65,20 +80,27 @@ function escapeXml(text) {
     .replace(/"/g, '&quot;');
 }
 
-function buildTextOverlayFragment(name, issuedDateStr, certificateId, expiryDateStr) {
+/** Transparent overlay SVG — text drawn on top of background (matches browser canvas). */
+function buildTextOverlaySvg(name, issuedDateStr, certificateId, expiryDateStr, mobileNumber) {
   const issued = issuedDateStr || formatCertificateDate();
   const expiry = expiryDateStr || formatCertificateExpiryDate(issued);
   const displayName = escapeXml(String(name || ' ').trim() || ' ');
   const certId = certificateId && String(certificateId).trim()
-    ? `<text x="${CERTIFICATE_ID_CONFIG.x}" y="${CERTIFICATE_ID_CONFIG.y}" font-size="${CERTIFICATE_ID_CONFIG.fontSize}" fill="${CERTIFICATE_ID_CONFIG.fillStyle}" font-family="Georgia, serif">${escapeXml(String(certificateId).trim())}</text>`
+    ? `<text x="${CERTIFICATE_ID_CONFIG.x}" y="${CERTIFICATE_ID_CONFIG.y}" font-size="${CERTIFICATE_ID_CONFIG.fontSize}" fill="${CERTIFICATE_ID_CONFIG.fillStyle}" font-family="${CERTIFICATE_ID_CONFIG.fontFamily}">${escapeXml(String(certificateId).trim())}</text>`
+    : '';
+  const mobile = mobileNumber && String(mobileNumber).trim()
+    ? `<text x="${MOBILE_CONFIG.x}" y="${MOBILE_CONFIG.y}" font-size="${MOBILE_CONFIG.fontSize}" fill="${MOBILE_CONFIG.fillStyle}" font-family="${MOBILE_CONFIG.fontFamily}">${escapeXml(String(mobileNumber).trim())}</text>`
     : '';
 
-  return `<g id="certificate-dynamic-fields">
-  <text x="${NAME_CONFIG.x}" y="${NAME_CONFIG.y}" text-anchor="middle" dominant-baseline="middle" font-size="${NAME_CONFIG.fontSize}" fill="${NAME_CONFIG.fillStyle}" font-family="cursive, Georgia, serif">${displayName}</text>
-  <text x="${ISSUED_DATE_CONFIG.x}" y="${ISSUED_DATE_CONFIG.y}" font-size="${ISSUED_DATE_CONFIG.fontSize}" fill="${ISSUED_DATE_CONFIG.fillStyle}" font-family="Georgia, serif">${escapeXml(issued)}</text>
-  <text x="${EXPIRY_DATE_CONFIG.x}" y="${EXPIRY_DATE_CONFIG.y}" font-size="${EXPIRY_DATE_CONFIG.fontSize}" fill="${EXPIRY_DATE_CONFIG.fillStyle}" font-family="Georgia, serif">${escapeXml(expiry)}</text>
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${CERT_WIDTH}" height="${CERT_HEIGHT}" viewBox="0 0 ${CERT_WIDTH} ${CERT_HEIGHT}">
+  <g id="certificate-dynamic-fields">
+  <text x="${NAME_CONFIG.x}" y="${NAME_CONFIG.y}" text-anchor="middle" dominant-baseline="middle" font-size="${NAME_CONFIG.fontSize}" fill="${NAME_CONFIG.fillStyle}" font-family="${NAME_CONFIG.fontFamily}">${displayName}</text>
+  <text x="${ISSUED_DATE_CONFIG.x}" y="${ISSUED_DATE_CONFIG.y}" font-size="${ISSUED_DATE_CONFIG.fontSize}" fill="${ISSUED_DATE_CONFIG.fillStyle}" font-family="${ISSUED_DATE_CONFIG.fontFamily}">${escapeXml(issued)}</text>
+  <text x="${EXPIRY_DATE_CONFIG.x}" y="${EXPIRY_DATE_CONFIG.y}" font-size="${EXPIRY_DATE_CONFIG.fontSize}" fill="${EXPIRY_DATE_CONFIG.fillStyle}" font-family="${EXPIRY_DATE_CONFIG.fontFamily}">${escapeXml(expiry)}</text>
   ${certId}
-</g>`;
+  ${mobile}
+  </g>
+</svg>`;
 }
 
 function readWasmBytes() {
@@ -101,6 +123,16 @@ async function ensureResvgReady() {
     });
   }
   await resvgInitPromise;
+}
+
+function renderSvgToPng(svgMarkup) {
+  const resvg = new ResvgClass(svgMarkup, {
+    fitTo: { mode: 'width', value: OUTPUT_WIDTH },
+    font: {
+      loadSystemFonts: true,
+    },
+  });
+  return Buffer.from(resvg.render().asPng());
 }
 
 async function loadSvgTemplate() {
@@ -130,14 +162,12 @@ async function loadSvgTemplate() {
   return cachedSvgTemplate;
 }
 
-async function buildCertificateSvg(name, issuedDateStr, certificateId, expiryDateStr) {
+async function getBaseTemplatePng() {
+  if (cachedBasePng) return cachedBasePng;
+  await ensureResvgReady();
   const template = await loadSvgTemplate();
-  const fragment = buildTextOverlayFragment(name, issuedDateStr, certificateId, expiryDateStr);
-  const closingIdx = template.lastIndexOf('</svg>');
-  if (closingIdx === -1) {
-    throw new Error('Invalid certificate SVG template.');
-  }
-  return `${template.slice(0, closingIdx)}${fragment}${template.slice(closingIdx)}`;
+  cachedBasePng = renderSvgToPng(template);
+  return cachedBasePng;
 }
 
 /**
@@ -146,26 +176,38 @@ async function buildCertificateSvg(name, issuedDateStr, certificateId, expiryDat
 async function warmupCertificateRenderer() {
   await ensureResvgReady();
   await loadSvgTemplate();
-  await buildCertificateSvg(' ', formatCertificateDate(), '');
+  await getBaseTemplatePng();
 }
 
 /**
- * @param {{ fullName: string, dateIssued: string, certificateId?: string }} params
+ * @param {{ fullName: string, dateIssued: string, certificateId?: string, mobileNumber?: string }} params
  * @returns {Promise<Buffer>}
  */
 async function renderCertificatePngBuffer(params) {
-  const { fullName, dateIssued, certificateId } = params;
+  const { fullName, dateIssued, certificateId, mobileNumber } = params;
   await ensureResvgReady();
-  const svgMarkup = await buildCertificateSvg(fullName, dateIssued, certificateId);
-  const resvg = new ResvgClass(svgMarkup, {
-    fitTo: { mode: 'width', value: OUTPUT_WIDTH },
-  });
-  const png = resvg.render().asPng();
-  return Buffer.from(png);
+
+  const [basePng, overlaySvg] = await Promise.all([
+    getBaseTemplatePng(),
+    Promise.resolve(
+      buildTextOverlaySvg(fullName, dateIssued, certificateId, undefined, mobileNumber)
+    ),
+  ]);
+
+  const overlayPng = renderSvgToPng(overlaySvg);
+  const baseMeta = await sharp(basePng).metadata();
+  const overlaySized = await sharp(overlayPng)
+    .resize(baseMeta.width, baseMeta.height, { fit: 'fill' })
+    .png()
+    .toBuffer();
+  return sharp(basePng)
+    .composite([{ input: overlaySized, top: 0, left: 0 }])
+    .png()
+    .toBuffer();
 }
 
 /**
- * @param {{ fullName: string, dateIssued: string, certificateId?: string }} params
+ * @param {{ fullName: string, dateIssued: string, certificateId?: string, mobileNumber?: string }} params
  * @returns {Promise<Buffer>}
  */
 async function renderCertificatePdfBuffer(params) {

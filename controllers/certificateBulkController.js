@@ -180,7 +180,7 @@ exports.bulkDownloadCertificates = async (req, res) => {
         fileBaseName,
       });
 
-      const renderParams = { fullName, dateIssued, certificateId };
+      const renderParams = { fullName, dateIssued, certificateId, mobileNumber: phone };
       const [pngBuffer, pdfBuffer] = await Promise.all([
         renderCertificatePngBuffer(renderParams),
         renderCertificatePdfBuffer(renderParams),
