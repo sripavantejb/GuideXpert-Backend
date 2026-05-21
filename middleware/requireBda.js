@@ -35,6 +35,7 @@ async function requireBda(req, res, next) {
       email: bda.email,
       phone: bda.phone,
       role: bda.role || 'BDA',
+      language: bda.language || '',
       status: bda.status,
     };
     next();

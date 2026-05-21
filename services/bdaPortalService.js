@@ -7,11 +7,15 @@ const {
 } = require('../utils/iitCounsellingLeadDto');
 const IitCounsellingVisit = require('../models/IitCounsellingVisit');
 
-function bdaLeadFilter(bdaId) {
-  return {
+function bdaLeadFilter(bdaId, bdaLanguage = '') {
+  const filter = {
     submissionType: 'iitCounselling',
     assignedBdaId: new mongoose.Types.ObjectId(bdaId),
   };
+  if (bdaLanguage === 'Hindi' || bdaLanguage === 'Telugu') {
+    filter['iitCounselling.section2Data.preferredLanguage'] = bdaLanguage;
+  }
+  return filter;
 }
 
 function connectedMatch() {
@@ -26,8 +30,8 @@ function paymentInitiatedMatch() {
   return { $in: ['payment_initiated', 'initiated'] };
 }
 
-async function getBdaDashboardStats(bdaId) {
-  const base = bdaLeadFilter(bdaId);
+async function getBdaDashboardStats(bdaId, bdaLanguage = '') {
+  const base = bdaLeadFilter(bdaId, bdaLanguage);
   const [
     totalAssigned,
     notCalled,
@@ -99,12 +103,12 @@ async function getBdaDashboardStats(bdaId) {
   };
 }
 
-async function listBdaLeads(bdaId, query = {}) {
+async function listBdaLeads(bdaId, query = {}, bdaLanguage = '') {
   const pageNum = Math.max(1, parseInt(query.page, 10) || 1);
   const limitNum = Math.min(50, Math.max(10, parseInt(query.limit, 10) || 25));
   const skip = (pageNum - 1) * limitNum;
 
-  const filter = bdaLeadFilter(bdaId);
+  const filter = bdaLeadFilter(bdaId, bdaLanguage);
 
   const q = typeof query.q === 'string' ? query.q.trim() : '';
   const nameQ = typeof query.name === 'string' ? query.name.trim() : '';
@@ -200,11 +204,11 @@ async function listBdaLeads(bdaId, query = {}) {
   };
 }
 
-async function getBdaLeadById(bdaId, leadId) {
+async function getBdaLeadById(bdaId, leadId, bdaLanguage = '') {
   if (!mongoose.Types.ObjectId.isValid(leadId)) return null;
   const lead = await IitCounsellingSubmission.findOne({
     _id: leadId,
-    ...bdaLeadFilter(bdaId),
+    ...bdaLeadFilter(bdaId, bdaLanguage),
   }).lean();
   if (!lead) return null;
   const visit = await IitCounsellingVisit.findOne({ submissionId: lead._id }).sort({ visitedAt: -1 }).lean();

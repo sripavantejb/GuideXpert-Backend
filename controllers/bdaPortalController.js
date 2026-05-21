@@ -9,7 +9,7 @@ const { updateLeadByBda } = require('../services/bdaLeadUpdateService');
 
 exports.getDashboardStats = async (req, res) => {
   try {
-    const stats = await getBdaDashboardStats(req.bda.id);
+    const stats = await getBdaDashboardStats(req.bda.id, req.bda.language);
     return res.status(200).json({ success: true, data: stats });
   } catch (error) {
     console.error('[bdaDashboardStats]', error);
@@ -19,7 +19,7 @@ exports.getDashboardStats = async (req, res) => {
 
 exports.listLeads = async (req, res) => {
   try {
-    const { data, pagination } = await listBdaLeads(req.bda.id, req.query);
+    const { data, pagination } = await listBdaLeads(req.bda.id, req.query, req.bda.language);
     return res.status(200).json({ success: true, data, pagination });
   } catch (error) {
     console.error('[bdaListLeads]', error);
@@ -29,7 +29,7 @@ exports.listLeads = async (req, res) => {
 
 exports.getLead = async (req, res) => {
   try {
-    const lead = await getBdaLeadById(req.bda.id, req.params.id);
+    const lead = await getBdaLeadById(req.bda.id, req.params.id, req.bda.language);
     if (!lead) {
       return res.status(404).json({ success: false, message: 'Lead not found' });
     }
