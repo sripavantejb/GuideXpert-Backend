@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const { formatCertificateExpiryDate } = require('../utils/certificateFormatUtils');
 
@@ -13,10 +14,8 @@ const NAME_CONFIG = {
   x: CERT_WIDTH / 2,
   y: 300,
   fontSize: 48,
-  fontFamily: 'cursive',
+  fontFamily: 'cursive, Georgia, serif',
   fillStyle: '#1f2937',
-  textAlign: 'center',
-  textBaseline: 'middle',
 };
 
 const ISSUED_DATE_CONFIG = {
@@ -25,8 +24,6 @@ const ISSUED_DATE_CONFIG = {
   fontSize: 13,
   fontFamily: 'Georgia, "Times New Roman", serif',
   fillStyle: '#1a1a1a',
-  textAlign: 'left',
-  textBaseline: 'alphabetic',
 };
 
 const EXPIRY_DATE_CONFIG = {
@@ -35,8 +32,6 @@ const EXPIRY_DATE_CONFIG = {
   fontSize: 13,
   fontFamily: 'Georgia, "Times New Roman", serif',
   fillStyle: '#1a1a1a',
-  textAlign: 'left',
-  textBaseline: 'alphabetic',
 };
 
 const CERTIFICATE_ID_CONFIG = {
@@ -45,11 +40,7 @@ const CERTIFICATE_ID_CONFIG = {
   fontSize: 11,
   fontFamily: 'Georgia, "Times New Roman", serif',
   fillStyle: '#1a1a1a',
-  textAlign: 'left',
-  textBaseline: 'alphabetic',
 };
-
-let cachedBackgroundImage = null;
 
 function formatCertificateDate(d = new Date()) {
   const date = d instanceof Date ? d : new Date(d);
@@ -62,55 +53,51 @@ function formatCertificateDate(d = new Date()) {
   return `${day} ${month} ${year}`;
 }
 
-function drawTextField(ctx, config, text, scale) {
-  const value = String(text || '').trim();
-  if (!value) return;
-  ctx.fillStyle = config.fillStyle;
-  ctx.font = `${config.fontSize * scale}px ${config.fontFamily}`;
-  ctx.textAlign = config.textAlign;
-  ctx.textBaseline = config.textBaseline;
-  ctx.fillText(value, config.x * scale, config.y * scale);
+function escapeXml(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
-async function loadCertificateBackground() {
-  const { loadImage } = getCanvasDeps();
-  if (cachedBackgroundImage) return cachedBackgroundImage;
-  cachedBackgroundImage = await loadImage(CERTIFICATE_SVG_PATH);
-  return cachedBackgroundImage;
-}
-
-async function drawCertificateToCanvas(img, name, issuedDateStr, certificateId, expiryDateStr) {
-  const { createCanvas } = getCanvasDeps();
-  const canvas = createCanvas(OUTPUT_WIDTH, OUTPUT_HEIGHT);
-  const ctx = canvas.getContext('2d');
-  const scale = OUTPUT_SCALE;
+function buildTextOverlayFragment(name, issuedDateStr, certificateId, expiryDateStr) {
   const issued = issuedDateStr || formatCertificateDate();
   const expiry = expiryDateStr || formatCertificateExpiryDate(issued);
+  const displayName = escapeXml(String(name || ' ').trim() || ' ');
+  const certId = certificateId && String(certificateId).trim()
+    ? `<text x="${CERTIFICATE_ID_CONFIG.x}" y="${CERTIFICATE_ID_CONFIG.y}" font-size="${CERTIFICATE_ID_CONFIG.fontSize}" fill="${CERTIFICATE_ID_CONFIG.fillStyle}" font-family="Georgia, serif">${escapeXml(String(certificateId).trim())}</text>`
+    : '';
 
-  ctx.drawImage(img, 0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT);
-  ctx.save();
-
-  ctx.fillStyle = NAME_CONFIG.fillStyle;
-  ctx.font = `${NAME_CONFIG.fontSize * scale}px ${NAME_CONFIG.fontFamily}`;
-  ctx.textAlign = NAME_CONFIG.textAlign;
-  ctx.textBaseline = NAME_CONFIG.textBaseline;
-  ctx.fillText(String(name || ' ').trim() || ' ', NAME_CONFIG.x * scale, NAME_CONFIG.y * scale);
-
-  drawTextField(ctx, ISSUED_DATE_CONFIG, issued, scale);
-  drawTextField(ctx, EXPIRY_DATE_CONFIG, expiry, scale);
-
-  if (certificateId && String(certificateId).trim()) {
-    drawTextField(ctx, CERTIFICATE_ID_CONFIG, String(certificateId).trim(), scale);
-  }
-
-  ctx.restore();
-  return canvas;
+  return `<g id="certificate-dynamic-fields">
+  <text x="${NAME_CONFIG.x}" y="${NAME_CONFIG.y}" text-anchor="middle" dominant-baseline="middle" font-size="${NAME_CONFIG.fontSize}" fill="${NAME_CONFIG.fillStyle}" font-family="cursive, Georgia, serif">${displayName}</text>
+  <text x="${ISSUED_DATE_CONFIG.x}" y="${ISSUED_DATE_CONFIG.y}" font-size="${ISSUED_DATE_CONFIG.fontSize}" fill="${ISSUED_DATE_CONFIG.fillStyle}" font-family="Georgia, serif">${escapeXml(issued)}</text>
+  <text x="${EXPIRY_DATE_CONFIG.x}" y="${EXPIRY_DATE_CONFIG.y}" font-size="${EXPIRY_DATE_CONFIG.fontSize}" fill="${EXPIRY_DATE_CONFIG.fillStyle}" font-family="Georgia, serif">${escapeXml(expiry)}</text>
+  ${certId}
+</g>`;
 }
 
-function getCanvasDeps() {
-  const { createCanvas, loadImage } = require('@napi-rs/canvas');
+let cachedSvgTemplate = null;
+
+function loadCertificateSvgWithFields(name, issuedDateStr, certificateId, expiryDateStr) {
+  if (!cachedSvgTemplate) {
+    cachedSvgTemplate = fs.readFileSync(CERTIFICATE_SVG_PATH, 'utf8');
+  }
+  const fragment = buildTextOverlayFragment(name, issuedDateStr, certificateId, expiryDateStr);
+  const closingIdx = cachedSvgTemplate.lastIndexOf('</svg>');
+  if (closingIdx === -1) {
+    throw new Error('Invalid certificate SVG template.');
+  }
+  return `${cachedSvgTemplate.slice(0, closingIdx)}${fragment}${cachedSvgTemplate.slice(closingIdx)}`;
+}
+
+function getSharp() {
+  return require('sharp');
+}
+
+function getJsPDF() {
   const { jsPDF } = require('jspdf');
-  return { createCanvas, loadImage, jsPDF };
+  return jsPDF;
 }
 
 /**
@@ -119,9 +106,19 @@ function getCanvasDeps() {
  */
 async function renderCertificatePngBuffer(params) {
   const { fullName, dateIssued, certificateId } = params;
-  const img = await loadCertificateBackground();
-  const canvas = await drawCertificateToCanvas(img, fullName, dateIssued, certificateId);
-  return canvas.toBuffer('image/png');
+  const sharp = getSharp();
+
+  if (!fs.existsSync(CERTIFICATE_SVG_PATH)) {
+    throw new Error('Certificate template asset missing.');
+  }
+
+  const svgMarkup = loadCertificateSvgWithFields(fullName, dateIssued, certificateId);
+  const png = await sharp(Buffer.from(svgMarkup), { density: OUTPUT_SCALE * 72 })
+    .resize(OUTPUT_WIDTH, OUTPUT_HEIGHT, { fit: 'fill' })
+    .png()
+    .toBuffer();
+
+  return png;
 }
 
 /**
@@ -133,7 +130,7 @@ async function renderCertificatePdfBuffer(params) {
   const pngBase64 = pngBuffer.toString('base64');
   const dataUrl = `data:image/png;base64,${pngBase64}`;
 
-  const { jsPDF } = getCanvasDeps();
+  const jsPDF = getJsPDF();
   const pdf = new jsPDF({
     orientation: 'landscape',
     unit: 'px',

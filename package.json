@@ -52,7 +52,6 @@
   },
   "homepage": "https://github.com/sripavantejb/GuideXpert-Backend#readme",
   "dependencies": {
-    "@napi-rs/canvas": "^1.0.0",
     "@vercel/functions": "^3.4.3",
     "archiver": "^8.0.0",
     "axios": "^1.13.2",
@@ -65,7 +64,8 @@
     "jsonwebtoken": "^9.0.2",
     "jspdf": "^4.2.1",
     "mongoose": "^9.1.5",
-    "nodemon": "^3.1.11"
+    "nodemon": "^3.1.11",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "mongodb-memory-server": "^10.4.3"
