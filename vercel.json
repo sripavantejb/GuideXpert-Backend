@@ -5,11 +5,7 @@
       "src": "server.js",
       "use": "@vercel/node",
       "config": {
-        "includeFiles": [
-          "data/rankPredictor/**",
-          "assets/certificate.svg",
-          "node_modules/@resvg/resvg-wasm/index_bg.wasm"
-        ],
+        "includeFiles": "assets/**,data/rankPredictor/**",
         "maxDuration": 60
       }
     }

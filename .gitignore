@@ -5,3 +5,5 @@ node_modules/
 config/sheets-service-account.json
 **/sheets-service-account*.json
 .vercel
+# Generated on npm install (see scripts/copyResvgWasm.js)
+assets/resvg.wasm

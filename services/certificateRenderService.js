@@ -1,14 +1,17 @@
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
 const { formatCertificateExpiryDate } = require('../utils/certificateFormatUtils');
 
-const CERTIFICATE_SVG_PATH = path.join(__dirname, '../assets/certificate.svg');
+const LOCAL_SVG_PATH = path.join(__dirname, '../assets/certificate.svg');
+const WASM_PATH = path.join(__dirname, '../assets/resvg.wasm');
+const CERTIFICATE_SVG_URL =
+  (process.env.CERTIFICATE_SVG_URL || 'https://www.guidexpert.co.in/certificate.svg').trim();
 
 const CERT_WIDTH = 842;
 const CERT_HEIGHT = 596;
 const OUTPUT_SCALE = 2;
 const OUTPUT_WIDTH = CERT_WIDTH * OUTPUT_SCALE;
-const OUTPUT_HEIGHT = CERT_HEIGHT * OUTPUT_SCALE;
 
 const NAME_CONFIG = {
   x: CERT_WIDTH / 2,
@@ -39,6 +42,7 @@ const CERTIFICATE_ID_CONFIG = {
 };
 
 let cachedSvgTemplate = null;
+let svgTemplatePromise = null;
 let resvgInitPromise = null;
 let ResvgClass = null;
 
@@ -77,19 +81,11 @@ function buildTextOverlayFragment(name, issuedDateStr, certificateId, expiryDate
 </g>`;
 }
 
-function loadCertificateSvgWithFields(name, issuedDateStr, certificateId, expiryDateStr) {
-  if (!cachedSvgTemplate) {
-    if (!fs.existsSync(CERTIFICATE_SVG_PATH)) {
-      throw new Error(`Certificate template missing at ${CERTIFICATE_SVG_PATH}`);
-    }
-    cachedSvgTemplate = fs.readFileSync(CERTIFICATE_SVG_PATH, 'utf8');
+function readWasmBytes() {
+  if (fs.existsSync(WASM_PATH)) {
+    return fs.readFileSync(WASM_PATH);
   }
-  const fragment = buildTextOverlayFragment(name, issuedDateStr, certificateId, expiryDateStr);
-  const closingIdx = cachedSvgTemplate.lastIndexOf('</svg>');
-  if (closingIdx === -1) {
-    throw new Error('Invalid certificate SVG template.');
-  }
-  return `${cachedSvgTemplate.slice(0, closingIdx)}${fragment}${cachedSvgTemplate.slice(closingIdx)}`;
+  return fs.readFileSync(require.resolve('@resvg/resvg-wasm/index_bg.wasm'));
 }
 
 async function ensureResvgReady() {
@@ -97,8 +93,7 @@ async function ensureResvgReady() {
   if (!resvgInitPromise) {
     resvgInitPromise = (async () => {
       const { initWasm, Resvg } = require('@resvg/resvg-wasm');
-      const wasmPath = require.resolve('@resvg/resvg-wasm/index_bg.wasm');
-      await initWasm(fs.readFileSync(wasmPath));
+      await initWasm(readWasmBytes());
       ResvgClass = Resvg;
     })().catch((err) => {
       resvgInitPromise = null;
@@ -108,15 +103,50 @@ async function ensureResvgReady() {
   await resvgInitPromise;
 }
 
+async function loadSvgTemplate() {
+  if (cachedSvgTemplate) return cachedSvgTemplate;
+  if (!svgTemplatePromise) {
+    svgTemplatePromise = (async () => {
+      if (fs.existsSync(LOCAL_SVG_PATH)) {
+        return fs.readFileSync(LOCAL_SVG_PATH, 'utf8');
+      }
+      const { data } = await axios.get(CERTIFICATE_SVG_URL, {
+        responseType: 'text',
+        timeout: 60000,
+        maxContentLength: 50 * 1024 * 1024,
+        validateStatus: (s) => s === 200,
+      });
+      const markup = typeof data === 'string' ? data : String(data || '');
+      if (!markup.includes('<svg')) {
+        throw new Error(`Invalid certificate template from ${CERTIFICATE_SVG_URL}`);
+      }
+      return markup;
+    })().catch((err) => {
+      svgTemplatePromise = null;
+      throw err;
+    });
+  }
+  cachedSvgTemplate = await svgTemplatePromise;
+  return cachedSvgTemplate;
+}
+
+async function buildCertificateSvg(name, issuedDateStr, certificateId, expiryDateStr) {
+  const template = await loadSvgTemplate();
+  const fragment = buildTextOverlayFragment(name, issuedDateStr, certificateId, expiryDateStr);
+  const closingIdx = template.lastIndexOf('</svg>');
+  if (closingIdx === -1) {
+    throw new Error('Invalid certificate SVG template.');
+  }
+  return `${template.slice(0, closingIdx)}${fragment}${template.slice(closingIdx)}`;
+}
+
 /**
  * Warm up renderer (WASM + template). Call from bulk download before ZIP build.
  */
 async function warmupCertificateRenderer() {
   await ensureResvgReady();
-  if (!fs.existsSync(CERTIFICATE_SVG_PATH)) {
-    throw new Error('Certificate template asset is not deployed.');
-  }
-  loadCertificateSvgWithFields(' ', formatCertificateDate(), '');
+  await loadSvgTemplate();
+  await buildCertificateSvg(' ', formatCertificateDate(), '');
 }
 
 /**
@@ -126,12 +156,11 @@ async function warmupCertificateRenderer() {
 async function renderCertificatePngBuffer(params) {
   const { fullName, dateIssued, certificateId } = params;
   await ensureResvgReady();
-  const svgMarkup = loadCertificateSvgWithFields(fullName, dateIssued, certificateId);
+  const svgMarkup = await buildCertificateSvg(fullName, dateIssued, certificateId);
   const resvg = new ResvgClass(svgMarkup, {
     fitTo: { mode: 'width', value: OUTPUT_WIDTH },
   });
-  const rendered = resvg.render();
-  const png = rendered.asPng();
+  const png = resvg.render().asPng();
   return Buffer.from(png);
 }
 
@@ -152,8 +181,7 @@ async function renderCertificatePdfBuffer(params) {
     compress: true,
   });
   pdf.addImage(dataUrl, 'PNG', 0, 0, CERT_WIDTH, CERT_HEIGHT);
-  const arrayBuffer = pdf.output('arraybuffer');
-  return Buffer.from(arrayBuffer);
+  return Buffer.from(pdf.output('arraybuffer'));
 }
 
 module.exports = {
