@@ -155,6 +155,7 @@ async function computeBdaMetrics(bda, dateRange) {
 
   return {
     bdaId,
+    id: bdaId,
     name: bda.name,
     phone: bda.phone || '',
     email: bda.email || '',
@@ -279,11 +280,12 @@ async function getTeamDashboardStats(query = {}) {
 
 async function getLeaderboard(query = {}, limit = 10) {
   const { rows } = await getAllBdaStats(query);
-  const activeRows = rows.filter((r) => r.totalAssigned > 0 || r.callsConnected > 0);
+  const activeRows = rows.filter((r) => r.status !== 'inactive');
 
   const byConversion = [...activeRows].sort((a, b) => {
     if (b.conversionPct !== a.conversionPct) return b.conversionPct - a.conversionPct;
-    return b.callsConnected - a.callsConnected;
+    if (b.callsConnected !== a.callsConnected) return b.callsConnected - a.callsConnected;
+    return (a.name || '').localeCompare(b.name || '');
   });
 
   const table = byConversion.map((row, idx) => ({

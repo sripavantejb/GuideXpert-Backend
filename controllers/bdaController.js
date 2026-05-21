@@ -58,12 +58,16 @@ exports.createBda = async (req, res) => {
     if (trimmedName.length < 2) {
       return res.status(400).json({ success: false, message: 'Name is required' });
     }
+    const phoneRaw = typeof phone === 'string' ? phone.replace(/\D/g, '').slice(-10) : '';
     let phoneVal = '';
-    if (phone) {
-      phoneVal = String(phone).replace(/\D/g, '').slice(-10);
-      if (!/^\d{10}$/.test(phoneVal)) {
-        return res.status(400).json({ success: false, message: 'Phone must be 10 digits' });
+    if (phoneRaw) {
+      if (!/^\d{10}$/.test(phoneRaw)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Phone must be exactly 10 digits, or leave blank',
+        });
       }
+      phoneVal = phoneRaw;
     }
     const doc = await Bda.create({
       name: trimmedName,
