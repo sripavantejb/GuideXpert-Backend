@@ -7,17 +7,19 @@ const {
 
 const BULK_DOWNLOAD_MAX_PHONES = 200;
 
-function loadBulkDeps() {
+async function loadBulkDeps() {
   try {
     const archiver = require('archiver');
-    const {
-      renderCertificatePngBuffer,
-      renderCertificatePdfBuffer,
-    } = require('../services/certificateRenderService');
-    return { archiver, renderCertificatePngBuffer, renderCertificatePdfBuffer };
+    const renderService = require('../services/certificateRenderService');
+    await renderService.warmupCertificateRenderer();
+    return {
+      archiver,
+      renderCertificatePngBuffer: renderService.renderCertificatePngBuffer,
+      renderCertificatePdfBuffer: renderService.renderCertificatePdfBuffer,
+    };
   } catch (err) {
-    console.error('[bulkDownloadCertificates] Failed to load render dependencies:', err?.message || err);
-    return null;
+    console.error('[bulkDownloadCertificates] Failed to load render dependencies:', err?.stack || err?.message || err);
+    return { error: err?.message || 'Certificate renderer unavailable' };
   }
 }
 
@@ -85,11 +87,11 @@ function buildManifestCsv(rows) {
  */
 exports.bulkDownloadCertificates = async (req, res) => {
   try {
-    const deps = loadBulkDeps();
-    if (!deps) {
+    const deps = await loadBulkDeps();
+    if (!deps || deps.error) {
       return res.status(503).json({
         success: false,
-        message: 'Certificate rendering is unavailable on this server. Contact support.',
+        message: deps?.error || 'Certificate rendering is unavailable on this server. Contact support.',
       });
     }
 

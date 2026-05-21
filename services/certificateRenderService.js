@@ -14,7 +14,6 @@ const NAME_CONFIG = {
   x: CERT_WIDTH / 2,
   y: 300,
   fontSize: 48,
-  fontFamily: 'cursive, Georgia, serif',
   fillStyle: '#1f2937',
 };
 
@@ -22,7 +21,6 @@ const ISSUED_DATE_CONFIG = {
   x: 196,
   y: 464,
   fontSize: 13,
-  fontFamily: 'Georgia, "Times New Roman", serif',
   fillStyle: '#1a1a1a',
 };
 
@@ -30,7 +28,6 @@ const EXPIRY_DATE_CONFIG = {
   x: 196,
   y: 488,
   fontSize: 13,
-  fontFamily: 'Georgia, "Times New Roman", serif',
   fillStyle: '#1a1a1a',
 };
 
@@ -38,9 +35,12 @@ const CERTIFICATE_ID_CONFIG = {
   x: 652,
   y: 505,
   fontSize: 11,
-  fontFamily: 'Georgia, "Times New Roman", serif',
   fillStyle: '#1a1a1a',
 };
+
+let cachedSvgTemplate = null;
+let resvgInitPromise = null;
+let ResvgClass = null;
 
 function formatCertificateDate(d = new Date()) {
   const date = d instanceof Date ? d : new Date(d);
@@ -77,10 +77,11 @@ function buildTextOverlayFragment(name, issuedDateStr, certificateId, expiryDate
 </g>`;
 }
 
-let cachedSvgTemplate = null;
-
 function loadCertificateSvgWithFields(name, issuedDateStr, certificateId, expiryDateStr) {
   if (!cachedSvgTemplate) {
+    if (!fs.existsSync(CERTIFICATE_SVG_PATH)) {
+      throw new Error(`Certificate template missing at ${CERTIFICATE_SVG_PATH}`);
+    }
     cachedSvgTemplate = fs.readFileSync(CERTIFICATE_SVG_PATH, 'utf8');
   }
   const fragment = buildTextOverlayFragment(name, issuedDateStr, certificateId, expiryDateStr);
@@ -91,13 +92,31 @@ function loadCertificateSvgWithFields(name, issuedDateStr, certificateId, expiry
   return `${cachedSvgTemplate.slice(0, closingIdx)}${fragment}${cachedSvgTemplate.slice(closingIdx)}`;
 }
 
-function getSharp() {
-  return require('sharp');
+async function ensureResvgReady() {
+  if (ResvgClass) return;
+  if (!resvgInitPromise) {
+    resvgInitPromise = (async () => {
+      const { initWasm, Resvg } = require('@resvg/resvg-wasm');
+      const wasmPath = require.resolve('@resvg/resvg-wasm/index_bg.wasm');
+      await initWasm(fs.readFileSync(wasmPath));
+      ResvgClass = Resvg;
+    })().catch((err) => {
+      resvgInitPromise = null;
+      throw err;
+    });
+  }
+  await resvgInitPromise;
 }
 
-function getJsPDF() {
-  const { jsPDF } = require('jspdf');
-  return jsPDF;
+/**
+ * Warm up renderer (WASM + template). Call from bulk download before ZIP build.
+ */
+async function warmupCertificateRenderer() {
+  await ensureResvgReady();
+  if (!fs.existsSync(CERTIFICATE_SVG_PATH)) {
+    throw new Error('Certificate template asset is not deployed.');
+  }
+  loadCertificateSvgWithFields(' ', formatCertificateDate(), '');
 }
 
 /**
@@ -106,19 +125,14 @@ function getJsPDF() {
  */
 async function renderCertificatePngBuffer(params) {
   const { fullName, dateIssued, certificateId } = params;
-  const sharp = getSharp();
-
-  if (!fs.existsSync(CERTIFICATE_SVG_PATH)) {
-    throw new Error('Certificate template asset missing.');
-  }
-
+  await ensureResvgReady();
   const svgMarkup = loadCertificateSvgWithFields(fullName, dateIssued, certificateId);
-  const png = await sharp(Buffer.from(svgMarkup), { density: OUTPUT_SCALE * 72 })
-    .resize(OUTPUT_WIDTH, OUTPUT_HEIGHT, { fit: 'fill' })
-    .png()
-    .toBuffer();
-
-  return png;
+  const resvg = new ResvgClass(svgMarkup, {
+    fitTo: { mode: 'width', value: OUTPUT_WIDTH },
+  });
+  const rendered = resvg.render();
+  const png = rendered.asPng();
+  return Buffer.from(png);
 }
 
 /**
@@ -130,7 +144,7 @@ async function renderCertificatePdfBuffer(params) {
   const pngBase64 = pngBuffer.toString('base64');
   const dataUrl = `data:image/png;base64,${pngBase64}`;
 
-  const jsPDF = getJsPDF();
+  const { jsPDF } = require('jspdf');
   const pdf = new jsPDF({
     orientation: 'landscape',
     unit: 'px',
@@ -145,6 +159,7 @@ async function renderCertificatePdfBuffer(params) {
 module.exports = {
   CERT_WIDTH,
   CERT_HEIGHT,
+  warmupCertificateRenderer,
   renderCertificatePngBuffer,
   renderCertificatePdfBuffer,
 };
