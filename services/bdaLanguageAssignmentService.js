@@ -10,17 +10,20 @@ function getLeadPreferredLanguage(sub) {
   return typeof lang === 'string' && BDA_LANGUAGES.includes(lang) ? lang : null;
 }
 
-async function fetchDedupedUnassignedLeadIds(language) {
-  if (!BDA_LANGUAGES.includes(language)) return [];
+const UNASSIGNED_MATCH = {
+  submissionType: 'iitCounselling',
+  $or: [{ assignedBdaId: null }, { assignedBdaId: { $exists: false } }],
+};
+
+async function fetchDedupedUnassignedLeadIds(language = null) {
+  const match = { ...UNASSIGNED_MATCH };
+  if (language) {
+    if (!BDA_LANGUAGES.includes(language)) return [];
+    match['iitCounselling.section2Data.preferredLanguage'] = language;
+  }
 
   const pipeline = [
-    {
-      $match: {
-        submissionType: 'iitCounselling',
-        $or: [{ assignedBdaId: null }, { assignedBdaId: { $exists: false } }],
-        'iitCounselling.section2Data.preferredLanguage': language,
-      },
-    },
+    { $match: match },
     IIT_SUB_DEDUP_PHONE_ADD_FIELDS,
     { $sort: { updatedAt: -1, createdAt: -1, _id: -1 } },
     { $group: { _id: '$phoneKey', doc: { $first: '$$ROOT' } } },
@@ -32,24 +35,70 @@ async function fetchDedupedUnassignedLeadIds(language) {
   return rows.map((r) => r._id).filter(Boolean);
 }
 
+/** Unassigned leads with no Hindi/Telugu preferredLanguage (Section 2 incomplete or other value). */
+async function fetchDedupedUnassignedOtherLanguageIds() {
+  const pipeline = [
+    {
+      $match: {
+        $and: [
+          UNASSIGNED_MATCH,
+          {
+            $or: [
+              { 'iitCounselling.section2Data.preferredLanguage': { $exists: false } },
+              { 'iitCounselling.section2Data.preferredLanguage': null },
+              { 'iitCounselling.section2Data.preferredLanguage': '' },
+              { 'iitCounselling.section2Data.preferredLanguage': { $nin: BDA_LANGUAGES } },
+            ],
+          },
+        ],
+      },
+    },
+    IIT_SUB_DEDUP_PHONE_ADD_FIELDS,
+    { $sort: { updatedAt: -1, createdAt: -1, _id: -1 } },
+    { $group: { _id: '$phoneKey', doc: { $first: '$$ROOT' } } },
+    { $replaceRoot: { newRoot: '$doc' } },
+    { $project: { _id: 1 } },
+  ];
+  const rows = await IitCounsellingSubmission.aggregate(pipeline);
+  return rows.map((r) => r._id).filter(Boolean);
+}
+
 async function getAutoAssignPreview() {
+  const [allLeadIds, otherLeadIds, ...langResults] = await Promise.all([
+    fetchDedupedUnassignedLeadIds(),
+    fetchDedupedUnassignedOtherLanguageIds(),
+    ...BDA_LANGUAGES.map(async (language) => {
+      const [leadIds, bdas] = await Promise.all([
+        fetchDedupedUnassignedLeadIds(language),
+        Bda.find({ status: 'active', language }).sort({ name: 1 }).lean(),
+      ]);
+      const count = leadIds.length;
+      const n = bdas.length;
+      return {
+        language,
+        unassignedLeads: count,
+        activeBdas: n,
+        bdas: bdas.map((b) => ({ id: String(b._id), name: b.name })),
+        perBdaEstimate: n > 0 ? Math.floor(count / n) : 0,
+        remainder: n > 0 ? count % n : 0,
+      };
+    }),
+  ]);
+
   const preview = {};
-  for (const language of BDA_LANGUAGES) {
-    const [leadIds, bdas] = await Promise.all([
-      fetchDedupedUnassignedLeadIds(language),
-      Bda.find({ status: 'active', language }).sort({ name: 1 }).lean(),
-    ]);
-    const count = leadIds.length;
-    const n = bdas.length;
-    preview[language] = {
-      language,
-      unassignedLeads: count,
-      activeBdas: n,
-      bdas: bdas.map((b) => ({ id: String(b._id), name: b.name })),
-      perBdaEstimate: n > 0 ? Math.floor(count / n) : 0,
-      remainder: n > 0 ? count % n : 0,
-    };
+  for (const row of langResults) {
+    preview[row.language] = row;
   }
+
+  const hindiTeluguTotal =
+    (preview.Hindi?.unassignedLeads ?? 0) + (preview.Telugu?.unassignedLeads ?? 0);
+
+  preview.summary = {
+    totalInPool: allLeadIds.length,
+    hindiTeluguUnassigned: hindiTeluguTotal,
+    otherOrMissingLanguage: otherLeadIds.length,
+  };
+
   return preview;
 }
 
