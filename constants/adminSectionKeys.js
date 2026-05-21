@@ -8,6 +8,7 @@ const ADMIN_SECTION_KEYS = [
   'certified-counsellors',
   'leads',
   'iit-counselling',
+  'calling-team',
   'analytics',
   'meeting-attendance',
   'iit-meet-attendance',

@@ -1,4 +1,11 @@
 const mongoose = require('mongoose');
+const {
+  CALL_STATUS,
+  LEAD_STATUS,
+  DEMO_STATUS,
+  NIAT_STATUS,
+  PAYMENT_STATUS,
+} = require('../constants/iitCounsellingLeadCrm');
 
 const iitCounsellingSubmissionSchema = new mongoose.Schema({
   submissionType: {
@@ -114,6 +121,43 @@ const iitCounsellingSubmissionSchema = new mongoose.Schema({
   utm_medium: { type: String, trim: true },
   utm_campaign: { type: String, trim: true },
   utm_content: { type: String, trim: true },
+  assignedBdaId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Bda',
+    default: null,
+    index: true,
+  },
+  assignedBdaName: { type: String, trim: true, maxlength: 100 },
+  assignedAt: { type: Date, default: null },
+  assignedBy: { type: String, trim: true, maxlength: 100 },
+  callStatus: {
+    type: String,
+    enum: CALL_STATUS,
+    default: 'not_called',
+  },
+  leadStatus: {
+    type: String,
+    enum: LEAD_STATUS,
+  },
+  demoStatus: {
+    type: String,
+    enum: DEMO_STATUS,
+    default: 'not_scheduled',
+  },
+  niatStatus: {
+    type: String,
+    enum: NIAT_STATUS,
+    default: 'not_registered',
+  },
+  paymentStatus: {
+    type: String,
+    enum: PAYMENT_STATUS,
+    default: 'none',
+  },
+  callbackDate: { type: Date, default: null },
+  lastRemark: { type: String, trim: true, maxlength: 2000 },
+  lastActivityAt: { type: Date, default: null },
+  crmUpdatedAt: { type: Date, default: null },
 }, {
   timestamps: true,
   versionKey: false,
@@ -122,4 +166,7 @@ const iitCounsellingSubmissionSchema = new mongoose.Schema({
 
 iitCounsellingSubmissionSchema.index({ phone: 1, createdAt: -1 });
 iitCounsellingSubmissionSchema.index({ createdAt: -1 });
+iitCounsellingSubmissionSchema.index({ assignedBdaId: 1, updatedAt: -1 });
+iitCounsellingSubmissionSchema.index({ assignedBdaId: 1, lastActivityAt: -1 });
+iitCounsellingSubmissionSchema.index({ assignedBdaId: 1, assignedAt: -1 });
 module.exports = mongoose.model('IitCounsellingSubmission', iitCounsellingSubmissionSchema);

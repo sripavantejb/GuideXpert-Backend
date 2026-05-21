@@ -54,6 +54,25 @@ const {
   getCertifiedCounsellors,
   getCertifiedCounsellorDetail,
 } = require('../controllers/certifiedCounsellorsController');
+const {
+  listBdas,
+  createBda,
+  updateBda,
+  getBdaStats,
+  getBdaStatsById,
+  getBdaLeaderboard,
+  getBdaAssignedLeads,
+  getTeamDashboard,
+} = require('../controllers/bdaController');
+const {
+  listIitCounsellingLeads,
+  getIitCounsellingLeadById,
+  patchIitCounsellingLeadCrm,
+  assignBda,
+  reassignBda,
+  bulkAssignBda,
+  getAssignmentHistory,
+} = require('../controllers/iitCounsellingLeadsController');
 router.post('/login', login);
 router.post('/login-with-phone', loginWithPhone);
 router.get('/admins', requireAdmin, requireSuperAdmin, listAdmins);
@@ -115,6 +134,22 @@ router.delete('/sales-analytics-saved-utm-links/:id', requireAdmin, deleteSalesA
 router.get('/iit-counselling/:id', requireAdmin, getIitCounsellingSubmissionById);
 router.get('/certified-counsellors', requireAdmin, getCertifiedCounsellors);
 router.get('/certified-counsellors/:id', requireAdmin, getCertifiedCounsellorDetail);
+// Calling Team — BDA & IIT counselling leads CRM (register literals before :id)
+router.get('/bdas/stats', requireAdmin, getBdaStats);
+router.get('/bdas/leaderboard', requireAdmin, getBdaLeaderboard);
+router.get('/bdas/team-dashboard', requireAdmin, getTeamDashboard);
+router.get('/bdas', requireAdmin, listBdas);
+router.post('/bdas', requireAdmin, createBda);
+router.get('/bdas/:id/stats', requireAdmin, getBdaStatsById);
+router.get('/bdas/:id/assigned-leads', requireAdmin, getBdaAssignedLeads);
+router.patch('/bdas/:id', requireAdmin, updateBda);
+router.get('/iit-counselling-leads', requireAdmin, listIitCounsellingLeads);
+router.patch('/iit-counselling-leads/bulk-assign', requireAdmin, bulkAssignBda);
+router.get('/iit-counselling-leads/:id/assignment-history', requireAdmin, getAssignmentHistory);
+router.patch('/iit-counselling-leads/:id/crm', requireAdmin, patchIitCounsellingLeadCrm);
+router.patch('/iit-counselling-leads/:id/assign-bda', requireAdmin, assignBda);
+router.patch('/iit-counselling-leads/:id/reassign-bda', requireAdmin, reassignBda);
+router.get('/iit-counselling-leads/:id', requireAdmin, getIitCounsellingLeadById);
 router.get('/announcements', requireAdmin, adminList);
 router.post('/announcements', requireAdmin, adminCreate);
 router.get('/announcements/:id/analytics', requireAdmin, adminAnalytics);
