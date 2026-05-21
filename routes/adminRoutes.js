@@ -58,6 +58,8 @@ const {
   listBdas,
   createBda,
   updateBda,
+  patchBdaStatus,
+  resetBdaPassword,
   getBdaStats,
   getBdaStatsById,
   getBdaLeaderboard,
@@ -145,6 +147,8 @@ router.post('/bdas', requireAdmin, createBda);
 router.get('/bdas/:id/stats', requireAdmin, getBdaStatsById);
 router.get('/bdas/:id/assigned-leads', requireAdmin, getBdaAssignedLeads);
 router.patch('/bdas/:id', requireAdmin, updateBda);
+router.patch('/bdas/:id/status', requireAdmin, patchBdaStatus);
+router.patch('/bdas/:id/reset-password', requireAdmin, resetBdaPassword);
 router.get('/iit-counselling-leads', requireAdmin, listIitCounsellingLeads);
 router.patch('/iit-counselling-leads/bulk-assign', requireAdmin, bulkAssignBda);
 router.get('/iit-counselling-leads/:id/assignment-history', requireAdmin, getAssignmentHistory);

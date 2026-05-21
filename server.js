@@ -191,6 +191,7 @@ app.use('/api/posters', posterTemplatePublicRoutes);
 // WhatsApp Messaging Ops console — explicit mount before generic /api/admin (same middleware stack elsewhere).
 app.use('/api/admin/whatsapp-ops', requireAdmin, whatsappOpsAdminRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/bda', require('./routes/bdaRoutes'));
 app.use('/api/meeting', meetingRoutes);
 app.use('/api/iit-meet', iitMeetRoutes);
 app.use('/api/iit-meet-hindi', iitMeetHindiRoutes);

@@ -3,6 +3,7 @@ const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
 const IitCounsellingVisit = require('../models/IitCounsellingVisit');
 const IitCounsellingLeadAssignmentHistory = require('../models/IitCounsellingLeadAssignmentHistory');
 const IitCounsellingLeadActivity = require('../models/IitCounsellingLeadActivity');
+const LeadCallHistory = require('../models/LeadCallHistory');
 const {
   CALL_STATUS,
   LEAD_STATUS,
@@ -130,16 +131,30 @@ exports.getIitCounsellingLeadById = async (req, res) => {
     const visit = await IitCounsellingVisit.findOne({ submissionId: sub._id })
       .sort({ visitedAt: -1 })
       .lean();
-    const activities = await IitCounsellingLeadActivity.find({ leadId: sub._id })
-      .sort({ createdAt: -1 })
-      .limit(30)
-      .lean();
+    const [activities, callHistory] = await Promise.all([
+      IitCounsellingLeadActivity.find({ leadId: sub._id }).sort({ createdAt: -1 }).limit(30).lean(),
+      LeadCallHistory.find({ leadId: sub._id }).sort({ createdAt: -1 }).limit(50).lean(),
+    ]);
 
     return res.status(200).json({
       success: true,
       data: {
         ...mapIitCounsellingLeadToDTO(sub, visit),
         recentActivities: activities.map(formatActivityRow),
+        callHistory: callHistory.map((h) => ({
+          id: String(h._id),
+          bdaName: h.bdaName || h.actorName || '',
+          callStatus: h.callStatus,
+          leadStatus: h.leadStatus,
+          demoStatus: h.demoStatus,
+          niatRegistrationStatus: h.niatRegistrationStatus,
+          paymentStatus: h.paymentStatus,
+          callbackNeeded: h.callbackNeeded,
+          callbackDateTime: h.callbackDateTime,
+          callbackNote: h.callbackNote,
+          remark: h.remark,
+          createdAt: h.createdAt,
+        })),
       },
     });
   } catch (error) {
@@ -343,9 +358,9 @@ exports.getAssignmentHistory = async (req, res) => {
         id: r._id,
         leadId: r.leadId,
         previousBdaId: r.previousBdaId?._id || r.previousBdaId || null,
-        previousBdaName: r.previousBdaId?.name || '',
+        previousBdaName: r.previousBdaName || r.previousBdaId?.name || '',
         newBdaId: r.newBdaId?._id || r.newBdaId,
-        newBdaName: r.newBdaId?.name || '',
+        newBdaName: r.newBdaName || r.newBdaId?.name || '',
         assignedBy: r.assignedBy,
         assignedAt: r.assignedAt,
         reason: r.reason || '',

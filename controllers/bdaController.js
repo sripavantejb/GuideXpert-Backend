@@ -12,7 +12,7 @@ const {
 const { fetchAssignedLeadsForBda } = require('../services/bdaAssignedLeadsService');
 const { resolveStatsDateRange } = require('../utils/statsDateRange');
 
-function mapBdaRow(bda) {
+function mapBdaRow(bda, extra = {}) {
   const id = String(bda._id);
   return {
     id,
@@ -20,10 +20,12 @@ function mapBdaRow(bda) {
     name: bda.name,
     phone: bda.phone || '',
     email: bda.email || '',
+    role: bda.role || 'BDA',
     status: bda.status,
     joinedAt: bda.joinedAt || bda.createdAt,
     createdAt: bda.createdAt,
     updatedAt: bda.updatedAt,
+    ...extra,
   };
 }
 
@@ -42,9 +44,21 @@ exports.listBdas = async (req, res) => {
       ];
     }
     const rows = await Bda.find(filter).sort({ name: 1 }).lean();
+    const counts = await IitCounsellingSubmission.aggregate([
+      {
+        $match: {
+          submissionType: 'iitCounselling',
+          assignedBdaId: { $in: rows.map((r) => r._id) },
+        },
+      },
+      { $group: { _id: '$assignedBdaId', count: { $sum: 1 } } },
+    ]);
+    const countMap = new Map(counts.map((c) => [String(c._id), c.count]));
     return res.status(200).json({
       success: true,
-      data: rows.map(mapBdaRow),
+      data: rows.map((r) =>
+        mapBdaRow(r, { assignedLeadsCount: countMap.get(String(r._id)) || 0 })
+      ),
     });
   } catch (error) {
     console.error('[listBdas]', error);
@@ -54,10 +68,17 @@ exports.listBdas = async (req, res) => {
 
 exports.createBda = async (req, res) => {
   try {
-    const { name, phone, email, status, joinedAt } = req.body || {};
+    const { name, phone, email, password, status, joinedAt } = req.body || {};
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (trimmedName.length < 2) {
       return res.status(400).json({ success: false, message: 'Name is required' });
+    }
+    const emailVal = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    if (!emailVal || !emailVal.includes('@')) {
+      return res.status(400).json({ success: false, message: 'Valid email is required' });
+    }
+    if (!password || typeof password !== 'string' || password.length < 6) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
     }
     const phoneRaw = typeof phone === 'string' ? phone.replace(/\D/g, '').slice(-10) : '';
     let phoneVal = '';
@@ -73,7 +94,9 @@ exports.createBda = async (req, res) => {
     const doc = await Bda.create({
       name: trimmedName,
       phone: phoneVal || undefined,
-      email: typeof email === 'string' ? email.trim().toLowerCase() : '',
+      email: emailVal,
+      password,
+      role: 'BDA',
       status: status === 'inactive' ? 'inactive' : 'active',
       joinedAt: joinedAt ? new Date(joinedAt) : new Date(),
       createdBy: req.admin?._id || null,
@@ -81,9 +104,55 @@ exports.createBda = async (req, res) => {
     return res.status(201).json({ success: true, data: mapBdaRow(doc.toObject()) });
   } catch (error) {
     if (error?.code === 11000) {
-      return res.status(400).json({ success: false, message: 'Phone already in use' });
+      const key = error?.keyPattern?.email ? 'Email' : 'Phone';
+      return res.status(400).json({ success: false, message: `${key} already in use` });
     }
     console.error('[createBda]', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.patchBdaStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body || {};
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ success: false, message: 'BDA not found' });
+    }
+    if (status !== 'active' && status !== 'inactive') {
+      return res.status(400).json({ success: false, message: 'Invalid status' });
+    }
+    const updated = await Bda.findByIdAndUpdate(id, { $set: { status } }, { new: true }).lean();
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'BDA not found' });
+    }
+    return res.status(200).json({ success: true, data: mapBdaRow(updated) });
+  } catch (error) {
+    console.error('[patchBdaStatus]', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.resetBdaPassword = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { password, newPassword } = req.body || {};
+    const pwd = newPassword || password;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ success: false, message: 'BDA not found' });
+    }
+    if (!pwd || typeof pwd !== 'string' || pwd.length < 6) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
+    }
+    const bda = await Bda.findById(id).select('+password');
+    if (!bda) {
+      return res.status(404).json({ success: false, message: 'BDA not found' });
+    }
+    bda.password = pwd;
+    await bda.save();
+    return res.status(200).json({ success: true, message: 'Password reset successfully' });
+  } catch (error) {
+    console.error('[resetBdaPassword]', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };

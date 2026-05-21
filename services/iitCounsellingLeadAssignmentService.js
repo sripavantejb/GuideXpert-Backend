@@ -66,21 +66,32 @@ async function assignLeadToBda({ leadId, bdaId, admin, reason, isReassign = fals
 
   const now = new Date();
   const assignedBy = getAdminActorName(admin);
+  const assignedByAdminName = admin?.name || admin?.username || assignedBy;
 
   lead.assignedBdaId = bda._id;
   lead.assignedBdaName = bda.name;
   lead.assignedAt = now;
   lead.assignedBy = assignedBy;
+  lead.assignedByAdminId = admin?._id || null;
+  lead.assignedByAdminName = assignedByAdminName;
   if (!lead.callStatus) lead.callStatus = 'not_called';
   lead.lastActivityAt = now;
 
   await lead.save();
 
+  const prevBda = previousBdaId
+    ? await Bda.findById(previousBdaId).select('name').lean()
+    : null;
+
   await IitCounsellingLeadAssignmentHistory.create({
     leadId: lead._id,
     previousBdaId,
+    previousBdaName: prevBda?.name || '',
     newBdaId: bda._id,
+    newBdaName: bda.name,
     assignedBy,
+    assignedByAdminId: admin?._id || null,
+    assignedByAdminName: assignedByAdminName,
     assignedAt: now,
     reason: typeof reason === 'string' ? reason.trim().slice(0, 500) : '',
   });

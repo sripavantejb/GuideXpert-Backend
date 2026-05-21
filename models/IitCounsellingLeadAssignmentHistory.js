@@ -12,16 +12,24 @@ const iitCounsellingLeadAssignmentHistorySchema = new mongoose.Schema({
     ref: 'Bda',
     default: null,
   },
+  previousBdaName: { type: String, trim: true, maxlength: 100 },
   newBdaId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Bda',
     required: true,
   },
+  newBdaName: { type: String, trim: true, maxlength: 100 },
   assignedBy: {
     type: String,
     trim: true,
     maxlength: 100,
   },
+  assignedByAdminId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Admin',
+    default: null,
+  },
+  assignedByAdminName: { type: String, trim: true, maxlength: 100 },
   assignedAt: {
     type: Date,
     default: Date.now,

@@ -130,6 +130,12 @@ const iitCounsellingSubmissionSchema = new mongoose.Schema({
   assignedBdaName: { type: String, trim: true, maxlength: 100 },
   assignedAt: { type: Date, default: null },
   assignedBy: { type: String, trim: true, maxlength: 100 },
+  assignedByAdminId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Admin',
+    default: null,
+  },
+  assignedByAdminName: { type: String, trim: true, maxlength: 100 },
   callStatus: {
     type: String,
     enum: CALL_STATUS,
@@ -152,10 +158,17 @@ const iitCounsellingSubmissionSchema = new mongoose.Schema({
   paymentStatus: {
     type: String,
     enum: PAYMENT_STATUS,
-    default: 'none',
+    default: 'not_paid',
   },
+  callbackNeeded: { type: Boolean, default: false },
   callbackDate: { type: Date, default: null },
+  callbackDateTime: { type: Date, default: null },
+  callbackNote: { type: String, trim: true, maxlength: 500 },
   lastRemark: { type: String, trim: true, maxlength: 2000 },
+  latestRemark: { type: String, trim: true, maxlength: 2000 },
+  lastUpdatedBy: { type: String, trim: true, maxlength: 100 },
+  lastUpdatedByRole: { type: String, enum: ['admin', 'bda', 'BDA'], default: null },
+  lastUpdatedAt: { type: Date, default: null },
   lastActivityAt: { type: Date, default: null },
   crmUpdatedAt: { type: Date, default: null },
 }, {
