@@ -55,7 +55,7 @@
   "dependencies": {
     "@resvg/resvg-wasm": "^2.6.2",
     "@vercel/functions": "^3.4.3",
-    "archiver": "^7.0.1",
+    "archiver": "7.0.1",
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
