@@ -1,6 +1,5 @@
 const path = require('path');
-const { createCanvas, loadImage } = require('@napi-rs/canvas');
-const { jsPDF } = require('jspdf');
+const { formatCertificateExpiryDate } = require('../utils/certificateFormatUtils');
 
 const CERTIFICATE_SVG_PATH = path.join(__dirname, '../assets/certificate.svg');
 
@@ -63,15 +62,6 @@ function formatCertificateDate(d = new Date()) {
   return `${day} ${month} ${year}`;
 }
 
-function formatCertificateExpiryDate(issuedDateStr) {
-  const raw = String(issuedDateStr || '').trim();
-  const parsed = raw ? Date.parse(raw) : NaN;
-  const base = Number.isFinite(parsed) ? new Date(parsed) : new Date();
-  const expiry = new Date(base);
-  expiry.setFullYear(expiry.getFullYear() + 1);
-  return formatCertificateDate(expiry);
-}
-
 function drawTextField(ctx, config, text, scale) {
   const value = String(text || '').trim();
   if (!value) return;
@@ -83,12 +73,14 @@ function drawTextField(ctx, config, text, scale) {
 }
 
 async function loadCertificateBackground() {
+  const { loadImage } = getCanvasDeps();
   if (cachedBackgroundImage) return cachedBackgroundImage;
   cachedBackgroundImage = await loadImage(CERTIFICATE_SVG_PATH);
   return cachedBackgroundImage;
 }
 
 async function drawCertificateToCanvas(img, name, issuedDateStr, certificateId, expiryDateStr) {
+  const { createCanvas } = getCanvasDeps();
   const canvas = createCanvas(OUTPUT_WIDTH, OUTPUT_HEIGHT);
   const ctx = canvas.getContext('2d');
   const scale = OUTPUT_SCALE;
@@ -115,14 +107,10 @@ async function drawCertificateToCanvas(img, name, issuedDateStr, certificateId, 
   return canvas;
 }
 
-function buildCertificateFileBaseName(fullName, dateIssued, certificateId) {
-  const safeName = (fullName || 'Certificate')
-    .replace(/[^a-zA-Z0-9-\s]/g, '')
-    .replace(/\s+/g, '-')
-    .slice(0, 40);
-  const datePart = (dateIssued || '').replace(/\s+/g, '-');
-  const idPrefix = certificateId ? `${String(certificateId).trim()}-` : '';
-  return `${idPrefix}GuideXpert-Career-Counsellor-Certificate-${safeName}-${datePart}`;
+function getCanvasDeps() {
+  const { createCanvas, loadImage } = require('@napi-rs/canvas');
+  const { jsPDF } = require('jspdf');
+  return { createCanvas, loadImage, jsPDF };
 }
 
 /**
@@ -145,6 +133,7 @@ async function renderCertificatePdfBuffer(params) {
   const pngBase64 = pngBuffer.toString('base64');
   const dataUrl = `data:image/png;base64,${pngBase64}`;
 
+  const { jsPDF } = getCanvasDeps();
   const pdf = new jsPDF({
     orientation: 'landscape',
     unit: 'px',
@@ -159,8 +148,6 @@ async function renderCertificatePdfBuffer(params) {
 module.exports = {
   CERT_WIDTH,
   CERT_HEIGHT,
-  formatCertificateExpiryDate,
-  buildCertificateFileBaseName,
   renderCertificatePngBuffer,
   renderCertificatePdfBuffer,
 };

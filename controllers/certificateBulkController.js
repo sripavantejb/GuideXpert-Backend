@@ -1,14 +1,25 @@
-const archiver = require('archiver');
 const WebinarCertificate = require('../models/WebinarCertificate');
 const otpRepository = require('../utils/otpRepository');
 const {
   formatCertificateExpiryDate,
   buildCertificateFileBaseName,
-  renderCertificatePngBuffer,
-  renderCertificatePdfBuffer,
-} = require('../services/certificateRenderService');
+} = require('../utils/certificateFormatUtils');
 
 const BULK_DOWNLOAD_MAX_PHONES = 200;
+
+function loadBulkDeps() {
+  try {
+    const archiver = require('archiver');
+    const {
+      renderCertificatePngBuffer,
+      renderCertificatePdfBuffer,
+    } = require('../services/certificateRenderService');
+    return { archiver, renderCertificatePngBuffer, renderCertificatePdfBuffer };
+  } catch (err) {
+    console.error('[bulkDownloadCertificates] Failed to load render dependencies:', err?.message || err);
+    return null;
+  }
+}
 
 function parseMobileNumbersFromBody(body) {
   const rawList = [];
@@ -74,6 +85,16 @@ function buildManifestCsv(rows) {
  */
 exports.bulkDownloadCertificates = async (req, res) => {
   try {
+    const deps = loadBulkDeps();
+    if (!deps) {
+      return res.status(503).json({
+        success: false,
+        message: 'Certificate rendering is unavailable on this server. Contact support.',
+      });
+    }
+
+    const { archiver, renderCertificatePngBuffer, renderCertificatePdfBuffer } = deps;
+
     const rawList = parseMobileNumbersFromBody(req.body || {});
     if (rawList.length === 0) {
       return res.status(400).json({

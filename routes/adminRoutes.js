@@ -34,7 +34,6 @@ const requireSuperAdmin = require('../middleware/requireSuperAdmin');
 const requireOsviAdminToken = require('../middleware/requireOsviAdminToken');
 const { listAdmins, createAdmin, updateAdmin, deleteAdmin, resetAdminPassword, changeMyPassword } = require('../controllers/adminUserController');
 const { adminListProgress, adminProgressStats, adminProgressDetail, adminAssessmentDetail, adminUpdateProgress, adminBulkProgress, adminProgressExport } = require('../controllers/webinarProgressController');
-const { bulkDownloadCertificates } = require('../controllers/certificateBulkController');
 const {
   listPosters,
   getPoster,
@@ -285,8 +284,11 @@ router.patch('/app-settings/osvi', requireAdmin, requireSuperAdmin, async (req, 
   }
 });
 
-// Certificates (bulk download by mobile)
-router.post('/certificates/bulk-download', requireAdmin, bulkDownloadCertificates);
+// Certificates (bulk download) — lazy-load controller so native canvas deps do not crash serverless cold start
+router.post('/certificates/bulk-download', requireAdmin, (req, res, next) => {
+  const { bulkDownloadCertificates } = require('../controllers/certificateBulkController');
+  return bulkDownloadCertificates(req, res, next);
+});
 
 // Webinar Progress
 router.get('/webinar-progress/stats', requireAdmin, adminProgressStats);
