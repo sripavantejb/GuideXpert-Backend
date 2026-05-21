@@ -62,6 +62,7 @@ const {
   getBdaStatsById,
   getBdaLeaderboard,
   getBdaAssignedLeads,
+  getBdaCallingData,
   getTeamDashboard,
 } = require('../controllers/bdaController');
 const {
@@ -138,6 +139,7 @@ router.get('/certified-counsellors/:id', requireAdmin, getCertifiedCounsellorDet
 router.get('/bdas/stats', requireAdmin, getBdaStats);
 router.get('/bdas/leaderboard', requireAdmin, getBdaLeaderboard);
 router.get('/bdas/team-dashboard', requireAdmin, getTeamDashboard);
+router.get('/bdas/calling-data', requireAdmin, getBdaCallingData);
 router.get('/bdas', requireAdmin, listBdas);
 router.post('/bdas', requireAdmin, createBda);
 router.get('/bdas/:id/stats', requireAdmin, getBdaStatsById);

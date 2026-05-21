@@ -7,11 +7,10 @@ const {
   getBdaStatsById,
   getLeaderboard,
   getTeamDashboardStats,
+  computeBdaMetrics,
 } = require('../services/bdaStatsService');
-const {
-  mapIitCounsellingLeadToDTO,
-  IIT_SUB_DEDUP_PHONE_ADD_FIELDS,
-} = require('../utils/iitCounsellingLeadDto');
+const { fetchAssignedLeadsForBda } = require('../services/bdaAssignedLeadsService');
+const { resolveStatsDateRange } = require('../utils/statsDateRange');
 
 function mapBdaRow(bda) {
   const id = String(bda._id);
@@ -199,72 +198,76 @@ exports.getBdaAssignedLeads = async (req, res) => {
       return res.status(404).json({ success: false, message: 'BDA not found' });
     }
 
-    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 25));
-    const skip = (page - 1) * limit;
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const { data, pagination } = await fetchAssignedLeadsForBda(id, {
+      q,
+      page: req.query.page,
+      limit: req.query.limit,
+    });
 
-    const filter = {
-      submissionType: 'iitCounselling',
-      assignedBdaId: new mongoose.Types.ObjectId(id),
-    };
+    return res.status(200).json({ success: true, data, pagination });
+  } catch (error) {
+    console.error('[getBdaAssignedLeads]', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/** All BDA admin profiles with their assigned lead CRM data (Calling Data section). */
+exports.getBdaCallingData = async (req, res) => {
+  try {
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
+    const leadsLimit = Math.min(200, Math.max(1, parseInt(req.query.leadsLimit, 10) || 100));
+    const bdaIdFilter = typeof req.query.bdaId === 'string' ? req.query.bdaId.trim() : '';
+
+    const bdaFilter = {};
+    if (status === 'active' || status === 'inactive') bdaFilter.status = status;
+    if (bdaIdFilter && mongoose.Types.ObjectId.isValid(bdaIdFilter)) {
+      bdaFilter._id = new mongoose.Types.ObjectId(bdaIdFilter);
+    }
     if (q) {
       const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      filter.$or = [
-        { fullName: { $regex: escaped, $options: 'i' } },
+      bdaFilter.$or = [
+        { name: { $regex: escaped, $options: 'i' } },
         { phone: { $regex: escaped } },
+        { email: { $regex: escaped, $options: 'i' } },
       ];
     }
 
-    const dedupePipeline = [
-      { $match: filter },
-      IIT_SUB_DEDUP_PHONE_ADD_FIELDS,
-      { $sort: { updatedAt: -1, createdAt: -1, _id: -1 } },
-      { $group: { _id: '$phoneKey', doc: { $first: '$$ROOT' } } },
-      { $replaceRoot: { newRoot: '$doc' } },
-      { $project: { phoneKey: 0, _demoSortKey: 0 } },
-      { $sort: { updatedAt: -1, createdAt: -1, _id: -1 } },
-      {
-        $facet: {
-          data: [{ $skip: skip }, { $limit: limit }],
-          meta: [{ $count: 'total' }],
-        },
-      },
-    ];
+    const dateRange = resolveStatsDateRange(req.query);
+    const bdas = await Bda.find(bdaFilter).sort({ name: 1 }).lean();
 
-    const aggOut = await IitCounsellingSubmission.aggregate(dedupePipeline);
-    const facet = Array.isArray(aggOut) && aggOut[0] ? aggOut[0] : { data: [], meta: [] };
-    const rows = facet.data || [];
-    const total = facet.meta?.[0]?.total ?? 0;
-
-    const submissionIds = rows.map((r) => r._id).filter(Boolean);
-    const visitsBySubmissionId = new Map();
-    if (submissionIds.length > 0) {
-      const visits = await IitCounsellingVisit.find({ submissionId: { $in: submissionIds } })
-        .sort({ visitedAt: -1 })
-        .lean();
-      for (const v of visits) {
-        const key = String(v.submissionId);
-        if (!visitsBySubmissionId.has(key)) visitsBySubmissionId.set(key, v);
-      }
-    }
-
-    const data = rows.map((sub) =>
-      mapIitCounsellingLeadToDTO(sub, visitsBySubmissionId.get(String(sub._id)))
+    const profiles = await Promise.all(
+      bdas.map(async (bda) => {
+        const [metrics, leadsOut] = await Promise.all([
+          computeBdaMetrics(bda, dateRange),
+          fetchAssignedLeadsForBda(bda._id, { page: 1, limit: leadsLimit }),
+        ]);
+        return {
+          profile: mapBdaRow(bda),
+          metrics,
+          assignedLeads: leadsOut.data,
+          leadsPagination: leadsOut.pagination,
+        };
+      })
     );
+
+    const unassignedLeads = await IitCounsellingSubmission.countDocuments({
+      submissionType: 'iitCounselling',
+      $or: [{ assignedBdaId: null }, { assignedBdaId: { $exists: false } }],
+    });
 
     return res.status(200).json({
       success: true,
-      data,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / limit)),
+      data: {
+        dateRange,
+        unassignedLeads,
+        totalProfiles: profiles.length,
+        profiles,
       },
     });
   } catch (error) {
-    console.error('[getBdaAssignedLeads]', error);
+    console.error('[getBdaCallingData]', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
