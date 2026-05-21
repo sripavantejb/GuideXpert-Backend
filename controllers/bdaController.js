@@ -14,8 +14,10 @@ const {
 } = require('../utils/iitCounsellingLeadDto');
 
 function mapBdaRow(bda) {
+  const id = String(bda._id);
   return {
-    id: bda._id,
+    id,
+    bdaId: id,
     name: bda.name,
     phone: bda.phone || '',
     email: bda.email || '',
