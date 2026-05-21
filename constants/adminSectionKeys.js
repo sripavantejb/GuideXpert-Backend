@@ -22,6 +22,7 @@ const ADMIN_SECTION_KEYS = [
   'poster-automation',
   'assessment-results',
   'webinar-progress',
+  'bulk-certificates',
   'blogs',
   'osvi-calls',
   'osvi-calls-data',

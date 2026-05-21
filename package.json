@@ -52,7 +52,9 @@
   },
   "homepage": "https://github.com/sripavantejb/GuideXpert-Backend#readme",
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.0",
     "@vercel/functions": "^3.4.3",
+    "archiver": "^8.0.0",
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
@@ -61,6 +63,7 @@
     "express": "^5.2.1",
     "googleapis": "^170.1.0",
     "jsonwebtoken": "^9.0.2",
+    "jspdf": "^4.2.1",
     "mongoose": "^9.1.5",
     "nodemon": "^3.1.11"
   },

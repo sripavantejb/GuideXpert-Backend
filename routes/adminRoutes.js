@@ -34,6 +34,7 @@ const requireSuperAdmin = require('../middleware/requireSuperAdmin');
 const requireOsviAdminToken = require('../middleware/requireOsviAdminToken');
 const { listAdmins, createAdmin, updateAdmin, deleteAdmin, resetAdminPassword, changeMyPassword } = require('../controllers/adminUserController');
 const { adminListProgress, adminProgressStats, adminProgressDetail, adminAssessmentDetail, adminUpdateProgress, adminBulkProgress, adminProgressExport } = require('../controllers/webinarProgressController');
+const { bulkDownloadCertificates } = require('../controllers/certificateBulkController');
 const {
   listPosters,
   getPoster,
@@ -283,6 +284,9 @@ router.patch('/app-settings/osvi', requireAdmin, requireSuperAdmin, async (req, 
     return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
+
+// Certificates (bulk download by mobile)
+router.post('/certificates/bulk-download', requireAdmin, bulkDownloadCertificates);
 
 // Webinar Progress
 router.get('/webinar-progress/stats', requireAdmin, adminProgressStats);
