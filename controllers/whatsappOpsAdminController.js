@@ -32,6 +32,12 @@ const {
   listAllowedOpsProducts,
   matchWhatsAppEventsByOpsProduct
 } = require('../utils/whatsappOpsProduct');
+const { validateMessageKindForOpsProduct } = require('../utils/whatsappOpsEventMatch');
+const {
+  resolveProviderErrorDisplay,
+  parseWebhookPayloadForErrors
+} = require('../utils/gupshupProviderErrors');
+const { describeOpsFailure } = require('../utils/whatsappOpsFailureCopy');
 const IST_OFFSET_MINUTES = 330;
 
 function clampInt(v, dflt, max) {
@@ -42,7 +48,7 @@ function clampInt(v, dflt, max) {
 
 /** @param {import('express').Request} req @param {string|null|undefined} opsProduct */
 function parsePreferredLanguageFromQuery(req, opsProduct) {
-  const raw = req.query.preferredLanguage;
+  const raw = req.query?.preferredLanguage ?? req.body?.preferredLanguage;
   if (raw == null || raw === '') return { preferredLanguage: null };
   const norm = recipientAnalytics.normalizePreferredLanguageParam(raw);
   if (norm === undefined) {
@@ -497,6 +503,18 @@ exports.listMessages = async (req, res) => {
     if (req.query.retryEligible === 'false') base.retryEligible = false;
     if (req.query.gupshupMessageId) base.gupshupMessageId = req.query.gupshupMessageId;
 
+    if (req.query.errorCode != null && String(req.query.errorCode).trim()) {
+      const code = String(req.query.errorCode).trim().slice(0, 32);
+      const codeEsc = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      clauses.push({
+        $or: [
+          { webhookErrorCode: code },
+          { sendErrorCode: code },
+          { errorMessage: new RegExp(`\\(#${codeEsc}\\)`) }
+        ]
+      });
+    }
+
     const opsProduct = parseOpsProductQuery(req.query.opsProduct ?? req.query.tenant);
     const langParse = parsePreferredLanguageFromQuery(req, opsProduct);
     if (langParse.error) {
@@ -532,6 +550,8 @@ exports.listMessages = async (req, res) => {
         });
       }
       base.iitCounsellingSubmissionId = { $in: iitIds };
+    } else {
+      Object.assign(base, matchWhatsAppEventsByOpsProduct(opsProduct));
     }
 
     if (Object.keys(base).length) clauses.push(base);
@@ -556,32 +576,57 @@ exports.listMessages = async (req, res) => {
     ]);
 
     const subIds = [...new Set(events.map((e) => e.formSubmissionId).filter(Boolean))];
-    const subs = subIds.length
-      ? await FormSubmission.find({ _id: { $in: subIds } })
-          .select('fullName phone step3Data whatsappDeliveryStatus whatsappLastWebhookAt whatsappLastError whatsappRetryCount whatsappRetryKind lastWhatsappAttemptAt whatsappLastMessageId')
-          .lean()
-      : [];
+    const iitIds = [...new Set(events.map((e) => e.iitCounsellingSubmissionId).filter(Boolean))];
+    const [subs, iitSubs] = await Promise.all([
+      subIds.length
+        ? FormSubmission.find({ _id: { $in: subIds } })
+            .select('fullName phone step3Data whatsappDeliveryStatus whatsappLastWebhookAt whatsappLastError whatsappRetryCount whatsappRetryKind lastWhatsappAttemptAt whatsappLastMessageId')
+            .lean()
+        : [],
+      iitIds.length
+        ? IitCounsellingSubmission.find({ _id: { $in: iitIds } }).select('fullName phone iitCounselling').lean()
+        : [],
+    ]);
     const subMap = Object.fromEntries(subs.map((s) => [String(s._id), s]));
+    const iitMap = Object.fromEntries(iitSubs.map((s) => [String(s._id), s]));
 
     const rows = events.map((e) => {
       const fs = e.formSubmissionId ? subMap[String(e.formSubmissionId)] : null;
+      const iit = e.iitCounsellingSubmissionId ? iitMap[String(e.iitCounsellingSubmissionId)] : null;
       const eventStatus = e.status || null;
       const deliveryStatus = mapEventStatusToDeliveryStatus(eventStatus);
       const retryCount = Number.isFinite(e.retryCountSnapshot)
         ? e.retryCountSnapshot
         : (Number.isFinite(fs?.whatsappRetryCount) ? fs.whatsappRetryCount : 0);
-      const failureReason = e.errorMessage || fs?.whatsappLastError || null;
+      const providerErr = resolveProviderErrorDisplay(e);
+      const failureReason =
+        providerErr.errorReason || e.errorMessage || fs?.whatsappLastError || null;
+      const failCopy = describeOpsFailure({
+        ...e,
+        errorCode: providerErr.errorCode,
+        errorReason: providerErr.errorReason,
+        errorSource: providerErr.errorSource,
+        errorMessage: failureReason,
+        lifecycleState: e.status,
+      });
       return {
         ...e,
-        userName: fs?.fullName || fs?.step1Data?.fullName || null,
-        slotDate: fs?.step3Data?.slotDate || null,
+        userName: fs?.fullName || fs?.step1Data?.fullName || iit?.fullName || null,
+        preferredLanguage: iit?.iitCounselling?.section2Data?.preferredLanguage || null,
+        slotDate: fs?.step3Data?.slotDate || iit?.counsellingSlotInstantUtc || null,
         slotId: fs?.step3Data?.selectedSlot || null,
         submissionDeliveryStatus: fs?.whatsappDeliveryStatus,
         submissionLastWebhookAt: fs?.whatsappLastWebhookAt,
         derivedStatus: fs ? deriveSubmissionWaStatus(fs) : null,
         whatsappRetryCountSnap: fs?.whatsappRetryCount,
         deliveryStatus,
-        failureReason,
+        failureReason: failCopy.detail || failureReason,
+        errorCode: providerErr.errorCode,
+        errorReason: providerErr.errorReason,
+        errorSource: providerErr.errorSource,
+        errorHeadline: failCopy.headline,
+        errorDetail: failCopy.detail,
+        errorCategory: failCopy.category,
         retryCount,
         sentAt: e.sentAt || e.createdAt || null
       };
@@ -612,6 +657,15 @@ exports.getMessageTimeline = async (req, res) => {
       .limit(200)
       .lean();
 
+    const webhooksEnriched = webhooks.map((w) => {
+      const parsed = parseWebhookPayloadForErrors(w.rawPayloadSnippet);
+      return {
+        ...w,
+        parsedErrorCode: parsed.errorCode,
+        parsedErrorReason: parsed.errorReason
+      };
+    });
+
     let submission = null;
     if (ev.formSubmissionId) {
       submission = await FormSubmission.findById(ev.formSubmissionId).lean();
@@ -619,7 +673,16 @@ exports.getMessageTimeline = async (req, res) => {
 
     res.json({
       success: true,
-      data: { event: ev, webhooks, submissionSummary: submission }
+      data: {
+        event: ev,
+        webhooks: webhooksEnriched,
+        submissionSummary: submission,
+        providerError: (() => {
+          const pe = resolveProviderErrorDisplay(ev);
+          const copy = describeOpsFailure({ ...ev, ...pe, errorCode: pe.errorCode, lifecycleState: ev.status });
+          return { ...pe, ...copy };
+        })()
+      }
     });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
@@ -809,39 +872,53 @@ exports.exportCsv = async (req, res) => {
 };
 
 function dispatchKindToSendFn(kind) {
-  switch (kind) {
-    case 'slot_booked':
-      return gupshupService.sendSlotBookedWhatsApp;
-    case 'pre4hr':
-      return gupshupService.sendPre4HrReminderWhatsApp;
-    case 'meet':
-      return gupshupService.sendMeetLinkWhatsApp;
-    case '30min':
-      return gupshupService.sendReminder30MinWhatsApp;
-    default:
-      return null;
-  }
+  return manualRecoveryService.dispatchKindToSendFn(kind);
 }
 
 exports.manualResend = async (req, res) => {
   try {
-    const { phone, formSubmissionId, messageKind, confirmReconcileRisk } = req.body || {};
-    let sub = null;
-    if (formSubmissionId && mongoose.Types.ObjectId.isValid(String(formSubmissionId))) {
-      sub = await FormSubmission.findById(formSubmissionId).lean();
-    } else if (phone) {
-      const p = String(phone).replace(/\D/g, '').slice(-10);
-      sub = await FormSubmission.findOne({ phone: p }).lean();
-    }
-    if (!sub) return res.status(404).json({ success: false, message: 'Submission not found' });
+    const {
+      phone,
+      formSubmissionId,
+      iitCounsellingSubmissionId,
+      messageKind,
+      confirmReconcileRisk,
+      opsProduct: bodyOpsProduct,
+    } = req.body || {};
     const kind = messageKind || 'slot_booked';
+    const opsProduct = parseOpsProductQuery(bodyOpsProduct);
+    const kindErr = validateMessageKindForOpsProduct(kind, opsProduct);
+    if (kindErr) return res.status(400).json({ success: false, message: kindErr });
+
     const sendFn = dispatchKindToSendFn(kind);
     if (!sendFn) return res.status(400).json({ success: false, message: 'Invalid messageKind' });
+
+    const p =
+      phone != null
+        ? String(phone).replace(/\D/g, '').slice(-10)
+        : null;
+    const resolved = await manualRecoveryService.resolveRecipientForRecovery({
+      phone: p,
+      messageKind: kind,
+      opsProduct,
+      lineage: {
+        formSubmissionId: formSubmissionId || null,
+        iitCounsellingSubmissionId: iitCounsellingSubmissionId || null,
+      },
+    });
+    if (resolved.error) {
+      return res.status(404).json({ success: false, message: 'Submission not found' });
+    }
+
+    const phone10 = p || resolved.iitSub?.phone || resolved.formSub?.phone;
+    if (!phone10) {
+      return res.status(400).json({ success: false, message: 'phone is required' });
+    }
 
     const now = new Date();
     const latestEvent = await WhatsAppMessageEvent.findOne({
       messageKind: kind,
-      phone: sub.phone
+      phone: phone10,
     })
       .sort({ createdAt: -1 })
       .select('status reconcileDerivedFailure reconcileFinalityUntil')
@@ -851,7 +928,7 @@ exports.manualResend = async (req, res) => {
       return res.status(409).json({
         success: false,
         code: 'reconcile_grace_active',
-        message: 'Recipient is in delayed-DLR reconciliation grace and cannot be manually resent yet.'
+        message: 'Recipient is in delayed-DLR reconciliation grace and cannot be manually resent yet.',
       });
     }
 
@@ -862,23 +939,83 @@ exports.manualResend = async (req, res) => {
           code: 'reconcile_risk_confirmation_required',
           message: RECONCILE_RECOVERY_RISK_WARNING,
           requiresConfirmation: true,
-          riskWarning: RECONCILE_RECOVERY_RISK_WARNING
+          riskWarning: RECONCILE_RECOVERY_RISK_WARNING,
         });
       }
     }
 
-    const withMeetingLink = kind === 'meet' || kind === '30min';
-    const vars = buildSlotNotificationVariables(sub, { withMeetingLink });
-    const r = await safeSendWhatsApp({
-      phone10: sub.phone,
-      formSubmissionId: sub._id,
-      vars,
-      retryKind: kind,
-      source: 'admin_manual',
-      cronRunId: null,
-      cronJobKey: null,
-      sendFn
-    });
+    const {
+      isIitReminderMessageKind,
+      resolveIitReminderTemplateEnvKey,
+      resolveIitSlotBookedTemplateEnvKey,
+    } = require('../utils/iitCounsellingWhatsApp');
+
+    const IIT_LABEL_TO_SLOT_ID = {
+      'Wednesday 6PM': 'WEDNESDAY_6PM',
+      'Saturday 6PM': 'SATURDAY_6PM',
+      'Sunday 11AM': 'SUNDAY_11AM',
+    };
+
+    let r;
+    if (resolved.opsProduct === 'iit_counselling' && isIitReminderMessageKind(kind)) {
+      const iitSub = resolved.iitSub;
+      const slotBooking = iitSub.iitCounselling?.section1Data?.slotBooking || '';
+      const preferredLanguage = iitSub.iitCounselling?.section2Data?.preferredLanguage || '';
+      const templateEnvKey = resolveIitReminderTemplateEnvKey({
+        slotBooking,
+        preferredLanguage,
+        reminderKind: kind,
+      });
+      const fullName = iitSub.fullName || iitSub.iitCounselling?.section1Data?.fullName || 'Student';
+      r = await safeSendWhatsApp({
+        phone10,
+        formSubmissionId: null,
+        iitCounsellingSubmissionId: iitSub._id,
+        vars: { name: fullName },
+        retryKind: kind,
+        source: 'admin_manual',
+        sendFn,
+        opsProduct: 'iit_counselling',
+        cohortSlotInstantUtc: iitSub.counsellingSlotInstantUtc || null,
+        explicitTemplateEnvKey: templateEnvKey || undefined,
+      });
+    } else if (resolved.opsProduct === 'iit_counselling' && kind === 'slot_booked') {
+      const iitSub = resolved.iitSub;
+      const slotBooking = String(iitSub.iitCounselling?.section1Data?.slotBooking || '').trim();
+      const iitTplKey = resolveIitSlotBookedTemplateEnvKey(slotBooking);
+      const fullName = iitSub.fullName || iitSub.iitCounselling?.section1Data?.fullName || 'Student';
+      r = await safeSendWhatsApp({
+        phone10,
+        formSubmissionId: null,
+        iitCounsellingSubmissionId: iitSub._id,
+        vars: buildSlotNotificationVariables({
+          fullName,
+          step3Data: {
+            slotDate: iitSub.counsellingSlotInstantUtc,
+            selectedSlot: IIT_LABEL_TO_SLOT_ID[slotBooking] || '',
+          },
+        }),
+        retryKind: kind,
+        source: 'admin_manual',
+        sendFn,
+        opsProduct: 'iit_counselling',
+        cohortSlotInstantUtc: iitSub.counsellingSlotInstantUtc || null,
+        ...(iitTplKey ? { explicitTemplateEnvKey: iitTplKey } : {}),
+      });
+    } else {
+      const sub = resolved.formSub;
+      const withMeetingLink = kind === 'meet' || kind === '30min';
+      const vars = buildSlotNotificationVariables(sub, { withMeetingLink });
+      r = await safeSendWhatsApp({
+        phone10: sub.phone,
+        formSubmissionId: sub._id,
+        vars,
+        retryKind: kind,
+        source: 'admin_manual',
+        sendFn,
+        opsProduct: 'guidexpert',
+      });
+    }
 
     res.json({ success: !!r.success, data: r });
   } catch (e) {
@@ -1556,7 +1693,19 @@ exports.previewManualRecovery = async (req, res) => {
     }
     const fromAt = opsAggregates.parseBoundaryDate(params.from, 'start');
     const toAt = opsAggregates.parseBoundaryDate(params.to, 'end');
-    const result = await manualRecoveryService.buildPreview({ messageKind, fromAt, toAt });
+    const opsProduct = parseOpsProductQuery(params.opsProduct || params.tenant);
+    const langParse = parsePreferredLanguageFromQuery(req, opsProduct);
+    if (langParse.error) {
+      return res.status(400).json({ success: false, message: langParse.error });
+    }
+
+    const result = await manualRecoveryService.buildPreview({
+      messageKind,
+      fromAt,
+      toAt,
+      opsProduct,
+      preferredLanguage: langParse.preferredLanguage,
+    });
     if (result.error) {
       return res.status(400).json({ success: false, message: result.error });
     }
@@ -1584,7 +1733,19 @@ exports.startManualRecovery = async (req, res) => {
       ? body.phones.map((p) => String(p || '').replace(/\D/g, '').slice(-10)).filter(Boolean)
       : null;
 
-    const preview = await manualRecoveryService.buildPreview({ messageKind, fromAt, toAt });
+    const opsProduct = parseOpsProductQuery(body.opsProduct || body.tenant);
+    const langParse = parsePreferredLanguageFromQuery(req, opsProduct);
+    if (langParse.error) {
+      return res.status(400).json({ success: false, message: langParse.error });
+    }
+
+    const preview = await manualRecoveryService.buildPreview({
+      messageKind,
+      fromAt,
+      toAt,
+      opsProduct,
+      preferredLanguage: langParse.preferredLanguage,
+    });
     if (preview.error) {
       return res.status(400).json({ success: false, message: preview.error });
     }
@@ -1620,12 +1781,16 @@ exports.startManualRecovery = async (req, res) => {
       lineageId: c.lineageId || null,
       lastEventId: c.eventId || null,
       maxAttemptAtStart: Number(c.maxAttemptAtStart) || Number(c.attemptNumber) || 1,
-      candidateCreatedAt: c.createdAt || null
+      candidateCreatedAt: c.createdAt || null,
+      iitCounsellingSubmissionId: c.iitCounsellingSubmissionId || null,
+      formSubmissionId: c.formSubmissionId || null,
     }));
 
     const job = await WhatsAppManualRecoveryJob.create({
       status: 'queued',
       messageKind,
+      opsProduct: parseOpsProductQuery(body.opsProduct || body.tenant),
+      preferredLanguage: langParse.preferredLanguage || null,
       fromAt: fromAt || null,
       toAt: toAt || null,
       candidatePhones: phones,
@@ -2007,6 +2172,12 @@ exports.getUnresolvedRecipients = async (req, res) => {
         ? String(params.cohortDateIso).trim()
         : null;
 
+    const opsProduct = parseOpsProductQuery(params.opsProduct || params.tenant);
+    const langParse = parsePreferredLanguageFromQuery(req, opsProduct);
+    if (langParse.error) {
+      return res.status(400).json({ success: false, message: langParse.error });
+    }
+
     const result = await opsAggregates.computeUnresolvedRecipients({
       from,
       to,
@@ -2015,7 +2186,9 @@ exports.getUnresolvedRecipients = async (req, res) => {
       page,
       limit,
       q,
-      cohortDateIso
+      cohortDateIso,
+      opsProduct,
+      preferredLanguage: langParse.preferredLanguage,
     });
     if (result.error) {
       return res.status(400).json({ success: false, message: result.error });
@@ -2159,7 +2332,7 @@ exports.exportUnresolvedCsv = async (req, res) => {
       return mustQuote ? `"${inner}"` : inner;
     };
     const header =
-      'phone,name,messageKind,canonicalBucket,canonicalExclusionReason,retriesAttempted,retryGroupId,exclusionReason,operatorReason,eventRows';
+      'phone,name,messageKind,canonicalBucket,canonicalExclusionReason,retriesAttempted,retryGroupId,exclusionReason,operatorReason,errorCode,errorReason,errorSource,eventRows';
     const seen = new Set();
     const lines = [];
     for (const r of rows) {
@@ -2173,6 +2346,9 @@ exports.exportUnresolvedCsv = async (req, res) => {
       const excl = r.exclusionReason != null ? String(r.exclusionReason) : '';
       const opReason = r.reason != null ? String(r.reason) : '';
       const hist = r.retryHistoryCount != null ? String(r.retryHistoryCount) : '';
+      const errCode = r.errorCode != null ? String(r.errorCode) : '';
+      const errReason = r.errorReason != null ? String(r.errorReason) : '';
+      const errSrc = r.errorSource != null ? String(r.errorSource) : '';
       lines.push(
         [
           escapeCell(phone),
@@ -2184,6 +2360,9 @@ exports.exportUnresolvedCsv = async (req, res) => {
           escapeCell(rg),
           escapeCell(excl),
           escapeCell(opReason),
+          escapeCell(errCode),
+          escapeCell(errReason),
+          escapeCell(errSrc),
           escapeCell(hist)
         ].join(',')
       );

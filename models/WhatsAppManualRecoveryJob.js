@@ -28,7 +28,9 @@ const candidateLineageEntrySchema = new mongoose.Schema(
     lineageId: { type: mongoose.Schema.Types.ObjectId, default: null },
     lastEventId: { type: mongoose.Schema.Types.ObjectId, default: null },
     maxAttemptAtStart: { type: Number, default: 1 },
-    candidateCreatedAt: { type: Date, default: null }
+    candidateCreatedAt: { type: Date, default: null },
+    iitCounsellingSubmissionId: { type: mongoose.Schema.Types.ObjectId, default: null },
+    formSubmissionId: { type: mongoose.Schema.Types.ObjectId, default: null },
   },
   { _id: false }
 );
@@ -58,6 +60,13 @@ const whatsAppManualRecoveryJobSchema = new mongoose.Schema({
     ],
     index: true
   },
+  opsProduct: {
+    type: String,
+    enum: ['guidexpert', 'iit_counselling'],
+    default: 'guidexpert',
+    index: true,
+  },
+  preferredLanguage: { type: String, trim: true, default: null },
   /** UI filter window applied when computing candidates */
   fromAt: { type: Date, default: null },
   toAt: { type: Date, default: null },

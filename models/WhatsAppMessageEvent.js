@@ -127,6 +127,8 @@ const whatsAppMessageEventSchema = new mongoose.Schema({
   immediateRetryLastTriedAt: { type: Date, default: null },
   webhookErrorCode: { type: String, trim: true, maxlength: 32, default: null },
   webhookErrorReason: { type: String, trim: true, maxlength: 2000, default: null },
+  /** Gupshup template send API rejection (before/at send, not DLR webhook) */
+  sendErrorCode: { type: String, trim: true, maxlength: 32, default: null },
   retryExclusionReason: {
     type: String,
     enum: [

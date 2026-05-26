@@ -18,6 +18,7 @@ const {
   RETRY_EXCLUSION_REASON
 } = require('./whatsappRetryRules');
 const { getCampaignReminderEligibility, CAMPAIGN_RELATIVE_KINDS } = require('./waReminderEligibility');
+const { extractGupshupSendErrorCode } = require('./gupshupProviderErrors');
 const {
   resolveCampaignSlotInstant,
   buildEligibilityTimingRecord,
@@ -115,6 +116,7 @@ function buildMessageEventPayload({
   status,
   retrySnap,
   errText,
+  sendErrorCode,
   retryGroupId,
   attemptNumber,
   parentOid,
@@ -150,6 +152,7 @@ function buildMessageEventPayload({
     status,
     retryCountSnapshot: retrySnap,
     errorMessage: errText ? errText.slice(0, 2000) : null,
+    sendErrorCode: sendErrorCode || null,
     retryGroupId,
     canonicalRetryGroupId: canonicalRetryGroupId || null,
     attemptNumber,
@@ -535,6 +538,9 @@ async function safeSendWhatsApp({
 
     const errText = sendOutcome.errText || (result && result.error ? String(result.error) : 'send failed');
     const providerDebug = providerPayloadSnippet(result, 500) || '';
+    const sendHttpStatus =
+      result && Number.isFinite(Number(result.httpStatus)) ? Number(result.httpStatus) : null;
+    const sendErrorCode = extractGupshupSendErrorCode(result && result.data, sendHttpStatus);
 
     let snap = attNum > 1 ? attNum - 1 : null;
     if (gxSideEffects && attNum === 1) {
@@ -609,6 +615,7 @@ async function safeSendWhatsApp({
           status: derivedStatus,
           retrySnap: snap,
           errText,
+          sendErrorCode,
           retryGroupId: resolvedGroupId,
           attemptNumber: attNum,
           parentOid,

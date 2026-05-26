@@ -20,9 +20,22 @@ const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');
 const WhatsAppManualRecoveryJob = require('../models/WhatsAppManualRecoveryJob');
 const WhatsAppRetryGroup = require('../models/WhatsAppRetryGroup');
 const FormSubmission = require('../models/FormSubmission');
+const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
 const gupshupService = require('./gupshupService');
+const { sendIitReminderWhatsApp } = require('./gupshupService');
 const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
 const { buildSlotNotificationVariables } = require('../utils/slotNotificationFormatters');
+const {
+  isIitReminderMessageKind,
+  resolveIitReminderTemplateEnvKey,
+  resolveIitSlotBookedTemplateEnvKey,
+} = require('../utils/iitCounsellingWhatsApp');
+const { parseOpsProductQuery } = require('../utils/whatsappOpsProduct');
+const {
+  buildOpsScopedEventMatch,
+  validateMessageKindForOpsProduct,
+} = require('../utils/whatsappOpsEventMatch');
+const { resolveProviderErrorDisplay } = require('../utils/gupshupProviderErrors');
 const {
   TERMINAL_FAILURE_STATUSES,
   RETRY_TERMINAL_SUCCESS_STATUSES,
@@ -34,7 +47,13 @@ const {
   isRiskyReconcileRecovery
 } = require('../utils/whatsappRetryRules');
 
-const ALLOWED_MESSAGE_KINDS = ['slot_booked', 'pre4hr', 'meet', '30min'];
+const ALLOWED_MESSAGE_KINDS = WhatsAppMessageEvent.WHATSAPP_MESSAGE_KINDS;
+
+const IIT_LABEL_TO_SLOT_ID = {
+  'Wednesday 6PM': 'WEDNESDAY_6PM',
+  'Saturday 6PM': 'SATURDAY_6PM',
+  'Sunday 11AM': 'SUNDAY_11AM',
+};
 
 function getInFlightStaleMs() {
   const min = parseInt(process.env.WHATSAPP_RECOVERY_INFLIGHT_STALE_MINUTES || '180', 10) || 180;
@@ -56,21 +75,81 @@ function dispatchKindToSendFn(kind) {
       return gupshupService.sendMeetLinkWhatsApp;
     case '30min':
       return gupshupService.sendReminder30MinWhatsApp;
+    case 'iit_pre2hr':
+    case 'iit_pre45min':
+    case 'iit_pre15min':
+      return (phone10, vars, sendOpts) => sendIitReminderWhatsApp(phone10, vars, sendOpts || {});
     default:
       return null;
   }
+}
+
+async function resolveRecipientForRecovery({ phone, messageKind, opsProduct, lineage }) {
+  const slug = parseOpsProductQuery(opsProduct);
+  const useIit =
+    slug === 'iit_counselling' &&
+    (isIitReminderMessageKind(messageKind) || messageKind === 'slot_booked');
+
+  if (useIit) {
+    let iitSub = null;
+    if (lineage?.iitCounsellingSubmissionId && mongoose.Types.ObjectId.isValid(String(lineage.iitCounsellingSubmissionId))) {
+      iitSub = await IitCounsellingSubmission.findById(lineage.iitCounsellingSubmissionId).lean();
+    }
+    if (!iitSub) {
+      iitSub = await IitCounsellingSubmission.findOne({ phone }).sort({ createdAt: -1 }).lean();
+    }
+    if (!iitSub) return { error: 'missing_iit_submission' };
+    return { iitSub, formSub: null, opsProduct: 'iit_counselling' };
+  }
+
+  let formSub = null;
+  if (lineage?.formSubmissionId && mongoose.Types.ObjectId.isValid(String(lineage.formSubmissionId))) {
+    formSub = await FormSubmission.findById(lineage.formSubmissionId).lean();
+  }
+  if (!formSub) {
+    formSub = await FormSubmission.findOne({ phone }).lean();
+  }
+  if (!formSub) return { error: 'missing_form_submission' };
+  return { iitSub: null, formSub, opsProduct: 'guidexpert' };
 }
 
 /**
  * Pure aggregation that returns one representative row per unresolved phone.
  * @param {{ messageKind: string, fromAt?: Date|null, toAt?: Date|null }} opts
  */
-async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
+async function buildPreview({
+  messageKind,
+  fromAt = null,
+  toAt = null,
+  opsProduct = null,
+  preferredLanguage = null,
+}) {
   if (!ALLOWED_MESSAGE_KINDS.includes(messageKind)) {
     return { error: `Invalid messageKind. Allowed: ${ALLOWED_MESSAGE_KINDS.join(', ')}` };
   }
+  const kindErr = validateMessageKindForOpsProduct(messageKind, opsProduct);
+  if (kindErr) return { error: kindErr };
 
-  const match = { messageKind };
+  const scoped = await buildOpsScopedEventMatch({ messageKind, opsProduct, preferredLanguage });
+  if (scoped.error) return { error: scoped.error };
+  if (scoped.empty) {
+    return {
+      data: {
+        candidates: [],
+        candidatesByReason: {},
+        targeted: 0,
+        skippedAlreadyDelivered: 0,
+        skippedGlobalRecentSuccess: 0,
+        skippedInFlightDuplicate: 0,
+        skippedReconcileGrace: 0,
+        skippedReconcilePending: 0,
+        skippedAwaitingFinalDlr: 0,
+        riskyCount: 0,
+      },
+    };
+  }
+
+  const match = scoped.match;
   /** For "delivered in UI window" we still scope success events to the same date bounds. */
   const windowCreatedRange = (fromAt || toAt)
     ? { ...(fromAt ? { $gte: fromAt } : {}), ...(toAt ? { $lte: toAt } : {}) }
@@ -123,7 +202,12 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
         reconcileDerivedFailure: { $first: '$reconcileDerivedFailure' },
         reconcileFinalityUntil: { $first: '$reconcileFinalityUntil' },
         errorMessage: { $first: '$errorMessage' },
+        webhookErrorCode: { $first: '$webhookErrorCode' },
+        sendErrorCode: { $first: '$sendErrorCode' },
+        webhookErrorReason: { $first: '$webhookErrorReason' },
+        providerPayloadSnippet: { $first: '$providerPayloadSnippet' },
         formSubmissionId: { $first: '$formSubmissionId' },
+        iitCounsellingSubmissionId: { $first: '$iitCounsellingSubmissionId' },
         createdAt: { $first: '$createdAt' },
         unresolvedRank: { $first: '$unresolvedRank' }
       }
@@ -283,6 +367,14 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
     const risky = isRiskyReconcileRecovery(rowDoc, now);
     if (risky) riskyCount += 1;
 
+    const providerErr = resolveProviderErrorDisplay({
+      webhookErrorCode: r.webhookErrorCode,
+      sendErrorCode: r.sendErrorCode,
+      webhookErrorReason: r.webhookErrorReason,
+      errorMessage: r.errorMessage,
+      providerPayloadSnippet: r.providerPayloadSnippet
+    });
+
     candidates.push({
       phone,
       eventId: r.eventId,
@@ -293,8 +385,12 @@ async function buildPreview({ messageKind, fromAt = null, toAt = null }) {
       status: r.status,
       retryExclusionReason: r.retryExclusionReason,
       reconcileDerivedFailure: r.reconcileDerivedFailure === true,
-      errorMessage: r.errorMessage,
+      errorMessage: providerErr.errorReason || r.errorMessage,
+      errorCode: providerErr.errorCode,
+      errorReason: providerErr.errorReason,
+      errorSource: providerErr.errorSource,
       formSubmissionId: r.formSubmissionId,
+      iitCounsellingSubmissionId: r.iitCounsellingSubmissionId,
       createdAt: r.createdAt,
       reason,
       ...(risky
@@ -513,22 +609,6 @@ async function executeJob(jobId) {
       const phone = phones[i];
       if (!phone) continue;
 
-      const sub = await FormSubmission.findOne({ phone }).lean();
-      if (!sub) {
-        sendFailed += 1;
-        await WhatsAppManualRecoveryJob.updateOne(
-          { _id: jobId },
-          {
-            $set: {
-              'counters.sendFailed': sendFailed,
-              'counters.remaining': Math.max(0, phones.length - (i + 1)),
-              lastProgressAt: new Date()
-            }
-          }
-        );
-        continue;
-      }
-
       const lineage = lineageByPhone.get(phone) || {};
       const candidateCreatedAt = lineage.candidateCreatedAt || null;
       const guard = await isStillUnresolved(job.messageKind, phone, candidateCreatedAt);
@@ -551,8 +631,26 @@ async function executeJob(jobId) {
         continue;
       }
 
-      const withMeetingLink = job.messageKind === 'meet' || job.messageKind === '30min';
-      const vars = buildSlotNotificationVariables(sub, { withMeetingLink });
+      const resolved = await resolveRecipientForRecovery({
+        phone,
+        messageKind: job.messageKind,
+        opsProduct: job.opsProduct,
+        lineage,
+      });
+      if (resolved.error) {
+        sendFailed += 1;
+        await WhatsAppManualRecoveryJob.updateOne(
+          { _id: jobId },
+          {
+            $set: {
+              'counters.sendFailed': sendFailed,
+              'counters.remaining': Math.max(0, phones.length - (i + 1)),
+              lastProgressAt: new Date(),
+            },
+          }
+        );
+        continue;
+      }
 
       const maxA = Number(lineage.maxAttemptAtStart);
       const maxAttemptStart = Number.isFinite(maxA) && maxA > 0 ? maxA : 1;
@@ -566,11 +664,8 @@ async function executeJob(jobId) {
           ? lineage.lineageId
           : null;
 
-      attempted += 1;
-      const r = await safeSendWhatsApp({
+      const sendBase = {
         phone10: phone,
-        formSubmissionId: sub._id,
-        vars,
         retryKind: job.messageKind,
         source: 'admin_manual',
         cronRunId: null,
@@ -579,8 +674,66 @@ async function executeJob(jobId) {
         retryGroupId: batchRetryGroupId,
         attemptNumber: nextAttempt,
         parentMessageEventId: parentId,
-        canonicalRetryGroupId: canon
-      });
+        canonicalRetryGroupId: canon,
+      };
+
+      let r;
+      if (resolved.opsProduct === 'iit_counselling' && isIitReminderMessageKind(job.messageKind)) {
+        const iitSub = resolved.iitSub;
+        const slotBooking = iitSub.iitCounselling?.section1Data?.slotBooking || '';
+        const preferredLanguage =
+          job.preferredLanguage ||
+          iitSub.iitCounselling?.section2Data?.preferredLanguage ||
+          '';
+        const templateEnvKey = resolveIitReminderTemplateEnvKey({
+          slotBooking,
+          preferredLanguage,
+          reminderKind: job.messageKind,
+        });
+        const fullName = iitSub.fullName || iitSub.iitCounselling?.section1Data?.fullName || 'Student';
+        r = await safeSendWhatsApp({
+          ...sendBase,
+          formSubmissionId: null,
+          iitCounsellingSubmissionId: iitSub._id,
+          vars: { name: fullName },
+          opsProduct: 'iit_counselling',
+          cohortSlotInstantUtc: iitSub.counsellingSlotInstantUtc || null,
+          explicitTemplateEnvKey: templateEnvKey || undefined,
+        });
+      } else if (resolved.opsProduct === 'iit_counselling' && job.messageKind === 'slot_booked') {
+        const iitSub = resolved.iitSub;
+        const slotBooking = String(iitSub.iitCounselling?.section1Data?.slotBooking || '').trim();
+        const iitTplKey = resolveIitSlotBookedTemplateEnvKey(slotBooking);
+        const slotIdForTpl = IIT_LABEL_TO_SLOT_ID[slotBooking] || '';
+        const fullName = iitSub.fullName || iitSub.iitCounselling?.section1Data?.fullName || 'Student';
+        r = await safeSendWhatsApp({
+          ...sendBase,
+          formSubmissionId: null,
+          iitCounsellingSubmissionId: iitSub._id,
+          vars: buildSlotNotificationVariables({
+            fullName,
+            step3Data: {
+              slotDate: iitSub.counsellingSlotInstantUtc,
+              selectedSlot: slotIdForTpl,
+            },
+          }),
+          opsProduct: 'iit_counselling',
+          cohortSlotInstantUtc: iitSub.counsellingSlotInstantUtc || null,
+          ...(iitTplKey ? { explicitTemplateEnvKey: iitTplKey } : {}),
+        });
+      } else {
+        const sub = resolved.formSub;
+        const withMeetingLink = job.messageKind === 'meet' || job.messageKind === '30min';
+        const vars = buildSlotNotificationVariables(sub, { withMeetingLink });
+        r = await safeSendWhatsApp({
+          ...sendBase,
+          formSubmissionId: sub._id,
+          vars,
+          opsProduct: 'guidexpert',
+        });
+      }
+
+      attempted += 1;
       if (r && r.success) apiAccepted += 1;
       else sendFailed += 1;
 
@@ -671,5 +824,7 @@ module.exports = {
   executeJob,
   startJobAsync,
   isStillUnresolved,
-  computePostStartCounters
+  computePostStartCounters,
+  resolveRecipientForRecovery,
+  dispatchKindToSendFn,
 };

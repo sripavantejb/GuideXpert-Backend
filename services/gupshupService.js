@@ -278,7 +278,7 @@ async function sendTemplateMessage(phoneE164, templateId, params, opts = {}) {
         return { success: true, data, ambiguousAccept: true };
       }
       console.error('[Gupshup] Template send failed', mask, errMsg, data);
-      return { success: false, error: String(errMsg), data };
+      return { success: false, error: String(errMsg), data, httpStatus: res.status };
     }
 
     if (data && (data.status === 'error' || data.success === false)) {
@@ -288,7 +288,7 @@ async function sendTemplateMessage(phoneE164, templateId, params, opts = {}) {
         return { success: true, data, ambiguousAccept: true };
       }
       console.error('[Gupshup] Template send rejected', mask, errMsg, data);
-      return { success: false, error: String(errMsg), data };
+      return { success: false, error: String(errMsg), data, httpStatus: res.status };
     }
 
     console.log('[Gupshup] Template submitted', mask, templateId);
@@ -309,7 +309,9 @@ async function sendTemplateMessage(phoneE164, templateId, params, opts = {}) {
     } else {
       console.error('[Gupshup] Template send exception', maskPhoneTail(destination), errText);
     }
-    return { success: false, error: errText, data: responseData || null };
+    const httpStatus =
+      e.response && Number.isFinite(Number(e.response.status)) ? Number(e.response.status) : null;
+    return { success: false, error: errText, data: responseData || null, httpStatus };
   }
 }
 

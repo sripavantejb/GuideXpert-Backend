@@ -22,6 +22,12 @@ const {
   matchWhatsAppEventsByOpsProduct,
   effectiveOverviewMessageKind
 } = require('../utils/whatsappOpsProduct');
+const {
+  buildOpsScopedEventMatch,
+  validateMessageKindForOpsProduct
+} = require('../utils/whatsappOpsEventMatch');
+const { resolveProviderErrorDisplay } = require('../utils/gupshupProviderErrors');
+const { describeOpsFailure } = require('../utils/whatsappOpsFailureCopy');
 const recipientAnalytics = require('./whatsappOpsRecipientAnalytics');
 const canonical = require('./whatsappOpsCanonicalMetrics');
 const { validateRecipientAnalyticsInvariants } = require('../utils/waAnalyticsIntegrity');
@@ -1285,11 +1291,17 @@ async function computeUnresolvedRecipients({
   limit = 50,
   q = null,
   cohortDateIso = null,
+  opsProduct = null,
+  preferredLanguage = null,
   inFlightStaleMinutes = parseInt(process.env.WHATSAPP_RECOVERY_INFLIGHT_STALE_MINUTES || '180', 10) || 180,
   notAcceptedThresholdMinutes = parseInt(process.env.WHATSAPP_NOT_ACCEPTED_THRESHOLD_MINUTES || '30', 10) || 30
 } = {}) {
   if (messageKind && !ALLOWED_MESSAGE_KINDS.includes(messageKind)) {
     return { error: `Invalid messageKind. Allowed: ${ALLOWED_MESSAGE_KINDS.join(', ')}` };
+  }
+  if (messageKind) {
+    const kindErr = validateMessageKindForOpsProduct(messageKind, opsProduct);
+    if (kindErr) return { error: kindErr };
   }
   const grp = String(group || 'all').toLowerCase();
   if (!UNRESOLVED_GROUPS.includes(grp)) {
@@ -1303,9 +1315,42 @@ async function computeUnresolvedRecipients({
 
   /** Do not filter by createdAt here: unresolved flags need the full attempt history per
    *  phone+template. The UI date range is applied after grouping on lastCreatedAt. */
-  const match = {
-    ...(messageKind ? { messageKind } : {})
-  };
+  const scoped = await buildOpsScopedEventMatch({ messageKind, opsProduct, preferredLanguage });
+  if (scoped.error) return { error: scoped.error };
+  if (scoped.empty) {
+    return {
+      data: {
+        filter: {
+          from: from || null,
+          to: to || null,
+          messageKind: messageKind || null,
+          opsProduct: parseOpsProductQuery(opsProduct),
+          preferredLanguage: preferredLanguage || null,
+          group: grp,
+          q: q != null && String(q).trim() ? String(q).trim() : null,
+          inFlightStaleMinutes,
+          notAcceptedThresholdMinutes,
+        },
+        page: safePage,
+        limit: safeLimit,
+        total: 0,
+        totalPages: 0,
+        totalsByGroup: {
+          failed: 0,
+          excluded: 0,
+          exhausted: 0,
+          not_accepted: 0,
+          in_flight_stale: 0,
+          reconciliation_pending: 0,
+          all: 0,
+        },
+        totalsByExclusionReason: {},
+        totalsByExclusionCategory: {},
+        rows: [],
+      },
+    };
+  }
+  const match = scoped.match;
 
   /** Collapse to one rep row per (phone, messageKind). Track per-group flags so the
    *  same dataset answers each tab without re-querying. */
@@ -1387,7 +1432,12 @@ async function computeUnresolvedRecipients({
         lastRetryGroupId: { $last: '$retryGroupId' },
         lastExclusionReason: { $last: '$retryExclusionReason' },
         lastErrorMessage: { $last: '$errorMessage' },
+        lastWebhookErrorCode: { $last: '$webhookErrorCode' },
+        lastSendErrorCode: { $last: '$sendErrorCode' },
+        lastWebhookErrorReason: { $last: '$webhookErrorReason' },
+        lastProviderPayloadSnippet: { $last: '$providerPayloadSnippet' },
         lastFormSubmissionId: { $last: '$formSubmissionId' },
+        lastIitCounsellingSubmissionId: { $last: '$iitCounsellingSubmissionId' },
         lastCreatedAt: { $last: '$createdAt' },
         anyRetryGroupId: { $first: '$retryGroupId' },
         firstCreatedAt: { $min: '$createdAt' }
@@ -1448,19 +1498,35 @@ async function computeUnresolvedRecipients({
 
   if (qTrim) {
     const subIdsForQ = [...new Set(filtered.map((r) => r.lastFormSubmissionId).filter(Boolean))];
-    const subsForQ = subIdsForQ.length
-      ? await FormSubmission.find({ _id: { $in: subIdsForQ } }).select('fullName').lean()
-      : [];
+    const iitIdsForQ = [...new Set(filtered.map((r) => r.lastIitCounsellingSubmissionId).filter(Boolean))];
+    const [subsForQ, iitSubsForQ] = await Promise.all([
+      subIdsForQ.length
+        ? FormSubmission.find({ _id: { $in: subIdsForQ } }).select('fullName').lean()
+        : [],
+      iitIdsForQ.length
+        ? IitCounsellingSubmission.find({ _id: { $in: iitIdsForQ } }).select('fullName').lean()
+        : [],
+    ]);
     const nameBySubId = Object.fromEntries(subsForQ.map((s) => [String(s._id), s.fullName || '']));
+    const nameByIitId = Object.fromEntries(iitSubsForQ.map((s) => [String(s._id), s.fullName || '']));
 
     filtered = filtered.filter((r) => {
       const phone = String(r._id?.phone || '').toLowerCase();
       const template = String(r._id?.messageKind || '').toLowerCase();
-      const name = String(nameBySubId[String(r.lastFormSubmissionId)] || '').toLowerCase();
+      const name =
+        String(nameBySubId[String(r.lastFormSubmissionId)] || nameByIitId[String(r.lastIitCounsellingSubmissionId)] || '').toLowerCase();
       const err = String(r.lastErrorMessage || '').toLowerCase();
       const excl = String(r.lastExclusionReason || '').toLowerCase();
       const reason = String(reasonLabelFromAggRow(r) || '').toLowerCase();
-      return [phone, template, name, err, excl, reason].some((field) => field.includes(qTrim));
+      const providerErr = resolveProviderErrorDisplay({
+        webhookErrorCode: r.lastWebhookErrorCode,
+        sendErrorCode: r.lastSendErrorCode,
+        webhookErrorReason: r.lastWebhookErrorReason,
+        errorMessage: r.lastErrorMessage,
+        providerPayloadSnippet: r.lastProviderPayloadSnippet
+      });
+      const codeQ = String(providerErr.errorCode || '').toLowerCase();
+      return [phone, template, name, err, excl, reason, codeQ].some((field) => field.includes(qTrim));
     });
   }
 
@@ -1494,17 +1560,34 @@ async function computeUnresolvedRecipients({
   const pageSlice = filtered.slice(skip, skip + safeLimit);
 
   const subIds = pageSlice.map((r) => r.lastFormSubmissionId).filter(Boolean);
-  const subs = subIds.length
-    ? await FormSubmission.find({ _id: { $in: subIds } })
-        .select('fullName phone step3Data whatsappDeliveryStatus whatsappLastWebhookAt whatsappLastError whatsappRetryCount whatsappRetryKind lastWhatsappAttemptAt whatsappLastMessageId')
-        .lean()
-    : [];
+  const iitIds = pageSlice.map((r) => r.lastIitCounsellingSubmissionId).filter(Boolean);
+  const [subs, iitSubs] = await Promise.all([
+    subIds.length
+      ? FormSubmission.find({ _id: { $in: subIds } })
+          .select('fullName phone step3Data whatsappDeliveryStatus whatsappLastWebhookAt whatsappLastError whatsappRetryCount whatsappRetryKind lastWhatsappAttemptAt whatsappLastMessageId')
+          .lean()
+      : [],
+    iitIds.length
+      ? IitCounsellingSubmission.find({ _id: { $in: iitIds } })
+          .select('fullName phone counsellingSlotInstantUtc iitCounselling')
+          .lean()
+      : [],
+  ]);
   const subMap = Object.fromEntries(subs.map((s) => [String(s._id), s]));
+  const iitMap = Object.fromEntries(iitSubs.map((s) => [String(s._id), s]));
 
   const rows = pageSlice.map((r) => {
     const phone = r._id.phone;
     const fs = r.lastFormSubmissionId ? subMap[String(r.lastFormSubmissionId)] : null;
+    const iit = r.lastIitCounsellingSubmissionId ? iitMap[String(r.lastIitCounsellingSubmissionId)] : null;
     const reasonLabel = reasonLabelFromAggRow(r);
+    const providerErr = resolveProviderErrorDisplay({
+      webhookErrorCode: r.lastWebhookErrorCode,
+      sendErrorCode: r.lastSendErrorCode,
+      webhookErrorReason: r.lastWebhookErrorReason,
+      errorMessage: r.lastErrorMessage,
+      providerPayloadSnippet: r.lastProviderPayloadSnippet
+    });
     const canonicalBucket = canonical.assignRecipientBucket({
       everDelivered: r.anyDelivered,
       finalPermanentFailed: r.anyPermanent || r.anyExhausted,
@@ -1515,10 +1598,26 @@ async function computeUnresolvedRecipients({
       lastExclusionReason: r.lastExclusionReason,
       lastStatus: r.lastStatus
     });
+    const failCopy = describeOpsFailure({
+      webhookErrorCode: r.lastWebhookErrorCode,
+      sendErrorCode: r.lastSendErrorCode,
+      webhookErrorReason: r.lastWebhookErrorReason,
+      errorMessage: r.lastErrorMessage,
+      errorReason: providerErr.errorReason,
+      errorCode: providerErr.errorCode,
+      errorSource: providerErr.errorSource,
+      exclusionReason: r.lastExclusionReason,
+      reason: reasonLabel,
+      canonicalExclusionReason: reasonLabel,
+      canonicalBucket,
+      lifecycleState: r.lastStatus
+    });
     return {
       phone,
-      name: fs?.fullName || null,
+      name: fs?.fullName || iit?.fullName || null,
       messageKind: r._id.messageKind,
+      opsProduct: parseOpsProductQuery(opsProduct),
+      preferredLanguage: iit?.iitCounselling?.section2Data?.preferredLanguage || null,
       canonicalBucket,
       canonicalExclusionReason: reasonLabel,
       attemptStage: r.lastRetrySource || null,
@@ -1527,7 +1626,13 @@ async function computeUnresolvedRecipients({
       exclusionReason: r.lastExclusionReason || null,
       exclusionCategory: classifyExclusionCategory(r.lastExclusionReason, r.lastStatus),
       reason: reasonLabel,
-      errorMessage: r.lastErrorMessage || fs?.whatsappLastError || null,
+      errorMessage: providerErr.errorReason || r.lastErrorMessage || fs?.whatsappLastError || null,
+      errorCode: providerErr.errorCode,
+      errorReason: providerErr.errorReason,
+      errorSource: providerErr.errorSource,
+      errorHeadline: failCopy.headline,
+      errorDetail: failCopy.detail,
+      errorCategory: failCopy.category,
       everDeliveredAt: r.deliveredAt || r.readAt || null,
       retryExhausted: !!r.anyExhausted,
       lastAttemptAt: r.lastCreatedAt,
@@ -1536,7 +1641,8 @@ async function computeUnresolvedRecipients({
       retryGroupId: r.lastRetryGroupId || r.anyRetryGroupId || null,
       lastEventId: r.lastEventId,
       formSubmissionId: r.lastFormSubmissionId || fs?._id || null,
-      slotDate: fs?.step3Data?.slotDate || null,
+      iitCounsellingSubmissionId: r.lastIitCounsellingSubmissionId || iit?._id || null,
+      slotDate: fs?.step3Data?.slotDate || iit?.counsellingSlotInstantUtc || null,
       submissionDeliveryStatus: fs?.whatsappDeliveryStatus || null,
       submissionLastError: fs?.whatsappLastError || null,
       submissionRetryCount: fs?.whatsappRetryCount ?? null
@@ -1549,6 +1655,8 @@ async function computeUnresolvedRecipients({
         from: from || null,
         to: to || null,
         messageKind: messageKind || null,
+        opsProduct: parseOpsProductQuery(opsProduct),
+        preferredLanguage: preferredLanguage || null,
         group: grp,
         q: qTrim || null,
         inFlightStaleMinutes,

@@ -28,8 +28,8 @@ describe('whatsappOpsProduct', () => {
     assert(matchWhatsAppEventsByOpsProduct('guidexpert').$or);
   });
 
-  test('effectiveOverviewMessageKind pins IIT rollup to slot_booked', () => {
-    assert.equal(effectiveOverviewMessageKind('iit_counselling', null), 'slot_booked');
+  test('effectiveOverviewMessageKind passes through explicit kind only', () => {
+    assert.equal(effectiveOverviewMessageKind('iit_counselling', null), null);
     assert.equal(effectiveOverviewMessageKind('iit_counselling', 'pre4hr'), 'pre4hr');
     assert.equal(effectiveOverviewMessageKind('guidexpert', null), null);
   });
