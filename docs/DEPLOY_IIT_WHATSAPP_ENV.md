@@ -72,6 +72,26 @@ Set each value to the Gupshup template UUID from your dashboard (UUID only — n
 | `WA_IIT_REMINDER_JOB_TTL_MS` | optional | Expire stale pending jobs |
 | `WA_IIT_SEND_TRACE` | `1` in dev | Verbose IIT send logs; set `0` in prod |
 
+### Pre2hr template param retry (fixes Meta 132012)
+
+If 2-hour reminders fail with `(#132012) Parameter format does not match`, align Gupshup template body variables with:
+
+| Variable | Purpose |
+|----------|---------|
+| `GUPSHUP_IIT_PRE2HR_PARAM_PROFILES` | Pipe-separated attempts: e.g. `name\|none\|name,date,time` (attempt 1 = name only, 2 = static, 3 = name+date+time) |
+| `GUPSHUP_IIT_PRE2HR_HEADER_IMAGE_URL` | Only if the pre2hr template has an IMAGE header in Gupshup |
+
+After changing profiles, redeploy and run:
+
+```bash
+npm run repair:iit-wa-pre2hr -- --dispatch
+npm run verify:iit-messaging
+```
+
+## Cron (external + Vercel)
+
+**Vercel** (`vercel.json`) runs both IIT crons every minute when `CRON_SECRET` or `GUIDEXPERT_CRON_SECRET` is set (Bearer auth). **cron-job.org** remains recommended as backup with `?key=` on the URL.
+
 ## Cron (external scheduler)
 
 Run **every 1 minute**:

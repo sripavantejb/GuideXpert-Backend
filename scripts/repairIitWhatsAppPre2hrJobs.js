@@ -14,8 +14,26 @@ const { dispatchDueReminderJobs } = require('../services/whatsappReminderJobDisp
 
 async function main() {
   const dispatch = process.argv.includes('--dispatch');
+  const dryRun = process.argv.includes('--dry-run');
   await mongoose.connect(process.env.MONGODB_URI);
   const now = new Date();
+
+  if (dryRun) {
+    const jobCount = await WhatsAppReminderJob.countDocuments({
+      messageKind: 'iit_pre2hr',
+      state: { $in: ['exhausted', 'failed'] },
+      slotDate: { $gt: now },
+    });
+    const eventCount = await WhatsAppMessageEvent.countDocuments({
+      messageKind: 'iit_pre2hr',
+      status: 'failed',
+      $or: [{ webhookErrorCode: '132012' }, { errorMessage: /132012|parameter format does not match/i }],
+      retryGroupId: { $ne: null },
+    });
+    console.log(JSON.stringify({ dryRun: true, jobsWouldRequeue: jobCount, eventsWouldUnblock: eventCount }, null, 2));
+    await mongoose.disconnect();
+    return;
+  }
 
   const eventFix = await WhatsAppMessageEvent.updateMany(
     {
@@ -39,10 +57,6 @@ async function main() {
       messageKind: 'iit_pre2hr',
       state: { $in: ['exhausted', 'failed'] },
       slotDate: { $gt: now },
-      $or: [
-        { lastError: 'attempt_already_recorded' },
-        { lastError: /132012|parameter format/i },
-      ],
     },
     {
       $set: {

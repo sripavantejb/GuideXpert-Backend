@@ -198,6 +198,20 @@ describe('classifyCampaignFailure (DLR after provider accept)', () => {
     assert.equal(r.retryable, false);
     assert.equal(r.exclusionReason, RETRY_EXCLUSION_REASON.dlrFailedAfterAccept);
   });
+
+  test('iit_pre2hr 132012 after accept is retryable on attempt 1', () => {
+    const r = classifyCampaignFailure(
+      'iit_pre2hr',
+      {
+        errorCode: '132012',
+        errorReason: '(#132012) Parameter format does not match format in the created template',
+      },
+      { afterProviderAccept: true, attemptNumber: 1 }
+    );
+    assert.equal(r.retryable, true);
+    assert.equal(r.metaNote, 'iit_pre2hr_template_param_retry');
+    assert.equal(r.exclusionReason, null);
+  });
 });
 
 describe('reconcile pending lifecycle helpers', () => {
