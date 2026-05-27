@@ -83,6 +83,12 @@ describe('iitTeluguSmsSchedule', () => {
     assert.equal(all.iit_sms_tminus_1d.state, 'skipped');
   });
 
+  test('sendImmediately T-2h expires at slot (not 10m cron window)', () => {
+    const now = new Date('2025-03-15T17:30:00+05:30');
+    const all = buildAllTriggerSchedules(SLOT_SAT_6PM, now);
+    assert.equal(all.iit_sms_tminus_2h.expiresAt.toISOString(), SLOT_SAT_6PM.toISOString());
+  });
+
   test('static templates send no Flow variables', () => {
     assert.equal(isStaticTeluguSmsTemplate('iit_sms_tminus_1d'), true);
     assert.equal(isStaticTeluguSmsTemplate('iit_sms_tminus_2h'), true);

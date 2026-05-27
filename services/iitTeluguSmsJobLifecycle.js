@@ -37,6 +37,8 @@ async function expireDueTeluguSmsJobs(opts = {}) {
   const match = {
     state: 'pending',
     expiresAt: { $lte: now, $ne: null },
+    // Do not expire immediate T−2h sends that are still before the counselling slot.
+    $nor: [{ sendImmediately: true, slotDate: { $gt: now } }],
   };
   if (opts.messageKinds && opts.messageKinds.length) {
     match.messageKind = { $in: opts.messageKinds };

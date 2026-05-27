@@ -137,9 +137,20 @@ function buildAllTriggerSchedules(slotAt, now = new Date()) {
       ? evaluateScheduleAtCreation(kind, scheduledSendAt, slotAt, now)
       : { state: 'skipped', suppressionReason: 'invalid_schedule', sendImmediately: false };
 
+    let effectiveExpiresAt = expiresAt;
+    // T−2h "send now" bookings complete after the nominal 4:00 window; keep claimable until slot.
+    if (
+      kind === 'iit_sms_tminus_2h' &&
+      evalResult.sendImmediately &&
+      slotAt &&
+      !Number.isNaN(new Date(slotAt).getTime())
+    ) {
+      effectiveExpiresAt = new Date(slotAt);
+    }
+
     out[kind] = {
       scheduledSendAt,
-      expiresAt,
+      expiresAt: effectiveExpiresAt,
       noBackfill: noBackfillForKind(kind),
       firstEligibleAt: scheduledSendAt || now,
       ...evalResult,

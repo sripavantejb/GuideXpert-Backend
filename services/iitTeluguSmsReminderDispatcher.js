@@ -215,7 +215,14 @@ async function executeIitTeluguSmsJob(job, cronRunId, cronJobKey, execOpts = {})
   const slotMs = slotDate ? new Date(slotDate).getTime() : NaN;
   const nowMs = now.getTime();
 
-  if (job.expiresAt && new Date(job.expiresAt).getTime() <= nowMs) {
+  const pastExpiry = job.expiresAt && new Date(job.expiresAt).getTime() <= nowMs;
+  const allowImmediateTminus2h =
+    job.sendImmediately &&
+    job.messageKind === 'iit_sms_tminus_2h' &&
+    !Number.isNaN(slotMs) &&
+    nowMs < slotMs;
+
+  if (pastExpiry && !allowImmediateTminus2h) {
     await IitTeluguSmsReminderJob.updateOne(
       { _id: job._id, claimToken: job.claimToken },
       {

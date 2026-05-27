@@ -34,6 +34,7 @@
     "backfill:iit-telugu-sms-jobs": "node scripts/backfillIitTeluguSmsJobs.js",
     "diagnose:iit-telugu-sms": "node scripts/diagnoseIitTeluguSms.js",
     "cron:url:iit-telugu-sms": "node scripts/printIitTeluguSmsCronUrl.js",
+    "repair:iit-telugu-sms-tminus2h": "node scripts/repairIitTeluguSmsTminus2h.js",
     "requeue:iit-reminder-jobs": "node scripts/requeueIitReminderJobs.js",
     "requeue:iit-reminder-jobs:dispatch": "node scripts/requeueIitReminderJobs.js --dispatch",
     "repair:iit-retry-funnel": "node scripts/repairIitRetryFunnel.js",
