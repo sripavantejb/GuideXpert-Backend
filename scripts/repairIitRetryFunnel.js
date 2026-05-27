@@ -15,6 +15,7 @@ const {
   computeRetryCandidates
 } = require('../services/whatsappRetryOrchestrator');
 const INFRA_RX = /WhatsApp disabled|Gupshup not configured|template id missing|ENABLE_WHATSAPP/i;
+const TEMPLATE_PARAM_RX = /132012|parameter format does not match/i;
 
 async function main() {
   const execute = process.argv.includes('--execute');
@@ -33,8 +34,10 @@ async function main() {
     status: { $in: ['failed', 'retry_exhausted'] },
     $or: [
       { errorMessage: { $regex: INFRA_RX } },
-      { terminalFailureKind: 'permanent', retryEligible: false }
-    ]
+      { webhookErrorCode: '132012' },
+      { errorMessage: { $regex: TEMPLATE_PARAM_RX } },
+      { terminalFailureKind: 'permanent', retryEligible: false },
+    ],
   };
 
   const candidateEvents = await WhatsAppMessageEvent.countDocuments(eventFilter);
@@ -65,7 +68,12 @@ async function main() {
       messageKind: { $in: IIT_REMINDER_MESSAGE_KINDS },
       attemptNumber: 1,
       status: { $in: ['failed', 'retry_exhausted'] },
-      $or: [{ errorMessage: { $regex: INFRA_RX } }, { terminalFailureKind: 'permanent' }]
+      $or: [
+        { errorMessage: { $regex: INFRA_RX } },
+        { webhookErrorCode: '132012' },
+        { errorMessage: { $regex: TEMPLATE_PARAM_RX } },
+        { terminalFailureKind: 'permanent' },
+      ],
     },
     {
       $set: {
@@ -140,8 +148,25 @@ async function main() {
   await mongoose.disconnect();
 }
 
+async function runRetryBatch() {
+  require('dotenv').config();
+  const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
+  if (!uri) {
+    console.error('MONGODB_URI required');
+    process.exit(1);
+  }
+  await mongoose.connect(uri);
+  const { executeRetryWhatsAppBatch } = require('../services/retryWhatsAppBatch');
+  const batch = await executeRetryWhatsAppBatch(null);
+  console.log(JSON.stringify({ retryBatch: batch }, null, 2));
+  await mongoose.disconnect();
+}
+
 if (require.main === module) {
-  main().catch((e) => {
+  const runner = process.argv.includes('--run-batch')
+    ? runRetryBatch
+    : main;
+  runner().catch((e) => {
     console.error(e);
     process.exit(1);
   });

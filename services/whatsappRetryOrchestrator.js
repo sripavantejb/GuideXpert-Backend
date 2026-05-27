@@ -16,6 +16,15 @@ const {
   isIitReminderMessageKind,
   resolveIitReminderTemplateEnvKey
 } = require('../utils/iitCounsellingWhatsApp');
+const { IIT_REMINDER_MESSAGE_KINDS } = require('../models/WhatsAppReminderJob');
+
+/** Kinds eligible for multi-stage retry cron (excludes slot_booked immediate_only). */
+const CAMPAIGN_RETRY_MESSAGE_KINDS = [
+  'pre4hr',
+  'meet',
+  '30min',
+  ...IIT_REMINDER_MESSAGE_KINDS
+];
 const { getIitReminderEligibility } = require('../utils/iitReminderEligibility');
 const {
   TERMINAL_FAILURE_STATUSES,
@@ -798,11 +807,14 @@ const CRON_BUDGET_MS = parseInt(process.env.WHATSAPP_RETRY_CRON_BUDGET_MS || '25
  */
 async function scanGroupsNeedingRetries(cronRunId) {
   const windowStart = new Date(Date.now() - 72 * 60 * 60 * 1000);
+  const now = new Date();
   const groups = await WhatsAppRetryGroup.find({
-    status: { $in: ['open'] },
-    createdAt: { $gte: windowStart }
+    status: 'open',
+    createdAt: { $gte: windowStart },
+    messageKind: { $in: CAMPAIGN_RETRY_MESSAGE_KINDS },
+    $or: [{ nextPromotionDueAt: null }, { nextPromotionDueAt: { $lte: now } }]
   })
-    .sort({ createdAt: 1 })
+    .sort({ updatedAt: -1 })
     .limit(500)
     .lean();
 
