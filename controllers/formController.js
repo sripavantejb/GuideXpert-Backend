@@ -1388,6 +1388,48 @@ function buildIitReminderScheduleWarnings(scheduleResult) {
   return warnings;
 }
 
+function buildIitTeluguSmsScheduleWarnings(scheduleResult) {
+  const warnings = [];
+  if (!scheduleResult) return warnings;
+
+  if (scheduleResult.error) {
+    warnings.push({
+      code: scheduleResult.error,
+      message:
+        scheduleResult.detail ||
+        `Telugu SMS scheduling failed (${scheduleResult.error})`,
+      messageKind: scheduleResult.messageKind || null,
+    });
+  }
+
+  if (scheduleResult.skipped && scheduleResult.reason === 'language_not_telugu') {
+    return warnings;
+  }
+
+  const jobs = scheduleResult.jobs || [];
+  const missingTemplate = jobs.filter(
+    (j) => j.state === 'skipped' && j.msg91TemplateId === 'missing'
+  );
+  if (missingTemplate.length) {
+    warnings.push({
+      code: 'telugu_sms_template_missing',
+      message: `MSG91 template id missing for: ${missingTemplate.map((j) => j.messageKind).join(', ')}`,
+      messageKinds: missingTemplate.map((j) => j.messageKind),
+    });
+  }
+
+  const missed = jobs.filter((j) => j.state === 'skipped');
+  if (missed.length && !scheduleResult.error) {
+    warnings.push({
+      code: 'telugu_sms_jobs_skipped',
+      message: `${missed.length} Telugu SMS trigger(s) skipped (missed window or slot passed).`,
+      messageKinds: missed.map((j) => j.messageKind),
+    });
+  }
+
+  return warnings;
+}
+
 exports.saveIitSection2 = async (req, res) => {
   try {
     const payload = req.body || {};
@@ -1477,6 +1519,54 @@ exports.saveIitSection2 = async (req, res) => {
       });
     }
 
+    let teluguSmsScheduleResult = { jobs: [] };
+    let teluguSmsScheduleWarnings = [];
+    let teluguSmsDispatch = null;
+    if (section2Data.preferredLanguage === 'Telugu') {
+      try {
+        const {
+          ensureIitTeluguSmsJobsForSubmission,
+          dispatchDueJobsForIitTeluguSmsSubmission,
+        } = require('../services/iitTeluguSmsReminderScheduler');
+        teluguSmsScheduleResult = await ensureIitTeluguSmsJobsForSubmission(updated);
+        teluguSmsScheduleWarnings = buildIitTeluguSmsScheduleWarnings(teluguSmsScheduleResult);
+        if (teluguSmsScheduleResult.error) {
+          console.warn(
+            '[saveIitSection2] IIT Telugu SMS scheduling:',
+            teluguSmsScheduleResult.error,
+            teluguSmsScheduleResult.detail || ''
+          );
+        } else if (teluguSmsScheduleWarnings.length) {
+          console.warn('[saveIitSection2] IIT Telugu SMS warnings:', teluguSmsScheduleWarnings);
+        }
+        try {
+          teluguSmsDispatch = await dispatchDueJobsForIitTeluguSmsSubmission(updated._id, {
+            now: new Date(),
+            cronJobKey: 'save_iit_section2_sms_catchup',
+          });
+        } catch (smsDispatchErr) {
+          console.warn('[saveIitSection2] IIT Telugu SMS dispatch:', smsDispatchErr.message);
+          teluguSmsScheduleWarnings.push({
+            code: 'telugu_sms_dispatch_failed',
+            message: smsDispatchErr.message || 'Telugu SMS dispatch failed',
+          });
+        }
+      } catch (smsScheduleErr) {
+        console.error('[saveIitSection2] IIT Telugu SMS scheduling failed:', smsScheduleErr);
+        teluguSmsScheduleWarnings.push({
+          code: 'telugu_sms_schedule_failed',
+          message: smsScheduleErr.message || 'Telugu SMS scheduling failed',
+        });
+      }
+    } else {
+      try {
+        const { cancelPendingTeluguSmsJobsForSubmission } = require('../services/iitTeluguSmsReminderScheduler');
+        await cancelPendingTeluguSmsJobsForSubmission(updated._id, 'language_not_telugu', new Date());
+      } catch (cancelErr) {
+        console.warn('[saveIitSection2] cancel Telugu SMS jobs:', cancelErr.message);
+      }
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Section 2 saved successfully.',
@@ -1486,6 +1576,9 @@ exports.saveIitSection2 = async (req, res) => {
         reminderJobs: scheduleResult.jobs || [],
         ...(reminderDispatch ? { reminderDispatch } : {}),
         ...(reminderScheduleWarnings.length ? { reminderScheduleWarnings } : {}),
+        teluguSmsJobs: teluguSmsScheduleResult.jobs || [],
+        ...(teluguSmsDispatch ? { teluguSmsDispatch } : {}),
+        ...(teluguSmsScheduleWarnings.length ? { teluguSmsScheduleWarnings } : {}),
       },
     });
   } catch (error) {

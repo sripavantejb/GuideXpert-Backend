@@ -200,6 +200,64 @@ router.get('/send-iit-reminders', verifyCronSecret, async (req, res) => {
   }
 });
 
+router.get('/send-iit-telugu-sms', verifyCronSecret, async (req, res) => {
+  let cronRun = null;
+  const jobKey = CRON_JOB_KEYS.SEND_IIT_TELUGU_SMS;
+  const { IIT_TELUGU_SMS_MESSAGE_KINDS } = require('../models/IitTeluguSmsReminderJob');
+  const { dispatchDueIitTeluguSmsJobs } = require('../services/iitTeluguSmsReminderDispatcher');
+  try {
+    cronRun = await startCronRun(jobKey);
+    const now = new Date();
+    const stats = await dispatchDueIitTeluguSmsJobs({
+      messageKinds: [...IIT_TELUGU_SMS_MESSAGE_KINDS],
+      now,
+      cronRunId: cronRun._id,
+      cronJobKey: jobKey,
+    });
+
+    const payload = {
+      scheduler: 'iit_telugu_sms_job_v1',
+      messageKinds: IIT_TELUGU_SMS_MESSAGE_KINDS,
+      nowIso: now.toISOString(),
+      ...stats,
+    };
+
+    await finishCronRun(
+      cronRun,
+      {
+        found: stats.jobsClaimed,
+        smsSent: stats.jobsDispatched,
+        smsFailed: stats.jobsFailed,
+        waAttempted: 0,
+        waSucceeded: 0,
+        waFailed: 0,
+        ...stats,
+      },
+      { success: true }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'IIT Telugu SMS jobs processed',
+      stats: payload,
+    });
+  } catch (error) {
+    console.error('[Cron] Error in send-iit-telugu-sms:', error);
+    if (cronRun) {
+      await finishCronRun(
+        cronRun,
+        { found: 0, smsSent: 0, smsFailed: 0, waAttempted: 0, waSucceeded: 0, waFailed: 0 },
+        { success: false, errorSummary: error.message }
+      ).catch(() => {});
+    }
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message,
+    });
+  }
+});
+
 router.get('/retry-whatsapp', verifyCronSecret, async (req, res) => {
   let cronRun = null;
   try {

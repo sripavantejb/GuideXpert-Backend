@@ -433,6 +433,57 @@ async function sendReminder30MinSms(phone, variables = {}) {
   return { success: result.success, error: result.error };
 }
 
+/**
+ * IIT counselling Telugu reminder SMS via MSG91 Flow (isolated from GX demo templates).
+ * @param {string} phone - 10-digit Indian number
+ * @param {string} templateId - DLT template id
+ * @param {Object} variables - Flow recipient vars (name, date, time, var, …)
+ * @returns {Promise<{ success: boolean, error?: string, response?: object }>}
+ */
+async function sendIitTeluguFlowSms(phone, templateId, variables = {}) {
+  const authkey = process.env.MSG91_AUTH_KEY;
+  if (!authkey) {
+    return { success: false, error: 'MSG91 not configured' };
+  }
+  if (!templateId) {
+    return { success: false, error: 'MSG91 IIT Telugu template id missing' };
+  }
+
+  const recipients = buildRecipients([phone], variables);
+  const requestBody = { template_id: String(templateId), recipients };
+
+  try {
+    const res = await axios.post(MSG91_FLOW_URL, requestBody, {
+      headers: {
+        accept: 'application/json',
+        authkey,
+        'content-type': 'application/json',
+      },
+      timeout: 15000,
+      validateStatus: () => true,
+    });
+
+    if (res.status >= 400) {
+      const err = (res.data && (res.data.message || res.data.error)) || `API returned ${res.status}`;
+      return { success: false, error: String(err), response: res.data };
+    }
+
+    const data = res.data || {};
+    if (data.type === 'error' || data.status === 'error' || data.success === false) {
+      const err = data.message || data.error || 'MSG91 error';
+      return { success: false, error: String(err), response: data };
+    }
+
+    return { success: true, response: data };
+  } catch (e) {
+    const msg =
+      e.response && e.response.data
+        ? e.response.data.message || e.response.data.error
+        : e.message;
+    return { success: false, error: msg || 'Failed to send IIT Telugu SMS' };
+  }
+}
+
 module.exports = {
   sendOtp,
   sendSlotConfirmationSms,
@@ -441,5 +492,6 @@ module.exports = {
   sendBulkMeetLinkSms,
   sendMeetLinkSms,
   sendBulkReminder30MinSms,
-  sendReminder30MinSms
+  sendReminder30MinSms,
+  sendIitTeluguFlowSms,
 };

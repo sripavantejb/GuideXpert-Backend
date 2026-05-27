@@ -31,6 +31,7 @@
     "backfill:wa-reconcile-derived": "node scripts/backfillReconcileDerivedFailure.js",
     "backfill:wa-reminder-jobs": "node scripts/backfillWhatsAppReminderJobs.js",
     "backfill:iit-reminder-jobs": "node scripts/backfillIitReminderJobs.js",
+    "backfill:iit-telugu-sms-jobs": "node scripts/backfillIitTeluguSmsJobs.js",
     "requeue:iit-reminder-jobs": "node scripts/requeueIitReminderJobs.js",
     "requeue:iit-reminder-jobs:dispatch": "node scripts/requeueIitReminderJobs.js --dispatch",
     "repair:iit-retry-funnel": "node scripts/repairIitRetryFunnel.js",

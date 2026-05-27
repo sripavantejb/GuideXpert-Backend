@@ -35,6 +35,10 @@
     {
       "path": "/api/cron/retry-whatsapp",
       "schedule": "*/1 * * * *"
+    },
+    {
+      "path": "/api/cron/send-iit-telugu-sms",
+      "schedule": "*/1 * * * *"
     }
   ]
 }
