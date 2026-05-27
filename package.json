@@ -35,6 +35,7 @@
     "diagnose:iit-telugu-sms": "node scripts/diagnoseIitTeluguSms.js",
     "cron:url:iit-telugu-sms": "node scripts/printIitTeluguSmsCronUrl.js",
     "repair:iit-telugu-sms-tminus2h": "node scripts/repairIitTeluguSmsTminus2h.js",
+    "repair:iit-wa-pre2hr": "node scripts/repairIitWhatsAppPre2hrJobs.js",
     "requeue:iit-reminder-jobs": "node scripts/requeueIitReminderJobs.js",
     "requeue:iit-reminder-jobs:dispatch": "node scripts/requeueIitReminderJobs.js --dispatch",
     "repair:iit-retry-funnel": "node scripts/repairIitRetryFunnel.js",

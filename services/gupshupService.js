@@ -21,8 +21,9 @@ const {
   isIitSlotBookedTemplateEnvKey,
   isIitReminderTemplateEnvKey,
   resolveIitSlotBookedHeaderImageUrl,
-  GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL
+  GUPSHUP_IIT_SLOT_BOOKED_HEADER_IMAGE_URL,
 } = require('../utils/iitCounsellingWhatsApp');
+const { buildIitReminderTemplateParams } = require('../utils/iitReminderWhatsAppSend');
 const { parseGupshupTemplateSendResponse } = require('../utils/gupshupMessageIds');
 const { isAmbiguousGupshupSendError } = require('../utils/gupshupSendOutcome');
 
@@ -389,10 +390,28 @@ async function sendIitReminderWhatsApp(phone10, vars, sendOpts = {}) {
       ? sendOpts.templateEnvKey.trim()
       : null;
   const tid = envKey ? process.env[envKey] : null;
-  const params = buildParamsFromKeys(vars, SLOT_BOOKED_IIT_PARAM_KEYS);
+  const messageKind =
+    typeof sendOpts.messageKind === 'string' && sendOpts.messageKind.trim()
+      ? sendOpts.messageKind.trim()
+      : 'iit_pre2hr';
+  const attemptNumber = Math.min(
+    6,
+    Math.max(1, parseInt(String(sendOpts.attemptNumber || 1), 10) || 1)
+  );
+  const params = buildIitReminderTemplateParams(vars, messageKind, attemptNumber);
+
+  let headerImageLink = null;
+  if (messageKind === 'iit_pre2hr') {
+    const pre2hrHeader = process.env.GUPSHUP_IIT_PRE2HR_HEADER_IMAGE_URL;
+    if (typeof pre2hrHeader === 'string' && pre2hrHeader.trim()) {
+      headerImageLink = pre2hrHeader.trim();
+    }
+  }
+
   return sendTemplateMessage(formatPhoneE16491(phone10), tid, params, {
     ...sendOpts,
     templateEnvKey: envKey,
+    headerImageLink,
   });
 }
 

@@ -67,7 +67,7 @@ function buildRetryPolicies() {
     },
     iit_pre2hr: {
       strategy: 'time_sensitive',
-      maxAttempts: 2,
+      maxAttempts: 3,
       retryDelayMinutes: parseCommaSeparatedPositiveInts(process.env.WA_IIT_PRE2HR_RETRY_DELAY_MINUTES, [1]),
       cooldownMinutes: parseCooldownMinutes('WA_IIT_PRE2HR_RETRY_COOLDOWN_MINUTES', 0),
       classifyPermanentFailures: true
@@ -192,6 +192,13 @@ function isImmediateOnlyStrategy(kind) {
  * @param {{ afterProviderAccept?: boolean, attemptNumber?: number }} [opts]
  * @returns {{ retryable: boolean, terminalFailureKind: 'permanent'|'transient'|null, exclusionReason: string|null, metaNote: string|null }}
  */
+function isIitTemplateParamFormatError(failCtx = {}) {
+  const hay = [failCtx.errorCode, failCtx.errorReason, failCtx.errorText, failCtx.errorMessage]
+    .filter(Boolean)
+    .join(' | ');
+  return /132012/i.test(hay) || /parameter format does not match/i.test(hay);
+}
+
 function classifyCampaignFailure(kind, failCtx = {}, opts = {}) {
   const { afterProviderAccept = false, attemptNumber = 1 } = opts;
   const policy = getRetryPolicy(kind);
@@ -199,6 +206,15 @@ function classifyCampaignFailure(kind, failCtx = {}, opts = {}) {
   const maxA = Number(policy.maxAttempts) || 3;
   const att = Number(attemptNumber) || 1;
   const hasAttemptsLeft = att < maxA;
+
+  if (kind === 'iit_pre2hr' && isIitTemplateParamFormatError(failCtx) && hasAttemptsLeft) {
+    return {
+      retryable: true,
+      terminalFailureKind: 'transient',
+      exclusionReason: null,
+      metaNote: 'iit_pre2hr_template_param_retry',
+    };
+  }
 
   if (isInfrastructureSendFailure(failCtx)) {
     return {

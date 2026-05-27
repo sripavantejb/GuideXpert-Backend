@@ -20,6 +20,7 @@ const {
   sendIitReminderWhatsApp
 } = require('../services/gupshupService');
 const { isIitReminderMessageKind, resolveIitReminderTemplateEnvKey } = require('../utils/iitCounsellingWhatsApp');
+const { buildIitReminderWhatsAppVars } = require('../utils/iitReminderWhatsAppSend');
 const { isInfrastructureSendFailure } = require('../utils/whatsappRetryRules');
 const { isGupshupConfigured } = require('../services/gupshupService');
 const { getIitReminderEligibility } = require('../utils/iitReminderEligibility');
@@ -247,6 +248,20 @@ function clearLeaseUpdate(extra = {}) {
   return { ...clearLeaseFields(), ...extra };
 }
 
+async function nextOutboundAttemptNumber(retryGroupId) {
+  if (!retryGroupId || !mongoose.Types.ObjectId.isValid(String(retryGroupId))) {
+    return 1;
+  }
+  const latest = await WhatsAppMessageEvent.findOne({
+    retryGroupId: new mongoose.Types.ObjectId(String(retryGroupId)),
+  })
+    .sort({ attemptNumber: -1 })
+    .select('attemptNumber')
+    .lean();
+  const prev = latest && Number.isFinite(Number(latest.attemptNumber)) ? Number(latest.attemptNumber) : 0;
+  return Math.min(6, prev + 1);
+}
+
 /**
  * @param {object} job lean doc (must include claimToken from claim)
  * @param {{ now?: Date }} [execOpts]
@@ -333,19 +348,26 @@ async function executeIitReminderJob(job, cronRunId, cronJobKey, execOpts = {}) 
 
   maybeCrash('before_send');
 
-  const fullName = iitSub.fullName || iitSub.iitCounselling?.section1Data?.fullName || 'Student';
+  const waVars = buildIitReminderWhatsAppVars(iitSub);
+  const outboundAttempt = await nextOutboundAttemptNumber(job.retryGroupId);
+
   const wa = await safeSendWhatsApp({
     phone10: job.phone,
     formSubmissionId: null,
     iitCounsellingSubmissionId: iitSub._id,
-    vars: { name: fullName },
+    vars: waVars,
     retryKind: job.messageKind,
     source: 'cron',
     cronRunId: cronRunId || null,
     cronJobKey: cronJobKey || cronJobKeyForKind(job.messageKind),
-    sendFn: (phone10, vars, sendOpts) => sendIitReminderWhatsApp(phone10, vars, sendOpts),
+    sendFn: (phone10, vars, sendOpts) =>
+      sendIitReminderWhatsApp(phone10, vars, {
+        ...sendOpts,
+        messageKind: job.messageKind,
+        attemptNumber: outboundAttempt,
+      }),
     retryGroupId: job.retryGroupId,
-    attemptNumber: 1,
+    attemptNumber: outboundAttempt,
     attemptBatchId: cronRunId || null,
     opsProduct: 'iit_counselling',
     cohortSlotInstantUtc: slotDate,
@@ -358,6 +380,11 @@ async function executeIitReminderJob(job, cronRunId, cronJobKey, execOpts = {}) 
   if (wa.duplicateInFlight) {
     await releaseJobClaim(job._id, job.claimToken);
     return { outcome: 'deferred', reason: 'duplicate_in_flight' };
+  }
+
+  if (wa.error === 'attempt_already_recorded' && outboundAttempt < 6) {
+    await releaseJobClaim(job._id, job.claimToken);
+    return { outcome: 'deferred', reason: 'attempt_already_recorded' };
   }
 
   if (wa.skippedOutsideWindow || wa.blockedPreSend) {
@@ -686,14 +713,15 @@ async function requeueBlockedReminderJobs(now, kinds) {
       slotDate: { $gt: now },
       $or: [
         { lastError: { $regex: /WhatsApp disabled|Gupshup not configured|template id missing|ENABLE_WHATSAPP/i } },
+        { lastError: 'attempt_already_recorded' },
         {
           state: 'exhausted',
           scheduledSendAt: { $lte: now },
-          attempts: { $lte: 2 },
+          attempts: { $lte: 3 },
         },
       ],
     },
-    { $set: { state: 'pending', updatedAt: now, ...clearLeaseFields() } }
+    { $set: { state: 'pending', updatedAt: now, lastError: null, ...clearLeaseFields() } }
   );
   return { requeued: res.modifiedCount || 0 };
 }

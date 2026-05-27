@@ -28,9 +28,20 @@ async function main() {
     {
       messageKind: { $in: IIT_REMINDER_MESSAGE_KINDS },
       status: 'failed',
-      errorMessage: { $regex: /WhatsApp disabled|Gupshup not configured|template id missing/i },
+      $or: [
+        { errorMessage: { $regex: /WhatsApp disabled|Gupshup not configured|template id missing/i } },
+        { webhookErrorCode: '132012' },
+        { errorMessage: /132012|parameter format does not match/i },
+      ],
     },
-    { $set: { terminalFailureKind: null, retryEligible: true } }
+    {
+      $set: {
+        terminalFailureKind: null,
+        retryEligible: true,
+        retryExclusionReason: null,
+        retryExclusionAt: null,
+      },
+    }
   );
 
   const jobFix = await WhatsAppReminderJob.updateMany(
