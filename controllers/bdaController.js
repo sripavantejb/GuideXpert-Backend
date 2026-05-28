@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 const Bda = require('../models/Bda');
 const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
 const IitCounsellingVisit = require('../models/IitCounsellingVisit');
+const LeadCallHistory = require('../models/LeadCallHistory');
+const IitCounsellingLeadActivity = require('../models/IitCounsellingLeadActivity');
 const {
   getAllBdaStats,
   getBdaStatsById,
@@ -224,6 +226,49 @@ exports.updateBda = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Phone already in use' });
     }
     console.error('[updateBda]', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.deleteBda = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ success: false, message: 'BDA not found' });
+    }
+
+    const bda = await Bda.findById(id).lean();
+    if (!bda) {
+      return res.status(404).json({ success: false, message: 'BDA not found' });
+    }
+
+    await Promise.all([
+      IitCounsellingSubmission.updateMany(
+        { assignedBdaId: bda._id },
+        {
+          $set: {
+            assignedBdaId: null,
+            assignedBdaName: '',
+            assignedAt: null,
+            assignedBy: '',
+            assignedByAdminId: null,
+            assignedByAdminName: '',
+          },
+        }
+      ),
+      LeadCallHistory.deleteMany({ bdaId: bda._id }),
+      IitCounsellingLeadActivity.deleteMany({ bdaId: bda._id }),
+    ]);
+
+    await Bda.deleteOne({ _id: bda._id });
+
+    return res.status(200).json({
+      success: true,
+      message: 'BDA deleted successfully',
+      data: mapBdaRow(bda),
+    });
+  } catch (error) {
+    console.error('[deleteBda]', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
