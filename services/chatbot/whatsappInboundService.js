@@ -12,6 +12,27 @@ const { processInbound } = require('./chatbotOrchestratorService');
 
 const rateLimitMap = new Map();
 
+function resolveInboundProcessUpdate(result) {
+  if (result && (result.outboundSuccess === true || result.delivered === true)) {
+    return {
+      processStatus: 'processed',
+      processError: null,
+    };
+  }
+  if (result && result.handoff) {
+    return {
+      processStatus: 'processed',
+      processError: null,
+    };
+  }
+  const err =
+    (result && (result.error || result.errMessage)) || 'outbound_send_failed';
+  return {
+    processStatus: 'pending',
+    processError: String(err).slice(0, 2000),
+  };
+}
+
 function rateLimitPerPhone(phone10) {
   const max = parseInt(process.env.CHATBOT_RATE_LIMIT_PER_MIN || '12', 10) || 12;
   const now = Date.now();
@@ -124,17 +145,27 @@ async function handleInboundWebhook(req, body, receivedAt = new Date()) {
   await touchInbound(conversation._id, receivedAt);
 
   try {
-    await processInbound({
+    const result = await processInbound({
       conversation,
       inbound: inboundDoc,
       leadLinks,
     });
+    const processUpdate = resolveInboundProcessUpdate(result);
+    if (processUpdate.processStatus === 'pending') {
+      console.error('[chatbot] outbound_send_failed', {
+        phone_tail: maskPhoneTail(parsed.phone10),
+        inbound_id: String(inboundDoc._id),
+        error: processUpdate.processError,
+      });
+    }
     await WhatsAppInboundMessage.updateOne(
       { _id: inboundDoc._id },
       {
         $set: {
-          processStatus: 'processed',
-          processedAt: new Date(),
+          processStatus: processUpdate.processStatus,
+          processError: processUpdate.processError,
+          processedAt:
+            processUpdate.processStatus === 'processed' ? new Date() : null,
         },
       }
     );
@@ -178,16 +209,28 @@ async function replayPendingInbound(limit = 30) {
       if (!conversation) continue;
       const { resolveLeadLinks } = require('../../utils/chatbotPhone');
       const leadLinks = await resolveLeadLinks(row.phone);
-      await processInbound({
+      const result = await processInbound({
         conversation,
         inbound: row,
         leadLinks,
       });
+      const processUpdate = resolveInboundProcessUpdate(result);
       await WhatsAppInboundMessage.updateOne(
         { _id: row._id },
-        { $set: { processStatus: 'processed', processedAt: new Date() } }
+        {
+          $set: {
+            processStatus: processUpdate.processStatus,
+            processError: processUpdate.processError,
+            processedAt:
+              processUpdate.processStatus === 'processed' ? new Date() : null,
+          },
+        }
       );
-      processed += 1;
+      if (processUpdate.processStatus === 'processed') {
+        processed += 1;
+      } else {
+        failed += 1;
+      }
     } catch (e) {
       await WhatsAppInboundMessage.updateOne(
         { _id: row._id },
@@ -211,4 +254,5 @@ module.exports = {
   replayPendingInbound,
   buildInboundMessageFields,
   verifyGupshupWebhookRequest,
+  resolveInboundProcessUpdate,
 };

@@ -77,6 +77,7 @@ describe('chatbotOrchestrator integration', () => {
         return { state, context };
       },
       isBotPausedForConversation: async () => false,
+      cancelActiveHandoffForUser: async () => ({ cancelled: false }),
       createHandoff: async () => ({ _id: new mongoose.Types.ObjectId() }),
       updateConversationIntent: async () => {},
       outbound: {

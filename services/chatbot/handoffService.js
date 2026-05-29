@@ -191,6 +191,33 @@ async function expireStaleHandoffs(limit = 50) {
   return { expired: count };
 }
 
+async function cancelActiveHandoffForUser(conversation) {
+  if (!conversation || conversation.status !== 'handoff' || !conversation.currentHandoffId) {
+    return { cancelled: false };
+  }
+  const now = new Date();
+  const handoff = await WhatsAppAgentHandoff.findOneAndUpdate(
+    {
+      _id: conversation.currentHandoffId,
+      status: { $in: ['open', 'claimed'] },
+    },
+    {
+      $set: {
+        status: 'cancelled',
+        botPaused: false,
+        updatedAt: now,
+      },
+    },
+    { new: true }
+  );
+  if (!handoff) {
+    return { cancelled: false };
+  }
+  await clearConversationHandoff(conversation._id, now);
+  await transitionState(conversation._id, conversation.phone, 'main_menu', emptySubflows(), { now });
+  return { cancelled: true, handoff };
+}
+
 async function isBotPausedForConversation(conversation) {
   if (conversation.status === 'handoff' && conversation.currentHandoffId) {
     const h = await WhatsAppAgentHandoff.findById(conversation.currentHandoffId).lean();
@@ -206,6 +233,7 @@ module.exports = {
   assertBdaCanResolveHandoff,
   expireStaleHandoffs,
   isBotPausedForConversation,
+  cancelActiveHandoffForUser,
   determineRoute,
   handoffExpiryMs,
   unclaimedAlertMs,

@@ -11,6 +11,7 @@ const BOT_STATES = Object.freeze([
   'faq_answer',
   'lead_lookup',
   'counselling_support',
+  'assigned_expert',
   'demo_support',
   'rank_predictor',
   'college_predictor',

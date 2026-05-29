@@ -19,6 +19,49 @@ const { logChatbotEvent, extractPredictorExam } = require('./chatbotStructuredLo
 const ORCHESTRATOR_FALLBACK_REPLY =
   'Sorry, something went wrong on our side. Please try again in a moment or reply MENU for options.';
 
+const HANDOFF_WAIT_REPLY =
+  'Our counsellor team is handling your chat. Please wait for their reply here.\n\nReply MENU to return to the assistant.';
+
+function outboundSucceeded(result) {
+  return Boolean(result && result.success);
+}
+
+function summarizeProcessResult(result) {
+  if (!result) {
+    return { outboundSuccess: false, delivered: false };
+  }
+  if (result.skipped) {
+    return {
+      outboundSuccess: outboundSucceeded(result),
+      delivered: outboundSucceeded(result),
+      skipped: true,
+      reason: result.reason || null,
+    };
+  }
+  if (result.handoff) {
+    return { outboundSuccess: true, delivered: true, handoff: true };
+  }
+  const success = outboundSucceeded(result);
+  return { outboundSuccess: success, delivered: success, error: result.error || null };
+}
+
+function logMenuDeliveryFallback({
+  conversation,
+  leadContext,
+  attemptedType,
+  fallbackType,
+  errMessage,
+}) {
+  logChatbotEvent('menu_delivery_fallback', {
+    conversationId: conversation._id,
+    phone10: conversation.phone,
+    productLine: leadContext?.productLine || conversation.productLine || null,
+    attemptedType,
+    fallbackType,
+    errMessage: errMessage || null,
+  });
+}
+
 const defaultHooks = {
   buildLeadContext: (links) => leadContextService.buildLeadContext(links),
   retrieveFacts: (links, ctx) => retrieveFacts(links, ctx),
@@ -26,6 +69,8 @@ const defaultHooks = {
   transitionState: (...args) => botStateService.transitionState(...args),
   isBotPausedForConversation: (c) => handoffService.isBotPausedForConversation(c),
   createHandoff: (args) => handoffService.createHandoff(args),
+  cancelActiveHandoffForUser: (conversation) =>
+    handoffService.cancelActiveHandoffForUser(conversation),
   updateConversationIntent: (id, intent) =>
     WhatsAppConversation.updateOne({ _id: id }, { $set: { lastIntent: intent, updatedAt: new Date() } }),
   outbound: whatsappOutbound,
@@ -123,33 +168,78 @@ async function sendMainMenu(conversation, leadContext, inReplyToInboundId) {
   const h = hooks();
   const body = buildMainMenuText(leadContext);
   const line = leadContext?.productLine || conversation.productLine || 'unknown';
+  const baseArgs = {
+    conversationId: conversation._id,
+    phone10: conversation.phone,
+    inReplyToInboundId,
+  };
 
   if (useButtonMenu() && line === 'iit_counselling' && useIitListMenu()) {
-    return h.outbound.sendBotListReply({
-      conversationId: conversation._id,
-      phone10: conversation.phone,
+    const listResult = await h.outbound.sendBotListReply({
+      ...baseArgs,
       body,
       buttonText: 'Choose option',
       sections: buildMainMenuListSections(),
-      inReplyToInboundId,
+    });
+    if (outboundSucceeded(listResult)) {
+      return listResult;
+    }
+    logMenuDeliveryFallback({
+      conversation,
+      leadContext,
+      attemptedType: 'interactive_list',
+      fallbackType: 'interactive_button',
+      errMessage: listResult?.error,
+    });
+
+    const buttonResult = await h.outbound.sendBotButtonReply({
+      ...baseArgs,
+      body,
+      buttons: buildMainMenuButtons(leadContext),
+    });
+    if (outboundSucceeded(buttonResult)) {
+      return buttonResult;
+    }
+    logMenuDeliveryFallback({
+      conversation,
+      leadContext,
+      attemptedType: 'interactive_button',
+      fallbackType: 'text',
+      errMessage: buttonResult?.error,
+    });
+
+    return h.outbound.sendBotTextReply({
+      ...baseArgs,
+      text: body,
     });
   }
 
   if (useButtonMenu()) {
-    return h.outbound.sendBotButtonReply({
-      conversationId: conversation._id,
-      phone10: conversation.phone,
+    const buttonResult = await h.outbound.sendBotButtonReply({
+      ...baseArgs,
       body,
       buttons: buildMainMenuButtons(leadContext),
-      inReplyToInboundId,
+    });
+    if (outboundSucceeded(buttonResult)) {
+      return buttonResult;
+    }
+    logMenuDeliveryFallback({
+      conversation,
+      leadContext,
+      attemptedType: 'interactive_button',
+      fallbackType: 'text',
+      errMessage: buttonResult?.error,
+    });
+
+    return h.outbound.sendBotTextReply({
+      ...baseArgs,
+      text: body,
     });
   }
 
   return h.outbound.sendBotTextReply({
-    conversationId: conversation._id,
-    phone10: conversation.phone,
+    ...baseArgs,
     text: body,
-    inReplyToInboundId,
   });
 }
 
@@ -213,7 +303,8 @@ async function processInbound({ conversation, inbound, leadLinks }) {
   const startedAt = Date.now();
   const h = hooks();
   try {
-    return await processInboundCore({ conversation, inbound, leadLinks, startedAt });
+    const result = await processInboundCore({ conversation, inbound, leadLinks, startedAt });
+    return { ...result, ...summarizeProcessResult(result) };
   } catch (err) {
     logInboundResult({
       event: 'inbound_failed',
@@ -230,12 +321,13 @@ async function processInbound({ conversation, inbound, leadLinks }) {
       err_message: err.message,
     });
     try {
-      return await h.outbound.sendBotTextReply({
+      const result = await h.outbound.sendBotTextReply({
         conversationId: conversation._id,
         phone10: conversation.phone,
         text: ORCHESTRATOR_FALLBACK_REPLY,
         inReplyToInboundId: inbound._id,
       });
+      return { ...result, ...summarizeProcessResult(result) };
     } catch (sendErr) {
       console.error('[chatbot] fallback reply failed', sendErr.message);
       throw err;
@@ -245,22 +337,41 @@ async function processInbound({ conversation, inbound, leadLinks }) {
 
 async function processInboundCore({ conversation, inbound, leadLinks, startedAt }) {
   const h = hooks();
-  const paused = await h.isBotPausedForConversation(conversation);
+  let activeConversation = conversation;
+  const paused = await h.isBotPausedForConversation(activeConversation);
   if (paused) {
-    logInboundResult({
-      event: 'inbound_skipped',
-      conversation,
-      botState: null,
-      intent: null,
-      contextPatch: {},
-      durationMs: Date.now() - startedAt,
-    });
-    return { skipped: true, reason: 'handoff_active' };
+    const menuIntent = classifyIntent(
+      inbound.text,
+      null,
+      activeConversation.productLine
+    );
+    if (menuIntent.intent === 'main_menu') {
+      await h.cancelActiveHandoffForUser(activeConversation);
+      activeConversation =
+        (await WhatsAppConversation.findById(activeConversation._id).lean()) ||
+        activeConversation;
+    } else {
+      const result = await h.outbound.sendBotTextReply({
+        conversationId: activeConversation._id,
+        phone10: activeConversation.phone,
+        text: HANDOFF_WAIT_REPLY,
+        inReplyToInboundId: inbound._id,
+      });
+      logInboundResult({
+        event: 'inbound_skipped',
+        conversation: activeConversation,
+        botState: null,
+        intent: null,
+        contextPatch: {},
+        durationMs: Date.now() - startedAt,
+      });
+      return { ...result, skipped: true, reason: 'handoff_active' };
+    }
   }
 
   const leadContext = await h.buildLeadContext(leadLinks);
   const facts = await h.retrieveFacts(leadLinks, leadContext);
-  const botState = await h.getBotState(conversation._id);
+  const botState = await h.getBotState(activeConversation._id);
 
   let intentResult;
   if (
@@ -268,26 +379,26 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     inbound.interactivePayload
   ) {
     intentResult = {
-      intent: mapMenuIdToIntent(resolveInteractiveMenuId(inbound), conversation.productLine),
+      intent: mapMenuIdToIntent(resolveInteractiveMenuId(inbound), activeConversation.productLine),
       confidence: 'high',
     };
   } else {
-    intentResult = classifyIntent(inbound.text, botState, conversation.productLine);
+    intentResult = classifyIntent(inbound.text, botState, activeConversation.productLine);
   }
 
-  await h.updateConversationIntent(conversation._id, intentResult.intent);
+  await h.updateConversationIntent(activeConversation._id, intentResult.intent);
 
   if (intentResult.intent === 'opt_out') {
-    await h.transitionState(conversation._id, conversation.phone, 'idle', { optedOut: true });
+    await h.transitionState(activeConversation._id, activeConversation.phone, 'idle', { optedOut: true });
     const result = await h.outbound.sendBotTextReply({
-      conversationId: conversation._id,
-      phone10: conversation.phone,
+      conversationId: activeConversation._id,
+      phone10: activeConversation.phone,
       text: 'You have been opted out of automated messages. Reply MENU anytime to start again.',
       inReplyToInboundId: inbound._id,
     });
     logInboundResult({
       event: 'inbound_processed',
-      conversation,
+      conversation: activeConversation,
       botState,
       intent: intentResult.intent,
       contextPatch: { optedOut: true },
@@ -298,14 +409,14 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
 
   if (intentResult.intent === 'human_handoff') {
     await h.createHandoff({
-      conversation,
+      conversation: activeConversation,
       leadContext,
       reason: 'user_requested',
       userLastMessage: inbound.text,
     });
     logInboundResult({
       event: 'inbound_processed',
-      conversation,
+      conversation: activeConversation,
       botState,
       intent: intentResult.intent,
       contextPatch: emptySubflows(),
@@ -315,11 +426,11 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
   }
 
   if (intentResult.intent === 'main_menu' || botState?.state === 'greeting') {
-    await h.transitionState(conversation._id, conversation.phone, 'main_menu', emptySubflows());
-    const result = await sendMainMenu(conversation, leadContext, inbound._id);
+    await h.transitionState(activeConversation._id, activeConversation.phone, 'main_menu', emptySubflows());
+    const result = await sendMainMenu(activeConversation, leadContext, inbound._id);
     logInboundResult({
       event: 'inbound_processed',
-      conversation,
+      conversation: activeConversation,
       botState,
       intent: intentResult.intent,
       contextPatch: emptySubflows(),
@@ -344,7 +455,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       break;
     case 'faq':
     case 'faq_query':
-      await h.transitionState(conversation._id, conversation.phone, 'faq', contextPatch);
+      await h.transitionState(activeConversation._id, activeConversation.phone, 'faq', contextPatch);
       replyText = 'Send a topic (e.g. "meeting link", "IIT session", "book demo") and I will search our FAQs.';
       if (intentResult.intent === 'faq_query' && inbound.text) {
         const staticHits = searchStaticFaq(inbound.text);
@@ -363,7 +474,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       break;
     case 'rank_predictor':
     case 'rank_predictor_continue': {
-      await h.transitionState(conversation._id, conversation.phone, 'rank_predictor', contextPatch);
+      await h.transitionState(activeConversation._id, activeConversation.phone, 'rank_predictor', contextPatch);
       const r = handleRankPredictorMessage(inbound.text, contextPatch.rank || {});
       replyText = r.reply;
       contextPatch = { rank: r.context };
@@ -409,22 +520,22 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     }
   }
 
-  await h.transitionState(conversation._id, conversation.phone, nextState, contextPatch);
+  await h.transitionState(activeConversation._id, activeConversation.phone, nextState, contextPatch);
 
   if (!replyText) {
     replyText = listExamsMessage();
   }
 
   const result = await h.outbound.sendBotTextReply({
-    conversationId: conversation._id,
-    phone10: conversation.phone,
+    conversationId: activeConversation._id,
+    phone10: activeConversation.phone,
     text: replyText,
     inReplyToInboundId: inbound._id,
   });
 
   logInboundResult({
     event: 'inbound_processed',
-    conversation,
+    conversation: activeConversation,
     botState,
     intent: intentResult.intent,
     contextPatch,

@@ -32,7 +32,8 @@ async function transitionState(conversationId, phone10, nextState, contextPatch 
           updatedAt: now,
         },
         $inc: { version: 1 },
-      }
+      },
+      { runValidators: true }
     );
   } else {
     await WhatsAppBotState.create({

@@ -74,6 +74,7 @@ async function refreshExistingConversation(convo, links, now) {
     updates.iitCounsellingSubmissionId = links.iitCounsellingSubmissionId;
   }
   await WhatsAppConversation.updateOne({ _id: convo._id }, { $set: updates });
+  await ensureBotStateForConversation(convo, now);
   return WhatsAppConversation.findById(convo._id);
 }
 

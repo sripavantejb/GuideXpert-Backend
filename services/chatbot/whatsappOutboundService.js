@@ -1,7 +1,16 @@
 const mongoose = require('mongoose');
 const WhatsAppOutboundMessage = require('../../models/WhatsAppOutboundMessage');
 const { parseGupshupTemplateSendResponse } = require('../../utils/gupshupMessageIds');
+const { maskPhoneTail } = require('../../utils/chatbotPhone');
 const gupshupSession = require('./gupshupSessionService');
+
+function logOutboundFailure(phone10, messageType, result) {
+  console.error('[chatbot] outbound_send_failed', {
+    phone_tail: maskPhoneTail(phone10),
+    message_type: messageType,
+    error: (result && result.error) || 'send failed',
+  });
+}
 
 function snippetFromResult(result, max = 1000) {
   if (!result || result.data == null) return null;
@@ -71,6 +80,7 @@ async function sendBotTextReply({
       },
     }
   );
+  logOutboundFailure(phone10, messageType, result);
   return { success: false, outboundId: outbound._id, error: result && result.error, result };
 }
 
@@ -119,12 +129,9 @@ async function sendBotButtonReply({ conversationId, phone10, body, buttons, inRe
       },
     }
   );
+  logOutboundFailure(phone10, 'interactive_button', result);
   return { success: false, outboundId: outbound._id, error: result && result.error };
 }
-
-/**
- * Agent reply (admin or BDA) during handoff.
- */
 async function sendAgentTextReply({
   conversationId,
   phone10,
@@ -234,6 +241,7 @@ async function sendBotListReply({
       },
     }
   );
+  logOutboundFailure(phone10, 'interactive_list', result);
   return { success: false, outboundId: outbound._id, error: result && result.error };
 }
 
