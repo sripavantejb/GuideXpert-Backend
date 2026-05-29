@@ -61,7 +61,7 @@ async function createHandoff({
   });
 
   await setConversationHandoff(conversation._id, handoff._id, now);
-  await transitionState(conversation._id, conversation.phone, 'human_handoff', {}, { now });
+  await transitionState(conversation._id, conversation.phone, 'human_handoff', { college: {} }, { now });
 
   const routeLabel =
     routing.route === 'bda'

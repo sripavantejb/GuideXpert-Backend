@@ -163,7 +163,7 @@ async function processInbound({ conversation, inbound, leadLinks }) {
   }
 
   if (intentResult.intent === 'main_menu' || botState?.state === 'greeting') {
-    await transitionState(conversation._id, conversation.phone, 'main_menu');
+    await transitionState(conversation._id, conversation.phone, 'main_menu', { college: {} });
     return sendMainMenu(conversation, leadContext, inbound._id);
   }
 
@@ -209,11 +209,20 @@ async function processInbound({ conversation, inbound, leadLinks }) {
     }
     case 'college_predictor':
     case 'college_predictor_continue': {
-      await transitionState(conversation._id, conversation.phone, 'college_predictor', contextPatch);
-      const c = handleCollegePredictorMessage(inbound.text, contextPatch.college || {});
+      const isNewEntry = intentResult.intent === 'college_predictor';
+      const c = await handleCollegePredictorMessage(
+        inbound.text,
+        contextPatch.college || {},
+        { isNewEntry }
+      );
       replyText = c.reply;
-      contextPatch = { college: c.context };
-      nextState = 'college_predictor';
+      if (c.clearState) {
+        contextPatch = { college: {} };
+        nextState = 'main_menu';
+      } else {
+        contextPatch = { college: c.context };
+        nextState = 'college_predictor';
+      }
       break;
     }
     default: {

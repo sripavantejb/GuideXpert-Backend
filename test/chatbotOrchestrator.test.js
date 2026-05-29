@@ -17,6 +17,11 @@ describe('chatbotOrchestrator rules', () => {
     assert.equal(r.intent, 'main_menu');
   });
 
+  test('classifyIntent digit 4 in college_predictor state is continue', () => {
+    const r = classifyIntent('4', { state: 'college_predictor' }, 'iit_counselling');
+    assert.equal(r.intent, 'college_predictor_continue');
+  });
+
   test('classifyIntent rank predictor via natural language on guidexpert', () => {
     const r = classifyIntent('rank predictor', null, 'guidexpert');
     assert.equal(r.intent, 'rank_predictor');

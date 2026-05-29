@@ -1,7 +1,8 @@
 const { getDemoMeetingLink } = require('../../utils/slotNotificationFormatters');
 const { getRecentWaStatus } = require('./leadContextService');
+const { extractFirstName } = require('./welcomeMessageService');
 
-async function buildCounsellingSupportReply(leadContext) {
+async function buildCounsellingSupportReply(leadContext, opts = {}) {
   const lines = [];
   if (!leadContext.hasIit || !leadContext.iit) {
     lines.push(
@@ -13,24 +14,33 @@ async function buildCounsellingSupportReply(leadContext) {
   }
 
   const i = leadContext.iit;
-  lines.push(`Hi ${i.fullName || 'there'}! Here is your IIT counselling summary:`);
+  const firstName = extractFirstName(i.fullName);
+  const greeting = firstName ? `Hi ${firstName}!` : 'Hi there!';
+  lines.push(`${greeting} Here is your IIT counselling summary:`);
   lines.push(`• Session: ${i.slotBooking || 'Not set'}`);
-  if (i.slotInstantLabel) lines.push(`• Date & time (IST): ${i.slotInstantLabel}`);
+  if (i.slotInstantLabel) lines.push(`• Date & Time (IST): ${i.slotInstantLabel}`);
   if (i.preferredLanguage) lines.push(`• Language: ${i.preferredLanguage}`);
   if (i.assignedBdaName) lines.push(`• Your counsellor (BDA): ${i.assignedBdaName}`);
-  lines.push(`• Demo status: ${i.demoStatusLabel || '—'}`);
-  lines.push(`• Payment status (our records): ${i.paymentStatusLabel || '—'}`);
-  lines.push(`\nMeeting link (if shared for your session): ${getDemoMeetingLink()}`);
+  lines.push(`• Demo Status: ${i.demoStatusLabel || '—'}`);
 
-  const wa = await getRecentWaStatus(leadContext.phone, 2);
+  lines.push('');
+  lines.push('Meeting Link:');
+  lines.push(getDemoMeetingLink());
+
+  const wa =
+    opts.recentWa != null
+      ? opts.recentWa
+      : await getRecentWaStatus(leadContext.phone, 2);
   if (wa.length) {
-    lines.push('\nRecent WhatsApp reminders:');
+    lines.push('');
+    lines.push('Recent WhatsApp reminders:');
     wa.forEach((w) => {
       lines.push(`• ${w.messageKind}: ${w.status}${w.webhookErrorCode ? ` (${w.webhookErrorCode})` : ''}`);
     });
   }
 
-  lines.push('\nReply MENU for main menu or AGENT to speak with our team.');
+  lines.push('');
+  lines.push('Reply MENU for main menu or AGENT to speak with our team.');
   return lines.join('\n');
 }
 

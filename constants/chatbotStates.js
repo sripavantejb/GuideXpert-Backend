@@ -70,6 +70,7 @@ const GLOBAL_KEYWORDS = Object.freeze({
   menu: ['menu', 'help', 'start', 'hi', 'hello', 'hey'],
   agent: ['agent', 'human', 'person', 'talk to someone', 'counsellor', 'counselor', 'support'],
   stop: ['stop', 'unsubscribe', 'opt out', 'optout'],
+  cancel: ['cancel'],
 });
 
 module.exports = {

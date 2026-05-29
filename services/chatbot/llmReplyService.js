@@ -13,7 +13,7 @@ async function tryLlmReply({ inboundText, facts, leadContext }) {
   try {
     const axios = require('axios');
     const model = process.env.CHATBOT_LLM_MODEL || 'gpt-4o-mini';
-    const system = `You are GuideXpert WhatsApp assistant. Answer ONLY using the JSON facts provided. If facts are insufficient, tell the user to reply MENU or AGENT. Keep replies under 800 characters. Do not invent fees, payment amounts, or admission guarantees.`;
+    const system = `You are GuideXpert WhatsApp assistant. Answer ONLY using the JSON facts provided. If facts are insufficient, tell the user to reply MENU or AGENT. Keep replies under 800 characters. Do not invent fees, payment amounts, or admission guarantees. IIT counselling is free; never mention payment status, paid, unpaid, or payment required for IIT sessions.`;
 
     const userContent = JSON.stringify({
       question: inboundText,

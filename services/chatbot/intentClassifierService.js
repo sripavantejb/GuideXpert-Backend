@@ -24,8 +24,22 @@ function classifyIntent(text, botState, productLine) {
   if (matchesAny(t, GLOBAL_KEYWORDS.menu)) {
     return { intent: 'main_menu', confidence: 'high' };
   }
+  if (matchesAny(t, GLOBAL_KEYWORDS.cancel)) {
+    return { intent: 'main_menu', confidence: 'high' };
+  }
   if (matchesAny(t, GLOBAL_KEYWORDS.stop)) {
     return { intent: 'opt_out', confidence: 'high' };
+  }
+
+  if (botState && botState.state === 'college_predictor') {
+    return { intent: 'college_predictor_continue', confidence: 'high' };
+  }
+  if (botState && botState.state === 'rank_predictor') {
+    return { intent: 'rank_predictor_continue', confidence: 'high' };
+  }
+
+  if (/^again$/.test(t)) {
+    return { intent: 'college_predictor', confidence: 'high' };
   }
 
   if (productLine === 'iit_counselling') {
@@ -84,12 +98,6 @@ function classifyIntent(text, botState, productLine) {
     return { intent: 'demo_support', confidence: 'medium' };
   }
 
-  if (botState && botState.state === 'rank_predictor') {
-    return { intent: 'rank_predictor_continue', confidence: 'high' };
-  }
-  if (botState && botState.state === 'college_predictor') {
-    return { intent: 'college_predictor_continue', confidence: 'high' };
-  }
   if (botState && botState.state === 'faq') {
     return { intent: 'faq_query', confidence: 'medium' };
   }
