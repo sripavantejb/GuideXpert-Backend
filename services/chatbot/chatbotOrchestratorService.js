@@ -45,12 +45,24 @@ function useButtonMenu() {
   return String(process.env.CHATBOT_USE_BUTTON_MENU || '').trim() === '1';
 }
 
+/** Opt-in IIT interactive list menu (disabled by default while verifying list send issues). */
+function useIitListMenu() {
+  return String(process.env.CHATBOT_USE_IIT_LIST_MENU || '').trim() === '1';
+}
+
 function buildMainMenuText(leadContext) {
   return buildWelcomeMenuText(leadContext);
 }
 
 function buildMainMenuButtons(leadContext) {
   const line = leadContext?.productLine || 'unknown';
+  if (line === 'iit_counselling') {
+    return [
+      { id: 'menu_1', title: 'My Details' },
+      { id: 'menu_4', title: 'Rank Predictor' },
+      { id: 'menu_agent', title: 'Talk to Counsellor' },
+    ];
+  }
   if (line === 'guidexpert') {
     return [
       { id: 'menu_2', title: 'Program Overview' },
@@ -112,7 +124,7 @@ async function sendMainMenu(conversation, leadContext, inReplyToInboundId) {
   const body = buildMainMenuText(leadContext);
   const line = leadContext?.productLine || conversation.productLine || 'unknown';
 
-  if (useButtonMenu() && line === 'iit_counselling') {
+  if (useButtonMenu() && line === 'iit_counselling' && useIitListMenu()) {
     return h.outbound.sendBotListReply({
       conversationId: conversation._id,
       phone10: conversation.phone,

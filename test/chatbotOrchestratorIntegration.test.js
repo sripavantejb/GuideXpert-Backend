@@ -112,23 +112,16 @@ describe('chatbotOrchestrator integration', () => {
     assert.equal(buildLeadContextCalls, 1);
   });
 
-  test('IIT MENU sends list menu with college predictor option', async () => {
+  test('IIT MENU sends button menu when list menu is disabled', async () => {
     await processInbound({
       conversation: makeConversation(),
       inbound: makeInbound({ text: 'menu' }),
       leadLinks: { phone10: '9876543210', productLine: 'iit_counselling' },
     });
     assert.equal(outboundCalls.length, 1);
-    assert.equal(outboundCalls[0].type, 'list');
-    const rowIds = outboundCalls[0].sections[0].rows.map((r) => r.id);
-    assert.deepEqual(rowIds, [
-      'menu_1',
-      'menu_2',
-      'menu_3',
-      'menu_4',
-      'menu_5',
-      'menu_6',
-    ]);
+    assert.equal(outboundCalls[0].type, 'button');
+    const buttonIds = outboundCalls[0].buttons.map((b) => b.id);
+    assert.deepEqual(buttonIds, ['menu_1', 'menu_4', 'menu_agent']);
     assert.match(outboundCalls[0].body, /College Predictor/);
   });
 
