@@ -1,9 +1,6 @@
 const { getPredictedColleges: getNwPredictedColleges } = require('../services/nwCollegePredictorService');
-const {
-  getPredictedColleges: getCollegeDostPredicted,
-  canonicalExamKey,
-  isSupportedExamInput,
-} = require('../services/collegeDostService');
+const { canonicalExamKey, isSupportedExamInput } = require('../services/collegeDostService');
+const { fetchCollegeDostColleges } = require('../services/collegePredictorCore');
 const { rankToCutoff } = require('../utils/rankToCutoff');
 
 /**
@@ -121,72 +118,12 @@ async function getPredictedCollegesHandler(req, res) {
 async function handleCollegeDost(req, res, offset, limit, body) {
   const exam = String(body.exam).trim();
 
-  // Auto-derive cutoffs from rank when cutoff fields are absent.
-  tryDeriveRankCutoffs(body, exam);
-
-  const rawFrom = body.cutoff_from;
-  const rawTo = body.cutoff_to;
-  const cutoffFrom = rawFrom != null && rawFrom !== '' ? parseInt(Number(rawFrom), 10) : NaN;
-  const cutoffTo = rawTo != null && rawTo !== '' ? parseInt(Number(rawTo), 10) : NaN;
-
-  if (rawFrom === undefined || rawFrom === null || rawFrom === '') {
-    return res.status(400).json({ response: 'cutoff_from is required (or provide rank / wbjee_rank / jee_main_rank)', res_status: 'INVALID_INPUT_FORMAT', http_status_code: 400 });
-  }
-  if (rawTo === undefined || rawTo === null || rawTo === '') {
-    return res.status(400).json({ response: 'cutoff_to is required (or provide rank / wbjee_rank / jee_main_rank)', res_status: 'INVALID_INPUT_FORMAT', http_status_code: 400 });
-  }
-  if (!Number.isInteger(cutoffFrom) || cutoffFrom < 0) {
-    return res.status(400).json({ response: 'cutoff_from must be a non-negative integer', res_status: 'INVALID_INPUT_FORMAT', http_status_code: 400 });
-  }
-  if (!Number.isInteger(cutoffTo) || cutoffTo < 0) {
-    return res.status(400).json({ response: 'cutoff_to must be a non-negative integer', res_status: 'INVALID_INPUT_FORMAT', http_status_code: 400 });
-  }
-  if (cutoffFrom >= cutoffTo) {
-    return res.status(400).json({ response: 'cutoff_to must be greater than cutoff_from', res_status: 'INVALID_CUTOFF_RANGE', http_status_code: 400 });
-  }
-
-  const sortOrder = (body.sort_order != null && body.sort_order !== '') ? String(body.sort_order).toUpperCase() : 'ASC';
-  if (sortOrder !== 'ASC' && sortOrder !== 'DESC') {
-    return res.status(400).json({ response: 'sort_order must be ASC or DESC', res_status: 'INVALID_INPUT_FORMAT', http_status_code: 400 });
-  }
-
-  // v2 API requires all array fields to be present (even if empty)
-  let reservationCodes = [];
-  if (Array.isArray(body.reservation_category_codes) && body.reservation_category_codes.length > 0) {
-    reservationCodes = body.reservation_category_codes;
-  } else if (body.reservation_category_code) {
-    reservationCodes = [String(body.reservation_category_code).trim()];
-  }
-
-  const quota = body.quota != null && String(body.quota).trim() !== '' ? String(body.quota).trim() : undefined;
-
-  const payload = {
-    entrance_exam_name_enum: body.entrance_exam_name_enum || exam,
-    admission_category_name_enum: body.admission_category_name_enum || 'GENERAL',
-    cutoff_from: cutoffFrom,
-    cutoff_to: cutoffTo,
-    reservation_category_codes: reservationCodes,
-    branch_codes: Array.isArray(body.branch_codes) ? body.branch_codes : [],
-    districts: Array.isArray(body.districts) ? body.districts : [],
-    sort_order: sortOrder,
-    quota,
-  };
-
-  // Upstream JEE & WBJEE datasets accept admission enum DEFAULT only.
-  if (
-    needsDefaultAdmissionEnum(payload.entrance_exam_name_enum) ||
-    needsDefaultAdmissionEnum(exam) ||
-    needsDefaultAdmissionEnum(body.entrance_exam_name_enum)
-  ) {
-    payload.admission_category_name_enum = 'DEFAULT';
-  }
-
   if (process.env.NODE_ENV !== 'production') {
-    console.log('[college-predictor:collegeDost] exam:', exam, '| payload:', JSON.stringify(payload));
+    console.log('[college-predictor:collegeDost] exam:', exam, '| body:', JSON.stringify(body));
   }
 
   try {
-    const data = normalizePredictorResponse(await getCollegeDostPredicted(exam, offset, limit, payload));
+    const data = normalizePredictorResponse(await fetchCollegeDostColleges(exam, offset, limit, body));
     return res.status(200).json(data);
   } catch (err) {
     const status = err.http_status_code || 502;

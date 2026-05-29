@@ -1,7 +1,25 @@
 const axios = require('axios');
-const { getCollegePredictorAccessToken } = require('../utils/collegePredictorToken');
 
 const BASE_URL = process.env.NW_PREDICTORS_BASE_URL || 'https://nw-predictors-backend-beta.earlywave.in';
+
+/** Same env as counsellor college predictor — no WhatsApp-specific variable. */
+function getPredictorAccessToken() {
+  const token =
+    process.env.NW_PREDICTORS_ACCESS_TOKEN || process.env.COLLEGEDOST_ACCESS_TOKEN;
+  if (!token || !String(token).trim()) return null;
+  return String(token).trim();
+}
+
+function buildPredictorAuthHeaders(token) {
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token}`,
+  };
+  if (process.env.NW_PREDICTORS_X_SOURCE) {
+    headers['X-Source'] = process.env.NW_PREDICTORS_X_SOURCE;
+  }
+  return headers;
+}
 const V1_PATH = '/api/nw_college_predictor/colleges/get/v1/';
 const V2_PATH = '/api/nw_college_predictor/colleges/get/v2/';
 
@@ -234,7 +252,7 @@ function buildInnerBodyV2(body, apiExamEnum) {
 async function callUpstream(url, payload, token) {
   try {
     const res = await axios.post(url, payload, {
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: buildPredictorAuthHeaders(token),
       timeout: 30000,
       validateStatus: () => true,
     });
@@ -271,7 +289,7 @@ async function callUpstream(url, payload, token) {
  * @returns {Promise<object>} { total_no_of_colleges, admission_category_name, colleges }
  */
 async function getPredictedColleges(exam, offset, limit, body) {
-  const token = getCollegePredictorAccessToken();
+  const token = getPredictorAccessToken();
   if (!token) {
     const err = new Error('Access token is not configured');
     err.http_status_code = 503;
@@ -319,10 +337,7 @@ async function getPredictedColleges(exam, offset, limit, body) {
 
   try {
     const res = await axios.post(urlV1, requestPayloadV1, {
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
+      headers: buildPredictorAuthHeaders(token),
       timeout: 30000,
       validateStatus: () => true,
     });
@@ -370,6 +385,7 @@ async function getPredictedColleges(exam, offset, limit, body) {
 
 module.exports = {
   getPredictedColleges,
+  getPredictorAccessToken,
   SUPPORTED_EXAMS,
   EXAM_API_MAP,
   canonicalExamKey,

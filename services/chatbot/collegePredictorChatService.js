@@ -1,6 +1,5 @@
 const { normalizeText } = require('./intentClassifierService');
-// Same token as counsellor college predictor: NW_PREDICTORS_ACCESS_TOKEN on Vercel (no extra env).
-const { getPredictedColleges: defaultGetPredictedColleges } = require('../collegeDostService');
+const { fetchCollegeDostColleges } = require('../collegePredictorCore');
 const {
   EXAM_AP,
   initialContext,
@@ -16,18 +15,33 @@ const {
   resolveReservationCode,
   AP_OC_MALE_BLOCKED_REPLY,
   mapRegionChoice,
-  buildPredictorRequestBody,
   formatPredictionReply,
 } = require('../../constants/whatsappCollegePredictor');
 
-let getPredictedCollegesFn = defaultGetPredictedColleges;
+let fetchCollegeDostCollegesFn = fetchCollegeDostColleges;
 
 function setCollegePredictorDeps(deps = {}) {
-  if (deps.getPredictedColleges) {
-    getPredictedCollegesFn = deps.getPredictedColleges;
+  if (deps.fetchCollegeDostColleges) {
+    fetchCollegeDostCollegesFn = deps.fetchCollegeDostColleges;
+  } else if (deps.getPredictedColleges) {
+    fetchCollegeDostCollegesFn = (exam, offset, limit, body) =>
+      deps.getPredictedColleges(exam, offset, limit, body);
   } else {
-    getPredictedCollegesFn = defaultGetPredictedColleges;
+    fetchCollegeDostCollegesFn = fetchCollegeDostColleges;
   }
+}
+
+/** Same request shape as counsellor POST /api/counsellor/college-predictor/colleges */
+function buildCounsellorStyleRequestBody(ctx) {
+  const body = {
+    exam: ctx.exam,
+    rank: ctx.rank,
+    reservation_category_codes: ctx.reservation_category_codes,
+  };
+  if (ctx.exam === EXAM_AP && ctx.admission_category_name_enum) {
+    body.admission_category_name_enum = ctx.admission_category_name_enum;
+  }
+  return body;
 }
 
 function parsePositiveIntRank(text) {
@@ -47,8 +61,12 @@ function parseMenuDigit(text) {
 }
 
 async function runPrediction(ctx) {
-  const body = buildPredictorRequestBody(ctx);
-  const data = await getPredictedCollegesFn(ctx.exam, 0, 5, body);
+  const data = await fetchCollegeDostCollegesFn(
+    ctx.exam,
+    0,
+    5,
+    buildCounsellorStyleRequestBody(ctx)
+  );
   const colleges = data?.colleges || [];
   const reply = formatPredictionReply(ctx, colleges);
   return {
@@ -181,6 +199,15 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
       try {
         return await runPrediction({ ...next, step: 'predict' });
       } catch (err) {
+        console.error('[whatsapp:college-predictor] predict failed:', {
+          exam: next.exam,
+          rank: next.rank,
+          reservation: next.reservation_category_codes,
+          http_status_code: err.http_status_code,
+          res_status: err.res_status,
+          response: err.response,
+          upstreamDetail: err.upstreamBody?.detail,
+        });
         return {
           reply:
             'We could not fetch college predictions right now. Please try again in a moment.\n\nYour details are saved — send any message to retry.',
@@ -218,6 +245,16 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
       try {
         return await runPrediction(ready);
       } catch (err) {
+        console.error('[whatsapp:college-predictor] predict failed:', {
+          exam: ready.exam,
+          rank: ready.rank,
+          reservation: ready.reservation_category_codes,
+          region: ready.admission_category_name_enum,
+          http_status_code: err.http_status_code,
+          res_status: err.res_status,
+          response: err.response,
+          upstreamDetail: err.upstreamBody?.detail,
+        });
         return {
           reply:
             'We could not fetch college predictions right now. Please try again in a moment.\n\nYour details are saved — send any message to retry.',
@@ -237,6 +274,15 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
       try {
         return await runPrediction(ctx);
       } catch (err) {
+        console.error('[whatsapp:college-predictor] predict retry failed:', {
+          exam: ctx.exam,
+          rank: ctx.rank,
+          reservation: ctx.reservation_category_codes,
+          http_status_code: err.http_status_code,
+          res_status: err.res_status,
+          response: err.response,
+          upstreamDetail: err.upstreamBody?.detail,
+        });
         return {
           reply:
             'We could not fetch college predictions right now. Please try again in a moment.\n\nSend any message to retry.',

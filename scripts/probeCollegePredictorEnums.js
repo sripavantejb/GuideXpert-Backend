@@ -98,9 +98,10 @@ function outboundBody(inner) {
 }
 
 async function postV1(inner) {
-  const token = process.env.COLLEGEDOST_ACCESS_TOKEN || process.env.NW_PREDICTORS_ACCESS_TOKEN;
-  if (!token || !String(token).trim()) {
-    return { skip: true, reason: 'No COLLEGEDOST_ACCESS_TOKEN or NW_PREDICTORS_ACCESS_TOKEN' };
+  const { getPredictorAccessToken } = require('../services/collegeDostService');
+  const token = getPredictorAccessToken();
+  if (!token) {
+    return { skip: true, reason: 'No NW_PREDICTORS_ACCESS_TOKEN or COLLEGEDOST_ACCESS_TOKEN' };
   }
   const url = `${BASE_URL}${V1_PATH}?offset=0&limit=3`;
   const body = outboundBody(inner);
@@ -126,8 +127,9 @@ async function postV1(inner) {
 }
 
 async function postV2(inner) {
-  const token = process.env.COLLEGEDOST_ACCESS_TOKEN || process.env.NW_PREDICTORS_ACCESS_TOKEN;
-  if (!token || !String(token).trim()) {
+  const { getPredictorAccessToken } = require('../services/collegeDostService');
+  const token = getPredictorAccessToken();
+  if (!token) {
     return { skip: true, reason: 'No token' };
   }
   const url = `${BASE_URL}${V2_PATH}?offset=0&limit=3`;
