@@ -1,147 +1,37 @@
-/**
- * WhatsApp College Predictor V1 — AP EAMCET & TS EAMCET only.
- * Reservation codes verified against earlywave (see frontend collegePredictorOptions.js).
- * Gender-aware codes: AP_EAMCET_RESERVATION_OPTIONS / TS_EAMCET_RESERVATION_OPTIONS.
- */
-
 const { rankToCutoff } = require('../utils/rankToCutoff');
+const {
+  EXAM_AP,
+  EXAM_TS,
+  AP_TS_CATEGORY_OPTIONS,
+  AP_REGION_OPTIONS,
+  isApOcMaleBlocked: isApOcMaleBlockedByCategory,
+  resolveApTsReservationCode,
+} = require('../services/chatbot/whatsappCollegePredictor/apTs');
 
 const FLOW = 'college_predictor';
+const EXAM_TNEA = 'TNEA';
+const EXAM_KCET = 'KCET';
+const EXAM_KEAM = 'KEAM';
+const EXAM_WBJEE = 'WBJEE_2024';
+const EXAM_JEE_MAIN = 'JEE_MAINS_2024';
+const EXAM_JEE_ADV = 'JEE_ADVANCE_2024';
+const EXAM_MHT = 'MHTCET';
 
-const EXAM_AP = 'AP_EAMCET';
-const EXAM_TS = 'TS_EAMCET';
+const EXAM_OPTIONS = [
+  { id: 1, value: EXAM_AP, label: 'AP EAMCET' },
+  { id: 2, value: EXAM_TS, label: 'TS EAMCET' },
+  { id: 3, value: EXAM_TNEA, label: 'TNEA' },
+  { id: 4, value: EXAM_KCET, label: 'KCET' },
+  { id: 5, value: EXAM_KEAM, label: 'KEAM' },
+  { id: 6, value: EXAM_WBJEE, label: 'WBJEE' },
+  { id: 7, value: EXAM_JEE_MAIN, label: 'JEE Main' },
+  { id: 8, value: EXAM_JEE_ADV, label: 'JEE Advanced' },
+  { id: 9, value: EXAM_MHT, label: 'MHT CET' },
+];
 
-const EXAM_DISPLAY = {
-  [EXAM_AP]: 'AP EAMCET',
-  [EXAM_TS]: 'TS EAMCET',
-};
+const EXAM_DISPLAY = Object.fromEntries(EXAM_OPTIONS.map((it) => [it.value, it.label]));
 
-/** AP EAMCET menu category index for Open Competition (OC). */
-const AP_OC_CATEGORY_N = 1;
-
-/**
- * Menu category → upstream reservation code by exam and gender (verified on earlywave beta).
- * AP OC + Male: no verified upstream code (no OC BOYS on beta); do not guess — block prediction.
- */
-const RESERVATION_BY_CATEGORY = {
-  1: {
-    label: 'OC',
-    AP_EAMCET: { female: 'OC GIRLS', male: null },
-    TS_EAMCET: { female: 'OC GIRLS', male: 'OC BOYS' },
-  },
-  2: {
-    label: 'BC-A',
-    AP_EAMCET: { female: 'BCA GIRLS', male: 'BCA BOYS' },
-    TS_EAMCET: { female: 'BCA GIRLS', male: 'BCA BOYS' },
-  },
-  3: {
-    label: 'BC-B',
-    AP_EAMCET: { female: 'BCB GIRLS', male: 'BCB BOYS' },
-    TS_EAMCET: { female: 'BCB GIRLS', male: 'BCB BOYS' },
-  },
-  4: {
-    label: 'BC-C',
-    AP_EAMCET: { female: 'BCC GIRLS', male: 'BCC BOYS' },
-    TS_EAMCET: { female: 'BCC GIRLS', male: 'BCC BOYS' },
-  },
-  5: {
-    label: 'BC-D',
-    AP_EAMCET: { female: 'BCD GIRLS', male: 'BCD BOYS' },
-    TS_EAMCET: { female: 'BCD GIRLS', male: 'BCD BOYS' },
-  },
-  6: {
-    label: 'BC-E',
-    AP_EAMCET: { female: 'BCE GIRLS', male: 'BCE BOYS' },
-    TS_EAMCET: { female: 'BCE GIRLS', male: 'BCE BOYS' },
-  },
-  7: {
-    label: 'SC',
-    AP_EAMCET: { female: 'SC GIRLS', male: 'SC BOYS' },
-    TS_EAMCET: { female: 'SC GIRLS', male: 'SC BOYS' },
-  },
-  8: {
-    label: 'ST',
-    AP_EAMCET: { female: 'ST GIRLS', male: 'ST BOYS' },
-    TS_EAMCET: { female: 'ST GIRLS', male: 'ST BOYS' },
-  },
-  9: {
-    label: 'EWS',
-    AP_EAMCET: { female: 'OC EWS GIRLS', male: 'OC EWS BOYS' },
-    TS_EAMCET: { female: 'EWS GEN OU', male: 'OC EWS BOYS' },
-  },
-};
-
-/** @deprecated use RESERVATION_BY_CATEGORY — kept for tests/docs */
-const CATEGORY_MENU = Object.entries(RESERVATION_BY_CATEGORY).map(([n, row]) => ({
-  n: Number(n),
-  label: row.label,
-  apCode: row.AP_EAMCET.female,
-  tsCode: row.TS_EAMCET.male,
-}));
-
-const PROMPT_EXAM = [
-  '🎓 College Predictor',
-  '',
-  'Which exam would you like to predict colleges for?',
-  '',
-  '1️⃣ AP EAMCET',
-  '2️⃣ TS EAMCET',
-  '',
-  'Example: Reply 1 for AP EAMCET.',
-].join('\n');
-
-const PROMPT_RANK = [
-  '📊 Please enter your rank.',
-  '',
-  'Example:',
-  '',
-  '15000',
-].join('\n');
-
-const PROMPT_GENDER = [
-  'Please select your gender.',
-  '',
-  'Reply with the number only:',
-  '',
-  '1️⃣ Male',
-  '2️⃣ Female',
-  '',
-  'Example: Reply 1 for Male.',
-].join('\n');
-
-function buildCategoryPrompt() {
-  const lines = [
-    '🎓 Please select your category.',
-    '',
-    'Reply with the number only:',
-    '',
-  ];
-  for (const n of Object.keys(RESERVATION_BY_CATEGORY).map(Number).sort((a, b) => a - b)) {
-    const row = RESERVATION_BY_CATEGORY[n];
-    const emoji = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣'][n - 1];
-    lines.push(`${emoji} ${row.label}`);
-  }
-  lines.push('', 'Example: Reply 4 for BC-C.');
-  return lines.join('\n');
-}
-
-const PROMPT_REGION = [
-  '📍 Please select your region.',
-  '',
-  '1️⃣ AU (Andhra University)',
-  '2️⃣ SVU (Sri Venkateswara University)',
-  '',
-  'Example: Reply 1 for AU.',
-].join('\n');
-
-const FOOTER_ACTIONS = [
-  '',
-  'Reply:',
-  '',
-  'MENU → Main Menu',
-  'AGENT → Talk to Expert',
-  'AGAIN → Run Another Prediction',
-].join('\n');
+const FOOTER_ACTIONS = ['', 'Reply:', '', 'MENU -> Main Menu', 'AGENT -> Talk to Expert', 'AGAIN -> Run Another Prediction'].join('\n');
 
 const AP_OC_MALE_BLOCKED_REPLY = [
   'We currently need your exact AP EAMCET reservation category to provide an accurate prediction.',
@@ -149,96 +39,87 @@ const AP_OC_MALE_BLOCKED_REPLY = [
   'Please connect with a GuideXpert expert for assistance.',
   '',
   'Reply:',
-  'AGENT → Talk to Expert',
-  'MENU → Main Menu',
+  'AGENT -> Talk to Expert',
+  'MENU -> Main Menu',
 ].join('\n');
 
-function mapExamChoice(n) {
-  if (n === 1) return EXAM_AP;
-  if (n === 2) return EXAM_TS;
-  return null;
+function buildNumberedPrompt(title, options, example) {
+  const digits = ['1.', '2.', '3.', '4.', '5.', '6.', '7.', '8.', '9.', '10.', '11.', '12.'];
+  const lines = [title, '', 'Reply with number only:', ''];
+  options.forEach((opt, i) => lines.push(`${digits[i] || `${i + 1}.`} ${opt.label}`));
+  if (example) lines.push('', `Example: ${example}`);
+  return lines.join('\n');
 }
 
-function mapCategoryChoice(n) {
-  const row = RESERVATION_BY_CATEGORY[n];
-  if (!row) return null;
-  return { label: row.label, categoryN: n };
+function buildExamPrompt() {
+  return buildNumberedPrompt(
+    'College Predictor\n\nWhich exam would you like to predict colleges for?',
+    EXAM_OPTIONS,
+    'Reply 1 for AP EAMCET'
+  );
+}
+
+const PROMPT_EXAM = buildExamPrompt();
+const PROMPT_RANK = ['Please enter your rank.', '', 'Example: 15000'].join('\n');
+const PROMPT_PERCENTILE = ['Please enter your percentile (1 to 100).', '', 'Example: 92.5'].join('\n');
+const PROMPT_GENDER = buildNumberedPrompt('Please select your gender.', [
+  { id: 1, value: 'male', label: 'Male' },
+  { id: 2, value: 'female', label: 'Female' },
+], 'Reply 1 for Male');
+
+function mapById(options, id) {
+  return options.find((it) => Number(it.id) === Number(id)) || null;
+}
+
+function mapExamChoice(n) {
+  const m = mapById(EXAM_OPTIONS, n);
+  return m ? m.value : null;
 }
 
 function mapGenderChoice(n) {
-  if (n === 1) return 'male';
-  if (n === 2) return 'female';
+  if (Number(n) === 1) return 'male';
+  if (Number(n) === 2) return 'female';
   return null;
-}
-
-/**
- * AP EAMCET Open Category (OC) has no verified male code on earlywave; never map to BC-* proxies.
- * @param {string} exam
- * @param {number} categoryN
- * @param {'male'|'female'|string} gender
- */
-function isApOcMaleBlocked(exam, categoryN, gender) {
-  return exam === EXAM_AP && Number(categoryN) === AP_OC_CATEGORY_N && gender === 'male';
-}
-
-/**
- * Resolve upstream reservation_category_code from exam, menu category, and gender.
- * @param {string} exam AP_EAMCET | TS_EAMCET
- * @param {number} categoryN 1–9
- * @param {'male'|'female'} gender
- * @returns {string|null}
- */
-function resolveReservationCode(exam, categoryN, gender) {
-  if (isApOcMaleBlocked(exam, categoryN, gender)) return null;
-  const row = RESERVATION_BY_CATEGORY[categoryN];
-  if (!row || !exam) return null;
-  const bucket = row[exam];
-  if (!bucket) return null;
-  const g = gender === 'female' ? 'female' : gender === 'male' ? 'male' : null;
-  if (!g) return null;
-  const code = bucket[g];
-  return code != null && String(code).trim() !== '' ? code : null;
 }
 
 function mapRegionChoice(n) {
-  if (n === 1) return 'AU';
-  if (n === 2) return 'SVU';
-  return null;
+  const m = mapById(AP_REGION_OPTIONS, n);
+  return m ? m.value : null;
+}
+
+function mapCategoryChoice(n) {
+  const m = mapById(AP_TS_CATEGORY_OPTIONS, n);
+  if (!m) return null;
+  return { categoryN: m.id, label: m.label };
+}
+
+function isApOcMaleBlocked(exam, categoryN, gender) {
+  return exam === EXAM_AP && isApOcMaleBlockedByCategory(categoryN, gender);
+}
+
+function resolveReservationCode(exam, categoryN, gender) {
+  return resolveApTsReservationCode(exam, categoryN, gender);
 }
 
 function formatGenderLabel(gender) {
   if (gender === 'male') return 'Male';
   if (gender === 'female') return 'Female';
-  return '—';
+  return 'NA';
 }
 
-/**
- * @param {object} ctx — college context with exam, rank, reservation_category_codes, admission_category_name_enum
- */
 function buildPredictorRequestBody(ctx) {
-  const exam = ctx.exam;
-  const rank = ctx.rank;
-  const range = rankToCutoff(rank);
-  if (!range) {
-    throw new Error('Invalid rank for cutoff');
-  }
-  const [cutoff_from, cutoff_to] = range;
+  const range = rankToCutoff(ctx.rank);
+  if (!range) throw new Error('Invalid rank for cutoff');
   const reservation =
     Array.isArray(ctx.reservation_category_codes) && ctx.reservation_category_codes.length > 0
       ? ctx.reservation_category_codes[0]
       : null;
-  if (!reservation) {
-    throw new Error('Missing reservation category');
-  }
-
-  const admission_category_name_enum =
-    exam === EXAM_AP ? ctx.admission_category_name_enum || 'AU' : 'DEFAULT';
-
+  if (!reservation) throw new Error('Missing reservation category');
   return {
-    entrance_exam_name_enum: exam,
-    admission_category_name_enum,
-    cutoff_from,
-    cutoff_to,
+    entrance_exam_name_enum: ctx.exam,
+    admission_category_name_enum: ctx.exam === EXAM_AP ? ctx.admission_category_name_enum || 'AU' : 'DEFAULT',
+    cutoff_from: range[0],
+    cutoff_to: range[1],
     reservation_category_codes: [reservation],
     branch_codes: [],
     districts: [],
@@ -247,73 +128,70 @@ function buildPredictorRequestBody(ctx) {
 }
 
 function pickBranchLine(college) {
-  const branches = college?.branches;
-  if (!Array.isArray(branches) || branches.length === 0) {
-    return '—';
-  }
-  const b = branches[0];
-  return b.branch_name || b.branch_code || '—';
+  const b = Array.isArray(college?.branches) ? college.branches[0] : null;
+  return b?.branch_name || b?.branch_code || 'NA';
 }
 
-/**
- * @param {object} ctx
- * @param {object[]} colleges
- */
 function formatPredictionReply(ctx, colleges) {
-  const examLabel = EXAM_DISPLAY[ctx.exam] || ctx.exam;
-  const categoryLabel = ctx.categoryLabel || '—';
-  const genderLabel = formatGenderLabel(ctx.gender);
   const lines = [
-    '🎯 Based on your profile:',
+    'Based on your profile:',
     '',
-    `Exam: ${examLabel}`,
-    `Rank: ${ctx.rank}`,
-    `Category: ${categoryLabel}`,
-    `Gender: ${genderLabel}`,
+    `Exam: ${EXAM_DISPLAY[ctx.exam] || ctx.exam}`,
+    `Rank/Percentile: ${ctx.percentile != null ? ctx.percentile : ctx.rank}`,
+    `Category: ${ctx.categoryLabel || 'NA'}`,
+    `Gender: ${formatGenderLabel(ctx.gender)}`,
     '',
     'Top Matches:',
     '',
   ];
-
   const list = Array.isArray(colleges) ? colleges.slice(0, 5) : [];
   if (list.length === 0) {
     lines.push('No colleges found for this profile.');
-    lines.push('Try a different category or rank, or reply AGAIN to start over.');
+    lines.push('Try AGAIN with different inputs.');
   } else {
-    const nums = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
     list.forEach((c, i) => {
-      lines.push(`${nums[i]} ${c.college_name || 'College'}`);
+      lines.push(`${i + 1}. ${c.college_name || 'College'}`);
       lines.push(pickBranchLine(c));
       lines.push('');
     });
   }
-
   lines.push(FOOTER_ACTIONS.trim());
   return lines.join('\n');
 }
 
 function initialContext() {
-  return {
-    flow: FLOW,
-    step: 'exam',
-  };
+  return { flow: FLOW, step: 'exam' };
 }
 
 module.exports = {
   FLOW,
   EXAM_AP,
   EXAM_TS,
+  EXAM_TNEA,
+  EXAM_KCET,
+  EXAM_KEAM,
+  EXAM_WBJEE,
+  EXAM_JEE_MAIN,
+  EXAM_JEE_ADV,
+  EXAM_MHT,
+  EXAM_OPTIONS,
   EXAM_DISPLAY,
-  AP_OC_CATEGORY_N,
-  CATEGORY_MENU,
-  RESERVATION_BY_CATEGORY,
+  CATEGORY_MENU: AP_TS_CATEGORY_OPTIONS.map((it) => ({ n: it.id, label: it.label })),
+  RESERVATION_BY_CATEGORY: Object.fromEntries(
+    AP_TS_CATEGORY_OPTIONS.map((it) => [
+      it.id,
+      { label: it.label, AP_EAMCET: it.byExamGender.AP_EAMCET, TS_EAMCET: it.byExamGender.TS_EAMCET },
+    ])
+  ),
   PROMPT_EXAM,
   PROMPT_RANK,
+  PROMPT_PERCENTILE,
   PROMPT_GENDER,
-  buildCategoryPrompt,
-  PROMPT_REGION,
+  PROMPT_REGION: buildNumberedPrompt('Please select your region.', AP_REGION_OPTIONS, 'Reply 1 for AU'),
   FOOTER_ACTIONS,
   AP_OC_MALE_BLOCKED_REPLY,
+  buildNumberedPrompt,
+  mapById,
   mapExamChoice,
   mapCategoryChoice,
   mapGenderChoice,

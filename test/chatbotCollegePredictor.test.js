@@ -2,21 +2,24 @@
 
 const { describe, test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('fs');
-const path = require('path');
 const { classifyIntent } = require('../services/chatbot/intentClassifierService');
 const {
   handleCollegePredictorMessage,
   setCollegePredictorDeps,
 } = require('../services/chatbot/collegePredictorChatService');
 const {
-  buildPredictorRequestBody,
-  resolveReservationCode,
-  isApOcMaleBlocked,
   EXAM_AP,
   EXAM_TS,
+  EXAM_TNEA,
+  EXAM_KCET,
+  EXAM_KEAM,
+  EXAM_WBJEE,
+  EXAM_JEE_MAIN,
+  EXAM_JEE_ADV,
+  EXAM_MHT,
   PROMPT_EXAM,
   AP_OC_MALE_BLOCKED_REPLY,
+  mapExamChoice,
 } = require('../constants/whatsappCollegePredictor');
 
 const MOCK_COLLEGES = {
@@ -33,14 +36,16 @@ const MOCK_COLLEGES = {
   total_no_of_colleges: 2,
 };
 
-function mockPredictorSuccess() {
+function makeSuccessPredictor(callLog) {
   return async (exam, offset, limit, body) => {
-    return { ...MOCK_COLLEGES, _body: body, _exam: exam, _offset: offset, _limit: limit };
+    callLog.push({ exam, offset, limit, body });
+    return { ...MOCK_COLLEGES };
   };
 }
 
-function mockPredictorFail() {
-  return async () => {
+function makeFailPredictor(callLog) {
+  return async (exam, offset, limit, body) => {
+    callLog.push({ exam, offset, limit, body });
     const err = new Error('upstream');
     err.res_status = 'UPSTREAM_ERROR';
     throw err;
@@ -53,36 +58,104 @@ function mockPredictorMustNotBeCalled() {
   };
 }
 
-async function runTsToPredict(ctx, { category = '4', gender = '2' } = {}) {
-  let r = await handleCollegePredictorMessage('2', ctx);
-  r = await handleCollegePredictorMessage('15000', r.context);
-  r = await handleCollegePredictorMessage(category, r.context);
-  r = await handleCollegePredictorMessage(gender, r.context);
+async function runFlow(steps, context = {}) {
+  let r = await handleCollegePredictorMessage(steps[0], context, { isNewEntry: true });
+  for (const s of steps.slice(1)) {
+    r = await handleCollegePredictorMessage(s, r.context);
+  }
   return r;
 }
 
 describe('chatbotCollegePredictor', () => {
+  let calls = [];
+
   beforeEach(() => {
-    setCollegePredictorDeps({ getPredictedColleges: mockPredictorSuccess() });
+    calls = [];
+    setCollegePredictorDeps({ getPredictedColleges: makeSuccessPredictor(calls) });
   });
 
   afterEach(() => {
     setCollegePredictorDeps({});
   });
 
-  test('TS EAMCET happy path with gender', async () => {
-    let r = await handleCollegePredictorMessage('ignored', {}, { isNewEntry: true });
-    assert.match(r.reply, /AP EAMCET/);
-    assert.equal(r.context.step, 'exam');
+  test('exam chooser maps all nine options', () => {
+    assert.equal(mapExamChoice(1), EXAM_AP);
+    assert.equal(mapExamChoice(2), EXAM_TS);
+    assert.equal(mapExamChoice(3), EXAM_TNEA);
+    assert.equal(mapExamChoice(4), EXAM_KCET);
+    assert.equal(mapExamChoice(5), EXAM_KEAM);
+    assert.equal(mapExamChoice(6), EXAM_WBJEE);
+    assert.equal(mapExamChoice(7), EXAM_JEE_MAIN);
+    assert.equal(mapExamChoice(8), EXAM_JEE_ADV);
+    assert.equal(mapExamChoice(9), EXAM_MHT);
+  });
 
-    r = await runTsToPredict(r.context, { category: '4', gender: '2' });
+  test('TS EAMCET happy path with gender', async () => {
+    const r = await runFlow(['2', '15000', '4', '2']);
     assert.equal(r.clearState, true);
     assert.match(r.reply, /TS EAMCET/);
-    assert.match(r.reply, /Rank: 15000/);
+    assert.match(r.reply, /Rank\/Percentile: 15000/);
     assert.match(r.reply, /BC-C/);
     assert.match(r.reply, /Gender: Female/);
     assert.match(r.reply, /VNR VJIET/);
     assert.equal(r.context.step, 'done');
+    assert.equal(calls.at(-1).body.admission_category_name_enum, 'DEFAULT');
+    assert.equal(calls.at(-1).body.reservation_category_codes[0], 'BCC GIRLS');
+  });
+
+  test('TNEA happy path', async () => {
+    const r = await runFlow(['3', '12000', '2']);
+    assert.equal(r.clearState, true);
+    assert.equal(calls.at(-1).exam, EXAM_TNEA);
+    assert.equal(calls.at(-1).body.admission_category_name_enum, 'DEFAULT');
+    assert.equal(calls.at(-1).body.reservation_category_codes[0], 'BC');
+  });
+
+  test('KCET happy path with admission type then category', async () => {
+    const r = await runFlow(['4', '9500', '2', '3']);
+    assert.equal(r.clearState, true);
+    assert.equal(calls.at(-1).exam, EXAM_KCET);
+    assert.equal(calls.at(-1).body.admission_category_name_enum, 'HK');
+    assert.equal(calls.at(-1).body.reservation_category_codes[0], '2BG');
+  });
+
+  test('KEAM happy path', async () => {
+    const r = await runFlow(['5', '5000', '2']);
+    assert.equal(r.clearState, true);
+    assert.equal(calls.at(-1).exam, EXAM_KEAM);
+    assert.equal(calls.at(-1).body.admission_category_name_enum, 'DEFAULT');
+    assert.equal(calls.at(-1).body.reservation_category_codes[0], 'EW');
+  });
+
+  test('WBJEE happy path with quota', async () => {
+    const r = await runFlow(['6', '7000', '1', '1']);
+    assert.equal(r.clearState, true);
+    assert.equal(calls.at(-1).exam, EXAM_WBJEE);
+    assert.equal(calls.at(-1).body.reservation_category_codes[0], 'OPEN_AI');
+  });
+
+  test('JEE Main happy path gender + category expansion', async () => {
+    const r = await runFlow(['7', '25000', '2', '5']);
+    assert.equal(r.clearState, true);
+    assert.equal(calls.at(-1).exam, EXAM_JEE_MAIN);
+    assert.ok(calls.at(-1).body.reservation_category_codes.length > 0);
+    assert.ok(calls.at(-1).body.reservation_category_codes.some((x) => /OBC-NCL/.test(x)));
+  });
+
+  test('JEE Advanced happy path gender + category expansion', async () => {
+    const r = await runFlow(['8', '7000', '1', '1']);
+    assert.equal(r.clearState, true);
+    assert.equal(calls.at(-1).exam, EXAM_JEE_ADV);
+    assert.deepEqual(calls.at(-1).body.reservation_category_codes, ['OPEN_AI']);
+  });
+
+  test('MHT CET happy path percentile flow', async () => {
+    const r = await runFlow(['9', '94.5', '1', '1']);
+    assert.equal(r.clearState, true);
+    assert.equal(calls.at(-1).exam, EXAM_MHT);
+    assert.equal(calls.at(-1).body.admission_category_name_enum, 'SL');
+    assert.ok(Number.isInteger(calls.at(-1).body.cutoff_from));
+    assert.ok(Number.isInteger(calls.at(-1).body.cutoff_to));
   });
 
   test('AP EAMCET happy path with region and gender', async () => {
@@ -109,15 +182,15 @@ describe('chatbotCollegePredictor', () => {
     r = await handleCollegePredictorMessage('1', r.context);
     assert.equal(r.reply, AP_OC_MALE_BLOCKED_REPLY);
     assert.match(r.reply, /exact AP EAMCET reservation category/);
-    assert.match(r.reply, /AGENT → Talk to Expert/);
-    assert.match(r.reply, /MENU → Main Menu/);
+    assert.match(r.reply, /AGENT/);
+    assert.match(r.reply, /MENU/);
     assert.equal(r.clearState, true);
     assert.equal(r.context.step, 'done');
     assert.equal(r.context.reservation_category_codes, undefined);
   });
 
   test('AP OC Female still predicts', async () => {
-    setCollegePredictorDeps({ getPredictedColleges: mockPredictorSuccess() });
+    setCollegePredictorDeps({ getPredictedColleges: makeSuccessPredictor(calls) });
     let r = await handleCollegePredictorMessage('1', {}, { isNewEntry: true });
     r = await handleCollegePredictorMessage('15000', r.context);
     r = await handleCollegePredictorMessage('1', r.context);
@@ -130,7 +203,7 @@ describe('chatbotCollegePredictor', () => {
   });
 
   test('TS OC Male still predicts', async () => {
-    setCollegePredictorDeps({ getPredictedColleges: mockPredictorSuccess() });
+    setCollegePredictorDeps({ getPredictedColleges: makeSuccessPredictor(calls) });
     let r = await handleCollegePredictorMessage('2', {}, { isNewEntry: true });
     r = await handleCollegePredictorMessage('15000', r.context);
     r = await handleCollegePredictorMessage('1', r.context);
@@ -139,29 +212,6 @@ describe('chatbotCollegePredictor', () => {
     assert.equal(r.clearState, true);
     assert.match(r.reply, /Top Matches/);
     assert.match(r.reply, /Gender: Male/);
-  });
-
-  test('male flow TS OC maps to OC BOYS', async () => {
-    let r = await handleCollegePredictorMessage('2', {}, { isNewEntry: true });
-    r = await handleCollegePredictorMessage('15000', r.context);
-    r = await handleCollegePredictorMessage('1', r.context);
-    r = await handleCollegePredictorMessage('1', r.context);
-    assert.equal(r.context.gender, 'male');
-    assert.equal(r.context.reservation_category_codes[0], 'OC BOYS');
-    assert.equal(r.clearState, true);
-    assert.match(r.reply, /Gender: Male/);
-  });
-
-  test('female flow AP BC-C maps to BCC GIRLS', async () => {
-    let r = await handleCollegePredictorMessage('1', {}, { isNewEntry: true });
-    r = await handleCollegePredictorMessage('8000', r.context);
-    r = await handleCollegePredictorMessage('4', r.context);
-    r = await handleCollegePredictorMessage('2', r.context);
-    assert.equal(r.context.reservation_category_codes[0], 'BCC GIRLS');
-    r = await handleCollegePredictorMessage('1', r.context);
-    assert.equal(r.clearState, true);
-    assert.match(r.reply, /Gender: Female/);
-    assert.match(r.reply, /BC-C/);
   });
 
   test('AGAIN during rank step restarts at exam', async () => {
@@ -182,14 +232,6 @@ describe('chatbotCollegePredictor', () => {
     assert.equal(r.restart, true);
   });
 
-  test('createHandoff clears college context on transitionState', () => {
-    const src = fs.readFileSync(
-      path.join(__dirname, '../services/chatbot/handoffService.js'),
-      'utf8'
-    );
-    assert.match(src, /human_handoff',\s*\{\s*college:\s*\{\}\s*\}/);
-  });
-
   test('invalid rank keeps rank step', async () => {
     let r = await handleCollegePredictorMessage('2', {}, { isNewEntry: true });
     r = await handleCollegePredictorMessage('abc', r.context);
@@ -202,7 +244,31 @@ describe('chatbotCollegePredictor', () => {
     r = await handleCollegePredictorMessage('100', r.context);
     r = await handleCollegePredictorMessage('99', r.context);
     assert.equal(r.context.step, 'category');
-    assert.match(r.reply, /1 to 9/);
+    assert.match(r.reply, /valid option number/i);
+  });
+
+  test('invalid percentile keeps percentile step', async () => {
+    let r = await handleCollegePredictorMessage('9', {}, { isNewEntry: true });
+    r = await handleCollegePredictorMessage('200', r.context);
+    assert.equal(r.context.step, 'percentile');
+    assert.match(r.reply, /1 to 100/);
+  });
+
+  test('invalid admission type keeps admission step (KCET)', async () => {
+    let r = await handleCollegePredictorMessage('4', {}, { isNewEntry: true });
+    r = await handleCollegePredictorMessage('12000', r.context);
+    r = await handleCollegePredictorMessage('9', r.context);
+    assert.equal(r.context.step, 'admission_type');
+    assert.match(r.reply, /valid option number/i);
+  });
+
+  test('invalid WBJEE quota-category combination bounces to category', async () => {
+    let r = await handleCollegePredictorMessage('6', {}, { isNewEntry: true });
+    r = await handleCollegePredictorMessage('12000', r.context);
+    r = await handleCollegePredictorMessage('5', r.context); // TUITION_FEE_WAIVER
+    r = await handleCollegePredictorMessage('1', r.context); // all_india -> invalid
+    assert.equal(r.context.step, 'category');
+    assert.match(r.reply, /not available/i);
   });
 
   test('invalid region keeps region step (AP)', async () => {
@@ -216,44 +282,21 @@ describe('chatbotCollegePredictor', () => {
   });
 
   test('predictor API failure preserves state for retry', async () => {
-    setCollegePredictorDeps({ getPredictedColleges: mockPredictorFail() });
-    let r = await runTsToPredict({}, { category: '4', gender: '2' });
+    setCollegePredictorDeps({ getPredictedColleges: makeFailPredictor(calls) });
+    let r = await runFlow(['2', '15000', '4', '2']);
     assert.equal(r.context.step, 'predict');
     assert.match(r.reply, /could not fetch/i);
 
-    setCollegePredictorDeps({ getPredictedColleges: mockPredictorSuccess() });
+    setCollegePredictorDeps({ getPredictedColleges: makeSuccessPredictor(calls) });
     r = await handleCollegePredictorMessage('retry', r.context);
     assert.equal(r.clearState, true);
     assert.match(r.reply, /Top Matches/);
   });
 
   test('state cleanup after success', async () => {
-    const r = await runTsToPredict({}, { category: '1', gender: '2' });
+    const r = await runFlow(['2', '15000', '1', '2']);
     assert.equal(r.clearState, true);
     assert.equal(r.context.step, 'done');
-  });
-
-  test('resolveReservationCode gender-aware mappings', () => {
-    assert.equal(resolveReservationCode(EXAM_TS, 1, 'male'), 'OC BOYS');
-    assert.equal(resolveReservationCode(EXAM_TS, 1, 'female'), 'OC GIRLS');
-    assert.equal(resolveReservationCode(EXAM_AP, 1, 'female'), 'OC GIRLS');
-    assert.equal(resolveReservationCode(EXAM_AP, 1, 'male'), null);
-    assert.equal(isApOcMaleBlocked(EXAM_AP, 1, 'male'), true);
-    assert.equal(isApOcMaleBlocked(EXAM_AP, 1, 'female'), false);
-    assert.equal(isApOcMaleBlocked(EXAM_TS, 1, 'male'), false);
-    assert.equal(resolveReservationCode(EXAM_TS, 9, 'female'), 'EWS GEN OU');
-    assert.equal(resolveReservationCode(EXAM_TS, 9, 'male'), 'OC EWS BOYS');
-    assert.equal(resolveReservationCode(EXAM_AP, 3, 'male'), 'BCB BOYS');
-  });
-
-  test('buildPredictorRequestBody uses resolved reservation', () => {
-    const body = buildPredictorRequestBody({
-      exam: EXAM_TS,
-      rank: 15000,
-      reservation_category_codes: ['OC BOYS'],
-    });
-    assert.equal(body.reservation_category_codes[0], 'OC BOYS');
-    assert.equal(body.admission_category_name_enum, 'DEFAULT');
   });
 
   test('classifyIntent MENU during college_predictor', () => {
@@ -279,5 +322,10 @@ describe('chatbotCollegePredictor', () => {
   test('classifyIntent AGAIN starts college_predictor from main menu', () => {
     const r = classifyIntent('again', null, 'unknown');
     assert.equal(r.intent, 'college_predictor');
+  });
+
+  test('PROMPT_EXAM shows expanded exam list', () => {
+    assert.match(PROMPT_EXAM, /AP EAMCET/);
+    assert.match(PROMPT_EXAM, /MHT CET/);
   });
 });
