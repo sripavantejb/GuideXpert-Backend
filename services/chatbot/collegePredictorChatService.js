@@ -37,6 +37,7 @@ const {
   normalizeMhtReservationCodeForApi,
   percentileToMhtCutoffRange,
 } = require('./whatsappCollegePredictor/mhtCet');
+const { logChatbotEvent } = require('./chatbotStructuredLog');
 
 let fetchCollegeDostCollegesFn = fetchCollegeDostColleges;
 
@@ -92,19 +93,40 @@ function parseMenuDigit(text) {
 }
 
 async function runPrediction(ctx) {
-  const data = await fetchCollegeDostCollegesFn(
-    ctx.exam,
-    0,
-    5,
-    buildCounsellorStyleRequestBody(ctx)
-  );
-  const colleges = data?.colleges || [];
-  const reply = formatPredictionReply(ctx, colleges);
-  return {
-    reply,
-    context: { ...ctx, step: 'done' },
-    clearState: true,
-  };
+  const PREDICT_RETRY_REPLY =
+    'We could not fetch college predictions right now. Please try again in a moment.\n\nYour details are saved — send any message to retry.';
+  const PREDICT_RETRY_REPLY_AT_PREDICT =
+    'We could not fetch college predictions right now. Please try again in a moment.\n\nSend any message to retry.';
+
+  try {
+    const data = await fetchCollegeDostCollegesFn(
+      ctx.exam,
+      0,
+      5,
+      buildCounsellorStyleRequestBody(ctx)
+    );
+    const colleges = data?.colleges || [];
+    const reply = formatPredictionReply(ctx, colleges);
+    return {
+      reply,
+      context: { ...ctx, step: 'done' },
+      clearState: true,
+    };
+  } catch (err) {
+    const upstreamStatus =
+      err.http_status_code != null
+        ? String(err.http_status_code)
+        : err.res_status || err.code || 'predict_failed';
+    logChatbotEvent('predictor_failed', {
+      predictorExam: ctx.exam || null,
+      upstreamStatus,
+      botState: 'college_predictor',
+    });
+    return {
+      reply: ctx.step === 'predict' ? PREDICT_RETRY_REPLY_AT_PREDICT : PREDICT_RETRY_REPLY,
+      context: { ...ctx, step: 'predict' },
+    };
+  }
 }
 
 function categoryPrompt(options, title = 'Please select your category.') {
@@ -320,30 +342,13 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
           step: 'predict',
         });
       }
-      try {
-        const admission = ctx.exam === EXAM_KCET ? ctx.admissionType : 'DEFAULT';
-        return await runPrediction({
-          ...next,
-          reservation_category_codes: [mapped.value],
-          admission_category_name_enum: admission,
-          step: 'predict',
-        });
-      } catch (err) {
-        console.error('[whatsapp:college-predictor] predict failed:', {
-          exam: next.exam,
-          rank: next.rank,
-          reservation: next.reservation_category_codes,
-          http_status_code: err.http_status_code,
-          res_status: err.res_status,
-          response: err.response,
-          upstreamDetail: err.upstreamBody?.detail,
-        });
-        return {
-          reply:
-            'We could not fetch college predictions right now. Please try again in a moment.\n\nYour details are saved — send any message to retry.',
-          context: { ...next, step: 'predict' },
-        };
-      }
+      const admission = ctx.exam === EXAM_KCET ? ctx.admissionType : 'DEFAULT';
+      return await runPrediction({
+        ...next,
+        reservation_category_codes: [mapped.value],
+        admission_category_name_enum: admission,
+        step: 'predict',
+      });
     }
 
     case 'gender': {
@@ -379,19 +384,11 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
         if (ctx.exam === EXAM_AP) {
           return { reply: PROMPT_REGION, context: { ...next, step: 'region' } };
         }
-        try {
-          return await runPrediction({
-            ...next,
-            admission_category_name_enum: 'DEFAULT',
-            step: 'predict',
-          });
-        } catch (err) {
-          return {
-            reply:
-              'We could not fetch college predictions right now. Please try again in a moment.\n\nYour details are saved — send any message to retry.',
-            context: { ...next, step: 'predict' },
-          };
-        }
+        return await runPrediction({
+          ...next,
+          admission_category_name_enum: 'DEFAULT',
+          step: 'predict',
+        });
       }
       if (ctx.exam === EXAM_JEE_MAIN || ctx.exam === EXAM_JEE_ADV) {
         return {
@@ -423,30 +420,13 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
           context: { ...ctx, step: 'category' },
         };
       }
-      try {
-        return await runPrediction({
-          ...ctx,
-          reservation_category_codes: [code],
-          admission_category_name_enum: 'DEFAULT',
-          step: 'predict',
-          quota: quota.value,
-        });
-      } catch (err) {
-        console.error('[whatsapp:college-predictor] predict failed:', {
-          exam: ctx.exam,
-          rank: ctx.rank,
-          reservation: [code],
-          http_status_code: err.http_status_code,
-          res_status: err.res_status,
-          response: err.response,
-          upstreamDetail: err.upstreamBody?.detail,
-        });
-        return {
-          reply:
-            'We could not fetch college predictions right now. Please try again in a moment.\n\nYour details are saved — send any message to retry.',
-          context: { ...ctx, reservation_category_codes: [code], step: 'predict' },
-        };
-      }
+      return await runPrediction({
+        ...ctx,
+        reservation_category_codes: [code],
+        admission_category_name_enum: 'DEFAULT',
+        step: 'predict',
+        quota: quota.value,
+      });
     }
 
     case 'region': {
@@ -478,24 +458,7 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
           clearState: true,
         };
       }
-      try {
-        return await runPrediction(ctx);
-      } catch (err) {
-        console.error('[whatsapp:college-predictor] predict retry failed:', {
-          exam: ctx.exam,
-          rank: ctx.rank,
-          reservation: ctx.reservation_category_codes,
-          http_status_code: err.http_status_code,
-          res_status: err.res_status,
-          response: err.response,
-          upstreamDetail: err.upstreamBody?.detail,
-        });
-        return {
-          reply:
-            'We could not fetch college predictions right now. Please try again in a moment.\n\nSend any message to retry.',
-          context: ctx,
-        };
-      }
+      return await runPrediction(ctx);
     }
 
     default:

@@ -4,7 +4,11 @@ const { describe, test } = require('node:test');
 const assert = require('node:assert/strict');
 const { classifyIntent } = require('../services/chatbot/intentClassifierService');
 const { searchStaticFaq } = require('../services/chatbot/faqService');
-const { buildMainMenuText } = require('../services/chatbot/chatbotOrchestratorService');
+const {
+  buildMainMenuText,
+  buildMainMenuListSections,
+  mapMenuIdToIntent,
+} = require('../services/chatbot/chatbotOrchestratorService');
 
 describe('chatbotOrchestrator rules', () => {
   test('classifyIntent detects agent keyword', () => {
@@ -44,6 +48,14 @@ describe('chatbotOrchestrator rules', () => {
       iit: { fullName: 'Test User' },
     });
     assert.match(text, /My Counselling Details/);
+    assert.match(text, /My Assigned Expert/);
+    assert.match(text, /College Predictor/);
     assert.match(text, /Talk to My Counsellor/);
+  });
+
+  test('IIT list menu exposes college predictor', () => {
+    const rows = buildMainMenuListSections()[0].rows.map((r) => r.id);
+    assert.ok(rows.includes('menu_5'));
+    assert.equal(mapMenuIdToIntent('menu_5', 'iit_counselling'), 'college_predictor');
   });
 });

@@ -12,6 +12,7 @@ const {
 const ENV_KEYS = [
   'GUPSHUP_WEBHOOK_SECRET',
   'GUPSHUP_WEBHOOK_AUTH_REQUIRED',
+  'NODE_ENV',
 ];
 
 function saveEnv() {
@@ -36,6 +37,7 @@ describe('gupshupWebhookAuth', () => {
     envSnap = saveEnv();
     delete process.env.GUPSHUP_WEBHOOK_SECRET;
     delete process.env.GUPSHUP_WEBHOOK_AUTH_REQUIRED;
+    delete process.env.NODE_ENV;
   });
 
   afterEach(() => {
@@ -72,6 +74,33 @@ describe('gupshupWebhookAuth', () => {
     assert.equal(r.ok, false);
     assert.equal(r.statusCode, 503);
     assert.equal(r.error, 'webhook_secret_not_configured');
+  });
+
+  test('production enforces auth even without AUTH_REQUIRED flag', () => {
+    process.env.NODE_ENV = 'production';
+    assert.equal(isWebhookAuthEnforced(), true);
+    const r = verifyGupshupWebhookRequest({ headers: {} });
+    assert.equal(r.ok, false);
+    assert.equal(r.statusCode, 503);
+    assert.equal(r.error, 'webhook_secret_not_configured');
+  });
+
+  test('production with secret rejects missing credential', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.GUPSHUP_WEBHOOK_SECRET = 'prod-secret';
+    const r = verifyGupshupWebhookRequest({ headers: {} });
+    assert.equal(r.ok, false);
+    assert.equal(r.statusCode, 401);
+    assert.equal(r.error, 'unauthorized');
+  });
+
+  test('production with secret accepts valid credential', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.GUPSHUP_WEBHOOK_SECRET = 'prod-secret';
+    const r = verifyGupshupWebhookRequest({
+      headers: { 'x-webhook-secret': 'prod-secret' },
+    });
+    assert.equal(r.ok, true);
   });
 
   test('extractWebhookCredential reads header and query', () => {

@@ -5,6 +5,7 @@ const { buildHandoffSummary } = require('./leadContextService');
 const { setConversationHandoff, clearConversationHandoff } = require('./conversationService');
 const { transitionState } = require('./botStateService');
 const whatsappOutbound = require('./whatsappOutboundService');
+const { emptySubflows } = require('./botSubflowContext');
 
 function handoffExpiryMs() {
   const h = parseInt(process.env.CHATBOT_HANDOFF_EXPIRY_HOURS || '4', 10);
@@ -61,7 +62,7 @@ async function createHandoff({
   });
 
   await setConversationHandoff(conversation._id, handoff._id, now);
-  await transitionState(conversation._id, conversation.phone, 'human_handoff', { college: {} }, { now });
+  await transitionState(conversation._id, conversation.phone, 'human_handoff', emptySubflows(), { now });
 
   const routeLabel =
     routing.route === 'bda'
@@ -152,7 +153,7 @@ async function resolveHandoff(handoffId, { resolvedBy = 'admin', bdaId = null } 
   if (!handoff) return { success: false, error: 'not_found' };
 
   await clearConversationHandoff(handoff.conversationId, now);
-  await transitionState(handoff.conversationId, handoff.phone, 'main_menu', {}, { now });
+  await transitionState(handoff.conversationId, handoff.phone, 'main_menu', emptySubflows(), { now });
 
   await whatsappOutbound.sendBotTextReply({
     conversationId: handoff.conversationId,
@@ -179,7 +180,7 @@ async function expireStaleHandoffs(limit = 50) {
       { $set: { status: 'expired', botPaused: false, updatedAt: now } }
     );
     await clearConversationHandoff(h.conversationId, now);
-    await transitionState(h.conversationId, h.phone, 'main_menu', {}, { now });
+    await transitionState(h.conversationId, h.phone, 'main_menu', emptySubflows(), { now });
     await whatsappOutbound.sendBotTextReply({
       conversationId: h.conversationId,
       phone10: h.phone,

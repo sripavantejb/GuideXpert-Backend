@@ -45,7 +45,7 @@ function classifyIntent(text, botState, productLine) {
   if (productLine === 'iit_counselling') {
     if (/^1$/.test(t)) return { intent: 'lead_lookup', confidence: 'high' };
     if (/^2$/.test(t)) return { intent: 'counselling_support', confidence: 'high' };
-    if (/^3$/.test(t)) return { intent: 'lead_lookup', confidence: 'high' };
+    if (/^3$/.test(t)) return { intent: 'assigned_expert', confidence: 'high' };
     if (/^4$/.test(t)) return { intent: 'rank_predictor', confidence: 'high' };
     if (/^5$/.test(t)) return { intent: 'college_predictor', confidence: 'high' };
     if (/^6$/.test(t)) return { intent: 'human_handoff', confidence: 'high' };
@@ -80,6 +80,9 @@ function classifyIntent(text, botState, productLine) {
   }
 
   if (productLine === 'iit_counselling') {
+    if (/assigned expert|my counsellor|my bda|who is my expert/.test(t)) {
+      return { intent: 'assigned_expert', confidence: 'high' };
+    }
     if (/iit|counselling|counseling|session|slot|telugu|hindi|bda/.test(t)) {
       return { intent: 'counselling_support', confidence: 'medium' };
     }

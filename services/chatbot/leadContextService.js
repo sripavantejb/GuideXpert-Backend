@@ -120,6 +120,31 @@ async function buildLeadContext(links) {
   return ctx;
 }
 
+function buildAssignedExpertReply(leadContext) {
+  if (!leadContext.hasIit || !leadContext.iit) {
+    return [
+      'We could not find an IIT counselling registration for this number.',
+      `Register here: ${process.env.IIT_COUNSELLING_PAGE_URL || 'https://www.guidexpert.co.in/iit-counselling'}`,
+      'Reply MENU for more options.',
+    ].join('\n\n');
+  }
+
+  const name = leadContext.iit.assignedBdaName;
+  if (!name) {
+    return [
+      'Your assigned IIT counselling expert will be confirmed shortly.',
+      'Our team will share counsellor details before your session.',
+      'Reply AGENT to connect with our team or MENU for options.',
+    ].join('\n\n');
+  }
+
+  return [
+    `Your assigned IIT counselling expert is ${name}.`,
+    'They will support you through your counselling journey.',
+    'Reply AGENT to message our team directly, or MENU for options.',
+  ].join('\n\n');
+}
+
 async function buildHandoffSummary(leadContext) {
   const lines = [];
   lines.push(`Phone: ****${String(leadContext.phone || '').slice(-4)}`);
@@ -149,6 +174,7 @@ async function getRecentWaStatus(phone10, limit = 3) {
 
 module.exports = {
   buildLeadContext,
+  buildAssignedExpertReply,
   buildHandoffSummary,
   getRecentWaStatus,
   formatIst,

@@ -3,9 +3,11 @@ const { getDemoMeetingLink } = require('../../utils/slotNotificationFormatters')
 
 /**
  * Facts bundle for orchestrator / LLM grounding.
+ * @param {object} leadLinks
+ * @param {object|null} [leadContext] — pre-built context to avoid duplicate DB loads
  */
-async function retrieveFacts(leadLinks) {
-  const lead = await buildLeadContext(leadLinks);
+async function retrieveFacts(leadLinks, leadContext = null) {
+  const lead = leadContext || (await buildLeadContext(leadLinks));
   return {
     lead,
     links: {

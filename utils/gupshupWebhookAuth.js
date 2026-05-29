@@ -1,10 +1,15 @@
 const crypto = require('crypto');
 
+function isProductionEnv() {
+  return String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+}
+
 /**
  * Whether webhook requests must present a valid shared secret.
- * Enabled when GUPSHUP_WEBHOOK_SECRET is set or GUPSHUP_WEBHOOK_AUTH_REQUIRED=1.
+ * Always enforced in production; otherwise when secret is set or AUTH_REQUIRED=1.
  */
 function isWebhookAuthEnforced() {
+  if (isProductionEnv()) return true;
   if (String(process.env.GUPSHUP_WEBHOOK_AUTH_REQUIRED || '').trim() === '1') {
     return true;
   }
@@ -65,6 +70,7 @@ function verifyGupshupWebhookRequest(req) {
 }
 
 module.exports = {
+  isProductionEnv,
   isWebhookAuthEnforced,
   getConfiguredWebhookSecret,
   extractWebhookCredential,

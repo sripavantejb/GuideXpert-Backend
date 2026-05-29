@@ -1,4 +1,5 @@
 const WhatsAppBotState = require('../../models/WhatsAppBotState');
+const { emptySubflows } = require('./botSubflowContext');
 
 const SUBFLOW_TTL_MS = 30 * 60 * 1000;
 
@@ -49,7 +50,7 @@ async function transitionState(conversationId, phone10, nextState, contextPatch 
 }
 
 async function resetToMainMenu(conversationId, phone10) {
-  return transitionState(conversationId, phone10, 'main_menu', {}, { ttlMs: SUBFLOW_TTL_MS });
+  return transitionState(conversationId, phone10, 'main_menu', emptySubflows(), { ttlMs: SUBFLOW_TTL_MS });
 }
 
 module.exports = {

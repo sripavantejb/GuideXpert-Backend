@@ -65,6 +65,10 @@ describe('welcomeMessageService', () => {
 });
 
 describe('welcome menu digit routing', () => {
+  test('IIT menu 3 is assigned expert', () => {
+    assert.equal(classifyIntent('3', null, 'iit_counselling').intent, 'assigned_expert');
+  });
+
   test('IIT menu 6 is human handoff', () => {
     assert.equal(classifyIntent('6', null, 'iit_counselling').intent, 'human_handoff');
   });
