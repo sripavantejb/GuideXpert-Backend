@@ -28,6 +28,27 @@ function classifyIntent(text, botState, productLine) {
     return { intent: 'opt_out', confidence: 'high' };
   }
 
+  if (productLine === 'iit_counselling') {
+    if (/^1$/.test(t)) return { intent: 'lead_lookup', confidence: 'high' };
+    if (/^2$/.test(t)) return { intent: 'counselling_support', confidence: 'high' };
+    if (/^3$/.test(t)) return { intent: 'lead_lookup', confidence: 'high' };
+    if (/^4$/.test(t)) return { intent: 'rank_predictor', confidence: 'high' };
+    if (/^5$/.test(t)) return { intent: 'college_predictor', confidence: 'high' };
+    if (/^6$/.test(t)) return { intent: 'human_handoff', confidence: 'high' };
+  }
+
+  if (productLine === 'guidexpert') {
+    if (/^[1-5]$/.test(t)) return { intent: 'faq', confidence: 'high' };
+    if (/^6$/.test(t)) return { intent: 'human_handoff', confidence: 'high' };
+  }
+
+  if (productLine === 'unknown') {
+    if (/^1$/.test(t)) return { intent: 'counselling_support', confidence: 'high' };
+    if (/^2$/.test(t)) return { intent: 'demo_support', confidence: 'high' };
+    if (/^3$/.test(t)) return { intent: 'rank_predictor', confidence: 'high' };
+    if (/^4$/.test(t)) return { intent: 'human_handoff', confidence: 'high' };
+  }
+
   if (/^1$|my details|my booking|my slot|profile/.test(t)) {
     return { intent: 'lead_lookup', confidence: 'high' };
   }

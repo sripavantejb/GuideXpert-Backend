@@ -11,57 +11,70 @@ const { handleCollegePredictorMessage } = require('./collegePredictorChatService
 const { createHandoff, isBotPausedForConversation } = require('./handoffService');
 const whatsappOutbound = require('./whatsappOutboundService');
 const { tryLlmReply } = require('./llmReplyService');
-const { getLocalizedStrings } = require('./multilingualReplyService');
+const { buildWelcomeMenuText } = require('./welcomeMessageService');
 
 function useButtonMenu() {
   return String(process.env.CHATBOT_USE_BUTTON_MENU || '').trim() === '1';
 }
 
-function buildMainMenuText(leadContext, strings) {
-  const lines = [
-    strings.mainMenuGreeting(leadContext),
-    '',
-    '1️⃣ My details',
-    '2️⃣ FAQs',
-    '3️⃣ Rank predictor',
-    '4️⃣ College predictor',
-    '5️⃣ Talk to an agent',
-    '',
-    'Reply with a number or describe what you need.',
-  ];
-  if (leadContext.productLine === 'iit_counselling') {
-    lines.splice(2, 0, 'Tip: ask "When is my session?" anytime.');
+function buildMainMenuText(leadContext) {
+  return buildWelcomeMenuText(leadContext);
+}
+
+function buildMainMenuButtons(leadContext) {
+  const line = leadContext?.productLine || 'unknown';
+  if (line === 'iit_counselling') {
+    return [
+      { id: 'menu_1', title: 'My Details' },
+      { id: 'menu_3', title: 'Rank Predictor' },
+      { id: 'menu_agent', title: 'Talk to Counsellor' },
+    ];
   }
-  return lines.join('\n');
-}
-
-function buildMainMenuButtons(strings) {
+  if (line === 'guidexpert') {
+    return [
+      { id: 'menu_2', title: 'Program Overview' },
+      { id: 'menu_faq', title: 'Fees & Enrollment' },
+      { id: 'menu_agent', title: 'Talk to Team' },
+    ];
+  }
   return [
-    { id: 'menu_1', title: 'My details' },
-    { id: 'menu_2', title: 'FAQs' },
-    { id: 'menu_faq', title: 'FAQs' },
-    { id: 'menu_agent', title: 'Talk to agent' },
-  ].slice(0, 3);
+    { id: 'menu_1', title: 'IIT Counselling' },
+    { id: 'menu_3', title: 'Rank Predictor' },
+    { id: 'menu_agent', title: 'Talk to Expert' },
+  ];
 }
 
-function mapButtonIdToIntent(buttonId) {
+function mapButtonIdToIntent(buttonId, productLine = 'unknown') {
   const id = String(buttonId || '');
-  if (id === 'menu_1') return 'lead_lookup';
-  if (id === 'menu_2' || id === 'menu_faq') return 'faq';
+  const line = productLine || 'unknown';
+
+  if (line === 'iit_counselling') {
+    if (id === 'menu_1') return 'lead_lookup';
+    if (id === 'menu_3') return 'rank_predictor';
+    if (id === 'menu_agent' || id === 'menu_5') return 'human_handoff';
+    return 'main_menu';
+  }
+
+  if (line === 'guidexpert') {
+    if (id === 'menu_1' || id === 'menu_2' || id === 'menu_faq') return 'faq';
+    if (id === 'menu_agent' || id === 'menu_5') return 'human_handoff';
+    return 'main_menu';
+  }
+
+  if (id === 'menu_1') return 'counselling_support';
   if (id === 'menu_3') return 'rank_predictor';
   if (id === 'menu_agent' || id === 'menu_5') return 'human_handoff';
   return 'main_menu';
 }
 
 async function sendMainMenu(conversation, leadContext, inReplyToInboundId) {
-  const strings = getLocalizedStrings(leadContext);
-  const body = buildMainMenuText(leadContext, strings);
+  const body = buildMainMenuText(leadContext);
   if (useButtonMenu()) {
     return whatsappOutbound.sendBotButtonReply({
       conversationId: conversation._id,
       phone10: conversation.phone,
       body,
-      buttons: buildMainMenuButtons(strings),
+      buttons: buildMainMenuButtons(leadContext),
       inReplyToInboundId,
     });
   }
@@ -116,7 +129,10 @@ async function processInbound({ conversation, inbound, leadLinks }) {
     const btnId =
       inbound.interactivePayload.id ||
       (inbound.interactivePayload.reply && inbound.interactivePayload.reply.id);
-    intentResult = { intent: mapButtonIdToIntent(btnId), confidence: 'high' };
+    intentResult = {
+      intent: mapButtonIdToIntent(btnId, conversation.productLine),
+      confidence: 'high',
+    };
   } else {
     intentResult = classifyIntent(inbound.text, botState, conversation.productLine);
   }

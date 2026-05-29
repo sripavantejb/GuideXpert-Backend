@@ -17,8 +17,8 @@ describe('chatbotOrchestrator rules', () => {
     assert.equal(r.intent, 'main_menu');
   });
 
-  test('classifyIntent rank predictor shortcut', () => {
-    const r = classifyIntent('3', null, 'guidexpert');
+  test('classifyIntent rank predictor via natural language on guidexpert', () => {
+    const r = classifyIntent('rank predictor', null, 'guidexpert');
     assert.equal(r.intent, 'rank_predictor');
   });
 
@@ -27,11 +27,18 @@ describe('chatbotOrchestrator rules', () => {
     assert.ok(hits.length > 0);
   });
 
-  test('buildMainMenuText includes options', () => {
-    const text = buildMainMenuText({ productLine: 'unknown', iit: null, gx: null }, {
-      mainMenuGreeting: () => 'Hello',
+  test('buildMainMenuText organic welcome options', () => {
+    const text = buildMainMenuText({ productLine: 'unknown', iit: null, gx: null });
+    assert.match(text, /IIT \/ College Counselling/);
+    assert.match(text, /Talk to an Expert/);
+  });
+
+  test('buildMainMenuText IIT welcome options', () => {
+    const text = buildMainMenuText({
+      productLine: 'iit_counselling',
+      iit: { fullName: 'Test User' },
     });
-    assert.match(text, /My details/);
-    assert.match(text, /Talk to an agent/);
+    assert.match(text, /My Counselling Details/);
+    assert.match(text, /Talk to My Counsellor/);
   });
 });
