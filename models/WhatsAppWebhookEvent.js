@@ -1,6 +1,19 @@
 const mongoose = require('mongoose');
 
+const { WEBHOOK_EVENT_KINDS } = require('../constants/chatbotStates');
+
 const whatsAppWebhookEventSchema = new mongoose.Schema({
+  eventKind: {
+    type: String,
+    enum: WEBHOOK_EVENT_KINDS,
+    default: 'dlr',
+    index: true,
+  },
+  inboundMessageId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'WhatsAppInboundMessage',
+    default: null,
+  },
   receivedAt: { type: Date, default: Date.now, index: true },
   /** Stable key so Gupshup retries do not double-apply status updates */
   webhookDedupeKey: { type: String, trim: true, maxlength: 128, default: null, unique: true, sparse: true },

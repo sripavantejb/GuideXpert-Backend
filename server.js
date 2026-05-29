@@ -42,6 +42,8 @@ const posterTemplatePublicRoutes = require('./routes/posterTemplatePublicRoutes'
 const osviRoutes = require('./routes/osviRoutes');
 const counsellorSupportRoutes = require('./routes/counsellorSupportRoutes');
 const gupshupWebhookRoutes = require('./routes/gupshupWebhookRoutes');
+const whatsappChatAdminRoutes = require('./routes/whatsappChatAdminRoutes');
+const whatsappChatBdaRoutes = require('./routes/whatsappChatBdaRoutes');
 const { configStatus: counsellorConfigStatus } = require('./controllers/counsellorAuthController');
 const { getPosterDownloads, getPosterDownloadStats } = require('./controllers/posterDownloadController');
 const { checkPosterEligibility, trackPosterDownload } = require('./controllers/posterController');
@@ -190,8 +192,10 @@ app.use('/api/api/blogs', blogRoutes);
 app.use('/api/posters', posterTemplatePublicRoutes);
 // WhatsApp Messaging Ops console — explicit mount before generic /api/admin (same middleware stack elsewhere).
 app.use('/api/admin/whatsapp-ops', requireAdmin, whatsappOpsAdminRoutes);
+app.use('/api/admin/whatsapp-chat', requireAdmin, whatsappChatAdminRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/bda', require('./routes/bdaRoutes'));
+app.use('/api/bda/whatsapp-chat', whatsappChatBdaRoutes);
 app.use('/api/meeting', meetingRoutes);
 app.use('/api/iit-meet', iitMeetRoutes);
 app.use('/api/iit-meet-hindi', iitMeetHindiRoutes);

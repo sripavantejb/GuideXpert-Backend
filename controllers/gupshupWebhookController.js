@@ -782,6 +782,40 @@ exports.ingestGupshupWebhook = async (req, res) => {
     req && req._testReceivedAt instanceof Date ? req._testReceivedAt : new Date();
   try {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
+
+    const { verifyGupshupWebhookRequest } = require('../utils/gupshupWebhookAuth');
+    const webhookAuth = verifyGupshupWebhookRequest(req);
+    if (!webhookAuth.ok) {
+      return res.status(webhookAuth.statusCode || 401).json({
+        success: false,
+        received: false,
+        error: webhookAuth.error || 'unauthorized',
+      });
+    }
+
+    if (String(process.env.CHATBOT_ENABLED || '1').trim() !== '0') {
+      const { classifyWebhookBody } = require('../services/chatbot/webhookRouterService');
+      const { handleInboundWebhook } = require('../services/chatbot/whatsappInboundService');
+      const classified = classifyWebhookBody(body);
+      if (classified.kind === 'inbound') {
+        const inboundResult = await handleInboundWebhook(req, body, receivedAt);
+        if (inboundResult.statusCode) {
+          return res.status(inboundResult.statusCode).json({
+            success: false,
+            received: false,
+            inbound: true,
+            ...inboundResult,
+          });
+        }
+        return res.status(200).json({
+          success: true,
+          received: true,
+          inbound: true,
+          ...inboundResult,
+        });
+      }
+    }
+
     const explicit = tryParseMessageEventBody(body);
     const extracted = extractWebhookFields(body);
     const merged = mergeExplicitAndExtracted(explicit, extracted);
@@ -832,8 +866,10 @@ exports.ingestGupshupWebhook = async (req, res) => {
     }
 
     let webhookEventDoc = null;
+    let chatbotDlrUpdated = false;
     try {
       webhookEventDoc = await WhatsAppWebhookEvent.create({
+        eventKind: 'dlr',
         webhookDedupeKey: dedupeKey,
         receivedAt,
         messageId: matchedProviderId || gsId || payloadId || null,
@@ -913,6 +949,22 @@ exports.ingestGupshupWebhook = async (req, res) => {
         updatedEventCount = n;
         if (n > 0) {
           updatePath = 'providerIds';
+        }
+      }
+      if (updatedEventCount === 0 && String(process.env.CHATBOT_ENABLED || '1').trim() !== '0') {
+        const { applyDlrToOutboundMessage } = require('../services/chatbot/chatbotDlrService');
+        const chatbotDlr = await applyDlrToOutboundMessage({
+          providerIds,
+          newStatus: stage || newStatus,
+          receivedAt,
+          failureCode,
+          failureReason,
+          transitionTs,
+        });
+        if (chatbotDlr.updated) {
+          chatbotDlrUpdated = true;
+          updatePath = 'chatbot_outbound';
+          updatedEventCount = 1;
         }
       }
     }
@@ -997,6 +1049,7 @@ exports.ingestGupshupWebhook = async (req, res) => {
       resolvedMatchId,
       updatedEventCount,
       quarantined: updatedEventCount === 0,
+      chatbotDlrUpdated,
       phoneSuffix: phone10 ? phone10.slice(-4) : null,
       matchedBy,
       parseError: parseError || null,

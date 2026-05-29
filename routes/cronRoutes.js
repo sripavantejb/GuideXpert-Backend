@@ -356,6 +356,28 @@ router.get('/osvi-outbound-due', verifyCronSecret, async (req, res) => {
   }
 });
 
+router.get('/process-chatbot-inbound', verifyCronSecret, async (req, res) => {
+  try {
+    const { replayPendingInbound } = require('../services/chatbot/whatsappInboundService');
+    const { expireStaleHandoffs } = require('../services/chatbot/handoffService');
+    const [replay, expired] = await Promise.all([
+      replayPendingInbound(parseInt(req.query.replayLimit || '30', 10) || 30),
+      expireStaleHandoffs(parseInt(req.query.expireLimit || '50', 10) || 50),
+    ]);
+    return res.status(200).json({
+      success: true,
+      replay,
+      expired,
+    });
+  } catch (error) {
+    console.error('[Cron] process-chatbot-inbound:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Internal server error',
+    });
+  }
+});
+
 router.get('/health', (req, res) => {
   res.status(200).json({
     success: true,
