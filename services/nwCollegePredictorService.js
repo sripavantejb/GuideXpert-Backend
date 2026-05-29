@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { getCollegePredictorAccessToken } = require('../utils/collegePredictorToken');
 
 const BASE_URL = process.env.NW_PREDICTORS_BASE_URL || 'https://nw-predictors-backend-beta.earlywave.in';
 const PATH = '/api/nw_college_predictor/colleges/get/v1/';
@@ -21,8 +22,8 @@ function useLegacyWrappedPayload() {
  * @throws {object} On 4xx/5xx: { response, res_status, http_status_code }
  */
 async function getPredictedColleges(offset, limit, body) {
-  const token = process.env.NW_PREDICTORS_ACCESS_TOKEN;
-  if (!token || !String(token).trim()) {
+  const token = getCollegePredictorAccessToken();
+  if (!token) {
     throw Object.assign(new Error('NW predictor access token is not configured'), {
       response: 'Predictor service is not configured. Please contact support.',
       res_status: 'SERVICE_UNAVAILABLE',

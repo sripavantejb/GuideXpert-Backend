@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { getCollegePredictorAccessToken } = require('../utils/collegePredictorToken');
 
 const BASE_URL = process.env.NW_PREDICTORS_BASE_URL || 'https://nw-predictors-backend-beta.earlywave.in';
 const V1_PATH = '/api/nw_college_predictor/colleges/get/v1/';
@@ -270,8 +271,8 @@ async function callUpstream(url, payload, token) {
  * @returns {Promise<object>} { total_no_of_colleges, admission_category_name, colleges }
  */
 async function getPredictedColleges(exam, offset, limit, body) {
-  const token = process.env.COLLEGEDOST_ACCESS_TOKEN || process.env.NW_PREDICTORS_ACCESS_TOKEN;
-  if (!token || !String(token).trim()) {
+  const token = getCollegePredictorAccessToken();
+  if (!token) {
     const err = new Error('Access token is not configured');
     err.http_status_code = 503;
     err.res_status = 'SERVICE_UNAVAILABLE';

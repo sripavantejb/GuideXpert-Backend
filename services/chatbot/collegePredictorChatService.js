@@ -1,4 +1,5 @@
 const { normalizeText } = require('./intentClassifierService');
+// Same token as counsellor college predictor: NW_PREDICTORS_ACCESS_TOKEN on Vercel (no extra env).
 const { getPredictedColleges: defaultGetPredictedColleges } = require('../collegeDostService');
 const {
   EXAM_AP,
