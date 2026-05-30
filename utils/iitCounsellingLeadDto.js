@@ -19,6 +19,8 @@ function mapIitCounsellingLeadToDTO(sub, visit) {
   const utm = pickUtmFromSources(sub, visit);
   const studentName = sub.fullName || iit.section1Data?.fullName || '';
   const phone = sub.phone || iit.section1Data?.mobileNumber || '';
+  const slotBooking = iit.section1Data?.slotBooking || '';
+  const slotBookingDate = iit.section1Data?.slotBookingDate || null;
 
   return {
     id: sub._id,
@@ -31,6 +33,9 @@ function mapIitCounsellingLeadToDTO(sub, visit) {
     section1Data: iit.section1Data || null,
     section2Data: iit.section2Data || null,
     section3Data: iit.section3Data || null,
+    slotBooking,
+    slotBookingDate,
+    counsellingSlotInstantUtc: sub.counsellingSlotInstantUtc || null,
     utm,
     assignedBdaId: sub.assignedBdaId || null,
     assignedBdaName: sub.assignedBdaName || '',
