@@ -22,6 +22,19 @@ const ORCHESTRATOR_FALLBACK_REPLY =
 const HANDOFF_WAIT_REPLY =
   'Our counsellor team is handling your chat. Please wait for their reply here.\n\nReply MENU to return to the assistant.';
 
+const COLLEGE_PREDICTOR_MAINTENANCE_REPLY = [
+  'College predictions are temporarily unavailable (service is under maintenance).',
+  '',
+  'Please try again later.',
+  '',
+  'Reply MENU for other options.',
+].join('\n');
+
+/** Set CHATBOT_COLLEGE_PREDICTOR_ENABLED=1 to turn the WhatsApp college predictor back on. */
+function isCollegePredictorEnabled() {
+  return String(process.env.CHATBOT_COLLEGE_PREDICTOR_ENABLED || '').trim() === '1';
+}
+
 function outboundSucceeded(result) {
   return Boolean(result && result.success);
 }
@@ -486,6 +499,12 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     }
     case 'college_predictor':
     case 'college_predictor_continue': {
+      if (!isCollegePredictorEnabled()) {
+        replyText = COLLEGE_PREDICTOR_MAINTENANCE_REPLY;
+        contextPatch = emptySubflows();
+        nextState = 'main_menu';
+        break;
+      }
       const isNewEntry = intentResult.intent === 'college_predictor';
       await h.transitionState(
         activeConversation._id,

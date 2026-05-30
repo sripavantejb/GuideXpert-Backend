@@ -126,7 +126,26 @@ describe('chatbotOrchestrator integration', () => {
     assert.match(outboundCalls[0].body, /College Predictor/);
   });
 
-  test('IIT list selection menu_5 starts college predictor flow', async () => {
+  test('IIT list selection menu_5 shows college predictor maintenance when disabled', async () => {
+    delete process.env.CHATBOT_COLLEGE_PREDICTOR_ENABLED;
+    await processInbound({
+      conversation: makeConversation(),
+      inbound: makeInbound({
+        messageType: 'list_reply',
+        text: 'College Predictor',
+        interactivePayload: { id: 'menu_5', title: 'College Predictor' },
+      }),
+      leadLinks: { phone10: '9876543210', productLine: 'iit_counselling' },
+    });
+    assert.equal(outboundCalls.length, 1);
+    assert.equal(outboundCalls[0].type, 'text');
+    assert.match(outboundCalls[0].text, /temporarily unavailable/i);
+    assert.match(outboundCalls[0].text, /try again later/i);
+    assert.equal(transitionCalls.at(-1).state, 'main_menu');
+  });
+
+  test('IIT list selection menu_5 starts college predictor flow when enabled', async () => {
+    process.env.CHATBOT_COLLEGE_PREDICTOR_ENABLED = '1';
     await processInbound({
       conversation: makeConversation(),
       inbound: makeInbound({
