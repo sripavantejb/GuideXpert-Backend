@@ -23,7 +23,13 @@ npm run check:whatsapp:production
 | `MONGODB_URI` | Conversations / inbound / outbound persistence |
 | `CRON_SECRET` or `GUIDEXPERT_CRON_SECRET` | Vercel cron auth for `process-chatbot-inbound` |
 
-Optional: `GUPSHUP_SRC_NAME`, `CHATBOT_USE_BUTTON_MENU=1`, `OPENAI_API_KEY` (LLM replies).
+Optional: `GUPSHUP_SRC_NAME` (must not be `Welcome`), `OPENAI_API_KEY` (LLM replies), session fallback template vars (see `.env.example`).
+
+Main menu is **plain text only** (no interactive list/button). Do not set `CHATBOT_USE_BUTTON_MENU` unless you have a specific reason.
+
+### Stray "Welcome" bubble before the menu
+
+If users see a separate short message **Welcome** before the real menu, it is almost always configured in **Gupshup or Meta**, not in this codebase. See [gupshup-disable-auto-welcome.md](./gupshup-disable-auto-welcome.md).
 
 Do **not** set `CHATBOT_ENABLED=0` unless disabling the bot intentionally.
 

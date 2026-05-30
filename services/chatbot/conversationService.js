@@ -22,7 +22,7 @@ async function ensureBotStateForConversation(conversation, now) {
     await WhatsAppBotState.create({
       conversationId: conversation._id,
       phone: conversation.phone,
-      state: 'greeting',
+      state: 'main_menu',
       context: {},
       stateEnteredAt: now,
       stateExpiresAt: new Date(now.getTime() + 30 * 60 * 1000),

@@ -58,23 +58,6 @@ function summarizeProcessResult(result) {
   return { outboundSuccess: success, delivered: success, error: result.error || null };
 }
 
-function logMenuDeliveryFallback({
-  conversation,
-  leadContext,
-  attemptedType,
-  fallbackType,
-  errMessage,
-}) {
-  logChatbotEvent('menu_delivery_fallback', {
-    conversationId: conversation._id,
-    phone10: conversation.phone,
-    productLine: leadContext?.productLine || conversation.productLine || null,
-    attemptedType,
-    fallbackType,
-    errMessage: errMessage || null,
-  });
-}
-
 const defaultHooks = {
   buildLeadContext: (links) => leadContextService.buildLeadContext(links),
   retrieveFacts: (links, ctx) => retrieveFacts(links, ctx),
@@ -97,25 +80,6 @@ function setChatbotOrchestratorTestHooks(hooks) {
 
 function hooks() {
   return testHooks || defaultHooks;
-}
-
-function useButtonMenu() {
-  return String(process.env.CHATBOT_USE_BUTTON_MENU || '').trim() === '1';
-}
-
-/**
- * Interactive list/button main menus can produce a stray "Welcome" bubble on Gupshup before the text menu.
- * Default is plain text only; set CHATBOT_INTERACTIVE_MAIN_MENU=1 to opt in (also needs CHATBOT_USE_BUTTON_MENU=1).
- */
-function useInteractiveMainMenu() {
-  return (
-    useButtonMenu() && String(process.env.CHATBOT_INTERACTIVE_MAIN_MENU || '').trim() === '1'
-  );
-}
-
-/** Opt-in IIT interactive list menu (disabled by default while verifying list send issues). */
-function useIitListMenu() {
-  return String(process.env.CHATBOT_USE_IIT_LIST_MENU || '').trim() === '1';
 }
 
 function buildMainMenuText(leadContext) {
@@ -190,74 +154,17 @@ function mapMenuIdToIntent(menuId, productLine = 'unknown') {
 async function sendMainMenu(conversation, leadContext, inReplyToInboundId) {
   const h = hooks();
   const body = buildMainMenuText(leadContext);
-  const line = leadContext?.productLine || conversation.productLine || 'unknown';
-  const baseArgs = {
+  logChatbotEvent('main_menu_sent', {
     conversationId: conversation._id,
     phone10: conversation.phone,
-    inReplyToInboundId,
-  };
-
-  if (useInteractiveMainMenu() && line === 'iit_counselling' && useIitListMenu()) {
-    const listResult = await h.outbound.sendBotListReply({
-      ...baseArgs,
-      body,
-      buttonText: 'Choose option',
-      sections: buildMainMenuListSections(),
-    });
-    if (outboundSucceeded(listResult)) {
-      return listResult;
-    }
-    logMenuDeliveryFallback({
-      conversation,
-      leadContext,
-      attemptedType: 'interactive_list',
-      fallbackType: 'interactive_button',
-      errMessage: listResult?.error,
-    });
-
-    const buttonResult = await h.outbound.sendBotButtonReply({
-      ...baseArgs,
-      body,
-      buttons: buildMainMenuButtons(leadContext),
-    });
-    if (outboundSucceeded(buttonResult)) {
-      return buttonResult;
-    }
-    logMenuDeliveryFallback({
-      conversation,
-      leadContext,
-      attemptedType: 'interactive_button',
-      fallbackType: 'text',
-      errMessage: buttonResult?.error,
-    });
-
-    return h.outbound.sendBotTextReply({
-      ...baseArgs,
-      text: body,
-    });
-  }
-
-  if (useInteractiveMainMenu()) {
-    const buttonResult = await h.outbound.sendBotButtonReply({
-      ...baseArgs,
-      body,
-      buttons: buildMainMenuButtons(leadContext),
-    });
-    if (outboundSucceeded(buttonResult)) {
-      return buttonResult;
-    }
-    logMenuDeliveryFallback({
-      conversation,
-      leadContext,
-      attemptedType: 'interactive_button',
-      fallbackType: 'text',
-      errMessage: buttonResult?.error,
-    });
-  }
-
+    productLine: leadContext?.productLine || conversation.productLine || null,
+    textLength: String(body || '').length,
+  });
   return h.outbound.sendBotTextReply({
-    ...baseArgs,
+    conversationId: conversation._id,
+    phone10: conversation.phone,
     text: body,
+    inReplyToInboundId,
   });
 }
 
@@ -443,7 +350,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     return { handoff: true };
   }
 
-  if (intentResult.intent === 'main_menu' || botState?.state === 'greeting') {
+  if (intentResult.intent === 'main_menu') {
     await h.transitionState(activeConversation._id, activeConversation.phone, 'main_menu', emptySubflows());
     const result = await sendMainMenu(activeConversation, leadContext, inbound._id);
     logInboundResult({

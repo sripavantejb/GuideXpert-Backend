@@ -20,7 +20,7 @@ function makeConversation() {
   };
 }
 
-describe('chatbot menu delivery fallback', () => {
+describe('chatbot main menu delivery', () => {
   let outboundCalls;
 
   beforeEach(() => {
@@ -33,42 +33,21 @@ describe('chatbot menu delivery fallback', () => {
         },
         sendBotButtonReply: async (args) => {
           outboundCalls.push({ type: 'button', ...args });
-          return { success: false, error: 'interactive rejected' };
+          return { success: false, error: 'should not be called' };
         },
         sendBotListReply: async (args) => {
           outboundCalls.push({ type: 'list', ...args });
-          return { success: false, error: 'list rejected' };
+          return { success: false, error: 'should not be called' };
         },
       },
     });
-    process.env.CHATBOT_USE_BUTTON_MENU = '1';
-    process.env.CHATBOT_INTERACTIVE_MAIN_MENU = '1';
-    delete process.env.CHATBOT_USE_IIT_LIST_MENU;
   });
 
   afterEach(() => {
-    delete process.env.CHATBOT_USE_BUTTON_MENU;
-    delete process.env.CHATBOT_INTERACTIVE_MAIN_MENU;
-    delete process.env.CHATBOT_USE_IIT_LIST_MENU;
     setChatbotOrchestratorTestHooks(null);
   });
 
-  test('button send failure falls back to plain text menu', async () => {
-    const result = await sendMainMenu(
-      makeConversation(),
-      { productLine: 'iit_counselling', iit: { fullName: 'Test' } },
-      new mongoose.Types.ObjectId()
-    );
-    assert.equal(outboundCalls.length, 2);
-    assert.equal(outboundCalls[0].type, 'button');
-    assert.equal(outboundCalls[1].type, 'text');
-    assert.match(outboundCalls[1].text, /IIT & Engineering counselling journey/);
-    assert.equal(result.success, true);
-  });
-
-  test('default main menu is plain text only (no interactive attempt)', async () => {
-    delete process.env.CHATBOT_INTERACTIVE_MAIN_MENU;
-    outboundCalls = [];
+  test('sendMainMenu sends exactly one plain text message', async () => {
     const result = await sendMainMenu(
       makeConversation(),
       { productLine: 'iit_counselling', iit: { fullName: 'Test' } },
@@ -76,21 +55,8 @@ describe('chatbot menu delivery fallback', () => {
     );
     assert.equal(outboundCalls.length, 1);
     assert.equal(outboundCalls[0].type, 'text');
-    assert.equal(result.success, true);
-  });
-
-  test('list send failure falls back to button then text', async () => {
-    process.env.CHATBOT_USE_IIT_LIST_MENU = '1';
-    const result = await sendMainMenu(
-      makeConversation(),
-      { productLine: 'iit_counselling', iit: { fullName: 'Test' } },
-      new mongoose.Types.ObjectId()
-    );
-    assert.equal(outboundCalls.length, 3);
-    assert.deepEqual(
-      outboundCalls.map((call) => call.type),
-      ['list', 'button', 'text']
-    );
+    assert.match(outboundCalls[0].text, /IIT & Engineering counselling journey/);
+    assert.doesNotMatch(outboundCalls[0].text, /^Welcome$/);
     assert.equal(result.success, true);
   });
 });
@@ -106,5 +72,15 @@ describe('inbound process status on delivery failure', () => {
     const update = resolveInboundProcessUpdate({ success: true, outboundSuccess: true, delivered: true });
     assert.equal(update.processStatus, 'processed');
     assert.equal(update.processError, null);
+  });
+
+  test('session fallback success marks inbound processed', () => {
+    const update = resolveInboundProcessUpdate({
+      success: true,
+      outboundSuccess: true,
+      delivered: true,
+      sessionFallback: true,
+    });
+    assert.equal(update.processStatus, 'processed');
   });
 });

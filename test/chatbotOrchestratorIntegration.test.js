@@ -96,13 +96,9 @@ describe('chatbotOrchestrator integration', () => {
       },
     });
 
-    process.env.CHATBOT_USE_BUTTON_MENU = '1';
-    process.env.CHATBOT_INTERACTIVE_MAIN_MENU = '1';
   });
 
   afterEach(() => {
-    delete process.env.CHATBOT_USE_BUTTON_MENU;
-    delete process.env.CHATBOT_INTERACTIVE_MAIN_MENU;
     setChatbotOrchestratorTestHooks(null);
   });
 
@@ -115,17 +111,16 @@ describe('chatbotOrchestrator integration', () => {
     assert.equal(buildLeadContextCalls, 1);
   });
 
-  test('IIT MENU sends button menu when list menu is disabled', async () => {
+  test('IIT MENU sends plain text menu', async () => {
     await processInbound({
       conversation: makeConversation(),
       inbound: makeInbound({ text: 'menu' }),
       leadLinks: { phone10: '9876543210', productLine: 'iit_counselling' },
     });
     assert.equal(outboundCalls.length, 1);
-    assert.equal(outboundCalls[0].type, 'button');
-    const buttonIds = outboundCalls[0].buttons.map((b) => b.id);
-    assert.deepEqual(buttonIds, ['menu_1', 'menu_4', 'menu_agent']);
-    assert.match(outboundCalls[0].body, /College Predictor/);
+    assert.equal(outboundCalls[0].type, 'text');
+    assert.match(outboundCalls[0].text, /College Predictor/);
+    assert.match(outboundCalls[0].text, /My Counselling Details/);
   });
 
   test('IIT list selection menu_5 shows college predictor maintenance when disabled', async () => {

@@ -3,6 +3,38 @@ const WhatsAppOutboundMessage = require('../../models/WhatsAppOutboundMessage');
 const { parseGupshupTemplateSendResponse } = require('../../utils/gupshupMessageIds');
 const { maskPhoneTail } = require('../../utils/chatbotPhone');
 const gupshupSession = require('./gupshupSessionService');
+const { sendSessionInactiveTemplateFallback } = require('./sessionFallbackService');
+
+function isReengagementSendError(error) {
+  const msg = String(error || '').toLowerCase();
+  return (
+    msg.includes('re-engagement') ||
+    msg.includes('reengagement') ||
+    msg.includes('131047')
+  );
+}
+
+async function attemptSessionFallbackOnFailure(phone10, result) {
+  if (!result || result.success || !isReengagementSendError(result.error)) {
+    return null;
+  }
+  const fallback = await sendSessionInactiveTemplateFallback(phone10);
+  if (!fallback.success) {
+    console.warn('[chatbot] session_fallback_failed', {
+      phone_tail: maskPhoneTail(phone10),
+      error: fallback.error || 'send failed',
+    });
+    return null;
+  }
+  console.log(
+    JSON.stringify({
+      event: 'session_fallback_sent',
+      phone_tail: maskPhoneTail(phone10),
+      reason: 're_engagement',
+    })
+  );
+  return fallback;
+}
 
 function logOutboundFailure(phone10, messageType, result) {
   console.error('[chatbot] outbound_send_failed', {
@@ -81,6 +113,15 @@ async function sendBotTextReply({
     }
   );
   logOutboundFailure(phone10, messageType, result);
+  const fallback = await attemptSessionFallbackOnFailure(phone10, result);
+  if (fallback && fallback.success) {
+    return {
+      success: true,
+      outboundId: outbound._id,
+      sessionFallback: true,
+      result: fallback,
+    };
+  }
   return { success: false, outboundId: outbound._id, error: result && result.error, result };
 }
 
@@ -130,6 +171,10 @@ async function sendBotButtonReply({ conversationId, phone10, body, buttons, inRe
     }
   );
   logOutboundFailure(phone10, 'interactive_button', result);
+  const fallback = await attemptSessionFallbackOnFailure(phone10, result);
+  if (fallback && fallback.success) {
+    return { success: true, outboundId: outbound._id, sessionFallback: true };
+  }
   return { success: false, outboundId: outbound._id, error: result && result.error };
 }
 async function sendAgentTextReply({
@@ -242,6 +287,10 @@ async function sendBotListReply({
     }
   );
   logOutboundFailure(phone10, 'interactive_list', result);
+  const fallback = await attemptSessionFallbackOnFailure(phone10, result);
+  if (fallback && fallback.success) {
+    return { success: true, outboundId: outbound._id, sessionFallback: true };
+  }
   return { success: false, outboundId: outbound._id, error: result && result.error };
 }
 
@@ -250,4 +299,5 @@ module.exports = {
   sendBotButtonReply,
   sendBotListReply,
   sendAgentTextReply,
+  isReengagementSendError,
 };
