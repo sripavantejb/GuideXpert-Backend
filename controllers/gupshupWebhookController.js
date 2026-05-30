@@ -804,6 +804,17 @@ exports.ingestGupshupWebhook = async (req, res) => {
       const { classifyWebhookBody } = require('../services/chatbot/webhookRouterService');
       const { handleInboundWebhook } = require('../services/chatbot/whatsappInboundService');
       const classified = classifyWebhookBody(body);
+
+      if (classified.kind === 'request_welcome') {
+        console.log(
+          JSON.stringify({
+            event: 'request_welcome_skipped',
+            note: 'Meta/Gupshup request_welcome webhook received and ignored — chatbot will reply to the real inbound that follows',
+          })
+        );
+        return res.status(200).json({ success: true, received: true, requestWelcome: true });
+      }
+
       if (classified.kind === 'inbound') {
         const inboundResult = await handleInboundWebhook(req, body, receivedAt);
         if (inboundResult.statusCode) {
