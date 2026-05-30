@@ -21,7 +21,7 @@ const iitCounsellingLeadActivitySchema = new mongoose.Schema({
   },
   actorType: {
     type: String,
-    enum: ['admin'],
+    enum: ['admin', 'bda'],
     default: 'admin',
   },
   actorId: {
