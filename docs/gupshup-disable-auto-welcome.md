@@ -1,65 +1,87 @@
-# Disable stray "Welcome" WhatsApp messages (Gupshup / Meta)
+# Disable stray "Welcome" WhatsApp messages (Gupshup Bot Studio)
 
-If users see a short **"Welcome"** bubble before (or instead of) the GuideXpert chatbot menu, that message is usually **not** from our backend API. MongoDB `WhatsAppOutboundMessage` rows for the same time will show the full menu text (`Hi <name>!` …), not `Welcome` alone.
+## Root cause (confirmed)
 
-Our chatbot sends **one plain-text reply** per inbound (`sendMainMenu` → `sendBotTextReply` only).
+GuideXpert uses Gupshup in **webhook mode** — every inbound message is forwarded to our API at `https://guide-xpert-backend.vercel.app/webhook/gupshup` and we reply via the session API.
 
-## Where "Welcome" comes from
+However Gupshup also has a **Bot Studio** layer that runs in parallel. Bot Studio has a built-in **Welcome Journey** that fires automatically for every message that does not match a configured User Journey keyword. Because our app handles all conversations (no Bot Studio User Journeys configured), Bot Studio considers the user "not inside any journey" for every message and fires the Welcome Journey on every single inbound — sending a separate "Welcome" bubble before our API reply arrives.
 
-| Source | In Mongo outbound? | Fix |
-|--------|-------------------|-----|
-| Gupshup **Journey / Bot** first node | No | Disable or change the Journey in Gupshup console |
-| Meta **Greeting / Welcome message** | No | WhatsApp Manager → phone number → messaging tools |
-| **Icebreaker** or default reply | No | Clear in Meta Business settings |
-| `GUPSHUP_SRC_NAME=Welcome` on Vercel | Sometimes odd labels | Unset or use your app name, not `Welcome` |
-| GuideXpert chatbot code | Yes (full menu text) | Already text-only; deploy latest backend |
+```
+User sends "hi"
+  │
+  ├─► Gupshup Bot Studio: no User Journey matched → fires Welcome Journey → sends "Welcome"
+  └─► Gupshup webhook: forwards to our API → our API sends "🎓 Hi venkat!..." menu
+```
 
-## Gupshup console checklist
+**MongoDB confirms:** zero `WhatsAppOutboundMessage` rows with `textPreview` exactly "Welcome". The Welcome bubble does not come from our code.
 
-1. Log in to [Gupshup](https://www.gupshup.io/) → your WhatsApp app.
-2. Open **Bot / Journey / Workflow** (name varies by account).
-3. Find any **start node** or **default reply** that sends text `Welcome` → **disable** the Journey or change the message.
-4. Ensure the **webhook URL** points to your API only:  
-   `https://<your-api-host>/webhook/gupshup`  
-   (not a Gupshup-only bot that replies before the webhook).
-5. Under app settings, check **Welcome message** / **Session message** templates — clear if set to `Welcome`.
+---
 
-## Meta WhatsApp Manager checklist
+## Fix — Gupshup Bot Studio console (required, cannot be done via API)
 
-1. [Meta Business Suite](https://business.facebook.com/) → WhatsApp accounts → your number.
-2. **WhatsApp Manager** → **Account tools** → **Greeting message** (or **Welcome message**).
-3. Turn **off** or replace text that says only `Welcome`.
-4. Review **Icebreakers** — remove entries that say `Welcome`.
+There is no REST API to disable Bot Studio journeys. This must be done in the Gupshup console.
 
-## Vercel environment
+### Step 1 — Open your Gupshup app
 
-Confirm these are **not** set incorrectly:
+1. Log in at **https://app.gupshup.io** (or https://www.gupshup.io → Dashboard)
+2. Find your WhatsApp app in **My Apps** / **Dashboard**
+3. Click the app name to open it
 
-- `GUPSHUP_SRC_NAME` — must not be `Welcome`
-- `CHATBOT_USE_BUTTON_MENU` / `CHATBOT_INTERACTIVE_MAIN_MENU` — not required; main menu is plain text
+### Step 2 — Open Bot Studio
 
-Optional for users outside the 24h session window:
+Look for one of:
+- A top navigation tab called **"Bot Studio"**
+- Left sidebar item called **"Bot Studio"** or **"Studio"**
+- A button/link called **"Design"** or **"Builder"**
+
+### Step 3 — Delete the Welcome Journey text node
+
+1. In the left panel under **Default Journeys**, click **"Welcome Journey"**
+2. The canvas will show a **Starting Node** with a **Text Node** connected to it
+3. The Text Node contains the word **"Welcome"** (or similar greeting)
+4. **Click the Text Node** to select it
+5. Press the **Delete** key (or right-click → Delete)
+6. The Starting Node should now have nothing connected to it
+7. Click **Save** (top right), then click **Deploy**
+
+### Step 4 — Do the same for the Fallback Journey
+
+1. Click **"Fallback"** in the Default Journeys list
+2. Delete any Text Node connected to the Starting Node
+3. Save → Deploy
+
+### Step 5 — Verify the callback URL is set to our API
+
+1. In the Gupshup console, go to your app → **Settings** or **Configuration**
+2. Find the **Callback URL** / **Webhook URL**
+3. It must be: `https://guide-xpert-backend.vercel.app/webhook/gupshup`
+4. Save if you changed it
+
+---
+
+## Fix — Meta WhatsApp Manager (turn off Greeting message)
+
+1. Go to [Meta Business Suite](https://business.facebook.com) → WhatsApp accounts → your number
+2. **WhatsApp Manager** → **Account tools** → **Phone numbers** → click Settings icon next to your number
+3. Under **Automations**, ensure "Greeting message" / "Welcome message" is **turned OFF**
+
+---
+
+## Vercel environment check
+
+Confirm `GUPSHUP_SRC_NAME` is **not** set to `Welcome` on Vercel dashboard. If it is, delete or rename it.
+
+---
+
+## Verify the fix worked
+
+Run the diagnostic script after making changes:
 
 ```bash
-CHATBOT_SESSION_FALLBACK_TEMPLATE_ENV=GUPSHUP_TEMPLATE_YOUR_MENU_OR_NUDGE
-GUPSHUP_TEMPLATE_YOUR_MENU_OR_NUDGE=<approved-template-uuid>
+cd GuideXpert-Backend
+node scripts/diagnose-stray-welcome.js 3131
 ```
 
-## Verify after changes
+Then send `hi` from a test phone. You should see **exactly one** grey bubble containing the full numbered menu (`🎓 Hi venkat!` …). No separate "Welcome" bubble.
 
-1. Send `hi` from a test phone.
-2. You should see **one** grey bubble with the full menu (numbered options).
-3. In MongoDB:
-
-```javascript
-// One outbound per inbound; preview should start with "Hi" or emoji salutation, not "Welcome"
-db.whatsappoutboundmessages.find({ phone: "<phone10>" }).sort({ createdAt: -1 }).limit(3)
-```
-
-4. Production health:
-
-```bash
-cd GuideXpert-Backend && npm run check:whatsapp:production
-```
-
-If `Welcome` still appears and **no** matching row exists in `whatsappoutboundmessages`, it is entirely from Gupshup/Meta — repeat the console steps above.
+If "Welcome" still appears with zero matching rows in `whatsappoutboundmessages` at the same timestamp, the Welcome Journey is still active — re-check that you Saved AND Deployed in Bot Studio.

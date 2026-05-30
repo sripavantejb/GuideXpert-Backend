@@ -44,6 +44,23 @@ function getWhatsAppConfigStatus() {
     );
   }
 
+  const gupshupSrcName = String(process.env.GUPSHUP_SRC_NAME || '').trim();
+  if (gupshupSrcName && /^welcome$/i.test(gupshupSrcName)) {
+    warnings.push(
+      'GUPSHUP_SRC_NAME is "Welcome" — can cause a stray Welcome label/bubble; unset or rename in Vercel'
+    );
+  }
+
+  const sessionFallbackEnvKey = String(process.env.CHATBOT_SESSION_FALLBACK_TEMPLATE_ENV || '').trim();
+  const sessionFallbackConfigured = Boolean(
+    sessionFallbackEnvKey && process.env[sessionFallbackEnvKey]
+  );
+  if (chatbotEnabled && gupshupConfigured && !sessionFallbackConfigured) {
+    warnings.push(
+      'CHATBOT_SESSION_FALLBACK_TEMPLATE_ENV not set — users outside the 24h window may only see Gupshup auto-replies when session send fails'
+    );
+  }
+
   return {
     whatsappEnabled,
     gupshupConfigured,
@@ -54,6 +71,8 @@ function getWhatsAppConfigStatus() {
     ready,
     issues,
     warnings,
+    gupshupSrcName: gupshupSrcName || null,
+    sessionFallbackConfigured,
   };
 }
 
