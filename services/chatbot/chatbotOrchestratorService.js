@@ -103,6 +103,16 @@ function useButtonMenu() {
   return String(process.env.CHATBOT_USE_BUTTON_MENU || '').trim() === '1';
 }
 
+/**
+ * Interactive list/button main menus can produce a stray "Welcome" bubble on Gupshup before the text menu.
+ * Default is plain text only; set CHATBOT_INTERACTIVE_MAIN_MENU=1 to opt in (also needs CHATBOT_USE_BUTTON_MENU=1).
+ */
+function useInteractiveMainMenu() {
+  return (
+    useButtonMenu() && String(process.env.CHATBOT_INTERACTIVE_MAIN_MENU || '').trim() === '1'
+  );
+}
+
 /** Opt-in IIT interactive list menu (disabled by default while verifying list send issues). */
 function useIitListMenu() {
   return String(process.env.CHATBOT_USE_IIT_LIST_MENU || '').trim() === '1';
@@ -187,7 +197,7 @@ async function sendMainMenu(conversation, leadContext, inReplyToInboundId) {
     inReplyToInboundId,
   };
 
-  if (useButtonMenu() && line === 'iit_counselling' && useIitListMenu()) {
+  if (useInteractiveMainMenu() && line === 'iit_counselling' && useIitListMenu()) {
     const listResult = await h.outbound.sendBotListReply({
       ...baseArgs,
       body,
@@ -227,7 +237,7 @@ async function sendMainMenu(conversation, leadContext, inReplyToInboundId) {
     });
   }
 
-  if (useButtonMenu()) {
+  if (useInteractiveMainMenu()) {
     const buttonResult = await h.outbound.sendBotButtonReply({
       ...baseArgs,
       body,
@@ -242,11 +252,6 @@ async function sendMainMenu(conversation, leadContext, inReplyToInboundId) {
       attemptedType: 'interactive_button',
       fallbackType: 'text',
       errMessage: buttonResult?.error,
-    });
-
-    return h.outbound.sendBotTextReply({
-      ...baseArgs,
-      text: body,
     });
   }
 

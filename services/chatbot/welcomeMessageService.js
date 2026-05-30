@@ -40,8 +40,6 @@ function buildIitStudentWelcome(leadContext) {
   return [
     salutation,
     '',
-    'Welcome back to GuideXpert.',
-    '',
     "We're here to support your IIT & Engineering counselling journey and help you make confident college decisions.",
     '',
     'What would you like help with today?',
@@ -69,9 +67,7 @@ function buildGuidexpertLeadWelcome(leadContext) {
   return [
     salutation,
     '',
-    'Welcome to GuideXpert.',
-    '',
-    'Thank you for showing interest in becoming a Certified Career Counsellor.',
+    'Thank you for showing interest in becoming a Certified Career Counsellor with GuideXpert.',
     '',
     'Our program helps passionate individuals learn career guidance, college counselling, student mentoring, and future-ready counselling practices.',
     '',
@@ -97,7 +93,7 @@ function buildGuidexpertLeadWelcome(leadContext) {
 
 function buildOrganicVisitorWelcome() {
   return [
-    '👋 Welcome to GuideXpert!',
+    '👋 Hi! This is GuideXpert.',
     '',
     "We're India's career guidance and counselling platform helping students make informed academic and career decisions, while also training future career counsellors.",
     '',

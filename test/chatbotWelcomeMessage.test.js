@@ -57,7 +57,7 @@ describe('welcomeMessageService', () => {
 
   test('organic visitor welcome', () => {
     const text = buildWelcomeMenuText({ productLine: 'unknown' });
-    assert.match(text, /👋 Welcome to GuideXpert!/);
+    assert.match(text, /👋 Hi! This is GuideXpert\./);
     assert.match(text, /IIT \/ College Counselling/);
     assert.match(text, /Become a Career Counsellor/);
     assert.match(text, /Talk to an Expert/);

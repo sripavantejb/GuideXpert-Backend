@@ -97,10 +97,12 @@ describe('chatbotOrchestrator integration', () => {
     });
 
     process.env.CHATBOT_USE_BUTTON_MENU = '1';
+    process.env.CHATBOT_INTERACTIVE_MAIN_MENU = '1';
   });
 
   afterEach(() => {
     delete process.env.CHATBOT_USE_BUTTON_MENU;
+    delete process.env.CHATBOT_INTERACTIVE_MAIN_MENU;
     setChatbotOrchestratorTestHooks(null);
   });
 

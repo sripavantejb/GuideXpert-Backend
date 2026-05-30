@@ -42,11 +42,13 @@ describe('chatbot menu delivery fallback', () => {
       },
     });
     process.env.CHATBOT_USE_BUTTON_MENU = '1';
+    process.env.CHATBOT_INTERACTIVE_MAIN_MENU = '1';
     delete process.env.CHATBOT_USE_IIT_LIST_MENU;
   });
 
   afterEach(() => {
     delete process.env.CHATBOT_USE_BUTTON_MENU;
+    delete process.env.CHATBOT_INTERACTIVE_MAIN_MENU;
     delete process.env.CHATBOT_USE_IIT_LIST_MENU;
     setChatbotOrchestratorTestHooks(null);
   });
@@ -60,7 +62,20 @@ describe('chatbot menu delivery fallback', () => {
     assert.equal(outboundCalls.length, 2);
     assert.equal(outboundCalls[0].type, 'button');
     assert.equal(outboundCalls[1].type, 'text');
-    assert.match(outboundCalls[1].text, /Welcome back to GuideXpert/);
+    assert.match(outboundCalls[1].text, /IIT & Engineering counselling journey/);
+    assert.equal(result.success, true);
+  });
+
+  test('default main menu is plain text only (no interactive attempt)', async () => {
+    delete process.env.CHATBOT_INTERACTIVE_MAIN_MENU;
+    outboundCalls = [];
+    const result = await sendMainMenu(
+      makeConversation(),
+      { productLine: 'iit_counselling', iit: { fullName: 'Test' } },
+      new mongoose.Types.ObjectId()
+    );
+    assert.equal(outboundCalls.length, 1);
+    assert.equal(outboundCalls[0].type, 'text');
     assert.equal(result.success, true);
   });
 
