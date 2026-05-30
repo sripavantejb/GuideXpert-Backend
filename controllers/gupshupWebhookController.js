@@ -786,6 +786,13 @@ exports.ingestGupshupWebhook = async (req, res) => {
     const { verifyGupshupWebhookRequest } = require('../utils/gupshupWebhookAuth');
     const webhookAuth = verifyGupshupWebhookRequest(req);
     if (!webhookAuth.ok) {
+      console.warn(
+        JSON.stringify({
+          event: 'webhook_auth_failed',
+          statusCode: webhookAuth.statusCode || 401,
+          error: webhookAuth.error || 'unauthorized',
+        })
+      );
       return res.status(webhookAuth.statusCode || 401).json({
         success: false,
         received: false,

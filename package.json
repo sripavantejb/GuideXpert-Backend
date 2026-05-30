@@ -38,6 +38,7 @@
     "repair:iit-wa-pre2hr": "node scripts/repairIitWhatsAppPre2hrJobs.js",
     "verify:iit-messaging": "node scripts/verifyIitMessagingAutomations.js",
     "verify:iit-messaging:ping": "node scripts/verifyIitMessagingAutomations.js --ping-cron",
+    "check:whatsapp:production": "node scripts/check-whatsapp-production.js",
     "smoke:iit-section2-jobs": "node scripts/smokeIitSection2Jobs.js",
     "requeue:iit-reminder-jobs": "node scripts/requeueIitReminderJobs.js",
     "requeue:iit-reminder-jobs:dispatch": "node scripts/requeueIitReminderJobs.js --dispatch",

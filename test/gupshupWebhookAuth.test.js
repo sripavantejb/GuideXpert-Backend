@@ -76,13 +76,30 @@ describe('gupshupWebhookAuth', () => {
     assert.equal(r.error, 'webhook_secret_not_configured');
   });
 
-  test('production enforces auth even without AUTH_REQUIRED flag', () => {
+  test('production without secret allows webhooks until secret is configured', () => {
     process.env.NODE_ENV = 'production';
+    assert.equal(isWebhookAuthEnforced(), false);
+    const r = verifyGupshupWebhookRequest({ headers: {} });
+    assert.equal(r.ok, true);
+  });
+
+  test('production with AUTH_REQUIRED=1 and no secret returns 503', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.GUPSHUP_WEBHOOK_AUTH_REQUIRED = '1';
     assert.equal(isWebhookAuthEnforced(), true);
     const r = verifyGupshupWebhookRequest({ headers: {} });
     assert.equal(r.ok, false);
     assert.equal(r.statusCode, 503);
     assert.equal(r.error, 'webhook_secret_not_configured');
+  });
+
+  test('AUTH_REQUIRED=0 disables auth even in production with secret set', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.GUPSHUP_WEBHOOK_SECRET = 'prod-secret';
+    process.env.GUPSHUP_WEBHOOK_AUTH_REQUIRED = '0';
+    assert.equal(isWebhookAuthEnforced(), false);
+    const r = verifyGupshupWebhookRequest({ headers: {} });
+    assert.equal(r.ok, true);
   });
 
   test('production with secret rejects missing credential', () => {

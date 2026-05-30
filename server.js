@@ -48,6 +48,10 @@ const { configStatus: counsellorConfigStatus } = require('./controllers/counsell
 const { getPosterDownloads, getPosterDownloadStats } = require('./controllers/posterDownloadController');
 const { checkPosterEligibility, trackPosterDownload } = require('./controllers/posterController');
 const requireAdmin = require('./middleware/requireAdmin');
+const {
+  getWhatsAppConfigStatus,
+  logWhatsAppConfigWarnings,
+} = require('./utils/whatsappConfigStatus');
 
 const app = express();
 
@@ -79,6 +83,7 @@ if (!process.env.COUNSELLOR_JWT_SECRET) {
 if (!process.env.WEBINAR_JWT_SECRET && !process.env.COUNSELLOR_JWT_SECRET) {
   console.warn('[env] WEBINAR_JWT_SECRET and COUNSELLOR_JWT_SECRET are both missing — webinar login will fail. Set at least one in .env / Vercel env vars.');
 }
+logWhatsAppConfigWarnings();
 
 const allowedOrigins = [
   process.env.FRONTEND_URL,
@@ -148,10 +153,12 @@ app.use(async (req, res, next) => {
 
 // Register specific /api routes before any broad `app.use('/api', router)` mounts.
 app.get('/api/health', (req, res) => {
+  const whatsapp = getWhatsAppConfigStatus();
   res.json({
     status: 'ok',
     message: 'GuideXpert API is running',
     features: { posterDownloadAdmin: true },
+    whatsapp,
   });
 });
 app.get('/api/admin/poster-downloads/stats', requireAdmin, getPosterDownloadStats);

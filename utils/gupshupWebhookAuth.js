@@ -6,15 +6,16 @@ function isProductionEnv() {
 
 /**
  * Whether webhook requests must present a valid shared secret.
- * Always enforced in production; otherwise when secret is set or AUTH_REQUIRED=1.
+ *
+ * - GUPSHUP_WEBHOOK_AUTH_REQUIRED=0 → never enforce (e.g. Gupshup dev callback without headers)
+ * - GUPSHUP_WEBHOOK_AUTH_REQUIRED=1 → always enforce (503 if secret missing)
+ * - Default → enforce only when GUPSHUP_WEBHOOK_SECRET is set (allows inbound until you configure secret)
  */
 function isWebhookAuthEnforced() {
-  if (isProductionEnv()) return true;
-  if (String(process.env.GUPSHUP_WEBHOOK_AUTH_REQUIRED || '').trim() === '1') {
-    return true;
-  }
-  const secret = process.env.GUPSHUP_WEBHOOK_SECRET;
-  return Boolean(secret && String(secret).trim());
+  const authFlag = String(process.env.GUPSHUP_WEBHOOK_AUTH_REQUIRED || '').trim();
+  if (authFlag === '0') return false;
+  if (authFlag === '1') return true;
+  return Boolean(getConfiguredWebhookSecret());
 }
 
 function getConfiguredWebhookSecret() {

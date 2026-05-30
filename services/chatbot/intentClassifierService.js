@@ -31,6 +31,10 @@ function classifyIntent(text, botState, productLine) {
     return { intent: 'opt_out', confidence: 'high' };
   }
 
+  if (/^(hi|hello|hey|hola|namaste|start)$/.test(t)) {
+    return { intent: 'main_menu', confidence: 'high' };
+  }
+
   if (botState && botState.state === 'college_predictor') {
     return { intent: 'college_predictor_continue', confidence: 'high' };
   }

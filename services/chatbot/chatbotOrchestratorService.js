@@ -487,6 +487,12 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     case 'college_predictor':
     case 'college_predictor_continue': {
       const isNewEntry = intentResult.intent === 'college_predictor';
+      await h.transitionState(
+        activeConversation._id,
+        activeConversation.phone,
+        'college_predictor',
+        contextPatch
+      );
       const c = await handleCollegePredictorMessage(
         inbound.text,
         contextPatch.college || {},
