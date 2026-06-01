@@ -20,6 +20,10 @@ const { getTrainingAttendance } = require('../controllers/trainingController');
 const { getTrainingFeedback } = require('../controllers/feedbackController');
 const { getTrainingFormResponses } = require('../controllers/trainingFormController');
 const {
+  listOneOnOneCounselingLeads,
+  patchOneOnOneCounselingLead,
+} = require('../controllers/oneOnOneCounselingController');
+const {
   adminList,
   adminCreate,
   adminGetOne,
@@ -110,6 +114,8 @@ router.get('/iit-second-form-submissions', requireAdmin, getIitSecondFormSubmiss
 router.get('/training-attendance', requireAdmin, getTrainingAttendance);
 router.get('/training-feedback', requireAdmin, getTrainingFeedback);
 router.get('/training-form-responses', requireAdmin, getTrainingFormResponses);
+router.get('/one-on-one-counseling-leads', requireAdmin, listOneOnOneCounselingLeads);
+router.patch('/one-on-one-counseling-leads/:id', requireAdmin, patchOneOnOneCounselingLead);
 router.get('/counsellor-support-requests', requireAdmin, getCounsellorSupportRequests);
 router.get('/assessment-submissions', requireAdmin, getAssessmentSubmissions);
 router.get('/assessment-submissions/:id', requireAdmin, getAssessmentSubmissionById);
