@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const IitCounsellingUtmSavedLink = require('../models/IitCounsellingUtmSavedLink');
+const { getMongoQuotaExceededMessage } = require('../utils/mongoErrorMessage');
 
 const DEFAULT_IIT_PAGE = 'https://guidexpert.co.in/iit-counselling';
 const PLATFORM_TO_SOURCE = {
@@ -100,6 +101,11 @@ exports.createIitCounsellingSavedUtmLink = async (req, res) => {
     if (err.name === 'ValidationError') {
       const msg = Object.values(err.errors).map((e) => e.message).join('; ');
       return res.status(400).json({ success: false, message: msg || 'Validation failed.' });
+    }
+    const quotaMsg = getMongoQuotaExceededMessage(err);
+    if (quotaMsg) {
+      console.error('[createIitCounsellingSavedUtmLink] MongoDB quota exceeded');
+      return res.status(503).json({ success: false, message: quotaMsg });
     }
     console.error('[createIitCounsellingSavedUtmLink]', err);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
