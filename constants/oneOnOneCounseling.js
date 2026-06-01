@@ -2,6 +2,7 @@ const CURRENT_CLASS_OPTIONS = [
   '10th',
   'Inter 1st Year',
   'Inter 2nd Year',
+  'Inter 2nd Year Completed',
   'Diploma',
   'Other',
 ];
@@ -44,7 +45,7 @@ const BIGGEST_CONCERN_OPTIONS = [
 
 const PREFERRED_LANGUAGE_OPTIONS = ['Telugu', 'English', 'Hindi'];
 
-const PREFERRED_TIME_SLOT_OPTIONS = ['Morning', 'Afternoon', 'Evening'];
+const SESSION_ATTENDEE_OPTIONS = ['Student', 'Parent', 'Student and Parent'];
 
 const LEAD_STATUS_OPTIONS = [
   'New Lead',
@@ -63,7 +64,7 @@ module.exports = {
   COLLEGE_BUDGET_OPTIONS,
   BIGGEST_CONCERN_OPTIONS,
   PREFERRED_LANGUAGE_OPTIONS,
-  PREFERRED_TIME_SLOT_OPTIONS,
+  SESSION_ATTENDEE_OPTIONS,
   LEAD_STATUS_OPTIONS,
   INDIAN_MOBILE_REGEX,
 };

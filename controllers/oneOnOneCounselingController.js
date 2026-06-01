@@ -6,10 +6,11 @@ const {
   COLLEGE_BUDGET_OPTIONS,
   BIGGEST_CONCERN_OPTIONS,
   PREFERRED_LANGUAGE_OPTIONS,
-  PREFERRED_TIME_SLOT_OPTIONS,
+  SESSION_ATTENDEE_OPTIONS,
   LEAD_STATUS_OPTIONS,
   INDIAN_MOBILE_REGEX,
 } = require('../constants/oneOnOneCounseling');
+const { isValidPreferredTimeSlot, resolveSlotMeta } = require('../utils/oneOnOneCounselingSlots');
 
 function to10Digits(val) {
   if (val == null) return '';
@@ -46,13 +47,16 @@ function mapLeadToDTO(doc) {
     mobileNumber: doc.mobileNumber,
     parentName: doc.parentName,
     parentMobileNumber: doc.parentMobileNumber,
+    sessionAttendee: doc.sessionAttendee || '',
     currentClass: doc.currentClass,
+    city: doc.city || '',
     entranceExamRank: doc.entranceExamRank,
     interestedBranch: doc.interestedBranch,
     collegeBudget: doc.collegeBudget,
     biggestConcern: doc.biggestConcern,
     preferredLanguage: doc.preferredLanguage,
     preferredTimeSlot: doc.preferredTimeSlot,
+    preferredTimeSlotDate: doc.preferredTimeSlotDate || '',
     additionalQuestions: doc.additionalQuestions || '',
     leadStatus: doc.leadStatus || 'New Lead',
     createdAt: doc.createdAt,
@@ -65,13 +69,15 @@ function validateSubmitBody(b) {
   const mobileNumber = to10Digits(b.mobileNumber);
   const parentName = (b.parentName && String(b.parentName).trim()) || '';
   const parentMobileNumber = to10Digits(b.parentMobileNumber);
+  const sessionAttendee = (b.sessionAttendee && String(b.sessionAttendee).trim()) || '';
   const currentClass = (b.currentClass && String(b.currentClass).trim()) || '';
+  const city = (b.city && String(b.city).trim()) || '';
   const entranceExamRank = (b.entranceExamRank && String(b.entranceExamRank).trim()) || '';
   const interestedBranch = (b.interestedBranch && String(b.interestedBranch).trim()) || '';
   const collegeBudget = (b.collegeBudget && String(b.collegeBudget).trim()) || '';
   const biggestConcern = (b.biggestConcern && String(b.biggestConcern).trim()) || '';
   const preferredLanguage = (b.preferredLanguage && String(b.preferredLanguage).trim()) || '';
-  const preferredTimeSlot = (b.preferredTimeSlot && String(b.preferredTimeSlot).trim()) || '';
+  const preferredTimeSlotKey = (b.preferredTimeSlot && String(b.preferredTimeSlot).trim()) || '';
   const additionalQuestions =
     (b.additionalQuestions && String(b.additionalQuestions).trim().slice(0, 2000)) || '';
 
@@ -87,8 +93,14 @@ function validateSubmitBody(b) {
   if (!INDIAN_MOBILE_REGEX.test(parentMobileNumber)) {
     return { error: 'Enter a valid 10-digit Indian mobile number for the parent.' };
   }
+  if (!SESSION_ATTENDEE_OPTIONS.includes(sessionAttendee)) {
+    return { error: 'Please select who will attend the session.' };
+  }
   if (!CURRENT_CLASS_OPTIONS.includes(currentClass)) {
     return { error: 'Please select a valid current class.' };
+  }
+  if (city.length < 2 || city.length > 80) {
+    return { error: 'City / town must be 2–80 characters.' };
   }
   if (!entranceExamRank || entranceExamRank.length > 120) {
     return { error: 'Entrance exam rank is required (max 120 characters).' };
@@ -105,8 +117,12 @@ function validateSubmitBody(b) {
   if (!PREFERRED_LANGUAGE_OPTIONS.includes(preferredLanguage)) {
     return { error: 'Please select a valid language.' };
   }
-  if (!PREFERRED_TIME_SLOT_OPTIONS.includes(preferredTimeSlot)) {
-    return { error: 'Please select a valid time slot.' };
+  if (!isValidPreferredTimeSlot(preferredTimeSlotKey)) {
+    return { error: 'Please select a valid session slot for the next 2 days.' };
+  }
+  const slotMeta = resolveSlotMeta(preferredTimeSlotKey);
+  if (!slotMeta) {
+    return { error: 'Please select a valid session slot for the next 2 days.' };
   }
 
   return {
@@ -115,13 +131,16 @@ function validateSubmitBody(b) {
       mobileNumber,
       parentName,
       parentMobileNumber,
+      sessionAttendee,
       currentClass,
+      city,
       entranceExamRank,
       interestedBranch,
       collegeBudget,
       biggestConcern,
       preferredLanguage,
-      preferredTimeSlot,
+      preferredTimeSlot: slotMeta.label,
+      preferredTimeSlotDate: slotMeta.slotDate,
       additionalQuestions,
       utm_source: (b.utm_source && String(b.utm_source).trim().slice(0, 120)) || undefined,
       utm_medium: (b.utm_medium && String(b.utm_medium).trim().slice(0, 120)) || undefined,
@@ -168,7 +187,9 @@ function buildSearchQuery(q) {
   const clauses = [
     { studentName: { $regex: term, $options: 'i' } },
     { parentName: { $regex: term, $options: 'i' } },
+    { city: { $regex: term, $options: 'i' } },
     { entranceExamRank: { $regex: term, $options: 'i' } },
+    { preferredTimeSlot: { $regex: term, $options: 'i' } },
   ];
   if (digits.length >= 6) {
     clauses.push({ mobileNumber: { $regex: digits } });
@@ -203,8 +224,16 @@ exports.listOneOnOneCounselingLeads = async (req, res) => {
       ['collegeBudget', COLLEGE_BUDGET_OPTIONS],
       ['biggestConcern', BIGGEST_CONCERN_OPTIONS],
       ['preferredLanguage', PREFERRED_LANGUAGE_OPTIONS],
-      ['preferredTimeSlot', PREFERRED_TIME_SLOT_OPTIONS],
+      ['sessionAttendee', SESSION_ATTENDEE_OPTIONS],
     ];
+
+    const slotDateFilter =
+      typeof req.query.preferredTimeSlotDate === 'string'
+        ? req.query.preferredTimeSlotDate.trim()
+        : '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(slotDateFilter)) {
+      match.preferredTimeSlotDate = slotDateFilter;
+    }
 
     for (const [key, allowed] of filterFields) {
       const val = typeof req.query[key] === 'string' ? req.query[key].trim() : '';
