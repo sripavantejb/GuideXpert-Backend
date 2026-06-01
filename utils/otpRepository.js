@@ -3,7 +3,9 @@
  * Keys use normalized 10-digit Indian phone (no 91 prefix).
  */
 
+const mongoose = require('mongoose');
 const OtpVerification = require('../models/OtpVerification');
+const otpMemoryFallback = require('./otpMemoryFallback');
 
 const RESEND_COOLDOWN_MS = 60 * 1000;       // 60 seconds
 const RATE_WINDOW_MS = 15 * 60 * 1000;     // 15 minutes
@@ -12,6 +14,11 @@ const MAX_OTP_PER_WINDOW = 3;
 function normalize(phone) {
   const d = String(phone || '').replace(/\D/g, '');
   return d.length >= 10 ? d.slice(-10) : d;
+}
+
+async function ensureDbReady() {
+  if (mongoose.connection.readyState === 1) return;
+  await mongoose.connection.asPromise();
 }
 
 /**
@@ -26,6 +33,14 @@ async function canSend(phone) {
   const cooldownCutoff = new Date(now.getTime() - RESEND_COOLDOWN_MS);
   const windowStart = new Date(now.getTime() - RATE_WINDOW_MS);
 
+  const memLatest = otpMemoryFallback.get(p);
+  if (memLatest?.createdAt && new Date(memLatest.createdAt) > cooldownCutoff) {
+    const waitSec = Math.ceil(
+      (new Date(memLatest.createdAt).getTime() + RESEND_COOLDOWN_MS - now.getTime()) / 1000
+    );
+    return { allowed: false, retryAfter: waitSec, message: 'Please wait before requesting another OTP.' };
+  }
+
   // Resend cooldown: latest OTP for this phone must be older than 60s
   const latest = await OtpVerification.findOne({ phoneNumber: p })
     .sort({ createdAt: -1 })
@@ -39,7 +54,7 @@ async function canSend(phone) {
   // Rate limit: count OTPs for this phone in last 15 min
   const count = await OtpVerification.countDocuments({
     phoneNumber: p,
-    createdAt: { $gte: windowStart }
+    createdAt: { $gte: windowStart },
   });
   if (count >= MAX_OTP_PER_WINDOW) {
     return { allowed: false, message: 'Too many OTP requests. Try again after 15 minutes.', retryAfter: 900 };
@@ -49,30 +64,46 @@ async function canSend(phone) {
 }
 
 /**
- * Save OTP (hashed) for a phone. Uses atomic upsert to avoid race conditions
- * where a delete succeeds but create fails, leaving no OTP record.
+ * Save OTP (hashed) for a phone. MongoDB primary; in-memory fallback on write failure.
  */
 async function saveOtp(phone, otpHash, expiresAt) {
   const p = normalize(phone);
-  await OtpVerification.findOneAndUpdate(
-    { phoneNumber: p },
-    {
-      $set: {
-        otpHash,
-        expiresAt: new Date(expiresAt),
-        attempts: 0,
-        createdAt: new Date(),
-      },
-    },
-    { upsert: true, new: true }
-  );
+  const expires = new Date(expiresAt);
+  const createdAt = new Date();
+  const record = {
+    phoneNumber: p,
+    otpHash,
+    expiresAt: expires,
+    attempts: 0,
+    createdAt,
+  };
+
+  try {
+    await ensureDbReady();
+    await OtpVerification.deleteMany({ phoneNumber: p });
+    await OtpVerification.create(record);
+    otpMemoryFallback.remove(p);
+    return { storage: 'mongodb' };
+  } catch (mongoErr) {
+    console.error(
+      '[otpRepository] Mongo saveOtp failed for phone ending',
+      p.slice(-4),
+      mongoErr?.message,
+      mongoErr?.code || ''
+    );
+    otpMemoryFallback.set(p, record);
+    return { storage: 'memory', mongoError: mongoErr?.message };
+  }
 }
 
 /**
- * Get latest OTP record for a phone (or null).
+ * Get latest OTP record for a phone (memory first, then Mongo).
  */
 async function getLatest(phone) {
   const p = normalize(phone);
+  const mem = otpMemoryFallback.get(p);
+  if (mem) return mem;
+
   return OtpVerification.findOne({ phoneNumber: p })
     .sort({ createdAt: -1 })
     .lean()
@@ -84,6 +115,7 @@ async function getLatest(phone) {
  */
 async function deleteOtp(phone) {
   const p = normalize(phone);
+  otpMemoryFallback.remove(p);
   await OtpVerification.deleteMany({ phoneNumber: p });
 }
 
@@ -93,11 +125,25 @@ async function deleteOtp(phone) {
  */
 async function incrementAttempts(phone) {
   const p = normalize(phone);
-  const doc = await OtpVerification.findOneAndUpdate(
-    { phoneNumber: p },
+  const mem = otpMemoryFallback.get(p);
+  if (mem) {
+    return otpMemoryFallback.incrementAttempts(p);
+  }
+
+  const latest = await OtpVerification.findOne({ phoneNumber: p })
+    .sort({ createdAt: -1 })
+    .select('_id attempts')
+    .lean()
+    .exec();
+  if (!latest?._id) return null;
+
+  const doc = await OtpVerification.findByIdAndUpdate(
+    latest._id,
     { $inc: { attempts: 1 } },
-    { new: true, sort: { createdAt: -1 } } // update latest
-  ).lean().exec();
+    { new: true }
+  )
+    .lean()
+    .exec();
   return doc ? { attempts: doc.attempts } : null;
 }
 
@@ -107,5 +153,5 @@ module.exports = {
   saveOtp,
   getLatest,
   deleteOtp,
-  incrementAttempts
+  incrementAttempts,
 };

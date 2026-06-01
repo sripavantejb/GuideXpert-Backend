@@ -267,16 +267,14 @@ exports.sendOtp = async (req, res) => {
       console.log('[sendOtp] Privileged OTP bypass (no SMS) for phone ending', p.slice(-4));
     }
 
-    try {
-      await otpRepository.saveOtp(p, hashed, expiresAt);
-    } catch (saveErr) {
-      console.error('[sendOtp] Failed to save OTP for phone ending', p.slice(-4), saveErr.message);
-      return res.status(500).json({
-        success: false,
-        message: 'OTP was sent but could not be saved. Please request a new OTP in a minute.',
-      });
-    }
-    if (process.env.NODE_ENV !== 'production') {
+    const saveResult = await otpRepository.saveOtp(p, hashed, expiresAt);
+    if (saveResult.storage === 'memory') {
+      console.warn(
+        '[sendOtp] OTP stored in memory fallback for phone ending',
+        p.slice(-4),
+        saveResult.mongoError || ''
+      );
+    } else if (process.env.NODE_ENV !== 'production') {
       console.log('[sendOtp] OTP saved for phone ending', p.slice(-4));
     }
 
