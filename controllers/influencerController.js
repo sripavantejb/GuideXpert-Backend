@@ -1,11 +1,9 @@
 const mongoose = require('mongoose');
 const InfluencerLink = require('../models/InfluencerLink');
 const FormSubmission = require('../models/FormSubmission');
-const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
 
 const DEFAULT_BASE_URL = 'https://guidexpert.co.in/register';
 const DEFAULT_IIT_COUNSELLING_PAGE_URL = 'https://guidexpert.co.in/iit-counselling';
-const DEFAULT_ONE_ON_ONE_SESSION_PAGE_URL = 'https://www.guidexpert.co.in/one-on-one-session';
 const PLATFORM_TO_SOURCE = {
   Instagram: 'instagram',
   YouTube: 'youtube',
@@ -28,10 +26,6 @@ function getRegistrationBaseUrl() {
 
 function getIitCounsellingBaseUrl() {
   return normalizeBaseUrl(process.env.IIT_COUNSELLING_PAGE_URL, DEFAULT_IIT_COUNSELLING_PAGE_URL);
-}
-
-function getOneOnOneSessionBaseUrl() {
-  return normalizeBaseUrl(process.env.ONE_ON_ONE_SESSION_PAGE_URL, DEFAULT_ONE_ON_ONE_SESSION_PAGE_URL);
 }
 
 /**
@@ -62,27 +56,16 @@ function buildIitCounsellingUtmLink(influencerName, platform, campaign) {
   return buildUtmLinkOnBase(getIitCounsellingBaseUrl(), influencerName, platform, campaign);
 }
 
-/**
- * 1-on-1 session booking page UTM link (same UTM shape as registration influencer links).
- */
-function buildOneOnOneSessionUtmLink(influencerName, platform, campaign) {
-  return buildUtmLinkOnBase(getOneOnOneSessionBaseUrl(), influencerName, platform, campaign);
-}
-
 function normalizeLinkTarget(value) {
   if (value == null || value === '') return 'registration';
   const s = String(value).trim().toLowerCase().replace(/-/g, '_');
   if (s === 'iitcounselling' || s === 'iit_counselling') return 'iitCounselling';
-  if (s === 'oneononesession' || s === 'one_on_one_session') return 'oneOnOneSession';
   return 'registration';
 }
 
 function resolveDocLinkTarget(doc) {
-  if (doc.linkTarget === 'oneOnOneSession' || doc.linkTarget === 'iitCounselling') {
-    return doc.linkTarget;
-  }
+  if (doc.linkTarget === 'iitCounselling') return 'iitCounselling';
   const url = doc.utmLink || '';
-  if (/^https?:\/\/[^/]+\/one-on-one-session(\/|\?|#|$)/i.test(url)) return 'oneOnOneSession';
   if (/^https?:\/\/[^/]+\/iit-counselling(\/|\?|#|$)/i.test(url)) return 'iitCounselling';
   return 'registration';
 }
@@ -133,10 +116,6 @@ function buildFormSubmissionUtmFilter(utmCampaign, utmContentRaw) {
   };
 }
 
-function buildOneOnOneLeadUtmFilter(utmCampaign, utmContentRaw) {
-  return { $expr: buildUtmMatchExpr(utmCampaign, utmContentRaw) };
-}
-
 /**
  * Parse and validate optional cost from request (non-negative number or null).
  */
@@ -149,7 +128,7 @@ function parseCost(value) {
 
 /**
  * POST /api/influencer-links — create and optionally save influencer UTM link.
- * Body: { influencerName, platform, campaign?, cost?, save?: boolean, linkTarget?: 'registration' | 'iitCounselling' | 'oneOnOneSession' }
+ * Body: { influencerName, platform, campaign?, cost?, save?: boolean, linkTarget?: 'registration' | 'iitCounselling' }
  */
 exports.createInfluencerLink = async (req, res) => {
   try {
@@ -165,14 +144,9 @@ exports.createInfluencerLink = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid platform. Use Instagram, YouTube, Twitter, X, WhatsApp, Telegram, Facebook, or LinkedIn.' });
     }
     const campaignVal = (campaign && typeof campaign === 'string' && campaign.trim()) ? campaign.trim() : 'guide_xperts';
-    let utmLink;
-    if (linkTarget === 'iitCounselling') {
-      utmLink = buildIitCounsellingUtmLink(influencerName.trim(), platformVal, campaignVal);
-    } else if (linkTarget === 'oneOnOneSession') {
-      utmLink = buildOneOnOneSessionUtmLink(influencerName.trim(), platformVal, campaignVal);
-    } else {
-      utmLink = buildUtmLink(influencerName.trim(), platformVal, campaignVal);
-    }
+    const utmLink = linkTarget === 'iitCounselling'
+      ? buildIitCounsellingUtmLink(influencerName.trim(), platformVal, campaignVal)
+      : buildUtmLink(influencerName.trim(), platformVal, campaignVal);
 
     const payload = {
       influencerName: influencerName.trim(),
@@ -238,13 +212,6 @@ exports.listInfluencerLinks = async (req, res) => {
             { utmLink: { $regex: /^https?:\/\/[^/]+\/iit-counselling(\/|\?|#|$)/i } },
           ],
         };
-      } else if (filterParam === 'oneOnOneSession') {
-        mongoFilter = {
-          $or: [
-            { linkTarget: 'oneOnOneSession' },
-            { utmLink: { $regex: /^https?:\/\/[^/]+\/one-on-one-session(\/|\?|#|$)/i } },
-          ],
-        };
       } else {
         mongoFilter = {
           $or: [
@@ -264,7 +231,7 @@ exports.listInfluencerLinks = async (req, res) => {
         const utmCampaign = ((doc.campaign || '').trim() || 'guide_xperts').toLowerCase();
         const utmContentRaw = (doc.influencerName || '').trim();
         const docTarget = resolveDocLinkTarget(doc);
-        const { leadCount, latestLeadAt } = await getLeadStatsForLink(doc, utmCampaign, utmContentRaw, docTarget);
+        const { leadCount, latestLeadAt } = await getLeadStatsForLink(doc, utmCampaign, utmContentRaw);
 
         const count = leadCount || 0;
         const costNum = doc.cost != null && typeof doc.cost === 'number' ? doc.cost : null;
@@ -319,19 +286,9 @@ exports.deleteInfluencerLink = async (req, res) => {
 /**
  * Build lead stats for a link doc (same logic as listInfluencerLinks).
  */
-async function getLeadStatsForLink(doc, utmCampaignOverride, utmContentOverride, linkTargetOverride) {
+async function getLeadStatsForLink(doc, utmCampaignOverride, utmContentOverride) {
   const utmCampaign = utmCampaignOverride ?? ((doc.campaign || '').trim() || 'guide_xperts').toLowerCase();
   const utmContentRaw = utmContentOverride ?? (doc.influencerName || '').trim();
-  const docTarget = linkTargetOverride ?? resolveDocLinkTarget(doc);
-
-  if (docTarget === 'oneOnOneSession') {
-    const leadFilter = buildOneOnOneLeadUtmFilter(utmCampaign, utmContentRaw);
-    const [leadCount, latestDoc] = await Promise.all([
-      OneOnOneCounselingLead.countDocuments(leadFilter),
-      OneOnOneCounselingLead.findOne(leadFilter, { createdAt: 1 }).sort({ createdAt: -1 }).lean(),
-    ]);
-    return { leadCount: leadCount || 0, latestLeadAt: latestDoc?.createdAt || null };
-  }
 
   const leadFilter = buildFormSubmissionUtmFilter(utmCampaign, utmContentRaw);
   const [leadCount, latestDoc] = await Promise.all([

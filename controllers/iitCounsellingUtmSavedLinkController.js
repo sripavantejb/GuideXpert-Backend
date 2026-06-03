@@ -3,6 +3,7 @@ const IitCounsellingUtmSavedLink = require('../models/IitCounsellingUtmSavedLink
 const { getMongoQuotaExceededMessage } = require('../utils/mongoErrorMessage');
 
 const DEFAULT_IIT_PAGE = 'https://guidexpert.co.in/iit-counselling';
+const DEFAULT_ONE_ON_ONE_SESSION_PAGE_URL = 'https://www.guidexpert.co.in/one-on-one-session';
 const PLATFORM_TO_SOURCE = {
   Instagram: 'instagram',
   YouTube: 'youtube',
@@ -14,14 +15,20 @@ const PLATFORM_TO_SOURCE = {
   LinkedIn: 'linkedin',
 };
 
-function getIitCounsellingBaseUrl() {
-  const raw = process.env.IIT_COUNSELLING_PAGE_URL || DEFAULT_IIT_PAGE;
-  const base = (raw && typeof raw === 'string' && raw.trim()) ? raw.trim() : DEFAULT_IIT_PAGE;
+function normalizeBaseUrl(raw, fallback) {
+  const base = (raw && typeof raw === 'string' && raw.trim()) ? raw.trim() : fallback;
   return base.replace(/\/?$/, '');
 }
 
-function buildIitCounsellingUtmUrl(influencerName, platform, campaign) {
-  const baseUrl = getIitCounsellingBaseUrl();
+function getIitCounsellingBaseUrl() {
+  return normalizeBaseUrl(process.env.IIT_COUNSELLING_PAGE_URL, DEFAULT_IIT_PAGE);
+}
+
+function getOneOnOneSessionBaseUrl() {
+  return normalizeBaseUrl(process.env.ONE_ON_ONE_SESSION_PAGE_URL, DEFAULT_ONE_ON_ONE_SESSION_PAGE_URL);
+}
+
+function buildUtmUrlOnBase(baseUrl, influencerName, platform, campaign) {
   const params = new URLSearchParams({
     utm_source: PLATFORM_TO_SOURCE[platform] || String(platform).toLowerCase(),
     utm_medium: 'influencer',
@@ -29,6 +36,28 @@ function buildIitCounsellingUtmUrl(influencerName, platform, campaign) {
     utm_content: influencerName.trim(),
   });
   return `${baseUrl}?${params.toString()}`;
+}
+
+function buildIitCounsellingUtmUrl(influencerName, platform, campaign) {
+  return buildUtmUrlOnBase(getIitCounsellingBaseUrl(), influencerName, platform, campaign);
+}
+
+function buildOneOnOneSessionUtmUrl(influencerName, platform, campaign) {
+  return buildUtmUrlOnBase(getOneOnOneSessionBaseUrl(), influencerName, platform, campaign);
+}
+
+function normalizeLinkTarget(value) {
+  if (value == null || value === '') return 'iitCounselling';
+  const s = String(value).trim().toLowerCase().replace(/-/g, '_');
+  if (s === 'oneononesession' || s === 'one_on_one_session') return 'oneOnOneSession';
+  return 'iitCounselling';
+}
+
+function resolveDocLinkTarget(doc) {
+  if (doc.linkTarget === 'oneOnOneSession') return 'oneOnOneSession';
+  const url = doc.utmLink || '';
+  if (/^https?:\/\/[^/]+\/one-on-one-session(\/|\?|#|$)/i.test(url)) return 'oneOnOneSession';
+  return 'iitCounselling';
 }
 
 function parseCost(value) {
@@ -46,18 +75,39 @@ function mapDoc(doc) {
     platform: doc.platform,
     campaign: doc.campaign,
     utmLink: doc.utmLink,
+    linkTarget: resolveDocLinkTarget(doc),
     cost: costNum,
     createdAt: doc.createdAt,
   };
 }
 
+function buildListFilter(linkTargetParam) {
+  if (linkTargetParam === 'oneOnOneSession') {
+    return {
+      $or: [
+        { linkTarget: 'oneOnOneSession' },
+        { utmLink: { $regex: /^https?:\/\/[^/]+\/one-on-one-session(\/|\?|#|$)/i } },
+      ],
+    };
+  }
+  return {
+    $or: [
+      { linkTarget: { $exists: false } },
+      { linkTarget: null },
+      { linkTarget: 'iitCounselling' },
+    ],
+  };
+}
+
 /**
  * GET /api/admin/iit-counselling/saved-utm-links
- * (aliases: GET /api/admin/iit-utm-saved-links)
+ * Query: linkTarget=iitCounselling|oneOnOneSession (optional, default iitCounselling)
  */
 exports.listIitCounsellingSavedUtmLinks = async (req, res) => {
   try {
-    const docs = await IitCounsellingUtmSavedLink.find({}).sort({ createdAt: -1 }).lean();
+    const filterParam = normalizeLinkTarget(req.query?.linkTarget);
+    const mongoFilter = buildListFilter(filterParam);
+    const docs = await IitCounsellingUtmSavedLink.find(mongoFilter).sort({ createdAt: -1 }).lean();
     return res.status(200).json({ success: true, data: docs.map(mapDoc) });
   } catch (err) {
     console.error('[listIitCounsellingSavedUtmLinks]', err);
@@ -67,11 +117,12 @@ exports.listIitCounsellingSavedUtmLinks = async (req, res) => {
 
 /**
  * POST /api/admin/iit-counselling/saved-utm-links
- * Body: { influencerName, platform, campaign?, cost? }
+ * Body: { influencerName, platform, campaign?, cost?, linkTarget?: 'iitCounselling' | 'oneOnOneSession' }
  */
 exports.createIitCounsellingSavedUtmLink = async (req, res) => {
   try {
     const { influencerName, platform, campaign, cost } = req.body || {};
+    const linkTarget = normalizeLinkTarget(req.body?.linkTarget);
     if (!influencerName || typeof influencerName !== 'string' || !influencerName.trim()) {
       return res.status(400).json({ success: false, message: 'Influencer name is required.' });
     }
@@ -86,12 +137,15 @@ exports.createIitCounsellingSavedUtmLink = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Cost must be a non-negative number.' });
     }
 
-    const utmLink = buildIitCounsellingUtmUrl(influencerName.trim(), platformVal, campaignVal);
+    const utmLink = linkTarget === 'oneOnOneSession'
+      ? buildOneOnOneSessionUtmUrl(influencerName.trim(), platformVal, campaignVal)
+      : buildIitCounsellingUtmUrl(influencerName.trim(), platformVal, campaignVal);
     const payload = {
       influencerName: influencerName.trim(),
       platform: platformVal,
       campaign: campaignVal,
       utmLink,
+      linkTarget,
     };
     if (costVal !== null) payload.cost = costVal;
 

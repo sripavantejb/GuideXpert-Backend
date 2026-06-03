@@ -759,10 +759,12 @@ exports.getIitCounsellingUtmAnalytics = async (req, res) => {
                 $cond: [{ $ne: ['$submissionId', null] }, 1, 0],
               },
             },
+            firstVisitAt: { $min: '$visitedAt' },
+            latestVisitAt: { $max: '$visitedAt' },
           },
         },
-        { $sort: { visits: -1 } },
-        { $limit: 50 },
+        { $sort: { latestVisitAt: -1 } },
+        { $limit: 500 },
         {
           $project: {
             _id: 0,
@@ -773,6 +775,8 @@ exports.getIitCounsellingUtmAnalytics = async (req, res) => {
             visits: 1,
             uniqueVisitors: { $size: { $ifNull: ['$uniqueVisitorSet', []] } },
             linkedSubmissions: 1,
+            firstVisitAt: 1,
+            latestVisitAt: 1,
           },
         },
       ]),

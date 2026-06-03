@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 /**
- * Saved UTM links for the public IIT counselling landing page only.
+ * Saved UTM links for IIT counselling admin (counselling page + 1-on-1 session).
  * Separate from InfluencerLink (registration) so admin lists never mix.
  */
 const iitCounsellingUtmSavedLinkSchema = new mongoose.Schema({
@@ -29,6 +29,12 @@ const iitCounsellingUtmSavedLinkSchema = new mongoose.Schema({
     type: String,
     required: true,
     trim: true,
+  },
+  linkTarget: {
+    type: String,
+    trim: true,
+    enum: ['iitCounselling', 'oneOnOneSession'],
+    default: 'iitCounselling',
   },
   cost: {
     type: Number,
