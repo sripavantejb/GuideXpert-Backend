@@ -9,6 +9,7 @@ const {
   LEAD_STATUS_OPTIONS,
   INDIAN_MOBILE_REGEX,
 } = require('../constants/oneOnOneCounseling');
+const { BOOKING_STATUS_OPTIONS } = require('../constants/guidanceBooking');
 
 const schema = new mongoose.Schema(
   {
@@ -36,6 +37,24 @@ const schema = new mongoose.Schema(
     utm_medium: { type: String, trim: true, maxlength: 120 },
     utm_campaign: { type: String, trim: true, maxlength: 120 },
     utm_content: { type: String, trim: true, maxlength: 120 },
+    bookingConfirmed: { type: Boolean, default: false, index: true },
+    bookingStatus: {
+      type: String,
+      enum: BOOKING_STATUS_OPTIONS,
+      default: 'Not Booked',
+      index: true,
+    },
+    selectedSlotId: { type: mongoose.Schema.Types.ObjectId, ref: 'GuidanceSlot', default: null },
+    oneOnOneCounselorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'OneOnOneCounselor',
+      default: null,
+    },
+    parentAttendanceConfirmed: { type: Boolean, default: false },
+    whatsappConsent: { type: Boolean, default: false },
+    bookingConfirmedAt: { type: Date, default: null },
+    attendanceStatus: { type: String, trim: true, maxlength: 40, default: '' },
+    counselorRemarks: { type: String, trim: true, maxlength: 2000, default: '' },
   },
   { timestamps: true }
 );
@@ -47,5 +66,8 @@ schema.index({ currentClass: 1 });
 schema.index({ preferredLanguage: 1 });
 schema.index({ preferredTimeSlot: 1 });
 schema.index({ preferredTimeSlotDate: 1 });
+schema.index({ selectedSlotId: 1 });
+schema.index({ oneOnOneCounselorId: 1 });
+schema.index({ bookingConfirmedAt: -1 });
 
 module.exports = mongoose.model('OneOnOneCounselingLead', schema);

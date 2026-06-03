@@ -24,6 +24,19 @@ const {
   patchOneOnOneCounselingLead,
 } = require('../controllers/oneOnOneCounselingController');
 const {
+  createCounselor,
+  listCounselors,
+  updateCounselor,
+  patchCounselorStatus,
+  deleteCounselor,
+  createSlot,
+  listSlots,
+  updateSlot,
+  toggleSlot,
+  deleteSlot,
+  listGuidanceBookings,
+} = require('../controllers/oneOnOneCounselorAdminController');
+const {
   adminList,
   adminCreate,
   adminGetOne,
@@ -116,6 +129,17 @@ router.get('/training-feedback', requireAdmin, getTrainingFeedback);
 router.get('/training-form-responses', requireAdmin, getTrainingFormResponses);
 router.get('/one-on-one-counseling-leads', requireAdmin, listOneOnOneCounselingLeads);
 router.patch('/one-on-one-counseling-leads/:id', requireAdmin, patchOneOnOneCounselingLead);
+router.post('/one-on-one-counselors', requireAdmin, requireSuperAdmin, createCounselor);
+router.get('/one-on-one-counselors', requireAdmin, listCounselors);
+router.put('/one-on-one-counselors/:id', requireAdmin, requireSuperAdmin, updateCounselor);
+router.patch('/one-on-one-counselors/:id/status', requireAdmin, requireSuperAdmin, patchCounselorStatus);
+router.delete('/one-on-one-counselors/:id', requireAdmin, requireSuperAdmin, deleteCounselor);
+router.post('/guidance-slots', requireAdmin, createSlot);
+router.get('/guidance-slots', requireAdmin, listSlots);
+router.put('/guidance-slots/:id', requireAdmin, updateSlot);
+router.patch('/guidance-slots/:id/toggle', requireAdmin, toggleSlot);
+router.delete('/guidance-slots/:id', requireAdmin, deleteSlot);
+router.get('/guidance-bookings', requireAdmin, listGuidanceBookings);
 router.get('/counsellor-support-requests', requireAdmin, getCounsellorSupportRequests);
 router.get('/assessment-submissions', requireAdmin, getAssessmentSubmissions);
 router.get('/assessment-submissions/:id', requireAdmin, getAssessmentSubmissionById);

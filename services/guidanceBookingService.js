@@ -1,0 +1,171 @@
+const mongoose = require('mongoose');
+const GuidanceSlot = require('../models/GuidanceSlot');
+const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
+const OneOnOneCounselor = require('../models/OneOnOneCounselor');
+const { INDIAN_MOBILE_REGEX } = require('../constants/oneOnOneCounseling');
+
+function mapSlotToPublicDTO(slot, counselor) {
+  const counselorName = counselor?.name || '';
+  const collegeName = counselor?.collegeName || '';
+  return {
+    id: String(slot._id),
+    sessionTitle: slot.sessionTitle,
+    slotDate: slot.slotDate,
+    slotTime: slot.slotTime,
+    maxBookings: slot.maxBookings,
+    currentBookings: slot.currentBookings,
+    spotsLeft: Math.max(0, slot.maxBookings - slot.currentBookings),
+    counselorName,
+    collegeName,
+    designation: counselor?.designation || '',
+  };
+}
+
+function mapLeadBasicDTO(doc) {
+  return {
+    id: String(doc._id),
+    studentName: doc.studentName,
+    mobileNumber: doc.mobileNumber,
+    parentName: doc.parentName,
+    currentClass: doc.currentClass,
+    city: doc.city || '',
+    preferredLanguage: doc.preferredLanguage,
+    bookingConfirmed: !!doc.bookingConfirmed,
+    bookingStatus: doc.bookingStatus || 'Not Booked',
+  };
+}
+
+function mapLeadBookingDTO(doc, slot, counselor) {
+  return {
+    ...mapLeadBasicDTO(doc),
+    parentAttendanceConfirmed: !!doc.parentAttendanceConfirmed,
+    whatsappConsent: !!doc.whatsappConsent,
+    selectedSlotId: doc.selectedSlotId ? String(doc.selectedSlotId) : '',
+    oneOnOneCounselorId: doc.oneOnOneCounselorId ? String(doc.oneOnOneCounselorId) : '',
+    bookingConfirmedAt: doc.bookingConfirmedAt || null,
+    attendanceStatus: doc.attendanceStatus || '',
+    counselorRemarks: doc.counselorRemarks || '',
+    slot: slot
+      ? {
+          sessionTitle: slot.sessionTitle,
+          slotDate: slot.slotDate,
+          slotTime: slot.slotTime,
+        }
+      : null,
+    counselor: counselor
+      ? { name: counselor.name, collegeName: counselor.collegeName || '' }
+      : null,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+  };
+}
+
+async function getAvailableActiveSlots() {
+  const slots = await GuidanceSlot.find({
+    isActive: true,
+    $expr: { $lt: ['$currentBookings', '$maxBookings'] },
+  })
+    .sort({ slotDate: 1, slotTime: 1 })
+    .lean();
+
+  const counselorIds = [...new Set(slots.map((s) => String(s.oneOnOneCounselorId)))];
+  const counselors = await OneOnOneCounselor.find({
+    _id: { $in: counselorIds },
+    isActive: true,
+  })
+    .select('name collegeName designation isActive')
+    .lean();
+  const counselorById = Object.fromEntries(counselors.map((c) => [String(c._id), c]));
+
+  return slots
+    .filter((s) => counselorById[String(s.oneOnOneCounselorId)])
+    .map((s) => mapSlotToPublicDTO(s, counselorById[String(s.oneOnOneCounselorId)]));
+}
+
+async function findLeadByMobile(mobileNumber) {
+  return OneOnOneCounselingLead.findOne({ mobileNumber }).lean();
+}
+
+async function bookSlotForLead({
+  mobileNumber,
+  slotId,
+  parentAttendanceConfirmed,
+  whatsappConsent,
+}) {
+  const lead = await OneOnOneCounselingLead.findOne({ mobileNumber });
+  if (!lead) {
+    return { error: 'This mobile number is not found. Please contact the GuideXpert team.', status: 404 };
+  }
+  if (lead.bookingConfirmed) {
+    return { error: 'A slot is already booked with this mobile number.', status: 409 };
+  }
+  if (!parentAttendanceConfirmed || !whatsappConsent) {
+    return { error: 'Parent attendance and WhatsApp consent are required.', status: 400 };
+  }
+  if (!mongoose.Types.ObjectId.isValid(slotId)) {
+    return { error: 'Invalid slot selected.', status: 400 };
+  }
+
+  const slot = await GuidanceSlot.findById(slotId).lean();
+  if (!slot || !slot.isActive) {
+    return { error: 'Selected slot is not available.', status: 400 };
+  }
+  if (slot.currentBookings >= slot.maxBookings) {
+    return { error: 'Selected slot is full. Please choose another slot.', status: 400 };
+  }
+
+  const counselor = await OneOnOneCounselor.findById(slot.oneOnOneCounselorId).lean();
+  if (!counselor || !counselor.isActive) {
+    return { error: 'Selected slot is not available.', status: 400 };
+  }
+
+  const slotUpdate = await GuidanceSlot.findOneAndUpdate(
+    {
+      _id: slotId,
+      isActive: true,
+      $expr: { $lt: ['$currentBookings', '$maxBookings'] },
+    },
+    { $inc: { currentBookings: 1 } },
+    { new: true }
+  );
+  if (!slotUpdate) {
+    return { error: 'Selected slot is full. Please choose another slot.', status: 409 };
+  }
+
+  const now = new Date();
+  lead.bookingConfirmed = true;
+  lead.bookingStatus = 'Confirmed';
+  lead.selectedSlotId = slotId;
+  lead.oneOnOneCounselorId = slot.oneOnOneCounselorId;
+  lead.parentAttendanceConfirmed = true;
+  lead.whatsappConsent = true;
+  lead.bookingConfirmedAt = now;
+  lead.attendanceStatus = 'Confirmed';
+
+  try {
+    await lead.save();
+  } catch (err) {
+    await GuidanceSlot.findByIdAndUpdate(slotId, { $inc: { currentBookings: -1 } });
+    throw err;
+  }
+
+  return {
+    lead: lead.toObject(),
+    slot: slotUpdate.toObject(),
+    counselor,
+  };
+}
+
+function validateMobile(mobile) {
+  return INDIAN_MOBILE_REGEX.test(mobile);
+}
+
+module.exports = {
+  mapSlotToPublicDTO,
+  mapLeadBasicDTO,
+  mapLeadBookingDTO,
+  getAvailableActiveSlots,
+  findLeadByMobile,
+  bookSlotForLead,
+  validateMobile,
+};

@@ -17,6 +17,8 @@ const ADMIN_SECTION_KEYS = [
   'slots',
   'training-form-responses',
   'one-on-one-counseling',
+  'guidance-slot-bookings',
+  'one-on-one-counselors-admin',
   'training-feedback',
   'influencer-tracking',
   'poster-downloads',

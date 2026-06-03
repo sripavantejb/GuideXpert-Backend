@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
 const {
@@ -11,6 +12,9 @@ const {
   INDIAN_MOBILE_REGEX,
 } = require('../constants/oneOnOneCounseling');
 const { isValidPreferredTimeSlot, resolveSlotMeta } = require('../utils/oneOnOneCounselingSlots');
+const { BOOKING_STATUS_OPTIONS } = require('../constants/guidanceBooking');
+const GuidanceSlot = require('../models/GuidanceSlot');
+const OneOnOneCounselor = require('../models/OneOnOneCounselor');
 
 function to10Digits(val) {
   if (val == null) return '';
@@ -63,6 +67,19 @@ function mapLeadToDTO(doc) {
     utm_medium: doc.utm_medium || '',
     utm_campaign: doc.utm_campaign || '',
     utm_content: doc.utm_content || '',
+    bookingConfirmed: !!doc.bookingConfirmed,
+    bookingStatus: doc.bookingStatus || 'Not Booked',
+    selectedSlotId: doc.selectedSlotId ? String(doc.selectedSlotId) : '',
+    oneOnOneCounselorId: doc.oneOnOneCounselorId ? String(doc.oneOnOneCounselorId) : '',
+    parentAttendanceConfirmed: !!doc.parentAttendanceConfirmed,
+    whatsappConsent: !!doc.whatsappConsent,
+    bookingConfirmedAt: doc.bookingConfirmedAt || null,
+    attendanceStatus: doc.attendanceStatus || '',
+    counselorRemarks: doc.counselorRemarks || '',
+    slotSessionTitle: doc._slotSessionTitle || '',
+    slotDate: doc._slotDate || '',
+    slotTime: doc._slotTime || '',
+    counselorName: doc._counselorName || '',
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
@@ -256,16 +273,73 @@ exports.listOneOnOneCounselingLeads = async (req, res) => {
 
     applyUtmFilters(match, req.query);
 
+    const bookingFilter =
+      typeof req.query.bookingFilter === 'string' ? req.query.bookingFilter.trim() : '';
+    if (bookingFilter === 'confirmed') {
+      match.bookingConfirmed = true;
+    } else if (bookingFilter === 'pending') {
+      match.bookingConfirmed = { $ne: true };
+      match.bookingStatus = 'Pending';
+    } else if (bookingFilter === 'notBooked') {
+      match.bookingConfirmed = { $ne: true };
+      match.$or = [
+        { bookingStatus: { $in: ['Not Booked', null] } },
+        { bookingStatus: { $exists: false } },
+      ];
+    }
+    if (req.query.bookingStatus && BOOKING_STATUS_OPTIONS.includes(req.query.bookingStatus)) {
+      match.bookingStatus = req.query.bookingStatus;
+    }
+    if (req.query.parentAttendanceConfirmed === 'true') {
+      match.parentAttendanceConfirmed = true;
+    }
+    if (req.query.whatsappConsent === 'true') {
+      match.whatsappConsent = true;
+    }
+    if (mongoose.Types.ObjectId.isValid(req.query.selectedSlotId)) {
+      match.selectedSlotId = req.query.selectedSlotId;
+    }
+    if (mongoose.Types.ObjectId.isValid(req.query.oneOnOneCounselorId)) {
+      match.oneOnOneCounselorId = req.query.oneOnOneCounselorId;
+    }
+    const slotDateFilter =
+      typeof req.query.slotDate === 'string' ? req.query.slotDate.trim() : '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(slotDateFilter)) {
+      const slotIds = await GuidanceSlot.find({ slotDate: slotDateFilter }).distinct('_id');
+      match.selectedSlotId = { $in: slotIds };
+    }
+
     const [rows, total] = await Promise.all([
       OneOnOneCounselingLead.find(match).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
       OneOnOneCounselingLead.countDocuments(match),
     ]);
 
+    const slotIds = rows.filter((r) => r.selectedSlotId).map((r) => r.selectedSlotId);
+    const counselorIds = rows.filter((r) => r.oneOnOneCounselorId).map((r) => r.oneOnOneCounselorId);
+    const [slots, counselors] = await Promise.all([
+      GuidanceSlot.find({ _id: { $in: slotIds } }).lean(),
+      OneOnOneCounselor.find({ _id: { $in: counselorIds } }).select('name').lean(),
+    ]);
+    const slotById = Object.fromEntries(slots.map((s) => [String(s._id), s]));
+    const counselorById = Object.fromEntries(counselors.map((c) => [String(c._id), c]));
+
+    const enriched = rows.map((r) => {
+      const slot = slotById[String(r.selectedSlotId)];
+      const counselor = counselorById[String(r.oneOnOneCounselorId)];
+      return {
+        ...r,
+        _slotSessionTitle: slot?.sessionTitle || '',
+        _slotDate: slot?.slotDate || '',
+        _slotTime: slot?.slotTime || '',
+        _counselorName: counselor?.name || '',
+      };
+    });
+
     const totalPages = Math.ceil(total / limit) || 1;
 
     return res.status(200).json({
       success: true,
-      data: rows.map(mapLeadToDTO),
+      data: enriched.map(mapLeadToDTO),
       pagination: { page, limit, total, totalPages },
     });
   } catch (err) {
