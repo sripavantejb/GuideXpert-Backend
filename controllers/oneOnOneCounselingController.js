@@ -302,10 +302,10 @@ exports.listOneOnOneCounselingLeads = async (req, res) => {
     if (mongoose.Types.ObjectId.isValid(req.query.oneOnOneCounselorId)) {
       match.oneOnOneCounselorId = req.query.oneOnOneCounselorId;
     }
-    const slotDateFilter =
+    const bookedSlotDate =
       typeof req.query.slotDate === 'string' ? req.query.slotDate.trim() : '';
-    if (/^\d{4}-\d{2}-\d{2}$/.test(slotDateFilter)) {
-      const slotIds = await GuidanceSlot.find({ slotDate: slotDateFilter }).distinct('_id');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(bookedSlotDate)) {
+      const slotIds = await GuidanceSlot.find({ slotDate: bookedSlotDate }).distinct('_id');
       match.selectedSlotId = { $in: slotIds };
     }
 

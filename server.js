@@ -92,31 +92,44 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
   'https://www.guidexpert.co.in',
   'https://guidexpert.co.in',
+  'http://www.guidexpert.co.in',
+  'http://guidexpert.co.in',
   'https://guide-xpert-frontend.vercel.app',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
 ].filter(Boolean);
 if (allowedOrigins.length === 0) allowedOrigins.push('https://guidexpert.co.in');
 // Allow any Vercel preview/production frontend (*.vercel.app)
-const vercelOriginRegex = /^https:\/\/[a-z0-9-]+(-[a-z0-9-]+)*\.vercel\.app$/;
+const vercelOriginRegex = /^https:\/\/[a-z0-9-]+(-[a-z0-9-]+)*\.vercel\.app$/i;
 // Any localhost / 127.0.0.1 port (Vite may use 5173, 5174, etc.)
-const localhostDevOriginRegex = /^http:\/\/(localhost|127\.0\.0\.1):\d+$/;
-app.use(cors({
-  origin: function(origin, callback) {
-    if (
-      !origin ||
-      allowedOrigins.includes(origin) ||
-      vercelOriginRegex.test(origin) ||
-      localhostDevOriginRegex.test(origin)
-    ) {
+const localhostDevOriginRegex = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
+// Production/staging on guidexpert.co.in (www or subdomains)
+const guidexpertOriginRegex = /^https?:\/\/([a-z0-9-]+\.)*guidexpert\.co\.in$/i;
+
+function isAllowedCorsOrigin(origin) {
+  if (!origin) return true;
+  return (
+    allowedOrigins.includes(origin) ||
+    vercelOriginRegex.test(origin) ||
+    localhostDevOriginRegex.test(origin) ||
+    guidexpertOriginRegex.test(origin)
+  );
+}
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (isAllowedCorsOrigin(origin)) {
       return callback(null, origin || allowedOrigins[0]);
     }
+    console.warn('[cors] Blocked origin:', origin);
     return callback(null, false);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  optionsSuccessStatus: 204,
+};
+app.use(cors(corsOptions));
 // Poster templates: large SVG + JSON overhead; keep above MAX_SVG_CHARS in posterTemplateController (~2MB markup alone)
 function logAdminPosterJsonBody(req, res, buf) {
   try {
