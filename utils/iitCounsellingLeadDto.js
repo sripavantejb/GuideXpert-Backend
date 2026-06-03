@@ -21,6 +21,11 @@ function mapIitCounsellingLeadToDTO(sub, visit) {
   const phone = sub.phone || iit.section1Data?.mobileNumber || '';
   const slotBooking = iit.section1Data?.slotBooking || '';
   const slotBookingDate = iit.section1Data?.slotBookingDate || null;
+  const classStatus =
+    typeof iit.section1Data?.classStatus === 'string' ? iit.section1Data.classStatus.trim() : '';
+  const top5Colleges = Array.isArray(iit.section1Data?.top5Colleges)
+    ? iit.section1Data.top5Colleges.map((c) => String(c || '').trim()).filter(Boolean)
+    : [];
 
   return {
     id: sub._id,
@@ -64,6 +69,9 @@ function mapIitCounsellingLeadToDTO(sub, visit) {
     city: iit.section1Data?.city || iit.section1Data?.location || '',
     alternatePhone: iit.section1Data?.alternateMobile || iit.section1Data?.alternatePhone || '',
     preferredLanguage: iit.section2Data?.preferredLanguage || '',
+    classStatus,
+    top5Colleges,
+    topColleges: top5Colleges.length ? top5Colleges.join(', ') : '',
   };
 }
 
