@@ -59,9 +59,23 @@ function mapLeadToDTO(doc) {
     preferredTimeSlotDate: doc.preferredTimeSlotDate || '',
     additionalQuestions: doc.additionalQuestions || '',
     leadStatus: doc.leadStatus || 'New Lead',
+    utm_source: doc.utm_source || '',
+    utm_medium: doc.utm_medium || '',
+    utm_campaign: doc.utm_campaign || '',
+    utm_content: doc.utm_content || '',
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
+}
+
+function applyUtmFilters(match, query) {
+  const utmFields = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'];
+  for (const key of utmFields) {
+    const val = typeof query[key] === 'string' ? query[key].trim() : '';
+    if (val) {
+      match[key] = { $regex: val.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+    }
+  }
 }
 
 function validateSubmitBody(b) {
@@ -239,6 +253,8 @@ exports.listOneOnOneCounselingLeads = async (req, res) => {
       const val = typeof req.query[key] === 'string' ? req.query[key].trim() : '';
       if (val && allowed.includes(val)) match[key] = val;
     }
+
+    applyUtmFilters(match, req.query);
 
     const [rows, total] = await Promise.all([
       OneOnOneCounselingLead.find(match).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
