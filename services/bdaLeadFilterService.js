@@ -2,6 +2,7 @@ const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
 const { BDA_LANGUAGES } = require('../constants/bdaLanguage');
 const { getISTDayRangeFromString } = require('../utils/dateHelpers');
 const { IIT_SUB_DEDUP_PHONE_ADD_FIELDS } = require('../utils/iitCounsellingLeadDto');
+const { buildLeadRelevanceMatchClause } = require('../utils/iitCounsellingClassStatus');
 
 let IitMeetAttendance;
 let IitMeetHindiAttendance;
@@ -40,6 +41,8 @@ function parseBdaLeadFilterQuery(query = {}) {
     hasPreferredLanguage = false;
   }
   const q = typeof query.q === 'string' ? query.q.trim() : '';
+  const leadRelevance =
+    typeof query.leadRelevance === 'string' ? query.leadRelevance.trim() : '';
 
   return {
     meetVariant: ['english', 'hindi', 'either'].includes(meetVariant) ? meetVariant : '',
@@ -53,6 +56,7 @@ function parseBdaLeadFilterQuery(query = {}) {
       : '',
     hasPreferredLanguage,
     q,
+    leadRelevance: ['relevant', 'irrelevant'].includes(leadRelevance) ? leadRelevance : '',
   };
 }
 
@@ -164,6 +168,12 @@ function buildBaseLeadMatch(parsed, { unassignedOnly = true, language = null } =
         { phone: { $regex: escaped } },
       ],
     });
+  }
+
+  const relevanceClause = buildLeadRelevanceMatchClause(parsed.leadRelevance);
+  if (relevanceClause) {
+    filter.$and = filter.$and || [];
+    filter.$and.push(relevanceClause);
   }
 
   return filter;
