@@ -1,8 +1,12 @@
-/** Current studying values that count as relevant IIT counselling leads (12th passed out only). */
-const RELEVANT_IIT_CLASS_STATUSES = ['Completed 12th/Intermediate 2nd Year'];
+/** Relevant IIT leads: 11th studying, 12th studying, and 12th passed out. */
+const RELEVANT_IIT_CLASS_STATUSES = [
+  'Studying 11th/Intermediate 1st Year',
+  'Studying 12th/Intermediate 2nd Year',
+  'Completed 12th/Intermediate 2nd Year',
+];
 
-/** Legacy value still stored on some submissions. */
-const LEGACY_RELEVANT_CLASS_STATUSES = ['12th Passed'];
+/** Legacy values still stored on some submissions. */
+const LEGACY_RELEVANT_CLASS_STATUSES = ['12th Appearing', '12th Passed'];
 
 const RELEVANT_CLASS_STATUS_QUERY_VALUES = [
   ...RELEVANT_IIT_CLASS_STATUSES,
