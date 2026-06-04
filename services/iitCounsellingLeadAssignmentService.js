@@ -110,7 +110,7 @@ async function assignLeadToBda({ leadId, bdaId, admin, reason, isReassign = fals
   return { lead };
 }
 
-async function bulkAssignLeads({ leadIds, bdaId, admin, reason }) {
+async function bulkAssignLeads({ leadIds, bdaId, admin, reason, respectExistingBda = false }) {
   if (!Array.isArray(leadIds) || leadIds.length === 0) {
     return { error: 'leadIds array is required', status: 400 };
   }
@@ -118,16 +118,46 @@ async function bulkAssignLeads({ leadIds, bdaId, admin, reason }) {
     return { error: 'Maximum 200 leads per request', status: 400 };
   }
 
-  const results = { updated: 0, failed: [] };
+  const results = { updated: 0, skippedSameBda: 0, failed: [] };
+
   for (const id of leadIds) {
+    let targetBdaId = bdaId;
+    let isReassign = false;
+
+    if (respectExistingBda) {
+      const lead = await IitCounsellingSubmission.findOne({
+        _id: id,
+        submissionType: 'iitCounselling',
+      })
+        .select('assignedBdaId')
+        .lean();
+      if (!lead) {
+        results.failed.push({ leadId: id, message: 'Lead not found' });
+        continue;
+      }
+      if (lead.assignedBdaId) {
+        targetBdaId = String(lead.assignedBdaId);
+        isReassign = true;
+      }
+    }
+
     const out = await assignLeadToBda({
       leadId: id,
-      bdaId,
+      bdaId: targetBdaId,
       admin,
       reason,
-      isReassign: false,
+      isReassign,
     });
     if (out.error) {
+      if (
+        respectExistingBda &&
+        out.error === 'Lead is already assigned to this BDA' &&
+        isReassign
+      ) {
+        results.skippedSameBda += 1;
+        results.updated += 1;
+        continue;
+      }
       results.failed.push({ leadId: id, message: out.error });
     } else {
       results.updated += 1;

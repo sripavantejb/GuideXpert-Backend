@@ -43,6 +43,8 @@ function parseBdaLeadFilterQuery(query = {}) {
   const q = typeof query.q === 'string' ? query.q.trim() : '';
   const leadRelevance =
     typeof query.leadRelevance === 'string' ? query.leadRelevance.trim() : '';
+  const keepExistingBda =
+    query.keepExistingBda === 'true' || query.keepExistingBda === '1';
 
   return {
     meetVariant: ['english', 'hindi', 'either'].includes(meetVariant) ? meetVariant : '',
@@ -57,6 +59,7 @@ function parseBdaLeadFilterQuery(query = {}) {
     hasPreferredLanguage,
     q,
     leadRelevance: ['relevant', 'irrelevant'].includes(leadRelevance) ? leadRelevance : '',
+    keepExistingBda,
   };
 }
 

@@ -75,7 +75,10 @@ exports.listIitCounsellingLeads = async (req, res) => {
     }
 
     if (unassignedOnly) {
-      const built = await buildLeadMatchWithMeet(parsed, { unassignedOnly: true });
+      const includeAssigned = parsed.keepExistingBda === true;
+      const built = await buildLeadMatchWithMeet(parsed, {
+        unassignedOnly: !includeAssigned,
+      });
       match = built.match;
     } else {
       const filter = { submissionType: 'iitCounselling' };
@@ -338,8 +341,16 @@ exports.reassignBda = async (req, res) => {
 
 exports.bulkAssignBda = async (req, res) => {
   try {
-    const { leadIds, bdaId, reason } = req.body || {};
-    const out = await bulkAssignLeads({ leadIds, bdaId, admin: req.admin, reason });
+    const { leadIds, bdaId, reason, respectExistingBda } = req.body || {};
+    const useExisting =
+      respectExistingBda === true || respectExistingBda === 'true' || respectExistingBda === 1;
+    const out = await bulkAssignLeads({
+      leadIds,
+      bdaId,
+      admin: req.admin,
+      reason,
+      respectExistingBda: useExisting,
+    });
     if (out.error) {
       return res.status(out.status || 400).json({ success: false, message: out.error });
     }
