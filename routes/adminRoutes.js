@@ -92,6 +92,7 @@ const {
   assignBda,
   reassignBda,
   bulkAssignBda,
+  bulkMapFilteredRespectiveBda,
   getAssignmentHistory,
   getAutoAssignPreview,
   autoAssignLeadsByLanguage,
@@ -187,6 +188,11 @@ router.get('/iit-counselling-leads', requireAdmin, listIitCounsellingLeads);
 router.get('/iit-counselling-leads/auto-assign-preview', requireAdmin, getAutoAssignPreview);
 router.post('/iit-counselling-leads/auto-assign-by-language', requireAdmin, autoAssignLeadsByLanguage);
 router.patch('/iit-counselling-leads/bulk-assign', requireAdmin, bulkAssignBda);
+router.patch(
+  '/iit-counselling-leads/bulk-map-filtered-respective',
+  requireAdmin,
+  bulkMapFilteredRespectiveBda
+);
 router.get('/iit-counselling-leads/:id/assignment-history', requireAdmin, getAssignmentHistory);
 router.patch('/iit-counselling-leads/:id/crm', requireAdmin, patchIitCounsellingLeadCrm);
 router.patch('/iit-counselling-leads/:id/assign-bda', requireAdmin, assignBda);

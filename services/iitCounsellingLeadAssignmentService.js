@@ -1,6 +1,10 @@
 const mongoose = require('mongoose');
 const Bda = require('../models/Bda');
 const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
+const {
+  parseBdaLeadFilterQuery,
+  fetchDedupedAssignedLeadIds,
+} = require('./bdaLeadFilterService');
 const IitCounsellingLeadAssignmentHistory = require('../models/IitCounsellingLeadAssignmentHistory');
 const IitCounsellingLeadActivity = require('../models/IitCounsellingLeadActivity');
 
@@ -217,10 +221,56 @@ async function bulkMapToRespectiveBda({ leadIds, admin, reason }) {
   return { results };
 }
 
+const MAP_FILTERED_MAX = 2000;
+
+/** Map every previously assigned lead in the active meet filter to its own BDA. */
+async function bulkMapFilteredToRespectiveBda({ filterQuery, admin, reason }) {
+  const parsed = parseBdaLeadFilterQuery(filterQuery);
+  if (!parsed.keepExistingBda) {
+    return {
+      error: 'Enable “map to respective BDA” (keepExistingBda) for this action',
+      status: 400,
+    };
+  }
+  if (!parsed.meetPresence) {
+    return {
+      error: 'Set Meet attendance to Attended or Did not attend meet before mapping',
+      status: 400,
+    };
+  }
+
+  const leadIds = await fetchDedupedAssignedLeadIds(filterQuery);
+  if (leadIds.length === 0) {
+    return {
+      results: { updated: 0, skippedSameBda: 0, skippedUnassigned: 0, failed: [], total: 0 },
+    };
+  }
+  if (leadIds.length > MAP_FILTERED_MAX) {
+    return {
+      error: `Too many leads (${leadIds.length}). Narrow meet date or other filters (max ${MAP_FILTERED_MAX}).`,
+      status: 400,
+    };
+  }
+
+  const merged = { updated: 0, skippedSameBda: 0, skippedUnassigned: 0, failed: [], total: leadIds.length };
+  for (let i = 0; i < leadIds.length; i += 200) {
+    const chunk = leadIds.slice(i, i + 200);
+    const out = await bulkMapToRespectiveBda({ leadIds: chunk, admin, reason });
+    if (out.error) return out;
+    merged.updated += out.results.updated;
+    merged.skippedSameBda += out.results.skippedSameBda;
+    merged.skippedUnassigned += out.results.skippedUnassigned;
+    merged.failed.push(...(out.results.failed || []));
+  }
+
+  return { results: merged };
+}
+
 module.exports = {
   assignLeadToBda,
   bulkAssignLeads,
   bulkMapToRespectiveBda,
+  bulkMapFilteredToRespectiveBda,
   logActivity,
   getAdminActorName,
 };

@@ -271,6 +271,23 @@ async function fetchDedupedUnassignedLeadIds(language, filterQuery = {}) {
   return rows.map((r) => r._id).filter(Boolean);
 }
 
+/** Deduped IIT counselling lead ids that already have assignedBdaId, matching filters (incl. meet). */
+async function fetchDedupedAssignedLeadIds(filterQuery = {}) {
+  const parsed = parseBdaLeadFilterQuery(filterQuery);
+  const { match } = await buildLeadMatchWithMeet(parsed, { unassignedOnly: false });
+  match.assignedBdaId = { $exists: true, $ne: null };
+  const pipeline = [
+    { $match: match },
+    IIT_SUB_DEDUP_PHONE_ADD_FIELDS,
+    { $sort: { updatedAt: -1, createdAt: -1, _id: -1 } },
+    { $group: { _id: '$phoneKey', doc: { $first: '$$ROOT' } } },
+    { $replaceRoot: { newRoot: '$doc' } },
+    { $project: { _id: 1 } },
+  ];
+  const rows = await IitCounsellingSubmission.aggregate(pipeline);
+  return rows.map((r) => r._id).filter(Boolean);
+}
+
 async function getMeetFlagsForPhones(phones) {
   const keys = [...new Set(phones.map(normalizePhoneKey).filter(Boolean))];
   const flags = new Map(keys.map((k) => [k, { meetEnglish: false, meetHindi: false }]));
@@ -314,6 +331,7 @@ module.exports = {
   buildLeadMatchWithMeet,
   aggregateDedupedLeads,
   fetchDedupedUnassignedLeadIds,
+  fetchDedupedAssignedLeadIds,
   getMeetFlagsForPhones,
   enrichDtoWithMeetFlags,
   normalizePhoneKey,

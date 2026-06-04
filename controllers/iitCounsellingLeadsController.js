@@ -19,6 +19,7 @@ const {
   assignLeadToBda,
   bulkAssignLeads,
   bulkMapToRespectiveBda,
+  bulkMapFilteredToRespectiveBda,
   logActivity,
   getAdminActorName,
 } = require('../services/iitCounsellingLeadAssignmentService');
@@ -336,6 +337,24 @@ exports.reassignBda = async (req, res) => {
     });
   } catch (error) {
     console.error('[reassignBda]', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.bulkMapFilteredRespectiveBda = async (req, res) => {
+  try {
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason : '';
+    const out = await bulkMapFilteredToRespectiveBda({
+      filterQuery: req.query,
+      admin: req.admin,
+      reason,
+    });
+    if (out.error) {
+      return res.status(out.status || 400).json({ success: false, message: out.error });
+    }
+    return res.status(200).json({ success: true, data: out.results });
+  } catch (error) {
+    console.error('[bulkMapFilteredRespectiveBda]', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
