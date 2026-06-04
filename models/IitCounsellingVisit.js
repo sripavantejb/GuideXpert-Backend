@@ -50,6 +50,11 @@ const iitCounsellingVisitSchema = new mongoose.Schema({
     ref: 'IitCounsellingSubmission',
     default: null,
   },
+  oneOnOneCounselingLeadId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'OneOnOneCounselingLead',
+    default: null,
+  },
   phone: {
     type: String,
     trim: true,

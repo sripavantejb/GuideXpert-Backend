@@ -17,6 +17,8 @@ const TrainingFormSubmission = require('../models/TrainingFormSubmission');
 const TrainingFormResponse = require('../models/TrainingFormResponse');
 const Counsellor = require('../models/Counsellor');
 const IitCounsellingVisit = require('../models/IitCounsellingVisit');
+const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
+const { resolveUtmAnalyticsPageKey } = require('../utils/utmAnalyticsPageKey');
 const { getISTCalendarDateUTC, getISTDayRangeFromString } = require('../utils/dateHelpers');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 const { ALL_SLOT_IDS } = require('../constants/slotIds');
@@ -441,7 +443,7 @@ function iitCounsellingUtmNormExpr(field) {
   };
 }
 
-function buildIitUtmDimensionPipeline(match, field, labelKey) {
+function buildIitUtmDimensionPipeline(match, field, labelKey, linkedIdField = 'submissionId') {
   return [
     { $match: match },
     { $addFields: { _dimNorm: iitCounsellingUtmNormExpr(field) } },
@@ -452,7 +454,7 @@ function buildIitUtmDimensionPipeline(match, field, labelKey) {
         uniqueVisitorSet: { $addToSet: '$visitorFingerprint' },
         linkedSubmissions: {
           $sum: {
-            $cond: [{ $ne: ['$submissionId', null] }, 1, 0],
+            $cond: [{ $ne: [`$${linkedIdField}`, null] }, 1, 0],
           },
         },
       },
@@ -571,7 +573,8 @@ exports.getIitCounsellingSubmissionById = async (req, res) => {
 exports.getIitCounsellingVisitAnalytics = async (req, res) => {
   try {
     const dateTime = parseIitDateTimeFilter(req.query);
-    const match = { pageKey: 'iitCounselling' };
+    const pageKey = resolveUtmAnalyticsPageKey(req.query);
+    const match = { pageKey };
     if (dateTime.hasRange) {
       match.visitedAt = dateTime.visitedAt;
     }
@@ -623,17 +626,22 @@ exports.getIitCounsellingVisitAnalytics = async (req, res) => {
         { $sort: { visits: -1 } },
         { $limit: 500 },
       ]),
-      IitCounsellingSubmission.aggregate([
-        {
-          $match: {
-            submissionType: 'iitCounselling',
-            ...(dateTime.hasRange ? { createdAt: dateTime.createdAt } : {}),
-          },
-        },
-        { $addFields: { phoneKey: { $trim: { input: { $ifNull: ['$phone', ''] } } } } },
-        { $group: { _id: '$phoneKey' } },
-        { $count: 'total' },
-      ]),
+      pageKey === 'oneOnOneSession'
+        ? OneOnOneCounselingLead.aggregate([
+            { $match: dateTime.hasRange ? { createdAt: dateTime.createdAt } : {} },
+            { $count: 'total' },
+          ])
+        : IitCounsellingSubmission.aggregate([
+            {
+              $match: {
+                submissionType: 'iitCounselling',
+                ...(dateTime.hasRange ? { createdAt: dateTime.createdAt } : {}),
+              },
+            },
+            { $addFields: { phoneKey: { $trim: { input: { $ifNull: ['$phone', ''] } } } } },
+            { $group: { _id: '$phoneKey' } },
+            { $count: 'total' },
+          ]),
     ]);
 
     const totals = base[0] || { totalVisits: 0, uniqueVisitors: [] };
@@ -660,6 +668,7 @@ exports.getIitCounsellingVisitAnalytics = async (req, res) => {
           fromTime: dateTime.fromTime,
           toTime: dateTime.toTime,
           granularity: dateTime.granularity,
+          linkTarget: pageKey,
         },
         topReferrers: topReferrers.map((row) => ({ referrer: row._id, visits: row.visits })),
         topUtmSources: topUtmSources.map((row) => ({ source: row._id, visits: row.visits })),
@@ -675,7 +684,10 @@ exports.getIitCounsellingVisitAnalytics = async (req, res) => {
 exports.getIitCounsellingUtmAnalytics = async (req, res) => {
   try {
     const dateTime = parseIitDateTimeFilter(req.query);
-    const match = { pageKey: 'iitCounselling' };
+    const pageKey = resolveUtmAnalyticsPageKey(req.query);
+    const match = { pageKey };
+    const linkedIdField =
+      pageKey === 'oneOnOneSession' ? 'oneOnOneCounselingLeadId' : 'submissionId';
     if (dateTime.hasRange) {
       match.visitedAt = dateTime.visitedAt;
     }
@@ -730,10 +742,10 @@ exports.getIitCounsellingUtmAnalytics = async (req, res) => {
           },
         },
       ]),
-      IitCounsellingVisit.aggregate(buildIitUtmDimensionPipeline(match, 'utm_source', 'utm_source')),
-      IitCounsellingVisit.aggregate(buildIitUtmDimensionPipeline(match, 'utm_medium', 'utm_medium')),
-      IitCounsellingVisit.aggregate(buildIitUtmDimensionPipeline(match, 'utm_campaign', 'utm_campaign')),
-      IitCounsellingVisit.aggregate(buildIitUtmDimensionPipeline(match, 'utm_content', 'utm_content')),
+      IitCounsellingVisit.aggregate(buildIitUtmDimensionPipeline(match, 'utm_source', 'utm_source', linkedIdField)),
+      IitCounsellingVisit.aggregate(buildIitUtmDimensionPipeline(match, 'utm_medium', 'utm_medium', linkedIdField)),
+      IitCounsellingVisit.aggregate(buildIitUtmDimensionPipeline(match, 'utm_campaign', 'utm_campaign', linkedIdField)),
+      IitCounsellingVisit.aggregate(buildIitUtmDimensionPipeline(match, 'utm_content', 'utm_content', linkedIdField)),
       IitCounsellingVisit.aggregate([
         { $match: match },
         {
@@ -756,7 +768,7 @@ exports.getIitCounsellingUtmAnalytics = async (req, res) => {
             uniqueVisitorSet: { $addToSet: '$visitorFingerprint' },
             linkedSubmissions: {
               $sum: {
-                $cond: [{ $ne: ['$submissionId', null] }, 1, 0],
+                $cond: [{ $ne: [`$${linkedIdField}`, null] }, 1, 0],
               },
             },
             firstVisitAt: { $min: '$visitedAt' },
@@ -812,6 +824,7 @@ exports.getIitCounsellingUtmAnalytics = async (req, res) => {
           toDate: dateTime.toDate,
           fromTime: dateTime.fromTime,
           toTime: dateTime.toTime,
+          linkTarget: pageKey,
         },
       },
     });

@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
+const IitCounsellingVisit = require('../models/IitCounsellingVisit');
 const {
   CURRENT_CLASS_OPTIONS,
   INTERESTED_BRANCH_OPTIONS,
@@ -202,6 +203,16 @@ exports.submitOneOnOneCounselingLead = async (req, res) => {
     }
 
     const doc = await OneOnOneCounselingLead.create(validated.data);
+
+    const visitorFingerprint =
+      typeof req.body?.visitorFingerprint === 'string' ? req.body.visitorFingerprint.trim() : '';
+    if (visitorFingerprint) {
+      await IitCounsellingVisit.findOneAndUpdate(
+        { visitorFingerprint, pageKey: 'oneOnOneSession', oneOnOneCounselingLeadId: null },
+        { $set: { oneOnOneCounselingLeadId: doc._id } },
+        { sort: { visitedAt: -1 } }
+      );
+    }
 
     /** @type {{ attempted: boolean, success?: boolean, skippedReason?: string, error?: string, idempotent?: boolean }|null} */
     let whatsappSubmit = null;
