@@ -212,6 +212,20 @@ exports.submitOneOnOneCounselingLead = async (req, res) => {
         { $set: { oneOnOneCounselingLeadId: doc._id } },
         { sort: { visitedAt: -1 } }
       );
+    } else if (doc.utm_content) {
+      const visitMatch = {
+        pageKey: 'oneOnOneSession',
+        oneOnOneCounselingLeadId: null,
+        utm_content: doc.utm_content,
+      };
+      if (doc.utm_campaign) visitMatch.utm_campaign = doc.utm_campaign;
+      if (doc.utm_source) visitMatch.utm_source = doc.utm_source;
+      if (doc.utm_medium) visitMatch.utm_medium = doc.utm_medium;
+      await IitCounsellingVisit.findOneAndUpdate(
+        visitMatch,
+        { $set: { oneOnOneCounselingLeadId: doc._id } },
+        { sort: { visitedAt: -1 } }
+      );
     }
 
     /** @type {{ attempted: boolean, success?: boolean, skippedReason?: string, error?: string, idempotent?: boolean }|null} */

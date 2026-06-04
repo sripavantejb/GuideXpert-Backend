@@ -443,6 +443,86 @@ function iitCounsellingUtmNormExpr(field) {
   };
 }
 
+function comboRowKeyFromUtmParts(source, medium, campaign, content) {
+  return [source, medium, campaign, content].join('|');
+}
+
+/**
+ * For 1-on-1 analytics: merge form lead counts by UTM into visit-based byCombo
+ * (covers leads saved without visitorFingerprint / before visit tracking went live).
+ */
+async function mergeOneOnOneLeadsIntoByCombo(byCombo, dateTime) {
+  const leadMatch = {};
+  if (dateTime.hasRange && dateTime.createdAt) {
+    leadMatch.createdAt = dateTime.createdAt;
+  }
+
+  const leadRows = await OneOnOneCounselingLead.aggregate([
+    { $match: leadMatch },
+    {
+      $addFields: {
+        utm_source_n: iitCounsellingUtmNormExpr('utm_source'),
+        utm_medium_n: iitCounsellingUtmNormExpr('utm_medium'),
+        utm_campaign_n: iitCounsellingUtmNormExpr('utm_campaign'),
+        utm_content_n: iitCounsellingUtmNormExpr('utm_content'),
+      },
+    },
+    {
+      $group: {
+        _id: {
+          utm_source: '$utm_source_n',
+          utm_medium: '$utm_medium_n',
+          utm_campaign: '$utm_campaign_n',
+          utm_content: '$utm_content_n',
+        },
+        leadCount: { $sum: 1 },
+        latestLeadAt: { $max: '$createdAt' },
+      },
+    },
+  ]);
+
+  const map = new Map();
+  for (const row of byCombo || []) {
+    map.set(
+      comboRowKeyFromUtmParts(row.utm_source, row.utm_medium, row.utm_campaign, row.utm_content),
+      { ...row },
+    );
+  }
+
+  for (const row of leadRows) {
+    const id = row._id || {};
+    const key = comboRowKeyFromUtmParts(
+      id.utm_source,
+      id.utm_medium,
+      id.utm_campaign,
+      id.utm_content,
+    );
+    const existing = map.get(key);
+    const leadCount = row.leadCount || 0;
+    if (existing) {
+      existing.linkedSubmissions = Math.max(existing.linkedSubmissions || 0, leadCount);
+    } else {
+      map.set(key, {
+        utm_source: id.utm_source,
+        utm_medium: id.utm_medium,
+        utm_campaign: id.utm_campaign,
+        utm_content: id.utm_content,
+        visits: 0,
+        uniqueVisitors: 0,
+        linkedSubmissions: leadCount,
+        firstVisitAt: null,
+        latestVisitAt: row.latestLeadAt || null,
+      });
+    }
+  }
+
+  return [...map.values()].sort((a, b) => {
+    const ta = a.latestVisitAt ? new Date(a.latestVisitAt).getTime() : 0;
+    const tb = b.latestVisitAt ? new Date(b.latestVisitAt).getTime() : 0;
+    return tb - ta;
+  });
+}
+
 function buildIitUtmDimensionPipeline(match, field, labelKey, linkedIdField = 'submissionId') {
   return [
     { $match: match },
@@ -803,6 +883,11 @@ exports.getIitCounsellingUtmAnalytics = async (req, res) => {
       uniqueVisitorsWithoutUtm: 0,
     };
 
+    const comboForResponse =
+      pageKey === 'oneOnOneSession'
+        ? await mergeOneOnOneLeadsIntoByCombo(byCombo, dateTime)
+        : byCombo;
+
     return res.status(200).json({
       success: true,
       data: {
@@ -818,7 +903,7 @@ exports.getIitCounsellingUtmAnalytics = async (req, res) => {
         byMedium,
         byCampaign,
         byContent,
-        byCombo,
+        byCombo: comboForResponse,
         filters: {
           fromDate: dateTime.fromDate,
           toDate: dateTime.toDate,
