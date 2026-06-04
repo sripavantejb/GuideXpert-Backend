@@ -1,5 +1,10 @@
 const path = require('path');
+const fs = require('fs');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
+const gupshupLocalEnv = path.join(__dirname, '.env.gupshup.local');
+if (fs.existsSync(gupshupLocalEnv)) {
+  require('dotenv').config({ path: gupshupLocalEnv, override: true });
+}
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
