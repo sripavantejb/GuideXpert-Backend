@@ -257,7 +257,14 @@ exports.submitOneOnOneCounselingLead = async (req, res) => {
       } catch (waErr) {
         const msg = String(waErr?.message || waErr || 'exception').slice(0, 240);
         whatsappSubmit = { attempted: true, success: false, error: msg };
-        console.error('[submitOneOnOneCounselingLead] WhatsApp dispatch error:', msg);
+        if (waErr?.name === 'ValidationError') {
+          console.error(
+            '[submitOneOnOneCounselingLead] retry_group_validation_failed',
+            msg
+          );
+        } else {
+          console.error('[submitOneOnOneCounselingLead] WhatsApp dispatch error:', msg);
+        }
       }
     }
 
