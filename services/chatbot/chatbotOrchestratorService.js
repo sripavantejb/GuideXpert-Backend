@@ -11,6 +11,7 @@ const { handleCollegePredictorMessage } = require('./collegePredictorChatService
 const handoffService = require('./handoffService');
 const whatsappOutbound = require('./whatsappOutboundService');
 const { tryLlmReply } = require('./llmReplyService');
+const { answer: knowledgeAssistantAnswer } = require('./knowledgeAssistantService');
 const { buildWelcomeMenuText } = require('./welcomeMessageService');
 const { emptySubflows } = require('./botSubflowContext');
 const { maskPhoneTail } = require('../../utils/chatbotPhone');
@@ -439,12 +440,32 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       }
       break;
     }
+    case 'knowledge_assistant': {
+      const ka = await knowledgeAssistantAnswer({
+        inboundText: inbound.text,
+        conversationId: activeConversation._id,
+        leadContext,
+      });
+      if (ka?.text) {
+        replyText = ka.text;
+      } else {
+        replyText =
+          'I am not sure I understood. Reply MENU for options or AGENT to speak with our team.';
+      }
+      nextState = 'idle';
+      break;
+    }
     default: {
       if (
         String(process.env.CHATBOT_KNOWLEDGE_ASSISTANT_ENABLED || '').trim() === '1' ||
         String(process.env.CHATBOT_LLM_ENABLED || '').trim() === '1'
       ) {
-        const llm = await tryLlmReply({ inboundText: inbound.text, facts, leadContext });
+        const llm = await tryLlmReply({
+          inboundText: inbound.text,
+          conversationId: activeConversation._id,
+          facts,
+          leadContext,
+        });
         if (llm && llm.text) {
           replyText = llm.text;
           break;

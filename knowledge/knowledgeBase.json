@@ -1,0 +1,872 @@
+[
+  {
+    "id": 1,
+    "category": "niit_counselling",
+    "question": "Sir/Madam, who are you? What is your background?",
+    "answer": "Nenu IIT graduate ni and currently top MNC/software industry lo work chesthunna. Last few years nundi students tho interact avthu engineering careers, placements, future opportunities, and industry trends gurinchi guidance isthunna. College time nundi internships, projects, placements process, real industry expectations anni practical ga experience chesanu. Anduke students ki real-world clarity ivvadaniki ee counselling sessions conduct chesthunna."
+  },
+  {
+    "id": 2,
+    "category": "niit_counselling",
+    "question": "Are you really from an IIT?",
+    "answer": "Yes, nenu IIT nundi graduation complete chesanu. IIT lo academics tho paatu competitive environment, projects, internships, and industry exposure meedha strong learning untundi. Graduation tarvata software/tech industry lo work chesthu real-world industry expectations and opportunities ni practical ga experience chesanu. Anduke students ki future careers, engineering branches, placements, and industry trends gurinchi clarity ivvadaniki ee sessions conduct chesthunna."
+  },
+  {
+    "id": 3,
+    "category": "niit_counselling",
+    "question": "Why are IIT counselors conducting this session?",
+    "answer": "\"Because chala mandi students Inter/EAMCET tarvata confusion lo untaru — ey branch tiskovali, ey college better, future lo ey field ki demand untundi, placements reality enti ani clarity undadu.\nMemu IIT and industry exposure tho practical ga chusina experience ni students tho share cheyyadaniki ee sessions conduct chesthunam. Main purpose enti ante students random ga decisions tiskokunda future opportunities, industry trends, and career growth gurinchi proper understanding tho decisions tiskovali.\""
+  },
+  {
+    "id": 4,
+    "category": "niit_counselling",
+    "question": "What is the main purpose of this counselling session?",
+    "answer": "Ee counselling session main purpose student ki clear guidance ivvadam. Student present situation, interests, doubts ni understand cheskoni, correct career direction ivvadam. IIT/JEE or other options gurinchi proper information explain chesi, confusion ni clear chesi, student ki right decision teesukovadaniki help cheyyadam."
+  },
+  {
+    "id": 5,
+    "category": "niit_counselling",
+    "question": "Is this only for MPC students?",
+    "answer": "\"Manam major ga focus  chesedhi MPC students meeda untundi, endukante IIT/JEE and engineering pathways ki maths strong ga undali. Kani idi only MPC students kosame ani kaadu. Engineering interest unna other stream students kuda join avvachu, kani vallaki maths/board exam requirement untundi.\nSo basically, MPC students ki direct ga smooth path untundi, and migatha students ki kuda option untundi kani konni eligibility steps complete cheyyali.\""
+  },
+  {
+    "id": 6,
+    "category": "niit_counselling",
+    "question": "Why are you focusing more on engineering?",
+    "answer": "\"Engineering meedha ekkuva focus undadaniki main reason, adi students ki strong career opportunities ivvadam. Engineering field lo different branches untayi and daanilo skills develop cheskunte multiple job options, higher studies chances, and long-term growth untayi.\nAnduke counselling lo engineering pathway ni ekkuva highlight chestaru, endukante chala mandi students ki idi stable and future-oriented option ga consider chestaru kabbati.\""
+  },
+  {
+    "id": 7,
+    "category": "niit_counselling",
+    "question": "Why are you mainly suggesting CSE branches?",
+    "answer": "\"CSE (Computer Science Engineering) branch ni ekkuva suggest cheyyadaniki main reason daaniki unna demand and opportunities. Current market lo software, IT, AI, data related fields lo jobs ekkuva ga unnayi and growth kuda fast ga untundi.\nCSE lo skills develop cheskunte different industries lo work cheyyachu — software companies nundi startups varaku wide options untayi. Anduke counselling lo CSE ni strong career option ga suggest chestaru, especially students ki future scope and flexibility ekkuva ga undadam valla.\""
+  },
+  {
+    "id": 8,
+    "category": "niit_counselling",
+    "question": "What is happening in the current software industry?",
+    "answer": "\"Current software industry lo chala fast ga changes jarugutunnayi. Companies ippudu automation, AI tools, cloud computing, data analytics meeda ekkuva focus chestunnayi.\nSimple coding jobs kanna, problem-solving, system design, and real-world applications build cheyyadam ki importance perigindi. Also, startups and product-based companies growth valla new technologies use chesi fast innovation jarugutondi.\nAnduke ippudu software field lo continuous learning and updated skills unte matrame strong career growth untundi.\""
+  },
+  {
+    "id": 9,
+    "category": "niit_counselling",
+    "question": "Why is everyone talking about AI?",
+    "answer": "\"AI ippudu chala fast ga almost anni industries lo use avtundi kabatti andaru dani gurinchi maatladutunnaru.\nAI help tho companies work fast ga, low cost lo, and better accuracy tho cheyyagalugutunnayi. Example ki automation, customer support, data analysis, content creation, and decision-making lo AI use avutondi.\nAnduke AI future technology lo key role play chestundi kabatti, students nundi companies varaku andaru dani importance gurinchi discuss chestunnaru.\""
+  },
+  {
+    "id": 10,
+    "category": "niit_counselling",
+    "question": "Is software engineering safe in the future?",
+    "answer": "\"Avunu, software engineering future lo strong and promising field gaane untundi. Technology usage every industry lo perugutundi kabatti software-related opportunities continue avuthayi.\nKani ippudu market lo only degree saripodu. Updated skills, practical knowledge, problem-solving ability and continuous learning chala important avtunnayi. New technologies ki adapt ayye vallaki software field lo long-term growth and opportunities strong ga untayi.\"\nEe counselling normal ga jarige counselling kanna ela different?\t\"Ee counselling lo just general suggestions matrame ivvaru. Student interest, goals, current level, and future opportunities ni consider chesi personalized guidance ivvadam jarugutundi.\nAlso, practical career awareness, industry trends, skill development, and clear roadmap meeda ekkuva focus untundi. So, simple motivation session laga kaakunda, student ki clarity and direction ivvadam meeda main focus untundi.\""
+  },
+  {
+    "id": 12,
+    "category": "niit_counselling",
+    "question": "Why should we follow your guidance?",
+    "answer": "\"Maa guidance main ga current industry trends, career opportunities, and student growth ni consider chesi design chesam. Random suggestions ivvakunda, practical ga future lo use ayye direction and awareness ivvadam meeda focus untundi.\nFinal decision always student and parents de, kani proper clarity, roadmap, and right information tho better decision teesukovadaniki maa guidance help chestundi.\""
+  },
+  {
+    "id": 13,
+    "category": "niit_counselling",
+    "question": "Is this only for admissions?",
+    "answer": "\"Kaadu, idi only admissions kosam matrame kaadu. Main focus student ki correct career clarity, awareness, and future direction ivvadam.\nAdmissions anedi process lo oka part matrame. Daanikanna important enti ante — student ki suitable path enti, future opportunities enti, ela prepare avvali ane vishayallo proper guidance ivvadam.\""
+  },
+  {
+    "id": 14,
+    "category": "niit_counselling",
+    "question": "Are you suggesting colleges based on placements?",
+    "answer": "\"Placements oka important factor, kani only placements base chesi matrame colleges suggest cheyyam. College environment, academics, faculty, opportunities, student growth, industry exposure, and overall learning ecosystem anni consider chesi guidance istam.\nEndukante long-term career growth ki college lo student ela develop avtunnadu anedi kuda equally important.\""
+  },
+  {
+    "id": 15,
+    "category": "niit_counselling",
+    "question": "What exactly is NIAT?",
+    "answer": "\"NIAT anedi oka industry-ready upskilling program.Idi students ni future technologies and software industry ki prepare cheyyadaniki design chesaru.\nTraditional learning tho paatu, real-world skills, projects, AI tools, internships, industry exposure, and practical learning meeda ekkuva focus untundi. NIAT different universities tho collaborate ayi industry-aligned learning experience provide chestundi.\nSimple ga cheppali ante, students ni only degree varaku kaakunda, real industry-ready ga develop cheyyadam NIAT main goal.\""
+  },
+  {
+    "id": 16,
+    "category": "niit_counselling",
+    "question": "Is NIAT a college or a platform?",
+    "answer": "\"NIAT oka standalone college kaadu. Idi group of universities tho tie-up ayi run ayyedi oka structured program/system.\nIkkada universities lo unna faculty, lab facilities, and academic setup ni use cheskuntu, NIAT side nundi students ki industry-ready training, skill development, and practical exposure provide chestaru.\nMain ga focus enti ante students ni industry ki ready cheyyadam — real-world skills, internships, and practical learning through exposure ivvadam.\""
+  },
+  {
+    "id": 17,
+    "category": "niit_counselling",
+    "question": "What is the relationship between NIAT and engineering colleges?",
+    "answer": "\"NIAT engineering colleges/universities tho tie-up ayi work chestundi. Students NIAT lo direct ga join avvaru; vallu partner engineering colleges/universities lo admission tisukoni degree pursue chestaru.\nAa universities lo academic education continue avtundi, and NIAT side nundi aa system ki add-on ga industry-oriented learning, practical exposure, skill development, internships, and real-world project experience integrate chestaru.\""
+  },
+  {
+    "id": 18,
+    "category": "niit_counselling",
+    "question": "Why was NIAT started? Can't we directly study in those colleges?",
+    "answer": "\"Avunu, students direct ga aa engineering colleges/universities lone chadavachu. Kani NIAT ni start cheyyadaniki main reason traditional education ki and industry requirements ki gap undatam.\nNIAT objective enti ante, university education tho paatu additional ga practical, industry-oriented learning ni integrate cheyyadam. Ante students ki theory matrame kaakunda real-world skills, projects, internships exposure kaligi, job-ready ga prepare avvadaniki help cheyyadam.\nSo, direct college education possible ye, kani NIAT approach valla learning more practical and industry-focused ga untundi.\""
+  },
+  {
+    "id": 19,
+    "category": "niit_counselling",
+    "question": "What problem is NIAT trying to solve?",
+    "answer": "\"NIAT solve cheyyalanukuntunna main problem enti ante — traditional engineering education ki and industry requirements ki madhya unna gap.\nChala mandiki college lo theory knowledge vastundi kani real-world skills, practical exposure, internships experience, and job-ready readiness miss avtundi.\nNIAT approach valla students ki academic learning tho paatu industry-oriented skills, hands-on projects, and practical exposure kalipi, vallani job-ready ga tayaru cheyyadam ane gap ni bridge cheyyadaniki try chestundi.\""
+  },
+  {
+    "id": 20,
+    "category": "niit_counselling",
+    "question": "How is NIAT different from traditional engineering?",
+    "answer": "\"Traditional engineering lo main ga academic syllabus, theory concepts, exams meeda focus untundi. Practical exposure untundi kani limited ga undochu and industry requirements ki direct connection sometimes weak ga untundi.\nNIAT approach lo university education tho paatu industry-oriented learning ni integrate chestaru. Ante real-world projects, practical training, internships exposure, and skill-based learning meeda ekkuva focus untundi.\nSimple ga cheppali ante — traditional engineering lo “theory + exams” focus ekkuva unte, NIAT model lo “theory + practical + industry readiness” kalipi complete learning approach untundi.\""
+  },
+  {
+    "id": 21,
+    "category": "niit_counselling",
+    "question": "Why is CSE called future-proof?",
+    "answer": "\"CSE ni future-proof ani antunnaru endukante, almost anni industries lo technology usage continuous ga perugutondi. Software development, artificial intelligence, data science, automation, cloud computing systems anni fields lo CSE skills ki demand untundi.\nCompanies ki digital applications, software systems, and AI-based solutions build cheyyadaniki skilled professionals avasaram untundi. Technology evolve aina kuda, aa systems ni design and develop cheyyadam CSE base meeda depend avtundi.\nAnduke long-term lo stable demand and multiple career opportunities untayi kabatti future-proof ani consider chestaru.\""
+  },
+  {
+    "id": 22,
+    "category": "niit_counselling",
+    "question": "Has the demand for Mechanical/Civil decreased?",
+    "answer": "\"Mechanical and Civil engineering demand complete ga taggipoledu, kani ippudu market change avtundi. Core industries like manufacturing, construction, infrastructure development lo still steady demand undi.\nKani software and technology driven roles fast ga perugutundam valla, mechanical and civil lo kuda now digital tools, automation, design software, and modern technologies use chese skills ki importance perigindi.\nSo demand undi, kani growth and opportunities ni match avvali ante updated skills and industry trends ki adapt avvadam important avtundi.\""
+  },
+  {
+    "id": 23,
+    "category": "niit_counselling",
+    "question": "Is the future of core branches not good?",
+    "answer": "\"Ala kaadu. Core branches future bagoledu ani cheppalem. Mechanical, Civil, Electrical lantivi always important branches ye, endukante infrastructure, manufacturing, energy, construction lantivi society ki basic needs.\nKani ippudu competition ekkuva ga undi and opportunities ni grab cheyyali ante updated skills, software tools usage, and industry exposure important avtunnayi.\nSo future untundi, kani branch matrame kaadu — student skillset, adaptability, and continuous learning meeda career growth depend avtundi.\""
+  },
+  {
+    "id": 24,
+    "category": "niit_counselling",
+    "question": "Which branch offers the highest salary?",
+    "answer": "\"Ala kaadu. Core branches future bagoledu ani cheppalem. Mechanical, Civil, Electrical lantivi always important branches ye, endukante infrastructure, manufacturing, energy, construction lantivi society ki basic needs.\nKani ippudu competition ekkuva ga undi and opportunities ni grab cheyyali ante updated skills, software tools usage, and industry exposure important avtunnayi.\nSo future untundi, kani branch matrame kaadu — student skillset, adaptability, and continuous learning meeda career growth depend avtundi.\""
+  },
+  {
+    "id": 25,
+    "category": "niit_counselling",
+    "question": "Which branch has more demand in the future?",
+    "answer": "\"Future demand ippudu chusthe technology-driven branches ki ekkuva untundi. Mainly software development, artificial intelligence, data-related fields, cybersecurity, cloud computing lantivi fast ga grow avtunnayi kabatti avi high demand lo unnayi.\nCore branches (Mechanical, Civil, Electrical) ki kuda demand untundi, especially infrastructure, manufacturing, energy sectors lo. Kani growth speed and opportunities comparatively technology-based fields lo ekkuva ga kanipistunnayi.\nSo overall ga chusthe, future demand ane di okka branch meeda kaakunda — skills, updates, and industry trends meeda depend avtundi.\""
+  },
+  {
+    "id": 26,
+    "category": "niit_counselling",
+    "question": "Will AI replace jobs or create them?",
+    "answer": "\"AI konni repetitive and basic tasks ni automate chestundi kabatti konni roles lo job pattern change avtundi. Kani overall ga chusthe AI ekkuva ga jobs create chestundi ani cheppachu.\nEndukante AI valla new roles vastunnayi — like AI system development, data handling, model training, automation management, and AI-based product development. Existing jobs kuda evolve avtayi, complete ga disappear avvadam kanna.\nSo simple ga cheppali ante, AI jobs ni only replace cheyyadam kaadu, kotha opportunities ni kuda create chestundi.\""
+  },
+  {
+    "id": 27,
+    "category": "niit_counselling",
+    "question": "What is the safest engineering branch for the future?",
+    "answer": "\"“Safest branch” ani okati fixed ga undadu. Future lo safety anedi market changes, technology updates, and student skills meeda depend avtundi.\nKani current trends chusthe technology-based fields lo demand fast ga grow avtundi — software development, artificial intelligence, data-related areas, cloud systems, cybersecurity lantivi. Ee fields lo constant evolution untundi kabatti opportunities kuda ekkuva untayi.\nAt the same time, core branches (Mechanical, Civil, Electrical) kuda infrastructure, energy, construction lantivi essential industries kabatti long-term lo stable ga untayi.\nSo final ga, safest branch kaadu — safest student = updated skills + adaptability + continuous learning unna person.\""
+  },
+  {
+    "id": 28,
+    "category": "niit_counselling",
+    "question": "What are the top careers after CSE?",
+    "answer": "\"CSE tarvata top careers chala wide ga untayi. Main ga:\nSoftware Development (applications, web, mobile)\nArtificial Intelligence and Machine Learning roles\nData Science and Data Analytics\nCybersecurity (systems and network protection)\nCloud Computing and DevOps roles\nProduct Development in IT companies\nFull Stack Development\nGame Development\nDatabase Administration\nIvi kakunda startups, product-based companies, and research-based roles lo kuda opportunities untayi.\""
+  },
+  {
+    "id": 29,
+    "category": "niit_counselling",
+    "question": "Which specialization has the highest growth?",
+    "answer": "\"Ippudu highest growth unna specializations chusthe technology-driven areas lo untayi.\nArtificial Intelligence and Machine Learning → automation, smart systems valla fast growth\nData Science and Data Analytics → companies decision-making data meeda base avtundi kabatti demand high\nCybersecurity → digital systems perigina koddhi security need kuda ekkuva avtundi\nCloud Computing → almost anni companies cloud systems ki shift avtunnayi\nSo overall ga chusthe, AI, data, cybersecurity, and cloud related fields ki current market lo highest growth kanipistondi.\""
+  },
+  {
+    "id": 30,
+    "category": "niit_counselling",
+    "question": "What exactly do software engineers do?",
+    "answer": "\"Software engineers main ga software applications and systems ni design, develop, test, and maintain chestaru.\nIla cheyyadam lo:\nUser ki use ayye apps, websites, systems build cheyyadam\nExisting software lo bugs fix cheyyadam and improve cheyyadam\nNew features design chesi implement cheyyadam\nSystem performance, speed, and security improve cheyyadam\nSimple ga cheppali ante, daily use chese apps like mobile apps, websites, online platforms anni work avvadanki back-end lo software engineers work chestaru.\""
+  },
+  {
+    "id": 31,
+    "category": "niit_counselling",
+    "question": "What is AIML?",
+    "answer": "\"AIML ante Artificial Intelligence and Machine Learning. Idi computers and systems ki human-like thinking and learning capability ni develop cheyyadam gurinchi.\nArtificial Intelligence lo machines ki smart decisions teesukune capability untundi. Machine Learning lo data nundi patterns nerchukoni, time tho improve avvadam untundi.\nSimple ga cheppali ante, AIML systems human behavior ni imitate chesi, data base cheskoni self-improve avvadaniki work chestayi.\""
+  },
+  {
+    "id": 32,
+    "category": "niit_counselling",
+    "question": "What is Data Science?",
+    "answer": "\"Data Science ante large amount of data ni collect chesi, analyze chesi, useful insights kanukovadam.\nIkkada data ni study chesi patterns, trends, and predictions identify chestaru. Ee insights ni companies better decisions teesukodaniki use chestayi — like customer behavior, business growth, and market trends.\nSimple ga cheppali ante, data lo unna information ni analyze chesi “what happened, why happened, and what will happen next” ane answers cheppadam Data Science.\""
+  },
+  {
+    "id": 33,
+    "category": "niit_counselling",
+    "question": "What is Cyber Security?",
+    "answer": "\"Cyber Security ante computers, networks, systems, and data ni hackers nundi, viruses nundi, and unauthorized access nundi protect cheyyadam.\nIkkada main ga focus enti ante sensitive information safe ga undali ani ensure cheyyadam — like bank details, personal data, company information.\nSimple ga cheppali ante, digital world lo unna “security guard” role Cyber Security, systems ni safe ga maintain cheyyadam kosam work chestundi.\""
+  },
+  {
+    "id": 34,
+    "category": "niit_counselling",
+    "question": "What is Cloud Computing?",
+    "answer": "\"Cloud Computing ante internet dwara computers, storage, software, and services ni use cheyyadam.\nIkkada data ni local computer lo store cheyyakunda, remote servers lo store chesi, eppudaina internet unte access cheyyachu. Companies kuda servers maintain cheyyakunda cloud services use chesi applications run chestayi.\nSimple ga cheppali ante, “physical computer resources ni internet lo available ga use cheskovadam” ne Cloud Computing antaru.\""
+  },
+  {
+    "id": 35,
+    "category": "niit_counselling",
+    "question": "Which specialization is easy?",
+    "answer": "\"“Easy” ani okka specialization ni fixed ga cheppalem. Endukante prati specialization lo basics nundi advanced level varaku effort and consistency avasaram untundi.\nKani general ga chusthe, coding and logic-based fields like basic software development konchem early stage lo understandable ga anipinchachu. At the same time, AI, data, cybersecurity, cloud lantivi concepts deep ga untayi kabatti continuous learning required.\nSo easy ane point kanna important enti ante — mee interest, practice, and consistency. Mee interest unna field ne relatively easy ga anipistundi.\""
+  },
+  {
+    "id": 36,
+    "category": "niit_counselling",
+    "question": "Which specialization gives the highest package?",
+    "answer": "\"Highest packages specific ga okka specialization ki matrame fix ga undavu. Kani generally software-related and new technology areas lo konchem high packages kanipistayi.\nFinal ga package anedi specialization kanna student skills and performance meeda ekkuva depend avtundi.\""
+  },
+  {
+    "id": 37,
+    "category": "niit_counselling",
+    "question": "Which branch has more opportunities abroad?",
+    "answer": "\"Abroad opportunities demand unna fields lo ekkuva untayi. Current ga technology-related, data, AI, cybersecurity, and cloud areas lo global demand high ga undi kabatti vatilo opportunities ekkuva kanipistayi.\nCore branches like mechanical, civil, electrical kuda abroad lo demand untayi, kani project and industry-based ga depend avtundi.\""
+  },
+  {
+    "id": 38,
+    "category": "niit_counselling",
+    "question": "Which branch is better for startups?",
+    "answer": "\"Startups ki fixed ga okka branch better ani ledu. Kani general ga software, data, AI, product development related skills unna fields lo startup opportunities ekkuva untayi, endukante fast building and innovation required untundi.\nAt the same time, core branches lo kuda product design, manufacturing, and hardware startups lo opportunities untayi.\nOverall ga branch kanna skills and idea execution capability important.\""
+  },
+  {
+    "id": 39,
+    "category": "niit_counselling",
+    "question": "What skills are required for future tech jobs?",
+    "answer": "\"Future tech jobs ki main ga problem-solving, logical thinking, and basic coding or technical understanding avasaram.\nDaanitho paatu data handling, AI tools usage, communication skills, and continuous learning mindset kuda important.\nSimple ga cheppali ante, skills kanna adaptability and learning speed future lo chala important avtayi.\""
+  },
+  {
+    "id": 40,
+    "category": "niit_counselling",
+    "question": "Is coding compulsory in CSE?",
+    "answer": "\"CSE lo different specializations untayi kabatti coding requirement okkati ga undadu. Software development, data related, AI and system building areas lo coding strong ga avasaram untundi, endukante vatilo programs, logic and development main part.\nKani networking, cybersecurity basics, IT support, and some management-oriented tech roles lo coding depth konchem takkuva ga untundi, kani basic understanding matram important.\nSo overall ga chusthe, CSE lo coding compulsory but level of coding depends on specialization and career path.\""
+  },
+  {
+    "id": 41,
+    "category": "niit_counselling",
+    "question": "I don't know coding, can I take CSE in engineering?",
+    "answer": "\"Avunu tiskovachu. CSE lo join ayetappudu advanced coding compulsory ga undadu. First year nundi basics nundi start chestaru kabatti slow ga nerchukovachu.\nKani okka important point enti ante, CSE lo grow avvali ante coding ni gradual ga nerchukovalsi untundi. Interest and practice unte coding easy ga improve avuthundi.\""
+  },
+  {
+    "id": 42,
+    "category": "niit_counselling",
+    "question": "Is coding difficult for beginners?",
+    "answer": "\"Beginners ki first lo coding konchem difficult ga anipinchachu, endukante logic and thinking style new ga untundi.\nKani regular practice chesthe concepts slow ga clear avtayi and easy avtundi. Starting lo basics meeda focus chesthe coding improve avvadam simple avtundi.\""
+  },
+  {
+    "id": 43,
+    "category": "niit_counselling",
+    "question": "Can average students survive in CSE?",
+    "answer": "\"Avunu, average students kuda CSE lo survive avvachu. Basics nundi start avtundi kabatti step by step nerchukovachu.\nKani consistency and regular practice important. Interest tho effort pedthe subjects ni handle chesi gradually improve avvachu.\""
+  },
+  {
+    "id": 44,
+    "category": "niit_counselling",
+    "question": "Can I manage if I am weak in Maths?",
+    "answer": "\"Avunu, maths weak unna kuda manage cheyachu. Engineering lo starting subjects nundi basics ga nerchukovachu kabatti step by step improve avvachu.\nKani logical thinking and practice important. Regular ga effort pedthe maths skills kuda gradual ga better avtayi.\""
+  },
+  {
+    "id": 45,
+    "category": "niit_counselling",
+    "question": "Is it difficult for students coming from Telugu medium?",
+    "answer": "\"Konchem initial ga adjustment untundi, kani difficulty anedi major ga undadu. College lo students ni basics nundi step by step English and communication skills develop chesukodaniki support untundi.\nSame time, students kuda konchem effort petti practice chesthe, English gradually improve avtundi and classes ni comfortably follow avvachu.\""
+  },
+  {
+    "id": 46,
+    "category": "niit_counselling",
+    "question": "Is it a problem if my communication is weak?",
+    "answer": "\"Initial ga konchem challenge untundi, endukante classes, presentations, interviews lo communication important.\nKani idi fixed skill kaadu. Regular practice, participation, and effort tho communication skills improve cheskovachu. College environment kuda daaniki support chestundi.\""
+  },
+  {
+    "id": 47,
+    "category": "niit_counselling",
+    "question": "Can village students compete in the software field?",
+    "answer": "\"Avunu, definitely compete cheyagalru. Software field lo village or city background kanna skills, learning ability, and consistency ekkuva important.\nStarting lo exposure or communication lo konchem difference undochu, kani proper practice, guidance, and effort tho aa gap ni easily cover cheyyachu. Ippudu online learning, technology access, and opportunities andariki available unnayi kabatti background anedi major limitation kaadu.\""
+  },
+  {
+    "id": 48,
+    "category": "niit_counselling",
+    "question": "Is it a problem if I don't have knowledge about laptops?",
+    "answer": "\"Starting lo laptop knowledge lekapoyina major problem kaadu. Chala mandi students basic knowledge tho ne engineering start chestaru.\nCollege lo step-by-step ga systems usage, tools, software, and practical work nerchukuntaru. Regular usage valla slowly comfort vastundi and technical knowledge improve avtundi. Initial ga konchem practice avasaram untundi anthe.\""
+  },
+  {
+    "id": 49,
+    "category": "niit_counselling",
+    "question": "Do colleges teach from the basics?",
+    "answer": "\"Avunu, colleges generally basics nundi start chestayi. Endukante different backgrounds nundi students vastaru kabatti foundation concepts first explain chestaru.\nFirst year lo fundamentals, basic subjects, and introductory concepts meeda ekkuva focus untundi. Students step-by-step ga subjects ni understand cheskoni gradual ga advanced topics ki move avtaru.\""
+  },
+  {
+    "id": 50,
+    "category": "niit_counselling",
+    "question": "What to do if I fail in coding subjects?",
+    "answer": "\"Coding subjects lo fail ayina kuda tension padalsina avasaram ledu. Colleges lo re-exam or supplementary exam opportunities untayi, so malli prepare ayi clear cheskovachu.\nChala mandi students ki starting lo coding new ga untundi kabatti konchem time padtundi. Regular practice, basics strong cheskovadam, and faculty support tho gradual ga improve ayi subjects clear cheyyachu.\""
+  },
+  {
+    "id": 51,
+    "category": "niit_counselling",
+    "question": "Can normal students also get placements?",
+    "answer": "\"Avunu, definitely placements pondagalru. Placements ki only toppers matrame kaadu, consistent ga skills develop chesina students ki kuda opportunities vastayi.\nCompanies generally communication, problem-solving, basic technical knowledge, and learning ability ni chustayi. Regular practice, projects, and preparation unte average students kuda good placements achieve cheyyachu.\""
+  },
+  {
+    "id": 52,
+    "category": "niit_counselling",
+    "question": "How much hard work is needed in engineering?",
+    "answer": "\"Engineering lo continuous effort and consistency important. Daily little-by-little practice chestu concepts understand cheskunte subjects easy ga artham avtayi.\nOnly exams mundu chadavadam kanna, regular study, practical learning, and skills development meeda focus chesthe pressure thakkuva untundi and performance better avtundi.\""
+  },
+  {
+    "id": 53,
+    "category": "niit_counselling",
+    "question": "Is engineering stressful?",
+    "answer": "\"Engineering lo exams, assignments, and deadlines valla konni times pressure untundi. Kani proper planning, regular preparation, and time management unte stress ni control lo pettukovachu.\nLast minute preparation kanna continuous learning and consistency maintain chesthe engineering journey smooth ga untundi.\""
+  },
+  {
+    "id": 54,
+    "category": "niit_counselling",
+    "question": "Can introverts survive in the software field?",
+    "answer": "\"Avunu, definitely survive avvachu. Software field lo individual work, logical thinking, and technical skills ki chala importance untundi.\nCommunication and teamwork basic level lo improve cheskunte introverts kuda chala successful ga grow avvachu. Personality type kanna skills and consistency ekkuva important.\""
+  },
+  {
+    "id": 55,
+    "category": "niit_counselling",
+    "question": "What habits should be developed from the first year?",
+    "answer": "\"First year nundi regular study habit tho paatu research-oriented mindset develop cheskovali. Classes lo nerchukunna concepts ni just memorise cheyyakunda, why and how ani explore cheyyadam start chesthe new things easy ga nerchukovachu and skills develop avvachu.\nDaanitho paatu time management, continuous learning, and basic communication skills improve cheskovadam kuda important.\""
+  },
+  {
+    "id": 56,
+    "category": "niit_counselling",
+    "question": "What are the common mistakes made by engineering students?",
+    "answer": "\"Engineering students chese common mistakes lo main ga consistency lekunda undadam, last minute preparation meeda depend avvadam, and basics ignore cheyyadam untayi.\nDaanitho paatu practical skills meeda focus cheyyakunda only theory chadavadam, distractions ekkuva ga follow avvadam kuda common mistakes. Regular practice and clear planning lekunte performance impact avtundi.\""
+  },
+  {
+    "id": 57,
+    "category": "niit_counselling",
+    "question": "What makes successful students different?",
+    "answer": "\"Successful students ni different ga chese main thing consistency and regular practice. Vallu daily konchem time aina subject and skills meeda work chestaru.\nDaanitho paatu clear goal undadam, basics strong ga build cheskovadam, and continuous learning mindset vallani other students nundi separate chestayi.\""
+  },
+  {
+    "id": 58,
+    "category": "niit_counselling",
+    "question": "Is English compulsory for placements?",
+    "answer": "\"Fluent English compulsory kaadu. Kani basic communication ability important — interview lo mee thoughts clear ga express cheyyagalagali.\nSimple ga, grammar perfect undalsina avasaram ledu, kani confidence tho communicate cheyyadam and answer explain cheyyadam important.\""
+  },
+  {
+    "id": 59,
+    "category": "niit_counselling",
+    "question": "Will confidence improve in college?",
+    "answer": "\"Avunu, college lo confidence definitely improve avtundi. Classes, presentations, group discussions, and activities valla students ki regular exposure vastundi.\nDaanitho paatu clubs lo participation, idea sharing, and teamwork valla thinking ability and communication improve avtayi. Different people tho interact avvadam valla thought process expand avtundi and self-confidence gradual ga build avtundi.\""
+  },
+  {
+    "id": 60,
+    "category": "niit_counselling",
+    "question": "Can students change completely in engineering?",
+    "answer": "\"Avunu, engineering lo students ki chala change vastundi. College life valla new environment, different people tho interaction, and continuous learning experience untundi.\nDaanivalla communication, thinking style, confidence, and overall personality lo gradual ga improvement kanipistundi. So students complete ga kaadu kani significant ga evolve avtaru.\""
+  },
+  {
+    "id": 61,
+    "category": "niit_counselling",
+    "question": "Why are you only suggesting CSE branches?",
+    "answer": "\"Current job market trends chusthe technology and software based fields ki demand ekkuva ga undi. Software development, datascience, artificial intelligence, cybersecurity, cloud computing lantivi fast growing areas kabatti vatilo job opportunities and career options ekkuva kanipistayi.\nAnduke comparison lo chusthe CSE-related path ki scope and opportunities wider ga untayi ani suggest chestaru. Kani final ga success anedi branch kanna student skills and effort meeda depend avtundi.\""
+  },
+  {
+    "id": 62,
+    "category": "niit_counselling",
+    "question": "Why not Mechanical?",
+    "answer": "\"Mechanical engineering ki scope undi, especially manufacturing, automotive, energy, and infrastructure sectors lo. Kani ippudu industries lo automation and advanced technology usage perugutondi kabatti traditional roles lo hiring pattern konchem shift avtundi.\nAnduke chala mandi students software and other technology-driven fields vaipu velthunnaru, endukante vatilo opportunities and growth fast ga kanipistayi.\nMechanical lo kuda future undi, kani demand industry needs meeda depend avtundi.\""
+  },
+  {
+    "id": 63,
+    "category": "niit_counselling",
+    "question": "Why not Civil?",
+    "answer": "\"Civil engineering ki kuda strong scope untundi, especially infrastructure, construction, roads, bridges, and government projects lo. Kani ippudu job market chusthe project-based hiring and location-based opportunities untayi kabatti stability konchem depend avtundi.\nAnduke chala mandi students software and technology-based fields vaipu velthunnaru, endukante vatilo global demand, flexibility, and opportunities ekkuva ga kanipistayi.\nCivil lo kuda future undi, kani growth and opportunities project flow and industry demand meeda depend avtayi.\""
+  },
+  {
+    "id": 64,
+    "category": "niit_counselling",
+    "question": "Is CSE better than ECE/EEE?",
+    "answer": "\"“Better” ani okati fixed ga undadu. CSE, ECE, EEE anni ki separate scope untundi.\nKani current job market lo software, data, AI, cloud related areas lo demand ekkuva ga undi kabatti CSE side opportunities wider ga kanipistayi.\nECE/EEE lo kuda electronics, telecom, power, and core industry sectors lo steady opportunities untayi.\nSo overall ga chusthe demand side lo CSE konchem advantage lo untundi, kani final ga branch interest and career direction meeda depend avtundi.\""
+  },
+  {
+    "id": 65,
+    "category": "niit_counselling",
+    "question": "Is CSE really better than all other branches?",
+    "answer": "\"Present job market trends chusthe software, data, artificial intelligence, cloud computing and related areas lo demand chala strong ga undi. Anduke CSE lo opportunities wider ga untayi ani cheppachu.\nBut “better” ani final ga decide cheyyadam student interest and effort meeda depend avtundi.\""
+  },
+  {
+    "id": 66,
+    "category": "niit_counselling",
+    "question": "What if I am interested in Mechanical?",
+    "answer": "\"Mechanical meeda genuine interest unte definitely aa branch tiskovachu. Endukante long-term lo manaki interest unna field lo work cheyyadam better growth and satisfaction istundi.\nMechanical lo manufacturing, automotive, robotics, energy lantivi areas lo opportunities untayi. Kani current market trends and future opportunities gurinchi clear understanding tho decision tiskovadam important.\""
+  },
+  {
+    "id": 67,
+    "category": "niit_counselling",
+    "question": "Can core branch students get software jobs?",
+    "answer": "\"Avunu, pondagalru. Chala mandi core branch students later software side ki shift avtunnaru.\nCoding, aptitude, and software concepts prepare ayithe software placements ki apply cheyyachu. Kani CSE students ki software exposure regular ga untundi kabatti vallaki konchem advantage untundi.\""
+  },
+  {
+    "id": 68,
+    "category": "niit_counselling",
+    "question": "Why are salaries high for software jobs?",
+    "answer": "\"Software industry global level lo fast ga grow avtundi and companies ki skilled professionals demand ekkuva ga untundi. Digital systems, applications, AI tools, and online platforms anni software meeda depend avtunnayi kabatti companies high salaries offer chestayi.\nDaanitho paatu software products worldwide scale lo use avvadam valla industry revenue and opportunities kuda ekkuva ga untayi.\""
+  },
+  {
+    "id": 69,
+    "category": "niit_counselling",
+    "question": "Have placements for core branches decreased?",
+    "answer": "\"Complete ga thaggipoyayi ani kaadu, kani current market lo software and technology-based hiring fast ga peragadam valla comparison lo core branch placements konchem takkuva ga kanipistunnayi.\nCore industries lo placements untayi, kani mostly industry demand, projects, and market conditions meeda depend avtayi.\""
+  },
+  {
+    "id": 70,
+    "category": "niit_counselling",
+    "question": "Will Mechanical have demand in the future?",
+    "answer": "\"Avunu, Mechanical ki future lo demand untundi. Manufacturing, automotive, robotics, energy, aerospace lantivi sectors lo mechanical role important gaane untundi.\nKani industries automation and advanced technology vaipu move avtunnayi kabatti traditional roles kanna modern industry requirements ki related opportunities ekkuva ga grow avtunnayi.\""
+  },
+  {
+    "id": 71,
+    "category": "niit_counselling",
+    "question": "Which branch offers more growth?",
+    "answer": "\"Present trends chusthe software and technology-related branches lo growth fast ga kanipistondi. Software development, AI, data, cloud, cybersecurity lantivi areas lo opportunities and expansion continuous ga perugutunnayi.\nAnduke current market lo CSE-related paths ki growth comparatively ekkuva ga undi ani cheppachu.\""
+  },
+  {
+    "id": 72,
+    "category": "niit_counselling",
+    "question": "Which branch gives flexible career options?",
+    "answer": "\"Present market chusthe CSE-related fields comparatively flexible career options istayi. Software, data, AI, cybersecurity, cloud, product-based roles, startups, freelancing, remote jobs lantivi multiple directions lo opportunities untayi.\nTechnology almost anni industries lo use avtundi kabatti career switch and growth options kuda ekkuva ga untayi.\""
+  },
+  {
+    "id": 73,
+    "category": "niit_counselling",
+    "question": "Can I shift from core to software?",
+    "answer": "\"Avunu, core branches nundi software side ki shift avvachu. Chala mandi students coding, aptitude, and technical preparation chesi software jobs ki apply chestaru.\nProper practice and preparation unte software roles ki eligible avvadam possible.\""
+  },
+  {
+    "id": 74,
+    "category": "niit_counselling",
+    "question": "Why is everyone choosing CSE?",
+    "answer": "\"Present trend lo CSE choose cheyyadaniki main reason software and technology sector lo high demand undadam. Companies digital products, apps, AI systems, and online platforms meeda heavily depend avtunnayi kabatti CSE related roles ki hiring ekkuva ga untundi.\nAnduke chala mandi students wide job opportunities and fast-growing industry kosam CSE ni prefer chestunnaru.\""
+  },
+  {
+    "id": 75,
+    "category": "niit_counselling",
+    "question": "Has CSE become overcrowded?",
+    "answer": "\"Avunu, chala colleges lo CSE intake perigindi kabatti competition ekkuva avtundi. Kani “overcrowded” ani kaadu — demand kuda parallel ga perugutondi.\nSoftware, data, AI, cloud lantivi fast ga grow avtunnayi kabatti skilled candidates ki opportunities still strong ga untayi.\""
+  },
+  {
+    "id": 76,
+    "category": "niit_counselling",
+    "question": "Has competition increased because everyone is taking CSE?",
+    "answer": "\"Avunu, CSE choose chese students ekkuva avvadam valla competition increase avtundi.\nKani opportunities kuda parallel ga perugutunnayi kabatti, skills and preparation strong ga unna vallaki impact thakkuva ga untundi.\""
+  },
+  {
+    "id": 77,
+    "category": "niit_counselling",
+    "question": "Will software jobs decrease because of AI?",
+    "answer": "\"AI valla software jobs taggipovadam kanna, job roles change avtunnayi. Konni repetitive tasks automate avtayi, kani dani place lo new roles create avtayi like AI tools integration, system design, and automation related work.\nSo overall ga jobs complete ga taggav, kani nature and required skills evolve avtunnayi.\""
+  },
+  {
+    "id": 78,
+    "category": "niit_counselling",
+    "question": "What is the safest branch during a recession?",
+    "answer": "\"Recession time lo kuda continuous demand unna industries comparatively stable ga untayi. Present trends chusthe technology and digital services almost anni sectors lo use avtunnayi kabatti CSE-related fields ki opportunities broader ga untayi.\nKani recession impact almost anni industries meeda konchem untundi — difference enti ante recovery speed and demand pattern.\""
+  },
+  {
+    "id": 79,
+    "category": "niit_counselling",
+    "question": "Is the software field risky?",
+    "answer": "\"Every field lo konchem market changes untayi, software field kuda alane. Kani technology usage continuous ga perugutondi kabatti software industry lo opportunities consistent ga vastunnayi.\nIppudu almost anni industries digital systems meeda depend avtunnayi kabatti software field long-term lo strong demand maintain chestundi.\""
+  },
+  {
+    "id": 80,
+    "category": "niit_counselling",
+    "question": "Which branch offers fast career growth?",
+    "answer": "\"Present market trends chusthe software and technology-related fields lo career growth comparatively fast ga kanipistondi. Digital products, AI, data, and cloud services fast ga expand avtunnayi kabatti opportunities and growth speed ekkuva ga untayi.\nAnduke current trend lo CSE-related careers fast growth side lo unnayi ani cheppachu.\""
+  },
+  {
+    "id": 81,
+    "category": "niit_counselling",
+    "question": "Why are you suggesting only these colleges?",
+    "answer": "\"Ee colleges ni suggest cheyyadaniki main reason academics tho paatu industry-oriented learning, practical exposure, internships, and technology-focused environment meeda ekkuva focus undadam.\nPresent market requirements ki align ayye learning approach and career opportunities students ki better exposure ivvadam valla ee colleges ni recommend chestunnam.\""
+  },
+  {
+    "id": 82,
+    "category": "niit_counselling",
+    "question": "How did you shortlist these colleges?",
+    "answer": "\"Colleges ni shortlist chesetappudu academics matrame kaakunda, industry exposure, practical learning environment, internships, technology adoption, faculty support, and career opportunities lantivi multiple factors consider chestam.\nPresent market trends ki align ayyi students future growth ki support cheyyagalige colleges ni prefer chestam.\""
+  },
+  {
+    "id": 83,
+    "category": "niit_counselling",
+    "question": "What is special about these colleges?",
+    "answer": "\"Ee colleges lo academics tho paatu industry-oriented learning, practical exposure, internships, and technology-focused environment meeda ekkuva focus untundi.\nStudents ki only theory kaakunda real-world learning experience, projects, and career-focused exposure ivvadaniki approach untundi.\""
+  },
+  {
+    "id": 84,
+    "category": "niit_counselling",
+    "question": "Are these colleges placement-oriented?",
+    "answer": "\"Avunu, ee colleges academics tho paatu placements and industry readiness meeda kuda focus chestayi.\nTechnical learning, practical exposure, projects, internships, and communication development lantivi meeda work chestu students ni career opportunities ki prepare chestaru.\""
+  },
+  {
+    "id": 85,
+    "category": "niit_counselling",
+    "question": "Why are you not suggesting local colleges?",
+    "answer": "\"Local colleges lo kuda manchi options untayi. Kani memu suggest chese colleges ni choose cheyyadaniki main reason academics tho paatu industry exposure, practical learning, internships, and career-focused environment comparatively ekkuva ga undadam.\nPresent market requirements ki align ayye opportunities and exposure students ki better ga dorakadam valla ee options ni recommend chestunnam.\""
+  },
+  {
+    "id": 86,
+    "category": "niit_counselling",
+    "question": "Are these colleges better than nearby colleges?",
+    "answer": "\"Comparison anedi multiple factors meeda depend avtundi. Kani memu suggest chese colleges lo academics tho paatu industry exposure, practical learning, internships, and career-focused environment meeda stronger focus untundi.\nPresent market trends ki align ayye learning ecosystem and opportunities students ki ekkuva ga dorakadam valla ee colleges ni prefer chestunnam.\""
+  },
+  {
+    "id": 87,
+    "category": "niit_counselling",
+    "question": "What makes these colleges different?",
+    "answer": "\"Ee colleges ni different ga chese main thing academics tho paatu industry-oriented learning meeda focus undadam.\nStudents ki practical exposure, projects, internships, technology-focused environment, and real-world learning opportunities ekkuva ga provide cheyyadaniki approach untundi.\""
+  },
+  {
+    "id": 88,
+    "category": "niit_counselling",
+    "question": "Are they industry-oriented colleges?",
+    "answer": "\"Avunu, ee colleges lo academics tho paatu industry-oriented learning ki importance untundi.\nStudents ki practical exposure, projects, internships, and real-world application based learning meeda focus untundi kabatti career readiness improve cheyyadaniki help avtundi.\""
+  },
+  {
+    "id": 89,
+    "category": "niit_counselling",
+    "question": "How is the campus environment?",
+    "answer": "\"Campus environment disciplined and student-friendly ga untundi. Academics tho paatu practical learning, activities, and interactions ki importance untundi.\nStudents ki learning, collaboration, and overall development ki support iche atmosphere create chestaru.\""
+  },
+  {
+    "id": 90,
+    "category": "niit_counselling",
+    "question": "Are the hostels safe?",
+    "answer": "\"Avunu, graduate college hostels lo basic safety systems untayi like security, entry rules, timings monitoring, and warden supervision.\nStudents ki separate accommodation, discipline environment, and basic facilities provide chestaru. Overall ga structured and supervised environment lo hostel life untundi.\""
+  },
+  {
+    "id": 91,
+    "category": "niit_counselling",
+    "question": "Is the coding culture strong?",
+    "answer": "\"Avunu, coding culture ki importance untundi. Students ki coding practice, hackathons, technical events, and project work encourage chestaru.\nDaanivalla coding interest develop avvadaniki and real-world problem solving skills improve avvadaniki environment create avtundi.\""
+  },
+  {
+    "id": 92,
+    "category": "niit_counselling",
+    "question": "How are the faculty?",
+    "answer": "\"Faculty experienced ga untaru and subjects ni basics nundi clear ga explain cheyyadaniki try chestaru.\nStudents ki doubts clarification, practical understanding, and career guidance ivvadam meeda focus untundi. Learning friendly approach maintain chestaru.\""
+  },
+  {
+    "id": 93,
+    "category": "niit_counselling",
+    "question": "Will students get exposure?",
+    "answer": "\"Avunu, students ki exposure ivvadam meeda focus untundi. Classes tho paatu projects, internships, technical events, and activities valla real-world learning experience kalugutundi.\nDaanivalla students ki subject knowledge tho paatu practical understanding kuda develop avtundi.\""
+  },
+  {
+    "id": 94,
+    "category": "niit_counselling",
+    "question": "Are there international opportunities?",
+    "answer": "\"Avunu, international opportunities untayi. Final ga students skills, performance, and higher studies or job applications meeda depend avtundi.\nGlobal companies and abroad universities lo opportunities kosam internships, certifications, and strong academic performance help chestayi.\""
+  },
+  {
+    "id": 95,
+    "category": "niit_counselling",
+    "question": "Do they encourage startups?",
+    "answer": "\"Avunu, startups ni encourage chestaru. Students ki idea development, innovation, and project building ki support untundi.\nTechnical events, hackathons, and incubation support valla startup mindset develop cheyyadaniki environment create chestaru.\""
+  },
+  {
+    "id": 96,
+    "category": "niit_counselling",
+    "question": "How important is the peer group?",
+    "answer": "\"Peer group chala important. Students tho kalisi undadam valla study habits, motivation, and learning consistency improve avtayi.\nPositive peer group unte doubts share cheyyadam, coding practice, and exam preparation easy avtundi. Negative influence unte distraction avvachu, so right circle lo undadam important.\""
+  },
+  {
+    "id": 97,
+    "category": "niit_counselling",
+    "question": "Do these colleges prepare you to be industry-ready?",
+    "answer": "\"Avunu, students ni industry-ready ga prepare cheyyadaniki focus untundi.\nStudents ki practical learning, projects, internships, communication training, and technical exposure ivvadam valla graduation time ki industry requirements ki match ayye skills develop avvadaniki help avtundi.\""
+  },
+  {
+    "id": 98,
+    "category": "niit_counselling",
+    "question": "Are the labs and infrastructure good?",
+    "answer": "\"Avunu, labs and infrastructure well-equipped ga untayi. Students ki practical learning kosam updated labs, computers, and required facilities provide chestaru.\nDaanivalla subject concepts ni hands-on ga practice chesi better understanding develop cheskovachu.\""
+  },
+  {
+    "id": 99,
+    "category": "niit_counselling",
+    "question": "How important is the college brand?",
+    "answer": "\"College brand konchem importance untundi, especially initial placement opportunities and basic exposure lo help avtundi.\nKani long-term career lo skills, projects, communication, and performance chala important. So brand oka starting advantage matrame, final growth student effort meeda depend avtundi.\""
+  },
+  {
+    "id": 100,
+    "category": "niit_counselling",
+    "question": "Are these colleges approved and trusted?",
+    "answer": "\"Avunu, ee colleges official ga approved and recognized institutions.\nGovernment norms and university standards follow chestu academics, exams, and certifications conduct chestaru kabatti students ki valid degree and trusted education system untundi.\""
+  },
+  {
+    "id": 101,
+    "category": "niit_counselling",
+    "question": "What exactly does NIAT provide?",
+    "answer": "\"NIAT lo students ki engineering education tho paatu industry-oriented training provide chestaru.\nSubjects basics nundi teach chestu, practical learning, projects, internships, and technology-based exposure meeda focus untundi. Daanivalla students ki graduation time ki industry requirements ki ready ga avvadaniki support untundi.\""
+  },
+  {
+    "id": 102,
+    "category": "niit_counselling",
+    "question": "Why should one join through NIAT?",
+    "answer": "\"NIAT dwara join avvadam main ga students ki industry-oriented learning and structured training approach dorakadam kosam.\nRegular academics tho paatu practical exposure, projects, internships, and career-focused guidance untundi kabatti students ki graduation time ki job-ready skills develop avvadaniki help avtundi.\""
+  },
+  {
+    "id": 103,
+    "category": "niit_counselling",
+    "question": "What is the extra support?",
+    "answer": "\"Extra support ante academics tho paatu practical knowledge meeda strong focus untundi. Students ki real-world based projects, hands-on learning, and industry-level exposure provide chestaru.\nDaanitho paatu industry leaders tho group interactions and sessions untayi, dani valla students ki real work environment ela untundo direct ga experience chese chance vastundi.\""
+  },
+  {
+    "id": 104,
+    "category": "niit_counselling",
+    "question": "Is NIAT only for admissions?",
+    "answer": "\"Kaadu, NIAT only admissions kosam kaadu. Admission process tho paatu students ki industry-oriented learning, practical exposure, and career readiness meeda kuda focus untundi.\nGoal enti ante students ni just college join cheyyadam kaakunda, future industry requirements ki prepare cheyyadam.\""
+  },
+  {
+    "id": 105,
+    "category": "niit_counselling",
+    "question": "How is it different from normal admissions?",
+    "answer": "\"Normal admission lo mostly seat allotment and academics meeda focus untundi. Kani ikkada academics tho paatu industry exposure, practical learning, projects, and career readiness meeda additional focus untundi.\nStudents ki real-world understanding and industry environment experience chese opportunities kuda ekkuva ga provide chestaru.\""
+  },
+  {
+    "id": 106,
+    "category": "niit_counselling",
+    "question": "Why are there IIT mentors in NIAT?",
+    "answer": "\"IIT mentors involve avvadam main reason students ki current industry trends, technology direction, and practical learning approach gurinchi better exposure ivvadam.\nValla experience and guidance valla students ki real-world thinking, innovation mindset, and industry expectations gurinchi early understanding develop avtundi.\""
+  },
+  {
+    "id": 107,
+    "category": "niit_counselling",
+    "question": "What is skill-based engineering?",
+    "answer": "\"Skill-based engineering ante only theory learning meeda kaakunda, practical understanding and real-world application meeda kuda focus cheyyadam.\nStudents projects, practical tasks, problem solving, and industry-related learning dwara concepts ni apply cheyyadam nerchukuntaru. Daanivalla graduation tarvata industry environment ki better ga adapt avvagalugutaru.\""
+  },
+  {
+    "id": 108,
+    "category": "niit_counselling",
+    "question": "Is traditional engineering outdated?",
+    "answer": "\"Traditional engineering outdated ani kaadu, basics and fundamentals still chala important. Kani present industry requirements fast ga change avtunnayi kabatti only theory-based learning saripovadam ledu.\nIppudu companies practical exposure, technology usage, problem solving, and real-world understanding ki ekkuva importance istunnayi.\""
+  },
+  {
+    "id": 109,
+    "category": "niit_counselling",
+    "question": "What is industry-ready learning?",
+    "answer": "\"Industry-ready learning ante students ki classroom knowledge tho paatu real-world industry requirements ki match ayye training ivvadam.\nProjects, practical exposure, internships, and hands-on learning dwara students ki job environment lo ela work cheyyalo mundhe understanding create chestaru.\""
+  },
+  {
+    "id": 110,
+    "category": "niit_counselling",
+    "question": "How does NIAT prepare students?",
+    "answer": "\"NIAT lo students ni industry requirements ki match ayye ga prepare chestaru.\nRegular academics tho paatu practical learning, real-world projects, internships, and industry interactions provide chestaru. Daanivalla students ki technical knowledge tho paatu job environment lo ela work cheyyalo clear understanding vastundi.\""
+  },
+  {
+    "id": 111,
+    "category": "niit_counselling",
+    "question": "Will they teach practical skills?",
+    "answer": "\"Avunu, practical skills meeda strong focus untundi. Students ki concepts ni only theory ga kaakunda projects, hands-on tasks, and real-world applications dwara nerpinchadaniki try chestaru.\nDaanivalla subjects ni practical ga ela use cheyyalo understanding develop avtundi.\""
+  },
+  {
+    "id": 112,
+    "category": "niit_counselling",
+    "question": "Will we do real projects?",
+    "answer": "\"Avunu, students ki project-based learning exposure untundi. Real-world problems and practical applications meeda work cheyyadam dwara concepts ni better ga understand cheskovachu.\nDaanivalla teamwork, problem solving, and practical thinking kuda improve avtayi.\""
+  },
+  {
+    "id": 113,
+    "category": "niit_counselling",
+    "question": "Will we build real applications?",
+    "answer": "\"Avunu, practical learning process lo students ki real-world use cases and applications meeda work chese exposure untundi.\nProjects and hands-on activities dwara applications ela design cheyyali, build cheyyali, and real scenarios lo ela use avtayo understanding develop avtundi..\""
+  },
+  {
+    "id": 114,
+    "category": "niit_counselling",
+    "question": "Why are internships important?",
+    "answer": "\"Internships valla students ki real industry environment experience vastundi. Classroom lo nerchukunna concepts ni actual work situations lo ela use chestaro direct ga choodagalugutaru.\nDaanivalla practical understanding, teamwork experience, and professional work culture gurinchi clarity vastundi.\""
+  },
+  {
+    "id": 115,
+    "category": "niit_counselling",
+    "question": "Why early internships?",
+    "answer": "\"Early internships valla students ki industry environment and real-world work exposure mundhe artham avtundi.\nCareer start ayye mundhe practical experience vastundi kabatti students ki technology usage, teamwork, and professional workflow gurinchi better understanding develop avtundi.\""
+  },
+  {
+    "id": 116,
+    "category": "niit_counselling",
+    "question": "How does NIAT arrange internships?",
+    "answer": "\"NIAT lo internships arrange cheyyadam lo students ki industry exposure ivvadam main focus. Students ki real companies, projects, and industry-based learning opportunities connect cheyyadaniki support untundi.\nDaanivalla students ki classroom learning tho paatu practical experience kuda kaligi, work environment gurinchi clear understanding vastundi.\""
+  },
+  {
+    "id": 117,
+    "category": "niit_counselling",
+    "question": "Is there a connection with companies?",
+    "answer": "\"Avunu, companies tho strong connections unnai and industry connections kuda maintain chestunnaru. Daanivalla students ki internships, projects, and exposure opportunities easy ga dorukutunnayi.\nIkkada focus enti ante students ki proper industry-ready skills develop cheyyadam, kabatti vallu internships ki eligible avvadam and real company environment lo work experience pondadam smooth ga avtundi.\""
+  },
+  {
+    "id": 118,
+    "category": "niit_counselling",
+    "question": "Will there be continuous mentorship?",
+    "answer": "\"Avunu, continuous mentorship untundi. Students ki learning journey antha support ivvadam kosam mentors regular ga guide chestaru.\nDaanivalla doubts clarification, project guidance, and industry understanding lo students ki proper direction dorukutundi.\""
+  },
+  {
+    "id": 119,
+    "category": "niit_counselling",
+    "question": "Will they give regular career guidance?",
+    "answer": "\"Avunu, regular ga career guidance istaru. Students ki different career paths, industry trends, and opportunities gurinchi time-to-time sessions and guidance provide chestaru.\nDaanivalla students ki clarity vastundi and right direction lo prepare avvadaniki help avtundi.\""
+  },
+  {
+    "id": 120,
+    "category": "niit_counselling",
+    "question": "How are students prepared for early earning?",
+    "answer": "\"Students ki early earning kosam practical skill development meeda focus chestaru. Coding, projects, and industry-based tasks dwara real-world work ela cheyyalo nerpinchadam jarugutundi.\nDaanitho paatu internships, freelance opportunities, and project-based experience ki guidance ivvadam valla students ki early stage lo ne earning opportunities gurinchi understanding vastundi.\""
+  },
+  {
+    "id": 121,
+    "category": "niit_counselling",
+    "question": "NIAT started recently, how can we trust it?",
+    "answer": "\"Trust choodadaniki main ga recognition, structure, and transparency choodali. NIAT lo structured learning approach, industry-focused training, and planned curriculum untundi kabatti students ki clear direction untundi.\nKani final ga evaraina join avvadaniki mundu campus visit, program details, faculty background, and student outcomes gurinchi verify cheskovadam best practice.\""
+  },
+  {
+    "id": 122,
+    "category": "niit_counselling",
+    "question": "There are no pass-out batches yet, right?",
+    "answer": "\"Avunu, recent initiative kabatti full passout batch track record ippudu establish avvaledu.\nKani ikkada focus enti ante present students ki internships provide chestunnaru. Aa internships lo students performance baga unte, companies lo continue avvadam or permanent opportunities ki consider avvadaniki chances untayi.\""
+  },
+  {
+    "id": 123,
+    "category": "niit_counselling",
+    "question": "What is the proof of placements?",
+    "answer": "\"Placements gurinchi proof ante official data and outcomes based information choodali. Present model lo students ki internships through industry exposure isthunnaru, and vaati performance base chesi companies lo further opportunities ki consider chestaru.\nSo actual “proof” ante documented internship partnerships, student participation records, and companies involvement in hiring/assessment process.\""
+  },
+  {
+    "id": 124,
+    "category": "niit_counselling",
+    "question": "What is the proof that this model works?",
+    "answer": "\"Ee model ki strong indication enti ante students ki internships and project-based learning opportunities dorukutunnayi. Daanivalla konthamandi students real-world exposure tho own startups start chestunnaru and new ideas build chestunnaru.\nAlage performance baga unna students ki paid internships and industry-based opportunities kuda dorukutunnayi, which shows practical learning approach working ga undani.\""
+  },
+  {
+    "id": 125,
+    "category": "niit_counselling",
+    "question": "Isn't a new model a risk?",
+    "answer": "\"Prathi new model lo konchem uncertainty untundi, endukante initial phase lo track record full ga establish avvakapovachu. Kani risk anedi support system meeda depend avtundi.\nIkkada students ki structured training, internships, industry exposure, and continuous mentorship untayi kabatti learning process guided ga untundi. Daanivalla uncertainty reduce avtundi and students ki practical experience tho growth opportunities create avtayi.\""
+  },
+  {
+    "id": 126,
+    "category": "niit_counselling",
+    "question": "Is this genuine or just marketing?",
+    "answer": "\"Ee question ki clear ga cheppalante, eppudu kuda “claims” kanna “evidence” choodali. Genuine ani decide cheyyadaniki actual student outcomes, internships, industry participation, and companies involvement observe cheyyali.\nIkkada model lo internships, project work, and industry interactions untunnayi ani cheptunnaru. Kani final ga idi work avtundaa leda anedi present student experience, verified outcomes, and long-term results base cheskoni judge cheyyadam best approach.\""
+  },
+  {
+    "id": 127,
+    "category": "niit_counselling",
+    "question": "Are internships really happening?",
+    "answer": "\"Avunu, internships nijanga jarugutunnayi. Students ki industry partners tho connect chesi real-world projects and internship opportunities provide chestunnaru.\nDaanivalla students ki classroom learning tho paatu practical industry exposure kuda kalugutundi.\""
+  },
+  {
+    "id": 128,
+    "category": "niit_counselling",
+    "question": "Are the success stories genuine?",
+    "answer": "\"Avunu, success stories nijanga students experiences based ga untayi. Internships, projects, and industry exposure lo perform chesina students outcomes ni base cheskoni vatini showcase chestaru.\nDaanivalla students ki real-world opportunities and learning outcomes ela untayo clear ga artham avvadaniki help avtundi.\""
+  },
+  {
+    "id": 129,
+    "category": "niit_counselling",
+    "question": "Why is NIAT growing so fast?",
+    "answer": "\"NIAT fast ga grow avvadaniki main reason industry-oriented learning model. Students ki regular academics tho paatu internships, projects, and real-world exposure provide chestunnaru.\nDaanivalla students outcomes and industry participation increase avtundi, which leads to more awareness and rapid growth.\""
+  },
+  {
+    "id": 130,
+    "category": "niit_counselling",
+    "question": "What if the system (NIAT) fails in the future?",
+    "answer": "\"Ala fail avvadaniki chance ledu, endukante idi industry requirements ki align ayye structured learning model. Students ki internships, projects, and real-world exposure already continuous ga provide chestunnaru.\nIndustry participation and student outcomes base cheskoni system run avtundi kabatti strong ecosystem untundi and growth continue avtundi.\""
+  },
+  {
+    "id": 131,
+    "category": "niit_counselling",
+    "question": "Are IIT counselors really involved?",
+    "answer": "\"Avunu, IIT background mentors/counselors involvement untundi ani structure lo mention chestunnaru. Vallu students ki career direction, learning approach, and industry understanding lo guidance istaru.\nDaanivalla students ki better clarity and structured preparation environment create avvadaniki support avtundi.\""
+  },
+  {
+    "id": 132,
+    "category": "niit_counselling",
+    "question": "Would you suggest this to your siblings too?",
+    "answer": "\"Avunu, ma siblings ki kuda suggest chestam. Endukante ikkada students ki academics tho paatu industry exposure, internships, projects, and practical learning meeda strong focus untundi.\nDaanivalla graduation tarvata career readiness develop avvadaniki help avtundi.\""
+  },
+  {
+    "id": 133,
+    "category": "niit_counselling",
+    "question": "Why are students trusting NIAT?",
+    "answer": "\"Students trust ki main reason structure and outcomes. NIAT lo academics tho paatu internships, projects, and industry exposure provide chestunnaru kabatti learning real-world oriented ga untundi.\nDaanivalla students ki practical experience dorakadam, industry interaction jaragadam, and career readiness build avvadam valla trust and interest create avtundi.\""
+  },
+  {
+    "id": 134,
+    "category": "niit_counselling",
+    "question": "How is NIAT better than consultancies?",
+    "answer": "\"Consultancies mostly admission complete cheyyadam varake support chestayi. Kani NIAT lo admission tho paatu students ki internships, projects, practical learning, and industry exposure meeda kuda focus untundi.\nGoal enti ante students ni just college lo join cheyyadam kaakunda, future jobs and real-world work environment ki prepare cheyyadam.\""
+  },
+  {
+    "id": 135,
+    "category": "niit_counselling",
+    "question": "How to believe that the placements are genuine?",
+    "answer": "\"Placements genuine aa kaada ani choodali ante actual student internships, company collaborations, and real hiring opportunities observe cheyyali.\nIkkada students ki industry exposure, paid internships, and project-based opportunities provide chestunnaru. Performance baga unna students ki companies lo further opportunities kuda vastunnayi, which builds trust on the process.\""
+  },
+  {
+    "id": 136,
+    "category": "niit_counselling",
+    "question": "Can we talk to existing students?",
+    "answer": "Avunu, meeru existing students tho maatladavachu. Daanivalla meeku learning environment, internships, projects, and overall experience gurinchi direct clarity vastundi."
+  },
+  {
+    "id": 137,
+    "category": "niit_counselling",
+    "question": "Why are students preferring this pathway?",
+    "answer": "\"Students ee pathway ni prefer cheyyadaniki main reason academics tho paatu practical learning and industry exposure dorakadam.\nInternships, projects, real-world experience, and industry interactions early stage nundi undadam valla students ki career-ready environment dorukutundi.\""
+  },
+  {
+    "id": 138,
+    "category": "niit_counselling",
+    "question": "Are companies recognizing NIAT?",
+    "answer": "\"Avunu, recognize chestunnayi. Main reason enti ante NIAT approach lo students ni only theory-based ga kaakunda practical and industry-ready ga prepare chestunnaru.\nProjects, internships, real-world exposure, and continuous industry interaction undadam valla companies ki students work-ready ga kanipistunnaru. Anduke companies internships and opportunities ivvadaniki interest chupistunnayi.\""
+  },
+  {
+    "id": 139,
+    "category": "niit_counselling",
+    "question": "What is the relationship with universities?",
+    "answer": "\"NIAT university with collaboration lo work chestundi, where students ki degree university through vastundi.\nDaanitho paatu NIAT side nundi additional ga industry-oriented learning provide chestaru — like practical training, real-world projects, internships, and company-based exposure.\nSo university academics formal education structure maintain chestunte, NIAT parallel ga students ni industry requirements ki ready ga tayaru cheyyadaniki practical ecosystem create chestundi.\""
+  },
+  {
+    "id": 140,
+    "category": "niit_counselling",
+    "question": "Is this future-focused education?",
+    "answer": "\"Avunu, approach future-focused ga untundi. Students ki present industry requirements ki match ayye ga practical learning, projects, and internships meeda focus untundi.\nDaanivalla graduation time ki students ki current technology and work environment ki related exposure already untundi.\""
+  },
+  {
+    "id": 141,
+    "category": "niit_counselling",
+    "question": "Will we get internships from the first year?",
+    "answer": "\"Avunu, structure lo early stage nunde industry exposure start avtundi. First year lo mostly foundational learning + small projects untayi, dani tarvata gradually internships and real-world assignments ki move avtaru.\nDaanivalla students ki early ga ne practical understanding build avvadaniki help avtundi.\""
+  },
+  {
+    "id": 142,
+    "category": "niit_counselling",
+    "question": "How will first-year students do internships?",
+    "answer": "\"First year lo students ki direct full-scale internships kanna guided exposure untundi. Munduga basics strong ga build chesi, small projects, simulations, and industry-based tasks ivvadam jarugutundi.\nDaanitho paatu mentors supervision lo simple real-world assignments chestu, gradual ga internship-level work ki prepare avtaru.\""
+  },
+  {
+    "id": 143,
+    "category": "niit_counselling",
+    "question": "Are internships guaranteed?",
+    "answer": "\"Avunu, internship opportunities actively provide chestaru. 3000+ company tie-ups undadam valla students ki different domains lo internship exposure chances untayi.\nStudents ki required skills and practical preparation provide chestu, internships lo participate avvadaniki support chestaru.\""
+  },
+  {
+    "id": 144,
+    "category": "niit_counselling",
+    "question": "Are they paid internships?",
+    "answer": "Avunu, paid internship opportunities kuda untayi. Student performance, skills, and company requirements base cheskoni paid internships lo work chese chances dorukutayi."
+  },
+  {
+    "id": 145,
+    "category": "niit_counselling",
+    "question": "Will we really get a ₹15k–₹25k stipend?",
+    "answer": "\"Avunu, skills and performance baga unna students ki paid internships lo ₹15K–₹25K range stipends vacche opportunities untayi.\nStipend amount anedi company, role, and student performance meeda depend avtundi.\""
+  },
+  {
+    "id": 146,
+    "category": "niit_counselling",
+    "question": "What skills are required for an internship?",
+    "answer": "\"Internship ki basic technical skills, communication, problem solving, and practical understanding important. Domain batti coding, project work, tools usage, and teamwork skills kuda expect chestaru.\nStudents ni gradual ga industry-ready skills develop ayye ga prepare chestaru kabatti internship environment ki adapt avvadam easy avtundi.\""
+  }
+]

@@ -13,9 +13,8 @@ function isLlmReplyEnabled() {
  * Phase 4 Sprint 1: delegates to knowledgeAssistantService (NVIDIA OpenAI-compatible API).
  * Disabled unless CHATBOT_KNOWLEDGE_ASSISTANT_ENABLED=1 or CHATBOT_LLM_ENABLED=1.
  */
-async function tryLlmReply({ inboundText, facts, leadContext }) {
+async function tryLlmReply({ inboundText, conversationId = null, facts, leadContext }) {
   void facts;
-  void leadContext;
 
   console.log('[LLM-DEBUG] entered tryLlmReply');
   const enabled = isLlmReplyEnabled();
@@ -28,7 +27,7 @@ async function tryLlmReply({ inboundText, facts, leadContext }) {
     return null;
   }
 
-  const llm = await answer({ inboundText });
+  const llm = await answer({ inboundText, conversationId, leadContext });
   if (llm && llm.text) {
     return { text: String(llm.text).trim().slice(0, 3500) };
   }

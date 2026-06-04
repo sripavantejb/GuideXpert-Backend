@@ -35,6 +35,34 @@ function matchesMainMenuTrigger(text) {
   return matchesMenuCommands(text) || matchesStandaloneGreeting(text);
 }
 
+const KNOWLEDGE_QUESTION_PATTERNS = [
+  /\bwhat is\b/i,
+  /\bwhat do\b/i,
+  /\bhow much\b/i,
+  /\bhow does\b/i,
+  /\bhow do\b/i,
+  /\btell me\b/i,
+  /\bexplain\b/i,
+  /\bwho are\b/i,
+  /\bwho is\b/i,
+  /\bservices\b/i,
+  /\bcost\b/i,
+  /\bfee\b/i,
+  /\bpricing\b/i,
+];
+
+/**
+ * General knowledge / exploratory questions routed to the Knowledge Assistant.
+ * @param {string} text - normalized (lowercase, collapsed spaces)
+ */
+function isKnowledgeQuestion(text) {
+  const t = String(text || '').trim();
+  if (!t || /^\d+$/.test(t)) {
+    return false;
+  }
+  return KNOWLEDGE_QUESTION_PATTERNS.some((pattern) => pattern.test(t));
+}
+
 /**
  * Rule-based intent classification (Phase 1).
  * @returns {{ intent: string, confidence: 'high'|'medium'|'low' }}
@@ -87,6 +115,10 @@ function classifyIntent(text, botState, productLine) {
     if (/^4$/.test(t)) return { intent: 'human_handoff', confidence: 'high' };
   }
 
+  if (isKnowledgeQuestion(t)) {
+    return { intent: 'knowledge_assistant', confidence: 'medium' };
+  }
+
   if (/^1$|my details|my booking|my slot|profile/.test(t)) {
     return { intent: 'lead_lookup', confidence: 'high' };
   }
@@ -132,4 +164,4 @@ function classifyIntent(text, botState, productLine) {
   return { intent: 'unknown', confidence: 'low' };
 }
 
-module.exports = { classifyIntent, normalizeText };
+module.exports = { classifyIntent, normalizeText, isKnowledgeQuestion };
