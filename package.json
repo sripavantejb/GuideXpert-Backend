@@ -25,6 +25,7 @@
     "test:integration:stress": "WA_INTEGRATION_STRESS=1 node --test test/integration/stress/*.test.js",
     "test:whatsapp-all": "node --test test/*.test.js test/integration/suites/*.test.js",
     "test:poster-track": "node scripts/testPosterTrackKeys.js",
+    "test:llm-reply-local": "node scripts/test-llm-reply-local.js",
     "test:gupshup-webhook": "node --test test/gupshupWebhookFlow.test.js",
     "test:whatsapp-retry-rules": "node --test test/whatsappRetryRules.test.js",
     "test:demo-meet-live-windows": "node --test test/demoMeetLiveWindows.test.js",
@@ -78,6 +79,7 @@
     "jspdf": "^4.2.1",
     "mongoose": "^9.1.5",
     "nodemon": "^3.1.11",
+    "openai": "^4.104.0",
     "sharp": "^0.33.5"
   },
   "devDependencies": {

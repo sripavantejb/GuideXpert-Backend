@@ -440,7 +440,10 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       break;
     }
     default: {
-      if (String(process.env.CHATBOT_LLM_ENABLED || '').trim() === '1') {
+      if (
+        String(process.env.CHATBOT_KNOWLEDGE_ASSISTANT_ENABLED || '').trim() === '1' ||
+        String(process.env.CHATBOT_LLM_ENABLED || '').trim() === '1'
+      ) {
         const llm = await tryLlmReply({ inboundText: inbound.text, facts, leadContext });
         if (llm && llm.text) {
           replyText = llm.text;
