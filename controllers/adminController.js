@@ -17,6 +17,7 @@ const TrainingFormSubmission = require('../models/TrainingFormSubmission');
 const TrainingFormResponse = require('../models/TrainingFormResponse');
 const Counsellor = require('../models/Counsellor');
 const IitCounsellingVisit = require('../models/IitCounsellingVisit');
+const IitCounsellingUtmSavedLink = require('../models/IitCounsellingUtmSavedLink');
 const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
 const { resolveUtmAnalyticsPageKey } = require('../utils/utmAnalyticsPageKey');
 const { getISTCalendarDateUTC, getISTDayRangeFromString } = require('../utils/dateHelpers');
@@ -447,6 +448,65 @@ function comboRowKeyFromUtmParts(source, medium, campaign, content) {
   return [source, medium, campaign, content].join('|');
 }
 
+function utmFieldForComboLabel(val) {
+  const s = String(val ?? '').trim();
+  return s || '(none)';
+}
+
+function parseUtmParamsFromSavedHref(href) {
+  if (!href || typeof href !== 'string') return null;
+  try {
+    const u = new URL(href);
+    return {
+      utm_source: u.searchParams.get('utm_source') ?? '',
+      utm_medium: u.searchParams.get('utm_medium') ?? '',
+      utm_campaign: u.searchParams.get('utm_campaign') ?? '',
+      utm_content: u.searchParams.get('utm_content') ?? '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function loadOneOnOneSavedComboKeys() {
+  const docs = await IitCounsellingUtmSavedLink.find({
+    $or: [
+      { linkTarget: 'oneOnOneSession' },
+      { utmLink: { $regex: /^https?:\/\/[^/]+\/one-on-one-session(\/|\?|#|$)/i } },
+    ],
+  })
+    .select('utmLink')
+    .lean();
+  const keys = new Set();
+  for (const doc of docs) {
+    const parsed = parseUtmParamsFromSavedHref(doc.utmLink);
+    if (!parsed) continue;
+    keys.add(
+      comboRowKeyFromUtmParts(
+        utmFieldForComboLabel(parsed.utm_source),
+        utmFieldForComboLabel(parsed.utm_medium),
+        utmFieldForComboLabel(parsed.utm_campaign),
+        utmFieldForComboLabel(parsed.utm_content),
+      ),
+    );
+  }
+  return keys;
+}
+
+function filterByComboToSavedKeys(rows, savedKeys) {
+  if (!savedKeys || savedKeys.size === 0) return [];
+  return (rows || []).filter((row) =>
+    savedKeys.has(
+      comboRowKeyFromUtmParts(
+        row.utm_source,
+        row.utm_medium,
+        row.utm_campaign,
+        row.utm_content,
+      ),
+    ),
+  );
+}
+
 /**
  * For 1-on-1 analytics: merge form lead counts by UTM into visit-based byCombo
  * (covers leads saved without visitorFingerprint / before visit tracking went live).
@@ -501,18 +561,6 @@ async function mergeOneOnOneLeadsIntoByCombo(byCombo, dateTime) {
     const leadCount = row.leadCount || 0;
     if (existing) {
       existing.linkedSubmissions = Math.max(existing.linkedSubmissions || 0, leadCount);
-    } else {
-      map.set(key, {
-        utm_source: id.utm_source,
-        utm_medium: id.utm_medium,
-        utm_campaign: id.utm_campaign,
-        utm_content: id.utm_content,
-        visits: 0,
-        uniqueVisitors: 0,
-        linkedSubmissions: leadCount,
-        firstVisitAt: null,
-        latestVisitAt: row.latestLeadAt || null,
-      });
     }
   }
 
@@ -883,9 +931,15 @@ exports.getIitCounsellingUtmAnalytics = async (req, res) => {
       uniqueVisitorsWithoutUtm: 0,
     };
 
+    let comboRows = byCombo;
+    if (pageKey === 'oneOnOneSession') {
+      const savedKeys = await loadOneOnOneSavedComboKeys();
+      comboRows = filterByComboToSavedKeys(byCombo, savedKeys);
+    }
+
     const comboForResponse =
       pageKey === 'oneOnOneSession'
-        ? await mergeOneOnOneLeadsIntoByCombo(byCombo, dateTime)
+        ? await mergeOneOnOneLeadsIntoByCombo(comboRows, dateTime)
         : byCombo;
 
     return res.status(200).json({
