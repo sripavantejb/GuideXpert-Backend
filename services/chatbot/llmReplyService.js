@@ -17,7 +17,14 @@ async function tryLlmReply({ inboundText, facts, leadContext }) {
   void facts;
   void leadContext;
 
-  if (!isLlmReplyEnabled()) {
+  console.log('[LLM-DEBUG] entered tryLlmReply');
+  const enabled = isLlmReplyEnabled();
+  console.log('[LLM-DEBUG] knowledge assistant enabled =', enabled);
+  const apiKeyPresent = Boolean(String(process.env.LLM_API_KEY || '').trim());
+  console.log('[LLM-DEBUG] api key present =', apiKeyPresent);
+
+  if (!enabled) {
+    console.log('[LLM-DEBUG] tryLlmReply return null: knowledge assistant disabled');
     return null;
   }
 
@@ -25,6 +32,7 @@ async function tryLlmReply({ inboundText, facts, leadContext }) {
   if (llm && llm.text) {
     return { text: String(llm.text).trim().slice(0, 3500) };
   }
+  console.log('[LLM-DEBUG] tryLlmReply return null: answer() returned no text');
   return null;
 }
 

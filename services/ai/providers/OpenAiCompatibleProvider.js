@@ -26,11 +26,13 @@ class OpenAiCompatibleProvider {
   }
 
   async chatCompletion({ messages, temperature = 1, maxTokens = 1000 }) {
+    console.log('[LLM-DEBUG] entered OpenAiCompatibleProvider');
     const model = String(process.env.LLM_MODEL || '').trim();
     if (!model) {
       throw new Error('LLM_MODEL is required');
     }
 
+    console.log('[LLM-DEBUG] calling NVIDIA model =', model);
     const client = this._getClient();
     const completion = await client.chat.completions.create({
       model,
@@ -40,6 +42,7 @@ class OpenAiCompatibleProvider {
       stream: false,
     });
 
+    console.log('[LLM-DEBUG] received response');
     const text = completion.choices?.[0]?.message?.content || '';
     return {
       text: String(text).trim(),

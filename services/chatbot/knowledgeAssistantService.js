@@ -13,17 +13,22 @@ function isKnowledgeAssistantEnabled() {
 }
 
 async function answer({ inboundText }) {
+  console.log('[LLM-DEBUG] entered knowledgeAssistantService');
+
   if (!isKnowledgeAssistantEnabled()) {
+    console.log('[LLM-DEBUG] answer return null: knowledge assistant disabled');
     return null;
   }
 
   const apiKey = String(process.env.LLM_API_KEY || '').trim();
   if (!apiKey) {
+    console.log('[LLM-DEBUG] answer return null: LLM_API_KEY missing');
     return null;
   }
 
   const text = String(inboundText || '').trim();
   if (!text) {
+    console.log('[LLM-DEBUG] answer return null: empty inbound text');
     return null;
   }
 
@@ -35,12 +40,16 @@ async function answer({ inboundText }) {
 
     const result = await provider.chatCompletion({ messages });
     if (result.text) {
+      console.log('[LLM-DEBUG] received response', { model: result.model });
       return { text: result.text, model: result.model };
     }
+    console.log('[LLM-DEBUG] answer return null: provider returned empty text');
   } catch (e) {
     console.warn('[chatbot] knowledge assistant error', e.message);
+    console.log('[LLM-DEBUG] caught error =', e.message);
   }
 
+  console.log('[LLM-DEBUG] answer return null: fallthrough after try/catch');
   return null;
 }
 
