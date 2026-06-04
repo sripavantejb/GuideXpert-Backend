@@ -26,6 +26,11 @@ const {
 const { buildIitReminderTemplateParams } = require('../utils/iitReminderWhatsAppSend');
 const { parseGupshupTemplateSendResponse } = require('../utils/gupshupMessageIds');
 const { isAmbiguousGupshupSendError } = require('../utils/gupshupSendOutcome');
+const {
+  GUPSHUP_TEMPLATE_ONE_ON_ONE_CONFIRM,
+  ONE_ON_ONE_HEADER_MISSING_ERROR,
+  resolveOneOnOneHeaderImageUrl,
+} = require('../utils/oneOnOneCounselingWhatsApp');
 
 const GUPSHUP_TEMPLATE_URL = 'https://api.gupshup.io/wa/api/v1/template/msg';
 
@@ -415,6 +420,30 @@ async function sendIitReminderWhatsApp(phone10, vars, sendOpts = {}) {
   });
 }
 
+/** 1-on-1 counseling form submit: name body + IMAGE header. */
+async function sendOneOnOneSubmitWhatsApp(phone10, vars, sendOpts = {}) {
+  const envKey =
+    typeof sendOpts.templateEnvKey === 'string' && sendOpts.templateEnvKey.trim()
+      ? sendOpts.templateEnvKey.trim()
+      : GUPSHUP_TEMPLATE_ONE_ON_ONE_CONFIRM;
+  const tid = process.env[envKey];
+  const params = buildParamsFromKeys(vars, SLOT_BOOKED_IIT_PARAM_KEYS);
+
+  let headerImageLink = resolveOneOnOneHeaderImageUrl();
+  if (!headerImageLink && !isIntegrationStub()) {
+    return { success: false, error: ONE_ON_ONE_HEADER_MISSING_ERROR };
+  }
+  if (isIntegrationStub() && !headerImageLink) {
+    headerImageLink = 'https://example.com/one-on-one-stub-header.png';
+  }
+
+  return sendTemplateMessage(formatPhoneE16491(phone10), tid, params, {
+    ...sendOpts,
+    templateEnvKey: envKey,
+    headerImageLink,
+  });
+}
+
 module.exports = {
   isWhatsAppEnabled,
   isGupshupConfigured,
@@ -426,6 +455,7 @@ module.exports = {
   sendMeetLinkWhatsApp,
   sendReminder30MinWhatsApp,
   sendIitReminderWhatsApp,
+  sendOneOnOneSubmitWhatsApp,
   isIitReminderTemplateEnvKey,
   resetIntegrationStubCallCount,
   getIntegrationStubCallCount,

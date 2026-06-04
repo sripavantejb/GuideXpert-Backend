@@ -211,6 +211,7 @@ exports.getOpsMeta = (_req, res) => {
       opsProductsAllowed: [...listAllowedOpsProducts()],
       templateKinds: [
         { id: 'slot_booked', label: 'Slot booked', description: 'Immediate confirmation after slot booking', retryPolicy: getRetryPolicy('slot_booked'), opsProducts: ['guidexpert', 'iit_counselling'] },
+        { id: 'one_on_one_submit', label: 'Form submit confirmation', description: 'Immediate confirmation after /one-on-one-session form submit', retryPolicy: getRetryPolicy('one_on_one_submit'), opsProducts: ['one_on_one_counseling'] },
         { id: 'pre4hr', label: '4hr reminder', description: 'Cron + save_step3 use the same deadline-backward window near 4h before slot (see WA_PRE4HR_*).', retryPolicy: getRetryPolicy('pre4hr'), opsProducts: ['guidexpert'] },
         { id: 'meet', label: 'Meet link (~1hr)', description: 'Same deadline-backward window near 1h before slot (see WA_MEET_*).', retryPolicy: getRetryPolicy('meet'), opsProducts: ['guidexpert'] },
         { id: '30min', label: '30 min reminder', description: 'Same deadline-backward window near 30m before slot (see WA_30MIN_*).', retryPolicy: getRetryPolicy('30min'), opsProducts: ['guidexpert'] },

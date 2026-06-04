@@ -4,9 +4,7 @@
  */
 
 const DEFAULT_OPS_PRODUCT = 'guidexpert';
-const ALLOWED_OPS_PRODUCTS = Object.freeze(['guidexpert', 'iit_counselling']);
-
-/** @typedef {'guidexpert'|'iit_counselling'} OpsProductSlug */
+const ALLOWED_OPS_PRODUCTS = Object.freeze(['guidexpert', 'iit_counselling', 'one_on_one_counseling']);
 
 /** @returns {readonly string[]} */
 function listAllowedOpsProducts() {
@@ -17,11 +15,18 @@ function listAllowedOpsProducts() {
  * Parse query/header string into a normalized ops product slug.
  * Invalid values fall back to `guidexpert`.
  * @param {unknown} raw
- * @returns {'guidexpert'|'iit_counselling'}
  */
 function parseOpsProductQuery(raw) {
   const s = raw == null ? '' : String(raw).trim().toLowerCase().replace(/-/g, '_');
   if (s === 'iit_counselling' || s === 'iitcounselling') return 'iit_counselling';
+  if (
+    s === 'one_on_one_counseling' ||
+    s === 'one_on_one' ||
+    s === 'oneonone' ||
+    s === 'one_on_one_session'
+  ) {
+    return 'one_on_one_counseling';
+  }
   return DEFAULT_OPS_PRODUCT;
 }
 
@@ -35,20 +40,23 @@ const GUIDEXPERT_EVENT_MATCH_FRAGMENT = Object.freeze({
 });
 
 /** @returns {object} fragment to merge into a Mongo `$match` (AND with other predicates) */
-function matchWhatsAppEventsByOpsProduct(/** @type {'guidexpert'|'iit_counselling'} */ slug) {
+function matchWhatsAppEventsByOpsProduct(slug) {
   if (slug === 'iit_counselling') {
     return { opsProduct: 'iit_counselling' };
+  }
+  if (slug === 'one_on_one_counseling') {
+    return { opsProduct: 'one_on_one_counseling' };
   }
   return { ...GUIDEXPERT_EVENT_MATCH_FRAGMENT };
 }
 
 /**
- * Persisted / outbound events: explicit IIT slug or GuideXpert default.
+ * Persisted / outbound events: explicit slug or GuideXpert default.
  * @param {unknown} raw
- * @returns {'guidexpert'|'iit_counselling'}
  */
 function normalizeOutboundOpsProduct(raw) {
   if (raw === 'iit_counselling') return 'iit_counselling';
+  if (raw === 'one_on_one_counseling') return 'one_on_one_counseling';
   return DEFAULT_OPS_PRODUCT;
 }
 

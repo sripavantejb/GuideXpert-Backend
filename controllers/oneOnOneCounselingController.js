@@ -15,6 +15,14 @@ const { isValidPreferredTimeSlot, resolveSlotMeta } = require('../utils/oneOnOne
 const { BOOKING_STATUS_OPTIONS } = require('../constants/guidanceBooking');
 const GuidanceSlot = require('../models/GuidanceSlot');
 const OneOnOneCounselor = require('../models/OneOnOneCounselor');
+const WhatsAppRetryGroup = require('../models/WhatsAppRetryGroup');
+const { isGupshupConfigured, sendOneOnOneSubmitWhatsApp } = require('../services/gupshupService');
+const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
+const {
+  buildOneOnOneSubmitVars,
+  parsePreferredSlotInstantUtc,
+  GUPSHUP_TEMPLATE_ONE_ON_ONE_CONFIRM,
+} = require('../utils/oneOnOneCounselingWhatsApp');
 
 function to10Digits(val) {
   if (val == null) return '';
@@ -193,10 +201,71 @@ exports.submitOneOnOneCounselingLead = async (req, res) => {
 
     const doc = await OneOnOneCounselingLead.create(validated.data);
 
+    /** @type {{ attempted: boolean, success?: boolean, skippedReason?: string, error?: string, idempotent?: boolean }|null} */
+    let whatsappSubmit = null;
+
+    if (!isGupshupConfigured()) {
+      whatsappSubmit = { attempted: false, skippedReason: 'gupshup_not_configured' };
+    } else {
+      try {
+        const cohortSlotUtc = parsePreferredSlotInstantUtc(doc);
+        const submitGroup = await WhatsAppRetryGroup.create({
+          messageKind: 'one_on_one_submit',
+          cronRunId: null,
+          trigger: 'one_on_one_submit',
+          status: 'open',
+        });
+        const waResult = await safeSendWhatsApp({
+          phone10: doc.mobileNumber,
+          formSubmissionId: null,
+          vars: buildOneOnOneSubmitVars(doc),
+          retryKind: 'one_on_one_submit',
+          source: 'one_on_one_submit',
+          cronRunId: null,
+          cronJobKey: null,
+          sendFn: sendOneOnOneSubmitWhatsApp,
+          retryGroupId: submitGroup._id,
+          attemptNumber: 1,
+          opsProduct: 'one_on_one_counseling',
+          cohortSlotInstantUtc: cohortSlotUtc,
+          oneOnOneCounselingLeadId: doc._id,
+          explicitTemplateEnvKey: GUPSHUP_TEMPLATE_ONE_ON_ONE_CONFIRM,
+        });
+
+        if (waResult && waResult.success) {
+          whatsappSubmit = {
+            attempted: true,
+            success: true,
+            ...(waResult.idempotent ? { idempotent: true } : {}),
+          };
+        } else {
+          const errText =
+            waResult && waResult.error ? String(waResult.error).slice(0, 240) : 'send_failed';
+          const skippedReason = waResult?.duplicateInFlight
+            ? 'duplicate_in_flight'
+            : waResult?.skippedOutsideWindow
+              ? 'outside_reminder_window'
+              : undefined;
+          whatsappSubmit = {
+            attempted: true,
+            success: false,
+            error: errText,
+            ...(skippedReason ? { skippedReason } : {}),
+          };
+          console.warn('[submitOneOnOneCounselingLead] WhatsApp one_on_one_submit unsuccessful:', errText);
+        }
+      } catch (waErr) {
+        const msg = String(waErr?.message || waErr || 'exception').slice(0, 240);
+        whatsappSubmit = { attempted: true, success: false, error: msg };
+        console.error('[submitOneOnOneCounselingLead] WhatsApp dispatch error:', msg);
+      }
+    }
+
     return res.status(201).json({
       success: true,
       message: 'Submitted successfully',
       data: mapLeadToDTO(doc.toObject()),
+      whatsappSubmit,
     });
   } catch (err) {
     if (err.name === 'ValidationError') {

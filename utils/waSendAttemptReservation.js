@@ -4,6 +4,7 @@
  */
 const mongoose = require('mongoose');
 const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');
+const { normalizeOutboundOpsProduct } = require('./whatsappOpsProduct');
 const {
   TERMINAL_FAILURE_STATUSES,
   RETRY_TERMINAL_SUCCESS_STATUSES,
@@ -43,7 +44,8 @@ async function reserveOutboundWhatsAppAttempt(p) {
     correlationId,
     opsProduct,
     cohortSlotInstantUtc,
-    iitCounsellingSubmissionId
+    iitCounsellingSubmissionId,
+    oneOnOneCounselingLeadId
   } = p;
 
   const gid = toOid(retryGroupId);
@@ -76,6 +78,10 @@ async function reserveOutboundWhatsAppAttempt(p) {
     iitCounsellingSubmissionId && mongoose.Types.ObjectId.isValid(String(iitCounsellingSubmissionId))
       ? new mongoose.Types.ObjectId(String(iitCounsellingSubmissionId))
       : null;
+  const oneOnOneLeadOid =
+    oneOnOneCounselingLeadId && mongoose.Types.ObjectId.isValid(String(oneOnOneCounselingLeadId))
+      ? new mongoose.Types.ObjectId(String(oneOnOneCounselingLeadId))
+      : null;
   const slotUtc =
     cohortSlotInstantUtc instanceof Date && !Number.isNaN(cohortSlotInstantUtc.getTime())
       ? cohortSlotInstantUtc
@@ -93,8 +99,9 @@ async function reserveOutboundWhatsAppAttempt(p) {
     templateId: templateId || null,
     formSubmissionId: subOid,
     iitCounsellingSubmissionId: iitSubOid,
+    oneOnOneCounselingLeadId: oneOnOneLeadOid,
     cohortSlotInstantUtc: slotUtc,
-    opsProduct: opsProduct === 'iit_counselling' ? 'iit_counselling' : 'guidexpert',
+    opsProduct: normalizeOutboundOpsProduct(opsProduct),
     parentMessageEventId: parentOid,
     attemptBatchId: batchOid,
     retrySource: retrySourceLabel || 'initial',

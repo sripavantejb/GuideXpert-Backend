@@ -21,6 +21,7 @@ const WhatsAppManualRecoveryJob = require('../models/WhatsAppManualRecoveryJob')
 const WhatsAppRetryGroup = require('../models/WhatsAppRetryGroup');
 const FormSubmission = require('../models/FormSubmission');
 const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
+const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
 const gupshupService = require('./gupshupService');
 const { sendIitReminderWhatsApp } = require('./gupshupService');
 const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
@@ -31,6 +32,11 @@ const {
   resolveIitSlotBookedTemplateEnvKey,
 } = require('../utils/iitCounsellingWhatsApp');
 const { parseOpsProductQuery } = require('../utils/whatsappOpsProduct');
+const {
+  buildOneOnOneSubmitVars,
+  parsePreferredSlotInstantUtc,
+  GUPSHUP_TEMPLATE_ONE_ON_ONE_CONFIRM,
+} = require('../utils/oneOnOneCounselingWhatsApp');
 const {
   buildOpsScopedEventMatch,
   validateMessageKindForOpsProduct,
@@ -79,6 +85,8 @@ function dispatchKindToSendFn(kind) {
     case 'iit_pre45min':
     case 'iit_pre15min':
       return (phone10, vars, sendOpts) => sendIitReminderWhatsApp(phone10, vars, sendOpts || {});
+    case 'one_on_one_submit':
+      return gupshupService.sendOneOnOneSubmitWhatsApp;
     default:
       return null;
   }
@@ -86,9 +94,28 @@ function dispatchKindToSendFn(kind) {
 
 async function resolveRecipientForRecovery({ phone, messageKind, opsProduct, lineage }) {
   const slug = parseOpsProductQuery(opsProduct);
+  const useOneOnOne =
+    slug === 'one_on_one_counseling' && messageKind === 'one_on_one_submit';
   const useIit =
     slug === 'iit_counselling' &&
     (isIitReminderMessageKind(messageKind) || messageKind === 'slot_booked');
+
+  if (useOneOnOne) {
+    let lead = null;
+    if (
+      lineage?.oneOnOneCounselingLeadId &&
+      mongoose.Types.ObjectId.isValid(String(lineage.oneOnOneCounselingLeadId))
+    ) {
+      lead = await OneOnOneCounselingLead.findById(lineage.oneOnOneCounselingLeadId).lean();
+    }
+    if (!lead) {
+      lead = await OneOnOneCounselingLead.findOne({ mobileNumber: phone })
+        .sort({ createdAt: -1 })
+        .lean();
+    }
+    if (!lead) return { error: 'missing_one_on_one_lead' };
+    return { iitSub: null, formSub: null, oneOnOneLead: lead, opsProduct: 'one_on_one_counseling' };
+  }
 
   if (useIit) {
     let iitSub = null;
@@ -99,7 +126,7 @@ async function resolveRecipientForRecovery({ phone, messageKind, opsProduct, lin
       iitSub = await IitCounsellingSubmission.findOne({ phone }).sort({ createdAt: -1 }).lean();
     }
     if (!iitSub) return { error: 'missing_iit_submission' };
-    return { iitSub, formSub: null, opsProduct: 'iit_counselling' };
+    return { iitSub, formSub: null, oneOnOneLead: null, opsProduct: 'iit_counselling' };
   }
 
   let formSub = null;
@@ -110,7 +137,7 @@ async function resolveRecipientForRecovery({ phone, messageKind, opsProduct, lin
     formSub = await FormSubmission.findOne({ phone }).lean();
   }
   if (!formSub) return { error: 'missing_form_submission' };
-  return { iitSub: null, formSub, opsProduct: 'guidexpert' };
+  return { iitSub: null, formSub, oneOnOneLead: null, opsProduct: 'guidexpert' };
 }
 
 /**
@@ -208,6 +235,7 @@ async function buildPreview({
         providerPayloadSnippet: { $first: '$providerPayloadSnippet' },
         formSubmissionId: { $first: '$formSubmissionId' },
         iitCounsellingSubmissionId: { $first: '$iitCounsellingSubmissionId' },
+        oneOnOneCounselingLeadId: { $first: '$oneOnOneCounselingLeadId' },
         createdAt: { $first: '$createdAt' },
         unresolvedRank: { $first: '$unresolvedRank' }
       }
@@ -391,6 +419,7 @@ async function buildPreview({
       errorSource: providerErr.errorSource,
       formSubmissionId: r.formSubmissionId,
       iitCounsellingSubmissionId: r.iitCounsellingSubmissionId,
+      oneOnOneCounselingLeadId: r.oneOnOneCounselingLeadId,
       createdAt: r.createdAt,
       reason,
       ...(risky
@@ -720,6 +749,17 @@ async function executeJob(jobId) {
           opsProduct: 'iit_counselling',
           cohortSlotInstantUtc: iitSub.counsellingSlotInstantUtc || null,
           ...(iitTplKey ? { explicitTemplateEnvKey: iitTplKey } : {}),
+        });
+      } else if (resolved.opsProduct === 'one_on_one_counseling' && job.messageKind === 'one_on_one_submit') {
+        const lead = resolved.oneOnOneLead;
+        r = await safeSendWhatsApp({
+          ...sendBase,
+          formSubmissionId: null,
+          vars: buildOneOnOneSubmitVars(lead),
+          opsProduct: 'one_on_one_counseling',
+          cohortSlotInstantUtc: parsePreferredSlotInstantUtc(lead),
+          oneOnOneCounselingLeadId: lead._id,
+          explicitTemplateEnvKey: GUPSHUP_TEMPLATE_ONE_ON_ONE_CONFIRM,
         });
       } else {
         const sub = resolved.formSub;

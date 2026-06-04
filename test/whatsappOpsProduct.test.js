@@ -19,8 +19,20 @@ describe('whatsappOpsProduct', () => {
     assert.equal(parseOpsProductQuery('junk'), 'guidexpert');
   });
 
+  test('parseOpsProductQuery normalizes 1-on-1 aliases', () => {
+    assert.equal(parseOpsProductQuery('one_on_one_counseling'), 'one_on_one_counseling');
+    assert.equal(parseOpsProductQuery('one-on-one'), 'one_on_one_counseling');
+    assert.equal(parseOpsProductQuery('one_on_one_session'), 'one_on_one_counseling');
+  });
+
   test('matchWhatsAppEventsByOpsProduct IT branch forces slug', () => {
     assert.deepEqual(matchWhatsAppEventsByOpsProduct('iit_counselling'), { opsProduct: 'iit_counselling' });
+  });
+
+  test('matchWhatsAppEventsByOpsProduct 1-on-1 branch forces slug', () => {
+    assert.deepEqual(matchWhatsAppEventsByOpsProduct('one_on_one_counseling'), {
+      opsProduct: 'one_on_one_counseling',
+    });
   });
 
   test('matchWhatsAppEventsByOpsProduct GuideXpert includes legacy omission', () => {

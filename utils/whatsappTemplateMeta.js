@@ -5,7 +5,8 @@ const MESSAGE_KIND_TO_ENV_KEY = {
   slot_booked: 'GUPSHUP_TEMPLATE_REMINDER',
   pre4hr: 'GUPSHUP_TEMPLATE_PRE4HR',
   meet: 'GUPSHUP_TEMPLATE_MEET',
-  '30min': 'GUPSHUP_TEMPLATE_30MIN'
+  '30min': 'GUPSHUP_TEMPLATE_30MIN',
+  one_on_one_submit: 'GUPSHUP_TEMPLATE_ONE_ON_ONE_CONFIRM',
 };
 
 function getTemplateMetaForKind(messageKind) {

@@ -75,6 +75,8 @@ function mapSourceToGroupTrigger(source) {
       return 'manual';
     case 'retry_api':
       return 'retry_api';
+    case 'one_on_one_submit':
+      return 'one_on_one_submit';
     default:
       return 'manual';
   }
@@ -130,12 +132,14 @@ function buildMessageEventPayload({
   opsProduct,
   cohortSlotInstantUtc,
   iitCounsellingSubmissionId,
+  oneOnOneCounselingLeadId,
   eligibilityTiming
 }) {
   return {
     phone: phone10,
     formSubmissionId: subId,
     iitCounsellingSubmissionId: iitCounsellingSubmissionId || null,
+    oneOnOneCounselingLeadId: oneOnOneCounselingLeadId || null,
     cohortSlotInstantUtc: cohortSlotInstantUtc || null,
     opsProduct: opsProduct || 'guidexpert',
     messageKind: retryKind,
@@ -235,6 +239,7 @@ async function safeSendWhatsApp({
   opsProduct: opsProductOpt,
   cohortSlotInstantUtc,
   iitCounsellingSubmissionId,
+  oneOnOneCounselingLeadId,
   explicitTemplateEnvKey,
   now: nowOpt
 }) {
@@ -256,6 +261,7 @@ async function safeSendWhatsApp({
   const correlationId = correlationIdOpt || crypto.randomUUID();
   const canonicalOid = toOidMaybe(canonicalRetryGroupIdOpt);
   const iitSubOid = toOidMaybe(iitCounsellingSubmissionId);
+  const oneOnOneLeadOid = toOidMaybe(oneOnOneCounselingLeadId);
   const cohortSlotUtc =
     cohortSlotInstantUtc instanceof Date && !Number.isNaN(cohortSlotInstantUtc.getTime())
       ? cohortSlotInstantUtc
@@ -324,7 +330,7 @@ async function safeSendWhatsApp({
     }
 
     let subId = formSubmissionId;
-    if (!subId) {
+    if (!subId && outboundProduct === 'guidexpert') {
       const sub = await FormSubmission.findOne({ phone: phone10 }).select('_id').lean();
       subId = sub ? sub._id : null;
     }
@@ -348,6 +354,7 @@ async function safeSendWhatsApp({
       opsProduct: outboundProduct,
       cohortSlotInstantUtc: cohortSlotUtc,
       iitCounsellingSubmissionId: iitSubOid,
+      oneOnOneCounselingLeadId: oneOnOneLeadOid,
       now: nowBase
     });
 
@@ -510,6 +517,7 @@ async function safeSendWhatsApp({
         opsProduct: outboundProduct,
         cohortSlotInstantUtc: cohortSlotUtc,
         iitCounsellingSubmissionId: iitSubOid,
+        oneOnOneCounselingLeadId: oneOnOneLeadOid,
         eligibilityTiming: eligibilityTimingPayload
       });
       if (sendOutcome.useAwaitingReconcile) {
@@ -629,6 +637,7 @@ async function safeSendWhatsApp({
           opsProduct: outboundProduct,
           cohortSlotInstantUtc: cohortSlotUtc,
           iitCounsellingSubmissionId: iitSubOid,
+          oneOnOneCounselingLeadId: oneOnOneLeadOid,
           eligibilityTiming: failEligibilityTiming
         }),
         reservedEventId
@@ -696,6 +705,7 @@ async function safeSendWhatsApp({
           opsProduct: outboundProduct,
           cohortSlotInstantUtc: cohortSlotUtc,
           iitCounsellingSubmissionId: iitSubOid,
+          oneOnOneCounselingLeadId: oneOnOneLeadOid,
           eligibilityTiming: null
         });
         Object.assign(ambiguousPayload, buildAwaitingReconcileFields(now));
@@ -722,7 +732,7 @@ async function safeSendWhatsApp({
       }
 
       let subId = formSubmissionId;
-      if (!subId) {
+      if (!subId && outboundProduct === 'guidexpert') {
         const sub = await FormSubmission.findOne({ phone: phone10 }).select('_id').lean();
         subId = sub ? sub._id : null;
       }
@@ -811,6 +821,7 @@ async function safeSendWhatsApp({
           opsProduct: outboundProduct,
           cohortSlotInstantUtc: cohortSlotUtc,
           iitCounsellingSubmissionId: iitSubOid,
+          oneOnOneCounselingLeadId: oneOnOneLeadOid,
           eligibilityTiming: catchEligibilityTiming
         }),
         reservedEventId
