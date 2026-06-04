@@ -1,4 +1,12 @@
 const { to10Digits } = require('../utils/mobileNormalize');
+const WhatsAppRetryGroup = require('../models/WhatsAppRetryGroup');
+const { isGupshupConfigured, sendGuidanceBookingSubmitWhatsApp } = require('../services/gupshupService');
+const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
+const {
+  buildGuidanceBookingSubmitVars,
+  parseGuidanceSlotInstantUtc,
+  GUPSHUP_TEMPLATE_GUIDANCE_BOOKING_CONFIRM,
+} = require('../utils/guidanceBookingWhatsApp');
 const {
   findLeadByMobile,
   getAvailableActiveSlots,
@@ -94,11 +102,75 @@ exports.bookSlot = async (req, res) => {
       return res.status(result.status || 400).json({ success: false, message: result.error });
     }
 
+    let whatsappBooking = null;
+
+    if (!isGupshupConfigured()) {
+      whatsappBooking = { attempted: false, skippedReason: 'gupshup_not_configured' };
+    } else {
+      try {
+        const cohortSlotUtc = parseGuidanceSlotInstantUtc(result.slot);
+        const bookingGroup = await WhatsAppRetryGroup.create({
+          messageKind: 'guidance_booking_submit',
+          cronRunId: null,
+          trigger: 'guidance_booking_submit',
+          status: 'open',
+        });
+        const waResult = await safeSendWhatsApp({
+          phone10: mobileNumber,
+          formSubmissionId: null,
+          vars: buildGuidanceBookingSubmitVars(result.slot),
+          retryKind: 'guidance_booking_submit',
+          source: 'guidance_booking_submit',
+          cronRunId: null,
+          cronJobKey: null,
+          sendFn: sendGuidanceBookingSubmitWhatsApp,
+          retryGroupId: bookingGroup._id,
+          attemptNumber: 1,
+          opsProduct: 'guidance_booking',
+          cohortSlotInstantUtc: cohortSlotUtc,
+          oneOnOneCounselingLeadId: result.lead._id,
+          explicitTemplateEnvKey: GUPSHUP_TEMPLATE_GUIDANCE_BOOKING_CONFIRM,
+        });
+
+        if (waResult && waResult.success) {
+          whatsappBooking = {
+            attempted: true,
+            success: true,
+            ...(waResult.idempotent ? { idempotent: true } : {}),
+          };
+        } else {
+          const errText =
+            waResult && waResult.error ? String(waResult.error).slice(0, 240) : 'send_failed';
+          const skippedReason = waResult?.duplicateInFlight
+            ? 'duplicate_in_flight'
+            : waResult?.skippedOutsideWindow
+              ? 'outside_reminder_window'
+              : undefined;
+          whatsappBooking = {
+            attempted: true,
+            success: false,
+            error: errText,
+            ...(skippedReason ? { skippedReason } : {}),
+          };
+          console.warn('[bookSlot] WhatsApp guidance_booking_submit unsuccessful:', errText);
+        }
+      } catch (waErr) {
+        const msg = String(waErr?.message || waErr || 'exception').slice(0, 240);
+        whatsappBooking = { attempted: true, success: false, error: msg };
+        if (waErr?.name === 'ValidationError') {
+          console.error('[bookSlot] retry_group_validation_failed', msg);
+        } else {
+          console.error('[bookSlot] WhatsApp dispatch error:', msg);
+        }
+      }
+    }
+
     return res.status(200).json({
       success: true,
       message:
         'Your guidance session slot has been booked successfully. Our team will send details on WhatsApp.',
       data: mapLeadBookingDTO(result.lead, result.slot, result.counselor),
+      whatsappBooking,
     });
   } catch (err) {
     console.error('[bookSlot]', err);

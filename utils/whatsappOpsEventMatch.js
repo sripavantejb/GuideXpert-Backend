@@ -7,18 +7,36 @@ const { parseOpsProductQuery, matchWhatsAppEventsByOpsProduct } = require('./wha
 const GX_ONLY_KINDS = ['pre4hr', 'meet', '30min'];
 const IIT_ONLY_KINDS = ['iit_pre2hr', 'iit_pre45min', 'iit_pre15min'];
 const ONE_ON_ONE_ONLY_KINDS = ['one_on_one_submit'];
+const GUIDANCE_BOOKING_ONLY_KINDS = ['guidance_booking_submit'];
 
 function validateMessageKindForOpsProduct(messageKind, opsProduct) {
   if (!messageKind) return null;
   const slug = parseOpsProductQuery(opsProduct);
-  if (slug === 'iit_counselling' && (GX_ONLY_KINDS.includes(messageKind) || ONE_ON_ONE_ONLY_KINDS.includes(messageKind))) {
+  const otherProductKinds = [
+    ...GX_ONLY_KINDS,
+    ...IIT_ONLY_KINDS,
+    ...ONE_ON_ONE_ONLY_KINDS,
+    ...GUIDANCE_BOOKING_ONLY_KINDS,
+  ];
+  if (slug === 'iit_counselling' && otherProductKinds.filter((k) => !IIT_ONLY_KINDS.includes(k)).includes(messageKind)) {
     return 'This template is not for IIT Counselling. Switch product or pick an IIT template.';
   }
-  if (slug === 'guidexpert' && (IIT_ONLY_KINDS.includes(messageKind) || ONE_ON_ONE_ONLY_KINDS.includes(messageKind))) {
+  if (
+    slug === 'guidexpert' &&
+    (IIT_ONLY_KINDS.includes(messageKind) ||
+      ONE_ON_ONE_ONLY_KINDS.includes(messageKind) ||
+      GUIDANCE_BOOKING_ONLY_KINDS.includes(messageKind))
+  ) {
     return 'This template is not for GuideXpert. Switch product or pick a GuideXpert template.';
   }
   if (slug === 'one_on_one_counseling' && !ONE_ON_ONE_ONLY_KINDS.includes(messageKind)) {
     return 'This template is not for 1-on-1 Counseling. Switch product or pick the form submit template.';
+  }
+  if (slug === 'guidance_booking' && !GUIDANCE_BOOKING_ONLY_KINDS.includes(messageKind)) {
+    return 'This template is not for Guidance Booking. Switch product or pick the booking confirmation template.';
+  }
+  if (slug === 'iit_counselling' && (GX_ONLY_KINDS.includes(messageKind) || ONE_ON_ONE_ONLY_KINDS.includes(messageKind) || GUIDANCE_BOOKING_ONLY_KINDS.includes(messageKind))) {
+    return 'This template is not for IIT Counselling. Switch product or pick an IIT template.';
   }
   return null;
 }
@@ -53,6 +71,7 @@ module.exports = {
   GX_ONLY_KINDS,
   IIT_ONLY_KINDS,
   ONE_ON_ONE_ONLY_KINDS,
+  GUIDANCE_BOOKING_ONLY_KINDS,
   validateMessageKindForOpsProduct,
   buildOpsScopedEventMatch,
 };

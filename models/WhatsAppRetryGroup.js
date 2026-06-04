@@ -14,13 +14,22 @@ const whatsAppRetryGroupSchema = new mongoose.Schema({
       'iit_pre45min',
       'iit_pre15min',
       'one_on_one_submit',
+      'guidance_booking_submit',
     ],
     index: true
   },
   cronRunId: { type: mongoose.Schema.Types.ObjectId, ref: 'MessagingCronRun', default: null, index: true },
   trigger: {
     type: String,
-    enum: ['cron', 'save_step3', 'manual', 'retry_api', 'scheduled_job', 'one_on_one_submit'],
+    enum: [
+      'cron',
+      'save_step3',
+      'manual',
+      'retry_api',
+      'scheduled_job',
+      'one_on_one_submit',
+      'guidance_booking_submit',
+    ],
     default: 'cron',
     index: true
   },

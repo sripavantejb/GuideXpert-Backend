@@ -298,6 +298,17 @@ describe('one_on_one_submit immediate-only policy', () => {
   });
 });
 
+describe('guidance_booking_submit immediate-only policy', () => {
+  test('matches one_on_one_submit immediate_only shape', () => {
+    const p = getRetryPolicy('guidance_booking_submit');
+    assert.equal(p.strategy, 'immediate_only');
+    assert.equal(p.maxAttempts, 2);
+    assert.equal(p.retryTransientOnly, true);
+    assert.equal(isImmediateOnlyStrategy('guidance_booking_submit'), true);
+    assert.equal(isCampaignStrategy('guidance_booking_submit'), false);
+  });
+});
+
 describe('campaign retry wall and reconcile stale defaults', () => {
   test('default retry wall is 15 minutes', () => {
     const prev = process.env.WHATSAPP_CAMPAIGN_RETRY_MAX_WALL_MS;

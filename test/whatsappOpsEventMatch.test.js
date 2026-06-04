@@ -21,7 +21,7 @@ describe('whatsappOpsEventMatch', () => {
     for (const kind of GX_ONLY_KINDS) {
       assert.match(
         validateMessageKindForOpsProduct(kind, 'iit_counselling'),
-        /GuideXpert-only/
+        /IIT Counselling/
       );
     }
   });
@@ -29,7 +29,7 @@ describe('whatsappOpsEventMatch', () => {
   test('validateMessageKindForOpsProduct rejects IIT kinds on GuideXpert product', () => {
     assert.match(
       validateMessageKindForOpsProduct('iit_pre45min', 'guidexpert'),
-      /IIT-only/
+      /GuideXpert/
     );
   });
 
@@ -37,11 +37,23 @@ describe('whatsappOpsEventMatch', () => {
     assert.equal(validateMessageKindForOpsProduct('iit_pre45min', 'iit_counselling'), null);
     assert.match(
       validateMessageKindForOpsProduct('iit_pre45min', 'guidexpert'),
-      /IIT-only/
+      /GuideXpert/
     );
     assert.match(
       validateMessageKindForOpsProduct('pre4hr', 'iit_counselling'),
-      /GuideXpert-only/
+      /IIT Counselling/
+    );
+  });
+
+  test('validateMessageKindForOpsProduct guidance booking product', () => {
+    assert.equal(validateMessageKindForOpsProduct('guidance_booking_submit', 'guidance_booking'), null);
+    assert.match(
+      validateMessageKindForOpsProduct('guidance_booking_submit', 'guidexpert'),
+      /GuideXpert/
+    );
+    assert.match(
+      validateMessageKindForOpsProduct('one_on_one_submit', 'guidance_booking'),
+      /Guidance Booking/
     );
   });
 });

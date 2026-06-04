@@ -77,6 +77,8 @@ function mapSourceToGroupTrigger(source) {
       return 'retry_api';
     case 'one_on_one_submit':
       return 'one_on_one_submit';
+    case 'guidance_booking_submit':
+      return 'guidance_booking_submit';
     default:
       return 'manual';
   }

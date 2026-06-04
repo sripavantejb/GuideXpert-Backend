@@ -4,7 +4,12 @@
  */
 
 const DEFAULT_OPS_PRODUCT = 'guidexpert';
-const ALLOWED_OPS_PRODUCTS = Object.freeze(['guidexpert', 'iit_counselling', 'one_on_one_counseling']);
+const ALLOWED_OPS_PRODUCTS = Object.freeze([
+  'guidexpert',
+  'iit_counselling',
+  'one_on_one_counseling',
+  'guidance_booking',
+]);
 
 /** @returns {readonly string[]} */
 function listAllowedOpsProducts() {
@@ -27,6 +32,13 @@ function parseOpsProductQuery(raw) {
   ) {
     return 'one_on_one_counseling';
   }
+  if (
+    s === 'guidance_booking' ||
+    s === 'guidance_booking_confirmation' ||
+    s === 'guidancebooking'
+  ) {
+    return 'guidance_booking';
+  }
   return DEFAULT_OPS_PRODUCT;
 }
 
@@ -47,6 +59,9 @@ function matchWhatsAppEventsByOpsProduct(slug) {
   if (slug === 'one_on_one_counseling') {
     return { opsProduct: 'one_on_one_counseling' };
   }
+  if (slug === 'guidance_booking') {
+    return { opsProduct: 'guidance_booking' };
+  }
   return { ...GUIDEXPERT_EVENT_MATCH_FRAGMENT };
 }
 
@@ -57,6 +72,7 @@ function matchWhatsAppEventsByOpsProduct(slug) {
 function normalizeOutboundOpsProduct(raw) {
   if (raw === 'iit_counselling') return 'iit_counselling';
   if (raw === 'one_on_one_counseling') return 'one_on_one_counseling';
+  if (raw === 'guidance_booking') return 'guidance_booking';
   return DEFAULT_OPS_PRODUCT;
 }
 

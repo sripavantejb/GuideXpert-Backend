@@ -52,6 +52,14 @@ function buildRetryPolicies() {
       retryTransientOnly: true,
       cooldownMinutes: 0
     },
+    guidance_booking_submit: {
+      strategy: 'immediate_only',
+      maxAttempts: 2,
+      immediateRetryDelaySeconds:
+        parseInt(process.env.WA_GUIDANCE_BOOKING_SUBMIT_RETRY_DELAY_SECONDS || '15', 10) || 15,
+      retryTransientOnly: true,
+      cooldownMinutes: 0
+    },
     pre4hr: {
       strategy: 'multi_stage',
       maxAttempts: 3,

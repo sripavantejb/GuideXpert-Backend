@@ -193,6 +193,8 @@ exports.getOpsMeta = (_req, res) => {
         'GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED',
         'GUPSHUP_TEMPLATE_ONE_ON_ONE_CONFIRM',
         'GUPSHUP_ONE_ON_ONE_HEADER_IMAGE_URL',
+        'GUPSHUP_TEMPLATE_GUIDANCE_BOOKING_CONFIRM',
+        'WA_GUIDANCE_BOOKING_SUBMIT_RETRY_DELAY_SECONDS',
         'GUPSHUP_TEMPLATE_IIT_PRE2HR_TELUGU',
         'GUPSHUP_TEMPLATE_IIT_PRE2HR_HINDI',
         'GUPSHUP_TEMPLATE_IIT_PRE45MIN_TELUGU',
@@ -214,6 +216,7 @@ exports.getOpsMeta = (_req, res) => {
       templateKinds: [
         { id: 'slot_booked', label: 'Slot booked', description: 'Immediate confirmation after slot booking', retryPolicy: getRetryPolicy('slot_booked'), opsProducts: ['guidexpert', 'iit_counselling'] },
         { id: 'one_on_one_submit', label: 'Form submit confirmation', description: 'Immediate confirmation after /one-on-one-session form submit', retryPolicy: getRetryPolicy('one_on_one_submit'), opsProducts: ['one_on_one_counseling'] },
+        { id: 'guidance_booking_submit', label: 'Booking confirmation', description: 'Immediate confirmation after /guidance-booking-confirmation book-slot', retryPolicy: getRetryPolicy('guidance_booking_submit'), opsProducts: ['guidance_booking'] },
         { id: 'pre4hr', label: '4hr reminder', description: 'Cron + save_step3 use the same deadline-backward window near 4h before slot (see WA_PRE4HR_*).', retryPolicy: getRetryPolicy('pre4hr'), opsProducts: ['guidexpert'] },
         { id: 'meet', label: 'Meet link (~1hr)', description: 'Same deadline-backward window near 1h before slot (see WA_MEET_*).', retryPolicy: getRetryPolicy('meet'), opsProducts: ['guidexpert'] },
         { id: '30min', label: '30 min reminder', description: 'Same deadline-backward window near 30m before slot (see WA_30MIN_*).', retryPolicy: getRetryPolicy('30min'), opsProducts: ['guidexpert'] },

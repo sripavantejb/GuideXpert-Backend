@@ -25,6 +25,12 @@ describe('whatsappOpsProduct', () => {
     assert.equal(parseOpsProductQuery('one_on_one_session'), 'one_on_one_counseling');
   });
 
+  test('parseOpsProductQuery normalizes guidance booking aliases', () => {
+    assert.equal(parseOpsProductQuery('guidance_booking'), 'guidance_booking');
+    assert.equal(parseOpsProductQuery('guidance-booking-confirmation'), 'guidance_booking');
+    assert.equal(parseOpsProductQuery('guidancebooking'), 'guidance_booking');
+  });
+
   test('matchWhatsAppEventsByOpsProduct IT branch forces slug', () => {
     assert.deepEqual(matchWhatsAppEventsByOpsProduct('iit_counselling'), { opsProduct: 'iit_counselling' });
   });
@@ -32,6 +38,12 @@ describe('whatsappOpsProduct', () => {
   test('matchWhatsAppEventsByOpsProduct 1-on-1 branch forces slug', () => {
     assert.deepEqual(matchWhatsAppEventsByOpsProduct('one_on_one_counseling'), {
       opsProduct: 'one_on_one_counseling',
+    });
+  });
+
+  test('matchWhatsAppEventsByOpsProduct guidance booking branch forces slug', () => {
+    assert.deepEqual(matchWhatsAppEventsByOpsProduct('guidance_booking'), {
+      opsProduct: 'guidance_booking',
     });
   });
 

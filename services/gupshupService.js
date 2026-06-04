@@ -31,6 +31,10 @@ const {
   ONE_ON_ONE_HEADER_MISSING_ERROR,
   resolveOneOnOneHeaderImageUrl,
 } = require('../utils/oneOnOneCounselingWhatsApp');
+const {
+  GUPSHUP_TEMPLATE_GUIDANCE_BOOKING_CONFIRM,
+  GUIDANCE_BOOKING_CONFIRM_PARAM_KEYS,
+} = require('../utils/guidanceBookingWhatsApp');
 
 const GUPSHUP_TEMPLATE_URL = 'https://api.gupshup.io/wa/api/v1/template/msg';
 
@@ -444,6 +448,20 @@ async function sendOneOnOneSubmitWhatsApp(phone10, vars, sendOpts = {}) {
   });
 }
 
+/** Guidance booking confirmation: date + time body (no header image). */
+async function sendGuidanceBookingSubmitWhatsApp(phone10, vars, sendOpts = {}) {
+  const envKey =
+    typeof sendOpts.templateEnvKey === 'string' && sendOpts.templateEnvKey.trim()
+      ? sendOpts.templateEnvKey.trim()
+      : GUPSHUP_TEMPLATE_GUIDANCE_BOOKING_CONFIRM;
+  const tid = process.env[envKey];
+  const params = buildParamsFromKeys(vars, GUIDANCE_BOOKING_CONFIRM_PARAM_KEYS);
+  return sendTemplateMessage(formatPhoneE16491(phone10), tid, params, {
+    ...sendOpts,
+    templateEnvKey: envKey,
+  });
+}
+
 module.exports = {
   isWhatsAppEnabled,
   isGupshupConfigured,
@@ -456,6 +474,7 @@ module.exports = {
   sendReminder30MinWhatsApp,
   sendIitReminderWhatsApp,
   sendOneOnOneSubmitWhatsApp,
+  sendGuidanceBookingSubmitWhatsApp,
   isIitReminderTemplateEnvKey,
   resetIntegrationStubCallCount,
   getIntegrationStubCallCount,

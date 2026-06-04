@@ -10,6 +10,7 @@ const WHATSAPP_MESSAGE_KINDS = Object.freeze([
   'iit_pre45min',
   'iit_pre15min',
   'one_on_one_submit',
+  'guidance_booking_submit',
 ]);
 
 const whatsAppMessageEventSchema = new mongoose.Schema({
@@ -81,7 +82,7 @@ const whatsAppMessageEventSchema = new mongoose.Schema({
   /** Product line for WhatsApp ops Overview filtering; legacy omit → GuideXpert */
   opsProduct: {
     type: String,
-    enum: ['guidexpert', 'iit_counselling', 'one_on_one_counseling'],
+    enum: ['guidexpert', 'iit_counselling', 'one_on_one_counseling', 'guidance_booking'],
     default: 'guidexpert',
     index: true
   },
@@ -99,7 +100,15 @@ const whatsAppMessageEventSchema = new mongoose.Schema({
   source: {
     type: String,
     required: true,
-    enum: ['save_step3', 'cron', 'retry_cron', 'admin_manual', 'retry_api', 'one_on_one_submit']
+    enum: [
+      'save_step3',
+      'cron',
+      'retry_cron',
+      'admin_manual',
+      'retry_api',
+      'one_on_one_submit',
+      'guidance_booking_submit',
+    ]
   },
   templateIdEnvKey: { type: String, trim: true, maxlength: 64, default: null },
   templateId: { type: String, trim: true, maxlength: 128, default: null },
