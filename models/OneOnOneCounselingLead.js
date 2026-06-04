@@ -55,6 +55,15 @@ const schema = new mongoose.Schema(
     bookingConfirmedAt: { type: Date, default: null },
     attendanceStatus: { type: String, trim: true, maxlength: 40, default: '' },
     counselorRemarks: { type: String, trim: true, maxlength: 2000, default: '' },
+    parentOccupation: { type: String, trim: true, maxlength: 120, default: '' },
+    preferredColleges: {
+      type: [{ type: String, trim: true, maxlength: 150 }],
+      default: [],
+      validate: {
+        validator: (v) => Array.isArray(v) && v.length <= 3,
+        message: 'At most 3 preferred colleges',
+      },
+    },
   },
   { timestamps: true }
 );

@@ -84,6 +84,8 @@ function mapLeadToDTO(doc) {
     bookingConfirmedAt: doc.bookingConfirmedAt || null,
     attendanceStatus: doc.attendanceStatus || '',
     counselorRemarks: doc.counselorRemarks || '',
+    parentOccupation: doc.parentOccupation || '',
+    preferredColleges: Array.isArray(doc.preferredColleges) ? doc.preferredColleges : [],
     slotSessionTitle: doc._slotSessionTitle || '',
     slotDate: doc._slotDate || '',
     slotTime: doc._slotTime || '',

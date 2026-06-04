@@ -2,7 +2,39 @@ const mongoose = require('mongoose');
 const GuidanceSlot = require('../models/GuidanceSlot');
 const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
 const OneOnOneCounselor = require('../models/OneOnOneCounselor');
-const { INDIAN_MOBILE_REGEX } = require('../constants/oneOnOneCounseling');
+const { COLLEGE_BUDGET_OPTIONS, INDIAN_MOBILE_REGEX } = require('../constants/oneOnOneCounseling');
+
+function normalizePreferredColleges(raw) {
+  const arr = Array.isArray(raw) ? raw : [];
+  return arr
+    .map((s) => String(s || '').trim())
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function validateBookingPreferences({ collegeBudget, parentOccupation, preferredColleges }) {
+  const budget = typeof collegeBudget === 'string' ? collegeBudget.trim() : '';
+  if (!COLLEGE_BUDGET_OPTIONS.includes(budget)) {
+    return { error: 'Please select college budget per year.', status: 400 };
+  }
+  const occ = String(parentOccupation || '').trim();
+  if (occ.length < 2) {
+    return { error: 'Please enter parent occupation (at least 2 characters).', status: 400 };
+  }
+  if (occ.length > 120) {
+    return { error: 'Parent occupation is too long.', status: 400 };
+  }
+  const colleges = normalizePreferredColleges(preferredColleges);
+  if (colleges.length < 1) {
+    return { error: 'Please enter at least one preferred college.', status: 400 };
+  }
+  for (const c of colleges) {
+    if (c.length > 150) {
+      return { error: 'Each preferred college name must be 150 characters or less.', status: 400 };
+    }
+  }
+  return { collegeBudget: budget, parentOccupation: occ, preferredColleges: colleges };
+}
 
 function mapSlotToPublicDTO(slot, counselor) {
   const counselorName = counselor?.name || '';
@@ -30,6 +62,9 @@ function mapLeadBasicDTO(doc) {
     currentClass: doc.currentClass,
     city: doc.city || '',
     preferredLanguage: doc.preferredLanguage,
+    collegeBudget: doc.collegeBudget || '',
+    parentOccupation: doc.parentOccupation || '',
+    preferredColleges: Array.isArray(doc.preferredColleges) ? doc.preferredColleges : [],
     bookingConfirmed: !!doc.bookingConfirmed,
     bookingStatus: doc.bookingStatus || 'Not Booked',
   };
@@ -91,6 +126,9 @@ async function bookSlotForLead({
   slotId,
   parentAttendanceConfirmed,
   whatsappConsent,
+  collegeBudget,
+  parentOccupation,
+  preferredColleges,
 }) {
   const lead = await OneOnOneCounselingLead.findOne({ mobileNumber });
   if (!lead) {
@@ -102,6 +140,14 @@ async function bookSlotForLead({
   if (!parentAttendanceConfirmed || !whatsappConsent) {
     return { error: 'Parent attendance and WhatsApp consent are required.', status: 400 };
   }
+
+  const prefs = validateBookingPreferences({
+    collegeBudget,
+    parentOccupation,
+    preferredColleges,
+  });
+  if (prefs.error) return { error: prefs.error, status: prefs.status };
+
   if (!mongoose.Types.ObjectId.isValid(slotId)) {
     return { error: 'Invalid slot selected.', status: 400 };
   }
@@ -141,6 +187,9 @@ async function bookSlotForLead({
   lead.whatsappConsent = true;
   lead.bookingConfirmedAt = now;
   lead.attendanceStatus = 'Confirmed';
+  lead.collegeBudget = prefs.collegeBudget;
+  lead.parentOccupation = prefs.parentOccupation;
+  lead.preferredColleges = prefs.preferredColleges;
 
   try {
     await lead.save();
@@ -168,4 +217,6 @@ module.exports = {
   findLeadByMobile,
   bookSlotForLead,
   validateMobile,
+  validateBookingPreferences,
+  normalizePreferredColleges,
 };

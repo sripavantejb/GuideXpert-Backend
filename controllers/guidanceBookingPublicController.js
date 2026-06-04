@@ -67,6 +67,7 @@ exports.bookSlot = async (req, res) => {
     const slotId = req.body?.slotId;
     const parentAttendanceConfirmed = req.body?.parentAttendanceConfirmed === true;
     const whatsappConsent = req.body?.whatsappConsent === true;
+    const { collegeBudget, parentOccupation, preferredColleges } = req.body || {};
 
     if (!validateMobile(mobileNumber)) {
       return res.status(400).json({ success: false, message: 'Enter a valid 10-digit Indian mobile number.' });
@@ -80,6 +81,9 @@ exports.bookSlot = async (req, res) => {
       slotId,
       parentAttendanceConfirmed,
       whatsappConsent,
+      collegeBudget,
+      parentOccupation,
+      preferredColleges,
     });
 
     if (result.error) {
