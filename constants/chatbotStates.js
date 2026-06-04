@@ -67,8 +67,9 @@ const HANDOFF_REASONS = Object.freeze([
 
 const WEBHOOK_EVENT_KINDS = Object.freeze(['inbound', 'dlr', 'unknown']);
 
+// menu: command words only; hi/hello/hey use whole-message matching in intentClassifierService
 const GLOBAL_KEYWORDS = Object.freeze({
-  menu: ['menu', 'help', 'start', 'hi', 'hello', 'hey'],
+  menu: ['menu', 'help', 'start'],
   agent: ['agent', 'human', 'person', 'talk to someone', 'counsellor', 'counselor', 'support'],
   stop: ['stop', 'unsubscribe', 'opt out', 'optout'],
   cancel: ['cancel'],

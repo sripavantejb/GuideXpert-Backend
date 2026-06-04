@@ -1,5 +1,7 @@
 const { GLOBAL_KEYWORDS } = require('../../constants/chatbotStates');
 
+const MENU_COMMAND_WORDS = ['menu', 'help', 'start'];
+
 function normalizeText(text) {
   return String(text || '')
     .trim()
@@ -7,8 +9,30 @@ function normalizeText(text) {
     .replace(/\s+/g, ' ');
 }
 
+function escapeRegExp(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function matchesWordBoundary(text, word) {
+  const pattern = new RegExp(`\\b${escapeRegExp(word)}\\b`, 'i');
+  return pattern.test(text);
+}
+
 function matchesAny(text, phrases) {
   return phrases.some((p) => text.includes(p));
+}
+
+function matchesMenuCommands(text) {
+  return MENU_COMMAND_WORDS.some((word) => matchesWordBoundary(text, word));
+}
+
+/** Whole message only — avoids substring false positives (e.g. "they" vs "hey"). */
+function matchesStandaloneGreeting(text) {
+  return /^(hi|hello|hey|hola|namaste|start)$/.test(text);
+}
+
+function matchesMainMenuTrigger(text) {
+  return matchesMenuCommands(text) || matchesStandaloneGreeting(text);
 }
 
 /**
@@ -21,7 +45,7 @@ function classifyIntent(text, botState, productLine) {
   if (matchesAny(t, GLOBAL_KEYWORDS.agent)) {
     return { intent: 'human_handoff', confidence: 'high' };
   }
-  if (matchesAny(t, GLOBAL_KEYWORDS.menu)) {
+  if (matchesMainMenuTrigger(t)) {
     return { intent: 'main_menu', confidence: 'high' };
   }
   if (matchesAny(t, GLOBAL_KEYWORDS.cancel)) {
@@ -29,10 +53,6 @@ function classifyIntent(text, botState, productLine) {
   }
   if (matchesAny(t, GLOBAL_KEYWORDS.stop)) {
     return { intent: 'opt_out', confidence: 'high' };
-  }
-
-  if (/^(hi|hello|hey|hola|namaste|start)$/.test(t)) {
-    return { intent: 'main_menu', confidence: 'high' };
   }
 
   if (botState && botState.state === 'college_predictor') {
