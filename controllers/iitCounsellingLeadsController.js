@@ -18,6 +18,7 @@ const {
 const {
   assignLeadToBda,
   bulkAssignLeads,
+  bulkMapToRespectiveBda,
   logActivity,
   getAdminActorName,
 } = require('../services/iitCounsellingLeadAssignmentService');
@@ -341,7 +342,26 @@ exports.reassignBda = async (req, res) => {
 
 exports.bulkAssignBda = async (req, res) => {
   try {
-    const { leadIds, bdaId, reason, respectExistingBda } = req.body || {};
+    const { leadIds, bdaId, reason, respectExistingBda, mapToRespectiveBda } = req.body || {};
+    const mapRespective =
+      mapToRespectiveBda === true || mapToRespectiveBda === 'true' || mapToRespectiveBda === 1;
+
+    if (mapRespective) {
+      const out = await bulkMapToRespectiveBda({
+        leadIds,
+        admin: req.admin,
+        reason,
+      });
+      if (out.error) {
+        return res.status(out.status || 400).json({ success: false, message: out.error });
+      }
+      return res.status(200).json({ success: true, data: out.results });
+    }
+
+    if (!bdaId) {
+      return res.status(400).json({ success: false, message: 'bdaId is required' });
+    }
+
     const useExisting =
       respectExistingBda === true || respectExistingBda === 'true' || respectExistingBda === 1;
     const out = await bulkAssignLeads({

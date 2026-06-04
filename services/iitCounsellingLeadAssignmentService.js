@@ -167,9 +167,60 @@ async function bulkAssignLeads({ leadIds, bdaId, admin, reason, respectExistingB
   return { results };
 }
 
+/** Re-apply each lead's existing assignedBdaId (meet-filter batches). Skips leads with no prior BDA. */
+async function bulkMapToRespectiveBda({ leadIds, admin, reason }) {
+  if (!Array.isArray(leadIds) || leadIds.length === 0) {
+    return { error: 'leadIds array is required', status: 400 };
+  }
+  if (leadIds.length > 200) {
+    return { error: 'Maximum 200 leads per request', status: 400 };
+  }
+
+  const results = { updated: 0, skippedSameBda: 0, skippedUnassigned: 0, failed: [] };
+
+  for (const id of leadIds) {
+    const lead = await IitCounsellingSubmission.findOne({
+      _id: id,
+      submissionType: 'iitCounselling',
+    })
+      .select('assignedBdaId')
+      .lean();
+
+    if (!lead) {
+      results.failed.push({ leadId: id, message: 'Lead not found' });
+      continue;
+    }
+    if (!lead.assignedBdaId) {
+      results.skippedUnassigned += 1;
+      continue;
+    }
+
+    const out = await assignLeadToBda({
+      leadId: id,
+      bdaId: String(lead.assignedBdaId),
+      admin,
+      reason,
+      isReassign: true,
+    });
+    if (out.error) {
+      if (out.error === 'Lead is already assigned to this BDA') {
+        results.skippedSameBda += 1;
+        results.updated += 1;
+        continue;
+      }
+      results.failed.push({ leadId: id, message: out.error });
+    } else {
+      results.updated += 1;
+    }
+  }
+
+  return { results };
+}
+
 module.exports = {
   assignLeadToBda,
   bulkAssignLeads,
+  bulkMapToRespectiveBda,
   logActivity,
   getAdminActorName,
 };
