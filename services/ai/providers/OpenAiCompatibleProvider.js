@@ -25,7 +25,7 @@ class OpenAiCompatibleProvider {
     return this._client;
   }
 
-  async chatCompletion({ messages, temperature = 1, maxTokens = 1000 }) {
+  async chatCompletion({ messages, temperature = 1, maxTokens = 1000, timeoutMs, maxRetries }) {
     console.log('[LLM-DEBUG] entered OpenAiCompatibleProvider');
     const model = String(process.env.LLM_MODEL || '').trim();
     if (!model) {
@@ -34,13 +34,24 @@ class OpenAiCompatibleProvider {
 
     console.log('[LLM-DEBUG] calling NVIDIA model =', model);
     const client = this._getClient();
-    const completion = await client.chat.completions.create({
-      model,
-      messages,
-      temperature,
-      max_tokens: maxTokens,
-      stream: false,
-    });
+    const requestOptions = {};
+    if (timeoutMs != null) {
+      requestOptions.timeout = timeoutMs;
+    }
+    if (maxRetries != null) {
+      requestOptions.maxRetries = maxRetries;
+    }
+
+    const completion = await client.chat.completions.create(
+      {
+        model,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+        stream: false,
+      },
+      Object.keys(requestOptions).length ? requestOptions : undefined
+    );
 
     console.log('[LLM-DEBUG] received response');
     const text = completion.choices?.[0]?.message?.content || '';

@@ -816,7 +816,29 @@ exports.ingestGupshupWebhook = async (req, res) => {
       }
 
       if (classified.kind === 'inbound') {
-        const inboundResult = await handleInboundWebhook(req, body, receivedAt);
+        const inboundPromise = handleInboundWebhook(req, body, receivedAt);
+        let inboundResult;
+
+        try {
+          const { waitUntil } = require('@vercel/functions');
+          if (typeof waitUntil === 'function') {
+            waitUntil(
+              inboundPromise.catch((err) => {
+                console.error('[chatbot] inbound processing failed', err.message);
+              })
+            );
+            return res.status(200).json({
+              success: true,
+              received: true,
+              inbound: true,
+              queued: true,
+            });
+          }
+        } catch {
+          /* local/non-Vercel runtimes continue with awaited processing */
+        }
+
+        inboundResult = await inboundPromise;
         if (inboundResult.statusCode) {
           return res.status(inboundResult.statusCode).json({
             success: false,

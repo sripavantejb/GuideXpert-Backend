@@ -375,6 +375,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
   let nextState = botState?.state || 'main_menu';
   let contextPatch = botState?.context || {};
   let upstreamStatus = null;
+  let knowledgeAssistantResult = null;
 
   switch (intentResult.intent) {
     case 'lead_lookup':
@@ -447,13 +448,13 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       break;
     }
     case 'knowledge_assistant': {
-      const ka = await knowledgeAssistantAnswer({
+      knowledgeAssistantResult = await knowledgeAssistantAnswer({
         inboundText: inbound.text,
         conversationId: activeConversation._id,
         leadContext,
       });
-      if (ka?.text) {
-        replyText = ka.text;
+      if (knowledgeAssistantResult?.text) {
+        replyText = knowledgeAssistantResult.text;
       } else {
         console.warn('[chatbot] knowledge_assistant_fallback using orchestrator reply');
         replyText = KNOWLEDGE_ASSISTANT_FALLBACK_REPLY;
@@ -487,7 +488,12 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
   }
 
   if (intentResult.intent === 'knowledge_assistant') {
-    contextPatch = { ...contextPatch, knowledgeAssistantActive: true };
+    contextPatch = {
+      ...contextPatch,
+      knowledgeAssistantActive: Boolean(
+        knowledgeAssistantResult?.model && knowledgeAssistantResult?.text
+      ),
+    };
   } else {
     contextPatch = { ...contextPatch, knowledgeAssistantActive: false };
   }

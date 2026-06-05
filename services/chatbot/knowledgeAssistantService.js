@@ -8,7 +8,7 @@ const { buildContext, formatUnifiedContext } = require('./contextBuilderService'
 const { validateAiResponse } = require('./aiGuardrailService');
 
 const provider = new OpenAiCompatibleProvider();
-const DEFAULT_TIMEOUT_MS = Number(process.env.KNOWLEDGE_ASSISTANT_TIMEOUT_MS) || 18000;
+const DEFAULT_TIMEOUT_MS = Number(process.env.KNOWLEDGE_ASSISTANT_TIMEOUT_MS) || 8000;
 
 function isKnowledgeAssistantEnabled() {
   return (
@@ -63,7 +63,18 @@ async function loadConversationHistory(conversationId) {
   }
 }
 
-async function answer({ inboundText, conversationId = null, leadContext = null } = {}) {
+function resolveLlmTimeoutMs(requestedTimeoutMs) {
+  const configured = Number(process.env.LLM_TIMEOUT_MS) || 20000;
+  const budget = Number(requestedTimeoutMs) || DEFAULT_TIMEOUT_MS;
+  return Math.max(3000, Math.min(configured, budget - 1500));
+}
+
+async function answer({
+  inboundText,
+  conversationId = null,
+  leadContext = null,
+  llmTimeoutMs = null,
+} = {}) {
   console.log('[LLM-DEBUG] entered knowledgeAssistantService');
 
   if (!isKnowledgeAssistantEnabled()) {
@@ -110,7 +121,14 @@ async function answer({ inboundText, conversationId = null, leadContext = null }
     ];
     console.log('[LLM-DEBUG] messageCount =', messages.length);
 
-    const result = await provider.chatCompletion({ messages });
+    const providerTimeoutMs = resolveLlmTimeoutMs(llmTimeoutMs || DEFAULT_TIMEOUT_MS);
+    console.log('[LLM-DEBUG] provider timeout ms =', providerTimeoutMs);
+
+    const result = await provider.chatCompletion({
+      messages,
+      timeoutMs: providerTimeoutMs,
+      maxRetries: 0,
+    });
     const guarded = validateAiResponse({
       response: result?.text,
       knowledgeResults,
@@ -131,13 +149,26 @@ async function answer({ inboundText, conversationId = null, leadContext = null }
 }
 
 async function answerWithTimeout(params, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  let timedOut = false;
+  const llmTimeoutMs = resolveLlmTimeoutMs(timeoutMs);
+
+  const answerPromise = answer({ ...params, llmTimeoutMs }).catch((e) => {
+    if (timedOut) {
+      console.log('[LLM-DEBUG] ignored late knowledge assistant error after timeout', e.message);
+      return null;
+    }
+    throw e;
+  });
+
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => {
+      timedOut = true;
+      reject(new Error('knowledge_assistant_timeout'));
+    }, timeoutMs);
+  });
+
   try {
-    return await Promise.race([
-      answer(params),
-      new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('knowledge_assistant_timeout')), timeoutMs);
-      }),
-    ]);
+    return await Promise.race([answerPromise, timeoutPromise]);
   } catch (e) {
     console.warn('[chatbot] knowledge_assistant_fallback', e.message);
     return null;
@@ -149,4 +180,6 @@ module.exports = {
   answerWithTimeout,
   normalizeHistoryForProvider,
   removeCurrentInboundFromHistory,
+  DEFAULT_TIMEOUT_MS,
+  resolveLlmTimeoutMs,
 };
