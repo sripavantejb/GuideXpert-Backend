@@ -2,11 +2,12 @@
 
 const { OpenAiCompatibleProvider } = require('../ai/providers/OpenAiCompatibleProvider');
 const { buildSystemPrompt } = require('../ai/prompts/knowledgeAssistant.system');
-const { searchKnowledge } = require('./knowledgeSearchService');
+const { searchKnowledgeAsync } = require('./knowledgeSearchService');
 const { getConversationHistory } = require('./conversationHistoryService');
 const { buildContext, formatUnifiedContext } = require('./contextBuilderService');
 const { validateAiResponse } = require('./aiGuardrailService');
 const { aiDebugLog } = require('./aiDebugLog');
+const { buildRetrievalQuery } = require('../../utils/knowledgeQueryBuilder');
 
 const provider = new OpenAiCompatibleProvider();
 const DEFAULT_TIMEOUT_MS = Number(process.env.KNOWLEDGE_ASSISTANT_TIMEOUT_MS) || 8000;
@@ -70,6 +71,36 @@ function resolveLlmTimeoutMs(requestedTimeoutMs) {
   return Math.max(3000, Math.min(configured, budget - 1500));
 }
 
+function logRetrievalMetrics(metrics = {}) {
+  if (metrics.mode) {
+    aiDebugLog('KB', 'Search Mode:', metrics.mode);
+  }
+  if (metrics.embedMs != null) {
+    aiDebugLog('VECTOR', 'embedMs =', metrics.embedMs);
+  }
+  if (metrics.vectorSearchMs != null) {
+    aiDebugLog('VECTOR', 'vectorSearchMs =', metrics.vectorSearchMs);
+  }
+  if (metrics.vectorCount != null) {
+    aiDebugLog('VECTOR', 'count =', metrics.vectorCount);
+  }
+  if (metrics.keywordMs != null) {
+    aiDebugLog('HYBRID', 'keywordMs =', metrics.keywordMs);
+  }
+  if (metrics.rerankMs != null) {
+    aiDebugLog('HYBRID', 'rerankMs =', metrics.rerankMs);
+  }
+  if (metrics.totalMs != null) {
+    aiDebugLog('HYBRID', 'totalMs =', metrics.totalMs);
+  }
+  if (metrics.resultIds) {
+    aiDebugLog('HYBRID', 'ids =', metrics.resultIds);
+  }
+  if (metrics.fallback) {
+    aiDebugLog('HYBRID', 'fallback =', metrics.fallback);
+  }
+}
+
 async function answer({
   inboundText,
   conversationId = null,
@@ -96,20 +127,26 @@ async function answer({
   }
 
   try {
-    const knowledgeResults = searchKnowledge(text, 5);
     const rawHistory = await loadConversationHistory(conversationId);
     const history = normalizeHistoryForProvider(
       removeCurrentInboundFromHistory(rawHistory, text)
     );
+    const retrievalQuery = buildRetrievalQuery({ currentMessage: text, history });
+    const { results: knowledgeResults, metrics } = await searchKnowledgeAsync(text, {
+      retrievalQuery,
+      limit: 5,
+    });
     const context = buildContext({ leadContext, knowledgeResults, history });
     const unifiedContext = formatUnifiedContext(context, {
       includeConversationContext: history.length === 0,
     });
 
     aiDebugLog('KB', 'User Question:', text);
+    aiDebugLog('KB', 'Retrieval Query:', retrievalQuery);
     aiDebugLog('KB', 'Matches Found:', knowledgeResults.length);
     aiDebugLog('KB', 'Selected IDs:', knowledgeResults.map((entry) => entry.id));
     aiDebugLog('KB', 'Context Size:', context.knowledgeContext.length);
+    logRetrievalMetrics(metrics);
     aiDebugLog('CTX', 'History Count:', history.length);
     aiDebugLog('CTX', 'Knowledge Matches:', knowledgeResults.length);
     aiDebugLog('CTX', 'CRM Included:', Boolean(context.crmContext));

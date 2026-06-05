@@ -57,7 +57,13 @@
     "id": 10,
     "category": "niit_counselling",
     "question": "Is software engineering safe in the future?",
-    "answer": "Yes, software engineering will remain a strong and promising field in the future. Because technology usage is increasing in every industry, software-related opportunities will continue to exist.\nHowever, just having a degree is not enough in the current market. Updated skills, practical knowledge, problem-solving abilities, and continuous learning are becoming extremely important. Those who adapt to new technologies will have strong long-term growth and opportunities in the software field.\n\nHow is this counselling different from normal counselling?\tIn this counselling, they do not just give general suggestions. Personalized guidance is provided by considering the student's interests, goals, current level, and future opportunities.\nAlso, there is a higher focus on practical career awareness, industry trends, skill development, and creating a clear roadmap. So, instead of being a simple motivation session, the main focus is on giving the student clear clarity and direction."
+    "answer": "Yes, software engineering will remain a strong and promising field in the future. Because technology usage is increasing in every industry, software-related opportunities will continue to exist.\nHowever, just having a degree is not enough in the current market. Updated skills, practical knowledge, problem-solving abilities, and continuous learning are becoming extremely important. Those who adapt to new technologies will have strong long-term growth and opportunities in the software field."
+  },
+  {
+    "id": 11,
+    "category": "niit_counselling",
+    "question": "How is this counselling different from normal counselling?",
+    "answer": "In this counselling, they do not just give general suggestions. Personalized guidance is provided by considering the student's interests, goals, current level, and future opportunities.\nAlso, there is a higher focus on practical career awareness, industry trends, skill development, and creating a clear roadmap. So, instead of being a simple motivation session, the main focus is on giving the student clear clarity and direction."
   },
   {
     "id": 12,
@@ -868,5 +874,329 @@
     "category": "niit_counselling",
     "question": "What skills are required for an internship?",
     "answer": "For an internship, basic technical skills, communication, problem-solving, and practical understanding are important. Depending on the domain, they also expect coding, project work, tools usage, and teamwork skills.\nBecause students are gradually prepared to develop industry-ready skills, it becomes easy for them to adapt to the internship environment."
+  },
+  {
+    "id": 147,
+    "category": "niit_counselling",
+    "question": "Will everyone get internships?",
+    "answer": "Internship opportunities are provided based on student performance, skills, and eligibility criteria. Students who actively participate in training and skill development have a higher chance of securing internships."
+  },
+  {
+    "id": 148,
+    "category": "niit_counselling",
+    "question": "What support will weak students get?",
+    "answer": "Weak students receive additional mentoring, foundation training, doubt-clearing sessions, and personalized guidance to help them improve gradually."
+  },
+  {
+    "id": 149,
+    "category": "niit_counselling",
+    "question": "Are the internships online or offline?",
+    "answer": "Internships may be online, offline, or hybrid depending on the company, project requirements, and industry partner."
+  },
+  {
+    "id": 150,
+    "category": "niit_counselling",
+    "question": "Which companies are giving internships?",
+    "answer": "Internship partners may vary every year. Details of participating companies are shared based on ongoing collaborations and available opportunities."
+  },
+  {
+    "id": 151,
+    "category": "niit_counselling",
+    "question": "Will there be internships every year?",
+    "answer": "Students are encouraged to participate in internships throughout their engineering journey, subject to performance and available opportunities."
+  },
+  {
+    "id": 152,
+    "category": "niit_counselling",
+    "question": "Will it cause any issues for our studies?",
+    "answer": "No. Internships are designed to complement academics and help students apply classroom learning in real-world situations."
+  },
+  {
+    "id": 153,
+    "category": "niit_counselling",
+    "question": "Will we do real-time projects?",
+    "answer": "Yes. Students get opportunities to work on practical and industry-oriented projects that build real-world experience."
+  },
+  {
+    "id": 154,
+    "category": "niit_counselling",
+    "question": "Can we earn money during engineering itself?",
+    "answer": "Some internships and project opportunities may provide stipends. Earnings depend on skills, performance, and available opportunities."
+  },
+  {
+    "id": 155,
+    "category": "niit_counselling",
+    "question": "Is early financial independence possible?",
+    "answer": "Yes. Students who develop strong technical and professional skills early can start earning through internships, freelancing, or projects during engineering."
+  },
+  {
+    "id": 156,
+    "category": "niit_counselling",
+    "question": "What skills will they teach in the first 6 months?",
+    "answer": "The initial months focus on communication skills, problem-solving, programming fundamentals, aptitude, industry readiness, and professional development."
+  },
+  {
+    "id": 157,
+    "category": "niit_counselling",
+    "question": "Can beginners handle real projects?",
+    "answer": "Yes. Beginners start with guided projects and gradually progress to more advanced real-world assignments."
+  },
+  {
+    "id": 158,
+    "category": "niit_counselling",
+    "question": "Will internships help with placements?",
+    "answer": "Absolutely. Internship experience strengthens resumes, improves practical skills, and enhances placement opportunities."
+  },
+  {
+    "id": 159,
+    "category": "niit_counselling",
+    "question": "How important is practical exposure?",
+    "answer": "Practical exposure is extremely important because employers look for applied skills in addition to academic performance."
+  },
+  {
+    "id": 160,
+    "category": "niit_counselling",
+    "question": "Are internships more important than marks?",
+    "answer": "Both are important. Good academic scores help with eligibility, while internships demonstrate practical skills and industry readiness."
+  },
+  {
+    "id": 161,
+    "category": "niit_counselling",
+    "question": "What is the NAT exam?",
+    "answer": "NAT is an aptitude-based assessment used to evaluate students' analytical ability, problem-solving skills, and academic potential."
+  },
+  {
+    "id": 162,
+    "category": "niit_counselling",
+    "question": "Why should we write NAT?",
+    "answer": "NAT helps students qualify for merit-based scholarships and admissions opportunities."
+  },
+  {
+    "id": 163,
+    "category": "niit_counselling",
+    "question": "Is NAT compulsory?",
+    "answer": "NAT may be mandatory for scholarship consideration and admission under specific programs."
+  },
+  {
+    "id": 164,
+    "category": "niit_counselling",
+    "question": "What is the benefit of NAT?",
+    "answer": "A strong NAT score can improve scholarship eligibility and admission opportunities."
+  },
+  {
+    "id": 165,
+    "category": "niit_counselling",
+    "question": "Is NAT difficult?",
+    "answer": "NAT is designed to assess aptitude and reasoning. Students with proper preparation can perform well."
+  },
+  {
+    "id": 166,
+    "category": "niit_counselling",
+    "question": "What is the NAT syllabus?",
+    "answer": "The syllabus generally includes quantitative aptitude, logical reasoning, analytical skills, and basic academic concepts."
+  },
+  {
+    "id": 167,
+    "category": "niit_counselling",
+    "question": "How should we prepare for NAT?",
+    "answer": "Students should practice aptitude questions, reasoning exercises, and mock tests while strengthening basic concepts."
+  },
+  {
+    "id": 168,
+    "category": "niit_counselling",
+    "question": "Is NAT online or offline?",
+    "answer": "The mode of the NAT exam is communicated by the institution and may be conducted online or at designated centers."
+  },
+  {
+    "id": 169,
+    "category": "niit_counselling",
+    "question": "What is the qualifying score?",
+    "answer": "Qualifying scores may vary depending on admission requirements and scholarship criteria."
+  },
+  {
+    "id": 170,
+    "category": "niit_counselling",
+    "question": "How do they calculate the scholarship?",
+    "answer": "Scholarships are generally calculated based on NAT performance and other eligibility criteria announced by the institution."
+  },
+  {
+    "id": 171,
+    "category": "niit_counselling",
+    "question": "Is the scholarship based on the NAT score?",
+    "answer": "Yes. NAT performance plays a significant role in determining scholarship eligibility."
+  },
+  {
+    "id": 172,
+    "category": "niit_counselling",
+    "question": "Is the Intermediate percentage important?",
+    "answer": "Intermediate marks may be considered as part of the overall admission evaluation process."
+  },
+  {
+    "id": 173,
+    "category": "niit_counselling",
+    "question": "What happens if we get a low NAT score?",
+    "answer": "Students with lower NAT scores may still be eligible for admission, though scholarship benefits may vary."
+  },
+  {
+    "id": 174,
+    "category": "niit_counselling",
+    "question": "Can average students crack NAT?",
+    "answer": "Yes. With preparation and practice, average students can perform well in NAT."
+  },
+  {
+    "id": 175,
+    "category": "niit_counselling",
+    "question": "Why is NAT important for admissions?",
+    "answer": "NAT helps identify deserving students based on merit, aptitude, and potential."
+  },
+  {
+    "id": 176,
+    "category": "niit_counselling",
+    "question": "Are seats limited?",
+    "answer": "Yes. Admissions are subject to seat availability and program capacity."
+  },
+  {
+    "id": 177,
+    "category": "niit_counselling",
+    "question": "Why is NAT merit-based?",
+    "answer": "Merit-based evaluation ensures opportunities are awarded fairly based on performance and potential."
+  },
+  {
+    "id": 178,
+    "category": "niit_counselling",
+    "question": "Will there be no reservations?",
+    "answer": "Admission policies are governed by the institution and applicable regulations. Specific details are shared during counselling."
+  },
+  {
+    "id": 179,
+    "category": "niit_counselling",
+    "question": "Will fees be reduced because of NAT?",
+    "answer": "Eligible students may receive fee reductions through scholarships awarded based on NAT performance."
+  },
+  {
+    "id": 180,
+    "category": "niit_counselling",
+    "question": "What happens after the NAT exam?",
+    "answer": "After NAT, students receive their results, scholarship eligibility details, and further admission guidance."
+  },
+  {
+    "id": 181,
+    "category": "niit_counselling",
+    "question": "Why are the fees so high?",
+    "answer": "The fee structure reflects investments in quality education, infrastructure, industry exposure, training, and career development programs."
+  },
+  {
+    "id": 182,
+    "category": "niit_counselling",
+    "question": "Is it worth investing ₹8–18 lakhs?",
+    "answer": "The value of the investment depends on the student's commitment to utilizing the available learning, internship, and placement opportunities."
+  },
+  {
+    "id": 183,
+    "category": "niit_counselling",
+    "question": "Will there be a Return on Investment (ROI)?",
+    "answer": "Students who actively build skills and gain practical experience often achieve strong returns through better career opportunities."
+  },
+  {
+    "id": 184,
+    "category": "niit_counselling",
+    "question": "Why is the scholarship only ₹2 lakhs?",
+    "answer": "Scholarship amounts are determined by institutional policies and available scholarship funds."
+  },
+  {
+    "id": 185,
+    "category": "niit_counselling",
+    "question": "Will the scholarship amount increase?",
+    "answer": "Scholarship revisions depend on institutional decisions and scholarship policies."
+  },
+  {
+    "id": 186,
+    "category": "niit_counselling",
+    "question": "Will everyone get a scholarship?",
+    "answer": "Scholarships are generally merit-based and awarded according to eligibility criteria."
+  },
+  {
+    "id": 187,
+    "category": "niit_counselling",
+    "question": "Is there no donation?",
+    "answer": "Admissions are designed to be transparent and merit-driven without donation-based admissions."
+  },
+  {
+    "id": 188,
+    "category": "niit_counselling",
+    "question": "Why aren't they taking donations?",
+    "answer": "The focus is on providing opportunities based on merit, aptitude, and student potential."
+  },
+  {
+    "id": 189,
+    "category": "niit_counselling",
+    "question": "Are the fees fixed for all 4 years?",
+    "answer": "Fee policies are communicated by the institution. Students should verify details during admission."
+  },
+  {
+    "id": 190,
+    "category": "niit_counselling",
+    "question": "Will there be any hidden charges?",
+    "answer": "Students receive a detailed fee structure during the admission process to ensure transparency."
+  },
+  {
+    "id": 191,
+    "category": "niit_counselling",
+    "question": "Can we pay in installments?",
+    "answer": "Installment options may be available as per institutional policies."
+  },
+  {
+    "id": 192,
+    "category": "niit_counselling",
+    "question": "Is an education loan available?",
+    "answer": "Yes. Eligible students can usually avail education loans through participating banks and financial institutions."
+  },
+  {
+    "id": 193,
+    "category": "niit_counselling",
+    "question": "Will the financial burden decrease because of internships?",
+    "answer": "Stipend-based internships may help students manage certain educational expenses."
+  },
+  {
+    "id": 194,
+    "category": "niit_counselling",
+    "question": "What is the return on investment?",
+    "answer": "ROI depends on the skills acquired, internships completed, placements secured, and career growth achieved."
+  },
+  {
+    "id": 195,
+    "category": "niit_counselling",
+    "question": "Why are they charging premium fees?",
+    "answer": "Premium fees support advanced learning resources, industry collaborations, career development programs, and practical exposure."
+  },
+  {
+    "id": 196,
+    "category": "niit_counselling",
+    "question": "Does a premium fee mean premium opportunities?",
+    "answer": "The objective is to provide enhanced learning opportunities, industry exposure, and career support, though outcomes depend on student effort."
+  },
+  {
+    "id": 197,
+    "category": "niit_counselling",
+    "question": "Why is the direct college fee different?",
+    "answer": "Different admission pathways may include additional services, benefits, training programs, or scholarship structures."
+  },
+  {
+    "id": 198,
+    "category": "niit_counselling",
+    "question": "What are the extra benefits we get through NIAT?",
+    "answer": "Students may receive benefits such as mentorship, skill development programs, industry exposure, internships, and career guidance."
+  },
+  {
+    "id": 199,
+    "category": "niit_counselling",
+    "question": "Can't we just join the college directly?",
+    "answer": "Students can choose the admission pathway that best aligns with their academic goals, support requirements, and career aspirations."
+  },
+  {
+    "id": 200,
+    "category": "niit_counselling",
+    "question": "Is the investment worth it after placements? (Will we get salary packages higher than the amount we invest in these colleges?)",
+    "answer": "Placement outcomes vary by student performance, skills, and market conditions. The goal is to help students develop the capabilities required for strong career opportunities."
   }
 ]

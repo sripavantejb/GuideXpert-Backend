@@ -26,6 +26,7 @@
     "test:whatsapp-all": "node --test test/*.test.js test/integration/suites/*.test.js",
     "test:poster-track": "node scripts/testPosterTrackKeys.js",
     "test:llm-reply-local": "node scripts/test-llm-reply-local.js",
+    "index:knowledge-base": "node scripts/index-knowledge-base.js",
     "test:gupshup-webhook": "node --test test/gupshupWebhookFlow.test.js",
     "test:whatsapp-retry-rules": "node --test test/whatsappRetryRules.test.js",
     "test:demo-meet-live-windows": "node --test test/demoMeetLiveWindows.test.js",

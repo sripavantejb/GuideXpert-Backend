@@ -1,6 +1,7 @@
 'use strict';
 
 const knowledgeBase = require('../../knowledge/knowledgeBase.json');
+const { aiDebugLog } = require('./aiDebugLog');
 
 const STOP_WORDS = new Set([
   'a',
@@ -122,10 +123,10 @@ function normalizeEntry(entry) {
   };
 }
 
-function searchKnowledge(query, limit = 5) {
+function rankKnowledgeEntries(query, limit, maxCap) {
   const normalizedQuery = normalize(query);
   const queryTokens = tokenize(normalizedQuery);
-  const max = Math.max(1, Math.min(Number(limit) || 5, 10));
+  const max = Math.max(1, Math.min(Number(limit) || 5, maxCap));
 
   if (!normalizedQuery || queryTokens.length === 0) {
     return [];
@@ -135,14 +136,125 @@ function searchKnowledge(query, limit = 5) {
     .map((entry) => ({
       ...normalizeEntry(entry),
       score: scoreEntry(entry, normalizedQuery, queryTokens),
+      keywordScore: scoreEntry(entry, normalizedQuery, queryTokens),
+      vectorScore: null,
     }))
     .filter((entry) => entry.score > 0)
     .sort((a, b) => b.score - a.score || String(a.id).localeCompare(String(b.id)))
     .slice(0, max);
 }
 
+function searchKnowledge(query, limit = 5) {
+  return rankKnowledgeEntries(query, limit, 10);
+}
+
+function searchKnowledgeKeyword(query, limit = 20) {
+  return rankKnowledgeEntries(query, limit, 20);
+}
+
+function scoreKnowledgeEntry(entry, query) {
+  const normalizedQuery = normalize(query);
+  const queryTokens = tokenize(normalizedQuery);
+  return scoreEntry(
+    {
+      id: entry.id,
+      category: entry.category,
+      question: entry.question,
+      answer: entry.answer,
+    },
+    normalizedQuery,
+    queryTokens
+  );
+}
+
+function resolveSearchMode() {
+  const mode = String(process.env.KNOWLEDGE_SEARCH_MODE || 'hybrid').trim().toLowerCase();
+  if (mode === 'keyword' || mode === 'vector' || mode === 'hybrid') {
+    return mode;
+  }
+  return 'hybrid';
+}
+
+async function searchKnowledgeAsync(query, options = {}) {
+  const text = String(query || '').trim();
+  const retrievalQuery = String(options.retrievalQuery || text).trim();
+  const limit = Math.max(1, Number(options.limit) || 5);
+  const recallLimit = Math.max(
+    1,
+    Number(options.recallLimit || process.env.KNOWLEDGE_KEYWORD_RECALL_LIMIT || 20)
+  );
+  const mode = resolveSearchMode();
+  const startedAt = Date.now();
+
+  aiDebugLog('KB', 'Mode:', mode);
+  aiDebugLog('KB', 'Retrieval Query:', retrievalQuery);
+
+  try {
+    if (mode === 'keyword') {
+      const keywordStartedAt = Date.now();
+      const results = searchKnowledge(text, limit);
+      return {
+        results,
+        metrics: {
+          mode,
+          keywordMs: Date.now() - keywordStartedAt,
+          totalMs: Date.now() - startedAt,
+          resultIds: results.map((entry) => entry.id),
+        },
+      };
+    }
+
+    if (mode === 'vector') {
+      const { searchKnowledgeVector } = require('./knowledgeVectorSearchService');
+      const vectorOut = await searchKnowledgeVector(retrievalQuery, {
+        recallLimit,
+        embeddingOptions: options.embeddingOptions,
+        indexName: options.indexName,
+      });
+      const results = vectorOut.results.slice(0, limit);
+      return {
+        results,
+        metrics: {
+          mode,
+          ...vectorOut.metrics,
+          totalMs: Date.now() - startedAt,
+          resultIds: results.map((entry) => entry.id),
+        },
+      };
+    }
+
+    const { searchKnowledgeHybrid } = require('./knowledgeHybridSearchService');
+    return await searchKnowledgeHybrid(text, {
+      retrievalQuery,
+      limit,
+      recallLimit,
+      embeddingOptions: options.embeddingOptions,
+      indexName: options.indexName,
+    });
+  } catch (error) {
+    aiDebugLog('HYBRID', 'fallback to keyword:', error.message);
+    const keywordStartedAt = Date.now();
+    const results = searchKnowledge(text, limit);
+    return {
+      results,
+      metrics: {
+        mode,
+        fallback: 'keyword',
+        error: error.message,
+        keywordMs: Date.now() - keywordStartedAt,
+        totalMs: Date.now() - startedAt,
+        resultIds: results.map((entry) => entry.id),
+      },
+    };
+  }
+}
+
 module.exports = {
   searchKnowledge,
+  searchKnowledgeKeyword,
+  scoreKnowledgeEntry,
+  searchKnowledgeAsync,
+  resolveSearchMode,
   normalize,
   tokenize,
 };

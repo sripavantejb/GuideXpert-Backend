@@ -33,6 +33,7 @@ const ORIGINAL_ENV = {
   CHATBOT_KNOWLEDGE_ASSISTANT_ENABLED: process.env.CHATBOT_KNOWLEDGE_ASSISTANT_ENABLED,
   CHATBOT_LLM_ENABLED: process.env.CHATBOT_LLM_ENABLED,
   LLM_API_KEY: process.env.LLM_API_KEY,
+  KNOWLEDGE_SEARCH_MODE: process.env.KNOWLEDGE_SEARCH_MODE,
 };
 
 afterEach(() => {
@@ -50,6 +51,7 @@ describe('knowledgeAssistantService', () => {
   test('sends prior conversation turns and unified CRM context to NVIDIA', async () => {
     process.env.CHATBOT_KNOWLEDGE_ASSISTANT_ENABLED = '1';
     process.env.LLM_API_KEY = 'test-key';
+    process.env.KNOWLEDGE_SEARCH_MODE = 'keyword';
 
     let capturedMessages = null;
     mock.method(OpenAiCompatibleProvider.prototype, 'chatCompletion', async ({ messages }) => {
