@@ -816,8 +816,8 @@ exports.ingestGupshupWebhook = async (req, res) => {
       }
 
       if (classified.kind === 'inbound') {
-        // Always await inbound processing before responding. waitUntil was dropping
-        // work on Vercel (200 returned but no Mongo row / no outbound send).
+        // Always await inbound processing before responding. Deferred background
+        // handling on Vercel returned 200 without persisting or sending replies.
         const inboundResult = await handleInboundWebhook(req, body, receivedAt).catch((err) => {
           console.error('[chatbot] inbound processing failed', err.message);
           throw err;
