@@ -1,4 +1,5 @@
 const WhatsAppInboundMessage = require('../../models/WhatsAppInboundMessage');
+const WhatsAppOutboundMessage = require('../../models/WhatsAppOutboundMessage');
 const WhatsAppWebhookEvent = require('../../models/WhatsAppWebhookEvent');
 const {
   parseInboundWebhook,
@@ -201,6 +202,27 @@ async function replayPendingInbound(limit = 30) {
   for (const row of pending) {
     try {
       if (!row.conversationId) {
+        continue;
+      }
+
+      const existingReply = await WhatsAppOutboundMessage.findOne({
+        inReplyToInboundId: row._id,
+        status: { $in: ['queued', 'submitted', 'sent', 'delivered', 'read'] },
+      })
+        .select('_id status')
+        .lean();
+      if (existingReply) {
+        await WhatsAppInboundMessage.updateOne(
+          { _id: row._id },
+          {
+            $set: {
+              processStatus: 'processed',
+              processError: null,
+              processedAt: new Date(),
+            },
+          }
+        );
+        processed += 1;
         continue;
       }
       const conversation = await require('../../models/WhatsAppConversation').findById(

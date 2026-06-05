@@ -191,11 +191,42 @@ function parseInboundWebhook(body) {
   return { isInbound: false, parsed: null };
 }
 
+function inboundDedupeBucketSec() {
+  const configured = Number(process.env.CHATBOT_INBOUND_DEDUPE_BUCKET_SEC);
+  return Number.isFinite(configured) && configured > 0 ? configured : 45;
+}
+
+/**
+ * Stable dedupe key for the same user utterance even when Gupshup and Meta
+ * webhooks use different provider message IDs.
+ */
 function buildInboundDedupeKey(parsed, body) {
-  if (parsed.dedupeKey) return `in:${parsed.dedupeKey}`;
+  void body;
+
+  const phone10 = parsed?.phone10;
+  const textNorm = String(parsed?.text || '').trim().toLowerCase();
+  const receivedAt =
+    parsed?.receivedAt instanceof Date && !Number.isNaN(parsed.receivedAt.getTime())
+      ? parsed.receivedAt
+      : new Date();
+  const bucket = Math.floor(receivedAt.getTime() / (inboundDedupeBucketSec() * 1000));
+
+  if (phone10 && textNorm) {
+    const hash = crypto
+      .createHash('sha256')
+      .update(JSON.stringify({ phone: phone10, text: textNorm, bucket }))
+      .digest('hex')
+      .slice(0, 32);
+    return `in:content:${hash}`;
+  }
+
+  if (parsed?.dedupeKey) {
+    return `in:provider:${parsed.dedupeKey}`;
+  }
+
   const hash = crypto
     .createHash('sha256')
-    .update(JSON.stringify({ phone: parsed.phone10, text: parsed.text, ts: parsed.receivedAt }))
+    .update(JSON.stringify({ phone: phone10, ts: receivedAt.toISOString() }))
     .digest('hex')
     .slice(0, 32);
   return `in:hash:${hash}`;
@@ -213,5 +244,6 @@ module.exports = {
   tryParseMetaInboundMessage,
   parseInboundWebhook,
   buildInboundDedupeKey,
+  inboundDedupeBucketSec,
   sanitizeInboundSnippet,
 };

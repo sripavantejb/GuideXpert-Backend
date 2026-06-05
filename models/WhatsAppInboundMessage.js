@@ -61,6 +61,10 @@ whatsAppInboundMessageSchema.index(
   { providerMessageId: 1 },
   { unique: true, partialFilterExpression: { providerMessageId: { $type: 'string', $ne: '' } } }
 );
+whatsAppInboundMessageSchema.index(
+  { dedupeKey: 1 },
+  { unique: true, partialFilterExpression: { dedupeKey: { $type: 'string', $ne: '' } } }
+);
 whatsAppInboundMessageSchema.index({ conversationId: 1, receivedAt: -1 });
 whatsAppInboundMessageSchema.index({ phone: 1, receivedAt: -1 });
 whatsAppInboundMessageSchema.index({ processStatus: 1, receivedAt: 1 });
