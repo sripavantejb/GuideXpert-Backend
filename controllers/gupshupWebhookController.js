@@ -816,37 +816,12 @@ exports.ingestGupshupWebhook = async (req, res) => {
       }
 
       if (classified.kind === 'inbound') {
-        const inboundPromise = handleInboundWebhook(req, body, receivedAt);
-        let inboundResult;
-
-        try {
-          const { waitUntil } = require('@vercel/functions');
-          const useWaitUntil =
-            process.env.VERCEL === '1' && typeof waitUntil === 'function';
-          if (useWaitUntil) {
-            waitUntil(
-              inboundPromise.catch((err) => {
-                console.error('[chatbot] inbound processing failed', err.message);
-              })
-            );
-            console.log(
-              JSON.stringify({
-                event: 'inbound_webhook_queued',
-                note: 'Inbound processing deferred via waitUntil on Vercel',
-              })
-            );
-            return res.status(200).json({
-              success: true,
-              received: true,
-              inbound: true,
-              queued: true,
-            });
-          }
-        } catch {
-          /* local/non-Vercel runtimes continue with awaited processing */
-        }
-
-        inboundResult = await inboundPromise;
+        // Always await inbound processing before responding. waitUntil was dropping
+        // work on Vercel (200 returned but no Mongo row / no outbound send).
+        const inboundResult = await handleInboundWebhook(req, body, receivedAt).catch((err) => {
+          console.error('[chatbot] inbound processing failed', err.message);
+          throw err;
+        });
         if (inboundResult.statusCode) {
           return res.status(inboundResult.statusCode).json({
             success: false,
