@@ -13,6 +13,7 @@ const {
   INDIAN_MOBILE_REGEX,
 } = require('../constants/oneOnOneCounseling');
 const { isValidPreferredTimeSlot, resolveSlotMeta } = require('../utils/oneOnOneCounselingSlots');
+const { buildLeadRelevanceMatchClause } = require('../utils/oneOnOneCounselingClassRelevance');
 const { BOOKING_STATUS_OPTIONS } = require('../constants/guidanceBooking');
 const GuidanceSlot = require('../models/GuidanceSlot');
 const OneOnOneCounselor = require('../models/OneOnOneCounselor');
@@ -372,6 +373,16 @@ exports.listOneOnOneCounselingLeads = async (req, res) => {
     for (const [key, allowed] of filterFields) {
       const val = typeof req.query[key] === 'string' ? req.query[key].trim() : '';
       if (val && allowed.includes(val)) match[key] = val;
+    }
+
+    const leadRelevance =
+      typeof req.query.leadRelevance === 'string' ? req.query.leadRelevance.trim() : '';
+    const relevanceClause = buildLeadRelevanceMatchClause(
+      ['relevant', 'irrelevant'].includes(leadRelevance) ? leadRelevance : ''
+    );
+    if (relevanceClause) {
+      match.$and = match.$and || [];
+      match.$and.push(relevanceClause);
     }
 
     applyUtmFilters(match, req.query);
