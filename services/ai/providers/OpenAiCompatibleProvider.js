@@ -1,6 +1,7 @@
 'use strict';
 
 const OpenAI = require('openai');
+const { aiDebugLog } = require('../../chatbot/aiDebugLog');
 
 class OpenAiCompatibleProvider {
   constructor() {
@@ -26,13 +27,13 @@ class OpenAiCompatibleProvider {
   }
 
   async chatCompletion({ messages, temperature = 1, maxTokens = 1000, timeoutMs, maxRetries }) {
-    console.log('[LLM-DEBUG] entered OpenAiCompatibleProvider');
+    aiDebugLog('LLM-DEBUG', 'entered OpenAiCompatibleProvider');
     const model = String(process.env.LLM_MODEL || '').trim();
     if (!model) {
       throw new Error('LLM_MODEL is required');
     }
 
-    console.log('[LLM-DEBUG] calling NVIDIA model =', model);
+    aiDebugLog('LLM-DEBUG', 'calling NVIDIA model =', model);
     const client = this._getClient();
     const requestOptions = {};
     if (timeoutMs != null) {
@@ -53,7 +54,7 @@ class OpenAiCompatibleProvider {
       Object.keys(requestOptions).length ? requestOptions : undefined
     );
 
-    console.log('[LLM-DEBUG] received response');
+    aiDebugLog('LLM-DEBUG', 'received response');
     const text = completion.choices?.[0]?.message?.content || '';
     return {
       text: String(text).trim(),

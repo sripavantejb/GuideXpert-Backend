@@ -6,8 +6,19 @@ const {
   OPPORTUNITY_FALLBACK,
   UNKNOWN_FALLBACK,
   UNSUPPORTED_CLAIM_FALLBACK,
+  extractPartnershipClaims,
+  extractCompanyTieupClaims,
+  extractMentorNameClaims,
   validateAiResponse,
 } = require('../services/chatbot/aiGuardrailService');
+
+const GENERIC_KB = [
+  {
+    question: 'What exactly is NIAT?',
+    answer:
+      'NIAT collaborates with different universities to provide an industry-aligned learning experience.',
+  },
+];
 
 describe('aiGuardrailService', () => {
   test('replaces guaranteed job claims with opportunity fallback', () => {
@@ -37,6 +48,26 @@ describe('aiGuardrailService', () => {
     assert.equal(result.reason, 'unsupported_numeric_claim');
   });
 
+  test('blocks invented placement percentages', () => {
+    const result = validateAiResponse({
+      response: 'NIAT has 95% placements.',
+      knowledgeResults: GENERIC_KB,
+    });
+
+    assert.equal(result.text, UNSUPPORTED_CLAIM_FALLBACK);
+    assert.equal(result.reason, 'unsupported_numeric_claim');
+  });
+
+  test('blocks invented salary figures', () => {
+    const result = validateAiResponse({
+      response: 'Average package is 50 LPA.',
+      knowledgeResults: GENERIC_KB,
+    });
+
+    assert.equal(result.text, UNSUPPORTED_CLAIM_FALLBACK);
+    assert.equal(result.reason, 'unsupported_numeric_claim');
+  });
+
   test('allows numeric claims when the exact values exist in retrieved knowledge', () => {
     const response = 'The program mentions 95% placements in the provided details.';
     const result = validateAiResponse({
@@ -59,5 +90,60 @@ describe('aiGuardrailService', () => {
     assert.equal(result.text, UNKNOWN_FALLBACK);
     assert.equal(result.modified, true);
     assert.equal(result.reason, 'empty_response');
+  });
+
+  test('blocks invented partnerships', () => {
+    const result = validateAiResponse({
+      response: 'NIAT partnered with Google.',
+      knowledgeResults: GENERIC_KB,
+    });
+
+    assert.equal(result.text, UNSUPPORTED_CLAIM_FALLBACK);
+    assert.equal(result.reason, 'unsupported_partnership_claim');
+  });
+
+  test('blocks invented company tie-ups', () => {
+    const result = validateAiResponse({
+      response: 'Internships happen at Microsoft.',
+      knowledgeResults: GENERIC_KB,
+    });
+
+    assert.equal(result.text, UNSUPPORTED_CLAIM_FALLBACK);
+    assert.equal(result.reason, 'unsupported_company_tieup_claim');
+  });
+
+  test('blocks invented mentor names', () => {
+    const result = validateAiResponse({
+      response: 'You will be guided by mentor Rahul Sharma.',
+      knowledgeResults: GENERIC_KB,
+    });
+
+    assert.equal(result.text, UNSUPPORTED_CLAIM_FALLBACK);
+    assert.equal(result.reason, 'unsupported_mentor_claim');
+  });
+
+  test('allows KB-supported partnership language', () => {
+    const response = 'NIAT collaborates with different universities.';
+    const result = validateAiResponse({
+      response,
+      knowledgeResults: GENERIC_KB,
+    });
+
+    assert.equal(result.text, response);
+    assert.equal(result.modified, false);
+  });
+});
+
+describe('aiGuardrailService extractors', () => {
+  test('extractPartnershipClaims captures partner entities', () => {
+    assert.deepEqual(extractPartnershipClaims('NIAT partnered with Google.'), ['Google']);
+  });
+
+  test('extractCompanyTieupClaims captures company entities', () => {
+    assert.deepEqual(extractCompanyTieupClaims('Internship at Microsoft.'), ['Microsoft']);
+  });
+
+  test('extractMentorNameClaims captures mentor names', () => {
+    assert.deepEqual(extractMentorNameClaims('Guided by mentor Rahul Sharma.'), ['Rahul Sharma']);
   });
 });

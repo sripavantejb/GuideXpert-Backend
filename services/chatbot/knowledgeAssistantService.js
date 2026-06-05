@@ -6,6 +6,7 @@ const { searchKnowledge } = require('./knowledgeSearchService');
 const { getConversationHistory } = require('./conversationHistoryService');
 const { buildContext, formatUnifiedContext } = require('./contextBuilderService');
 const { validateAiResponse } = require('./aiGuardrailService');
+const { aiDebugLog } = require('./aiDebugLog');
 
 const provider = new OpenAiCompatibleProvider();
 const DEFAULT_TIMEOUT_MS = Number(process.env.KNOWLEDGE_ASSISTANT_TIMEOUT_MS) || 8000;
@@ -75,22 +76,22 @@ async function answer({
   leadContext = null,
   llmTimeoutMs = null,
 } = {}) {
-  console.log('[LLM-DEBUG] entered knowledgeAssistantService');
+  aiDebugLog('LLM-DEBUG', 'entered knowledgeAssistantService');
 
   if (!isKnowledgeAssistantEnabled()) {
-    console.log('[LLM-DEBUG] answer return null: knowledge assistant disabled');
+    aiDebugLog('LLM-DEBUG', 'answer return null: knowledge assistant disabled');
     return null;
   }
 
   const apiKey = String(process.env.LLM_API_KEY || '').trim();
   if (!apiKey) {
-    console.log('[LLM-DEBUG] answer return null: LLM_API_KEY missing');
+    aiDebugLog('LLM-DEBUG', 'answer return null: LLM_API_KEY missing');
     return null;
   }
 
   const text = String(inboundText || '').trim();
   if (!text) {
-    console.log('[LLM-DEBUG] answer return null: empty inbound text');
+    aiDebugLog('LLM-DEBUG', 'answer return null: empty inbound text');
     return null;
   }
 
@@ -105,13 +106,13 @@ async function answer({
       includeConversationContext: history.length === 0,
     });
 
-    console.log('[KB] User Question:', text);
-    console.log('[KB] Matches Found:', knowledgeResults.length);
-    console.log('[KB] Selected IDs:', knowledgeResults.map((entry) => entry.id));
-    console.log('[KB] Context Size:', context.knowledgeContext.length);
-    console.log('[CTX] History Count:', history.length);
-    console.log('[CTX] Knowledge Matches:', knowledgeResults.length);
-    console.log('[CTX] CRM Included:', Boolean(context.crmContext));
+    aiDebugLog('KB', 'User Question:', text);
+    aiDebugLog('KB', 'Matches Found:', knowledgeResults.length);
+    aiDebugLog('KB', 'Selected IDs:', knowledgeResults.map((entry) => entry.id));
+    aiDebugLog('KB', 'Context Size:', context.knowledgeContext.length);
+    aiDebugLog('CTX', 'History Count:', history.length);
+    aiDebugLog('CTX', 'Knowledge Matches:', knowledgeResults.length);
+    aiDebugLog('CTX', 'CRM Included:', Boolean(context.crmContext));
 
     const messages = [
       { role: 'system', content: buildSystemPrompt() },
@@ -119,10 +120,10 @@ async function answer({
       ...history,
       { role: 'user', content: text },
     ];
-    console.log('[LLM-DEBUG] messageCount =', messages.length);
+    aiDebugLog('LLM-DEBUG', 'messageCount =', messages.length);
 
     const providerTimeoutMs = resolveLlmTimeoutMs(llmTimeoutMs || DEFAULT_TIMEOUT_MS);
-    console.log('[LLM-DEBUG] provider timeout ms =', providerTimeoutMs);
+    aiDebugLog('LLM-DEBUG', 'provider timeout ms =', providerTimeoutMs);
 
     const result = await provider.chatCompletion({
       messages,
@@ -133,18 +134,18 @@ async function answer({
       response: result?.text,
       knowledgeResults,
     });
-    console.log('[GUARDRAIL] Modified:', guarded.modified);
+    aiDebugLog('GUARDRAIL', 'Modified:', guarded.modified);
     if (guarded.reason) {
-      console.log('[GUARDRAIL] Reason:', guarded.reason);
+      aiDebugLog('GUARDRAIL', 'Reason:', guarded.reason);
     }
-    console.log('[LLM-DEBUG] received response', { model: result?.model });
+    aiDebugLog('LLM-DEBUG', 'received response', { model: result?.model });
     return { text: guarded.text, model: result?.model, guardrailModified: guarded.modified };
   } catch (e) {
     console.warn('[chatbot] knowledge assistant error', e.message);
-    console.log('[LLM-DEBUG] caught error =', e.message);
+    aiDebugLog('LLM-DEBUG', 'caught error =', e.message);
   }
 
-  console.log('[LLM-DEBUG] answer return null: fallthrough after try/catch');
+  aiDebugLog('LLM-DEBUG', 'answer return null: fallthrough after try/catch');
   return null;
 }
 
@@ -154,7 +155,7 @@ async function answerWithTimeout(params, timeoutMs = DEFAULT_TIMEOUT_MS) {
 
   const answerPromise = answer({ ...params, llmTimeoutMs }).catch((e) => {
     if (timedOut) {
-      console.log('[LLM-DEBUG] ignored late knowledge assistant error after timeout', e.message);
+      aiDebugLog('LLM-DEBUG', 'ignored late knowledge assistant error after timeout', e.message);
       return null;
     }
     throw e;
