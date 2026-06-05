@@ -37,10 +37,13 @@ function matchesMainMenuTrigger(text) {
 
 const KNOWLEDGE_QUESTION_PATTERNS = [
   /\bwhat is\b/i,
+  /\bwhat are\b/i,
   /\bwhat do\b/i,
   /\bhow much\b/i,
   /\bhow does\b/i,
   /\bhow do\b/i,
+  /\bhow are\b/i,
+  /\bhow is\b/i,
   /\btell me\b/i,
   /\bexplain\b/i,
   /\bwho are\b/i,

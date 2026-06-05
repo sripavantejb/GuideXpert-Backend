@@ -94,6 +94,10 @@ describe('knowledge_assistant intent', () => {
     assertKnowledgeAssistant('What services do you offer?'));
   test('ok what do they actually do', () =>
     assertKnowledgeAssistant('ok what do they actually do'));
+  test('how are placements at niat routes to knowledge_assistant', () =>
+    assertKnowledgeAssistant('how are placements at niat'));
+  test('how is NIAT different routes to knowledge_assistant', () =>
+    assertKnowledgeAssistant('how is NIAT different'));
 
   test('menu stays main_menu', () => {
     const r = classifyIntent('menu', null, PRODUCT_LINE);
