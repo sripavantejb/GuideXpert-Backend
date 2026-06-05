@@ -1,6 +1,6 @@
-/** Clears rank and college predictor slot-filling state while preserving other context keys. */
+/** Clears rank/college predictor and knowledge-assistant session flags. */
 function emptySubflows() {
-  return { college: {}, rank: {} };
+  return { college: {}, rank: {}, knowledgeAssistantActive: false };
 }
 
 module.exports = { emptySubflows };

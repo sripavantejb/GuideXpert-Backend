@@ -5,6 +5,10 @@ const assert = require('node:assert/strict');
 const WhatsAppInboundMessage = require('../models/WhatsAppInboundMessage');
 const WhatsAppOutboundMessage = require('../models/WhatsAppOutboundMessage');
 const { OpenAiCompatibleProvider } = require('../services/ai/providers/OpenAiCompatibleProvider');
+const {
+  answer,
+  normalizeHistoryForProvider,
+} = require('../services/chatbot/knowledgeAssistantService');
 
 function findChain(rows) {
   let max = rows.length;
@@ -79,8 +83,8 @@ describe('knowledgeAssistantService', () => {
       ])
     );
 
-    const { answer } = require('../services/chatbot/knowledgeAssistantService');
-    const result = await answer({
+    const { answer: answerFn } = require('../services/chatbot/knowledgeAssistantService');
+    const result = await answerFn({
       inboundText: 'How is it different?',
       conversationId: 'convo1',
       leadContext: {
@@ -100,10 +104,24 @@ describe('knowledgeAssistantService', () => {
     assert.match(capturedMessages[1].content, /Unified Context/);
     assert.match(capturedMessages[1].content, /name: Test Student/);
     assert.match(capturedMessages[1].content, /assignedCounsellor: Counsellor A/);
+    assert.doesNotMatch(capturedMessages[1].content, /Conversation Context:/);
     assert.deepEqual(capturedMessages.slice(2), [
       { role: 'user', content: 'What is NIAT?' },
       { role: 'assistant', content: 'NIAT is an industry-ready upskilling program.' },
       { role: 'user', content: 'How is it different?' },
+    ]);
+  });
+
+  test('normalizeHistoryForProvider merges consecutive duplicate roles', () => {
+    const normalized = normalizeHistoryForProvider([
+      { role: 'user', content: 'What is NIAT?' },
+      { role: 'user', content: 'What is NIAT?' },
+      { role: 'assistant', content: 'NIAT is an industry-ready upskilling program.' },
+    ]);
+
+    assert.deepEqual(normalized, [
+      { role: 'user', content: 'What is NIAT?' },
+      { role: 'assistant', content: 'NIAT is an industry-ready upskilling program.' },
     ]);
   });
 });

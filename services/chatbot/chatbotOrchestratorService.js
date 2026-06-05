@@ -11,7 +11,7 @@ const { handleCollegePredictorMessage } = require('./collegePredictorChatService
 const handoffService = require('./handoffService');
 const whatsappOutbound = require('./whatsappOutboundService');
 const { tryLlmReply } = require('./llmReplyService');
-const { answer: knowledgeAssistantAnswer } = require('./knowledgeAssistantService');
+const { answerWithTimeout } = require('./knowledgeAssistantService');
 const { buildWelcomeMenuText } = require('./welcomeMessageService');
 const { emptySubflows } = require('./botSubflowContext');
 const { maskPhoneTail } = require('../../utils/chatbotPhone');
@@ -22,6 +22,9 @@ const ORCHESTRATOR_FALLBACK_REPLY =
 
 const HANDOFF_WAIT_REPLY =
   'Our counsellor team is handling your chat. Please wait for their reply here.\n\nReply MENU to return to the assistant.';
+
+const KNOWLEDGE_ASSISTANT_FALLBACK_REPLY =
+  'I am not sure I understood. Reply MENU for options or AGENT to speak with our team.';
 
 const COLLEGE_PREDICTOR_MAINTENANCE_REPLY = [
   'College predictions are temporarily unavailable (service is under maintenance).',
@@ -315,7 +318,10 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
   await h.updateConversationIntent(activeConversation._id, intentResult.intent);
 
   if (intentResult.intent === 'opt_out') {
-    await h.transitionState(activeConversation._id, activeConversation.phone, 'idle', { optedOut: true });
+    await h.transitionState(activeConversation._id, activeConversation.phone, 'idle', {
+      optedOut: true,
+      knowledgeAssistantActive: false,
+    });
     const result = await h.outbound.sendBotTextReply({
       conversationId: activeConversation._id,
       phone10: activeConversation.phone,
@@ -449,8 +455,8 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       if (ka?.text) {
         replyText = ka.text;
       } else {
-        replyText =
-          'I am not sure I understood. Reply MENU for options or AGENT to speak with our team.';
+        console.warn('[chatbot] knowledge_assistant_fallback using orchestrator reply');
+        replyText = KNOWLEDGE_ASSISTANT_FALLBACK_REPLY;
       }
       nextState = 'idle';
       break;
@@ -472,13 +478,18 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
         }
       }
       if (intentResult.confidence === 'low') {
-        replyText =
-          'I am not sure I understood. Reply MENU for options or AGENT to speak with our team.';
+        replyText = KNOWLEDGE_ASSISTANT_FALLBACK_REPLY;
       } else {
         replyText = await buildLeadLookupReply(leadContext);
       }
       nextState = 'idle';
     }
+  }
+
+  if (intentResult.intent === 'knowledge_assistant') {
+    contextPatch = { ...contextPatch, knowledgeAssistantActive: true };
+  } else {
+    contextPatch = { ...contextPatch, knowledgeAssistantActive: false };
   }
 
   await h.transitionState(activeConversation._id, activeConversation.phone, nextState, contextPatch);

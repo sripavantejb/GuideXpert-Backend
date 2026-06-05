@@ -8,6 +8,7 @@ const { buildContext, formatUnifiedContext } = require('./contextBuilderService'
 const { validateAiResponse } = require('./aiGuardrailService');
 
 const provider = new OpenAiCompatibleProvider();
+const DEFAULT_TIMEOUT_MS = Number(process.env.KNOWLEDGE_ASSISTANT_TIMEOUT_MS) || 18000;
 
 function isKnowledgeAssistantEnabled() {
   return (
@@ -28,6 +29,38 @@ function removeCurrentInboundFromHistory(history, inboundText) {
     next.pop();
   }
   return next;
+}
+
+function normalizeHistoryForProvider(history = []) {
+  const normalized = [];
+
+  for (const message of history) {
+    const role = message?.role === 'assistant' ? 'assistant' : 'user';
+    const content = String(message?.content || '').trim();
+    if (!content) continue;
+
+    const last = normalized[normalized.length - 1];
+    if (last && last.role === role) {
+      if (last.content === content) continue;
+      last.content = content;
+      continue;
+    }
+
+    normalized.push({ role, content });
+  }
+
+  return normalized;
+}
+
+async function loadConversationHistory(conversationId) {
+  if (!conversationId) return [];
+
+  try {
+    return await getConversationHistory({ conversationId, limit: 10 });
+  } catch (e) {
+    console.warn('[chatbot] conversation history load failed', e.message);
+    return [];
+  }
 }
 
 async function answer({ inboundText, conversationId = null, leadContext = null } = {}) {
@@ -52,12 +85,14 @@ async function answer({ inboundText, conversationId = null, leadContext = null }
 
   try {
     const knowledgeResults = searchKnowledge(text, 5);
-    const rawHistory = conversationId
-      ? await getConversationHistory({ conversationId, limit: 10 })
-      : [];
-    const history = removeCurrentInboundFromHistory(rawHistory, text);
+    const rawHistory = await loadConversationHistory(conversationId);
+    const history = normalizeHistoryForProvider(
+      removeCurrentInboundFromHistory(rawHistory, text)
+    );
     const context = buildContext({ leadContext, knowledgeResults, history });
-    const unifiedContext = formatUnifiedContext(context);
+    const unifiedContext = formatUnifiedContext(context, {
+      includeConversationContext: history.length === 0,
+    });
 
     console.log('[KB] User Question:', text);
     console.log('[KB] Matches Found:', knowledgeResults.length);
@@ -71,8 +106,9 @@ async function answer({ inboundText, conversationId = null, leadContext = null }
       { role: 'system', content: buildSystemPrompt() },
       { role: 'system', content: unifiedContext },
       ...history,
+      { role: 'user', content: text },
     ];
-    messages.push({ role: 'user', content: text });
+    console.log('[LLM-DEBUG] messageCount =', messages.length);
 
     const result = await provider.chatCompletion({ messages });
     const guarded = validateAiResponse({
@@ -94,4 +130,23 @@ async function answer({ inboundText, conversationId = null, leadContext = null }
   return null;
 }
 
-module.exports = { answer };
+async function answerWithTimeout(params, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  try {
+    return await Promise.race([
+      answer(params),
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('knowledge_assistant_timeout')), timeoutMs);
+      }),
+    ]);
+  } catch (e) {
+    console.warn('[chatbot] knowledge_assistant_fallback', e.message);
+    return null;
+  }
+}
+
+module.exports = {
+  answer,
+  answerWithTimeout,
+  normalizeHistoryForProvider,
+  removeCurrentInboundFromHistory,
+};

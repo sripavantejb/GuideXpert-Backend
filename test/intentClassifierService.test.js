@@ -124,4 +124,23 @@ describe('knowledge_assistant intent', () => {
     const r = classifyIntent('rank predictor', null, PRODUCT_LINE);
     assert.equal(r.intent, 'rank_predictor');
   });
+
+  test('follow-up routes to knowledge_assistant when session is active', () => {
+    const r = classifyIntent(
+      'How is it different?',
+      { state: 'idle', context: { knowledgeAssistantActive: true } },
+      PRODUCT_LINE
+    );
+    assert.equal(r.intent, 'knowledge_assistant');
+    assert.equal(r.confidence, 'medium');
+  });
+
+  test('menu clears knowledge session routing priority', () => {
+    const r = classifyIntent(
+      'menu',
+      { state: 'idle', context: { knowledgeAssistantActive: true } },
+      PRODUCT_LINE
+    );
+    assert.equal(r.intent, 'main_menu');
+  });
 });

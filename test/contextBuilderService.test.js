@@ -70,4 +70,16 @@ describe('contextBuilderService', () => {
     assert.match(unified, /Conversation Context:/);
     assert.match(unified, /Knowledge Context:/);
   });
+
+  test('formatUnifiedContext omits conversation transcript when history is sent separately', () => {
+    const context = buildContext({
+      leadContext: null,
+      history: [{ role: 'user', content: 'What is NIAT?' }],
+      knowledgeResults: [],
+    });
+    const unified = formatUnifiedContext(context, { includeConversationContext: false });
+
+    assert.doesNotMatch(unified, /Conversation Context:/);
+    assert.match(unified, /Knowledge Context:/);
+  });
 });

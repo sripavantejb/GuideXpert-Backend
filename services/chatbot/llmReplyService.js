@@ -1,6 +1,6 @@
 'use strict';
 
-const { answer } = require('./knowledgeAssistantService');
+const { answerWithTimeout } = require('./knowledgeAssistantService');
 
 function isLlmReplyEnabled() {
   return (
@@ -27,7 +27,7 @@ async function tryLlmReply({ inboundText, conversationId = null, facts, leadCont
     return null;
   }
 
-  const llm = await answer({ inboundText, conversationId, leadContext });
+  const llm = await answerWithTimeout({ inboundText, conversationId, leadContext });
   if (llm && llm.text) {
     return { text: String(llm.text).trim().slice(0, 3500) };
   }

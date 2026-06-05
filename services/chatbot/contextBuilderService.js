@@ -69,24 +69,26 @@ function formatCrmContext(crmContext) {
     .join('\n');
 }
 
-function formatUnifiedContext(context) {
+function formatUnifiedContext(context, options = {}) {
+  const includeConversationContext = options.includeConversationContext !== false;
   const knowledgeContext =
     context.knowledgeContext ||
     'No relevant knowledge entries were found for this question.';
-  const conversationContext = context.conversationContext || 'No previous conversation context.';
 
-  return [
+  const sections = [
     'Unified Context',
     '',
     'CRM Context:',
     formatCrmContext(context.crmContext),
-    '',
-    'Conversation Context:',
-    conversationContext,
-    '',
-    'Knowledge Context:',
-    knowledgeContext,
-  ].join('\n');
+  ];
+
+  if (includeConversationContext) {
+    const conversationContext = context.conversationContext || 'No previous conversation context.';
+    sections.push('', 'Conversation Context:', conversationContext);
+  }
+
+  sections.push('', 'Knowledge Context:', knowledgeContext);
+  return sections.join('\n');
 }
 
 module.exports = {

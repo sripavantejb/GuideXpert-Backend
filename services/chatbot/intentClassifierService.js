@@ -51,6 +51,10 @@ const KNOWLEDGE_QUESTION_PATTERNS = [
   /\bpricing\b/i,
 ];
 
+function isKnowledgeSessionActive(botState) {
+  return Boolean(botState?.context?.knowledgeAssistantActive);
+}
+
 /**
  * General knowledge / exploratory questions routed to the Knowledge Assistant.
  * @param {string} text - normalized (lowercase, collapsed spaces)
@@ -88,6 +92,10 @@ function classifyIntent(text, botState, productLine) {
   }
   if (botState && botState.state === 'rank_predictor') {
     return { intent: 'rank_predictor_continue', confidence: 'high' };
+  }
+
+  if (isKnowledgeSessionActive(botState)) {
+    return { intent: 'knowledge_assistant', confidence: 'medium' };
   }
 
   if (/^again$/.test(t)) {
@@ -164,4 +172,4 @@ function classifyIntent(text, botState, productLine) {
   return { intent: 'unknown', confidence: 'low' };
 }
 
-module.exports = { classifyIntent, normalizeText, isKnowledgeQuestion };
+module.exports = { classifyIntent, normalizeText, isKnowledgeQuestion, isKnowledgeSessionActive };
