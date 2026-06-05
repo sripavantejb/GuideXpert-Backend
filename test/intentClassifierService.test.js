@@ -41,6 +41,11 @@ describe('intentClassifierService menu false positives', () => {
     const r = classifyIntent('say hello', null, PRODUCT_LINE);
     assert.notEqual(r.intent, 'main_menu');
   });
+
+  test('"take help of guidexpert" should not trigger main_menu', () => {
+    const r = classifyIntent('why i need to take help of guidexpert', null, PRODUCT_LINE);
+    assert.notEqual(r.intent, 'main_menu');
+  });
 });
 
 describe('intentClassifierService menu and greetings', () => {
@@ -98,6 +103,16 @@ describe('knowledge_assistant intent', () => {
     assertKnowledgeAssistant('how are placements at niat'));
   test('how is NIAT different routes to knowledge_assistant', () =>
     assertKnowledgeAssistant('how is NIAT different'));
+  test('why i need to take help of guidexpert routes to knowledge_assistant', () =>
+    assertKnowledgeAssistant('why i need to take help of guidexpert'));
+  test('Why should I use GuideXpert?', () =>
+    assertKnowledgeAssistant('Why should I use GuideXpert?'));
+  test('Why do I need GuideXpert?', () =>
+    assertKnowledgeAssistant('Why do I need GuideXpert?'));
+  test('How is GuideXpert different?', () =>
+    assertKnowledgeAssistant('How is GuideXpert different?'));
+  test('Tell me about GuideXpert.', () =>
+    assertKnowledgeAssistant('Tell me about GuideXpert.'));
 
   test('menu stays main_menu', () => {
     const r = classifyIntent('menu', null, PRODUCT_LINE);

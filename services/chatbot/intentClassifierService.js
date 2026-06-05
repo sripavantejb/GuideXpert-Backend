@@ -22,8 +22,19 @@ function matchesAny(text, phrases) {
   return phrases.some((p) => text.includes(p));
 }
 
+function matchesHelpMenuCommand(text) {
+  return /^(help|help menu)\s*[.!?]?$/.test(String(text || '').trim());
+}
+
+function matchesMenuWord(text, word) {
+  if (word === 'help') {
+    return matchesHelpMenuCommand(text);
+  }
+  return matchesWordBoundary(text, word);
+}
+
 function matchesMenuCommands(text) {
-  return MENU_COMMAND_WORDS.some((word) => matchesWordBoundary(text, word));
+  return MENU_COMMAND_WORDS.some((word) => matchesMenuWord(text, word));
 }
 
 /** Whole message only — avoids substring false positives (e.g. "they" vs "hey"). */
@@ -46,9 +57,15 @@ const KNOWLEDGE_QUESTION_PATTERNS = [
   /\bhow is\b/i,
   /\btell me\b/i,
   /\bexplain\b/i,
+  /\bwhy should\b/i,
+  /\bwhy do i need\b/i,
+  /\bwhy i need\b/i,
+  /\bwhy do\b/i,
   /\bwho are\b/i,
   /\bwho is\b/i,
   /\bservices\b/i,
+  /\bbenefits\b/i,
+  /\bdifference\b/i,
   /\bcost\b/i,
   /\bfee\b/i,
   /\bpricing\b/i,
