@@ -821,10 +821,18 @@ exports.ingestGupshupWebhook = async (req, res) => {
 
         try {
           const { waitUntil } = require('@vercel/functions');
-          if (typeof waitUntil === 'function') {
+          const useWaitUntil =
+            process.env.VERCEL === '1' && typeof waitUntil === 'function';
+          if (useWaitUntil) {
             waitUntil(
               inboundPromise.catch((err) => {
                 console.error('[chatbot] inbound processing failed', err.message);
+              })
+            );
+            console.log(
+              JSON.stringify({
+                event: 'inbound_webhook_queued',
+                note: 'Inbound processing deferred via waitUntil on Vercel',
               })
             );
             return res.status(200).json({

@@ -448,7 +448,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       break;
     }
     case 'knowledge_assistant': {
-      knowledgeAssistantResult = await knowledgeAssistantAnswer({
+      knowledgeAssistantResult = await answerWithTimeout({
         inboundText: inbound.text,
         conversationId: activeConversation._id,
         leadContext,
