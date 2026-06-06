@@ -3,6 +3,7 @@
 const { OpenAiCompatibleProvider } = require('../ai/providers/OpenAiCompatibleProvider');
 const { aiDebugLog } = require('../chatbot/aiDebugLog');
 const { detectRomanizedLanguage } = require('./romanizedLanguageDetectionService');
+const { classifyDevanagariLanguage, containsDevanagari } = require('./devanagariLanguageClassifier');
 const {
   FRANC_TO_ISO,
   normalizeLanguageCode,
@@ -154,6 +155,21 @@ async function detectLanguage({ message, provider } = {}) {
     offlineConfidence,
     ms: Date.now() - startedAt,
   });
+
+  if (containsDevanagari(text)) {
+    const devanagari = classifyDevanagariLanguage(text);
+    if (devanagari?.language && devanagari.confidence >= minConfidence) {
+      aiDebugLog('LANG', 'devanagari lexical detect', {
+        ...devanagari,
+        ms: Date.now() - startedAt,
+      });
+      return {
+        language: devanagari.language,
+        confidence: devanagari.confidence,
+        source: devanagari.source,
+      };
+    }
+  }
 
   if (offlineLanguage && offlineConfidence >= minConfidence) {
     if (offlineLanguage === 'en') {

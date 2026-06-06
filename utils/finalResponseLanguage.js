@@ -1,13 +1,14 @@
 'use strict';
 
+const { classifyDevanagariLanguage } = require('../services/language/devanagariLanguageClassifier');
+
 const SCRIPT_RANGES = [
   { lang: 'te', pattern: /[\u0C00-\u0C7F]/g },
-  { lang: 'hi', pattern: /[\u0900-\u097F]/g },
   { lang: 'bn', pattern: /[\u0980-\u09FF]/g },
   { lang: 'kn', pattern: /[\u0C80-\u0CFF]/g },
   { lang: 'ml', pattern: /[\u0D00-\u0D7F]/g },
   { lang: 'ta', pattern: /[\u0B80-\u0BFF]/g },
-  { lang: 'mr', pattern: /[\u0900-\u097F]/g },
+  { lang: 'devanagari', pattern: /[\u0900-\u097F]/g },
 ];
 
 function countMatches(text, pattern) {
@@ -35,6 +36,14 @@ function inferFinalResponseLanguage(text) {
 
   if (latinCount > top.score * 1.5 && latinCount >= 20) {
     return 'en';
+  }
+
+  if (top.lang === 'devanagari') {
+    const devanagari = classifyDevanagariLanguage(value);
+    if (devanagari?.language) {
+      return devanagari.language;
+    }
+    return 'hi';
   }
 
   return top.lang;

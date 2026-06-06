@@ -1,0 +1,85 @@
+{
+  "generatedAt": "2026-06-06T11:24:23.245Z",
+  "results": [
+    {
+      "lang": "en",
+      "pass": true,
+      "failures": [],
+      "detection": {
+        "language": "en",
+        "confidence": 0.92,
+        "source": "offline"
+      }
+    },
+    {
+      "lang": "te",
+      "pass": true,
+      "failures": [],
+      "detection": {
+        "language": "te",
+        "confidence": 0.88,
+        "source": "offline"
+      }
+    },
+    {
+      "lang": "hi",
+      "pass": true,
+      "failures": [],
+      "detection": {
+        "language": "hi",
+        "confidence": 0.99,
+        "source": "devanagari_lexical"
+      }
+    },
+    {
+      "lang": "ta",
+      "pass": true,
+      "failures": [],
+      "detection": {
+        "language": "ta",
+        "confidence": 0.88,
+        "source": "offline"
+      }
+    },
+    {
+      "lang": "kn",
+      "pass": true,
+      "failures": [],
+      "detection": {
+        "language": "kn",
+        "confidence": 0.88,
+        "source": "offline"
+      }
+    },
+    {
+      "lang": "ml",
+      "pass": true,
+      "failures": [],
+      "detection": {
+        "language": "ml",
+        "confidence": 0.88,
+        "source": "offline"
+      }
+    },
+    {
+      "lang": "mr",
+      "pass": true,
+      "failures": [],
+      "detection": {
+        "language": "mr",
+        "confidence": 0.99,
+        "source": "devanagari_lexical"
+      }
+    },
+    {
+      "lang": "bn",
+      "pass": true,
+      "failures": [],
+      "detection": {
+        "language": "bn",
+        "confidence": 0.88,
+        "source": "offline"
+      }
+    }
+  ]
+}

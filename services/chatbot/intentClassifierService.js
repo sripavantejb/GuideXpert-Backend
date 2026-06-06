@@ -81,6 +81,22 @@ const SOCIAL_GREETING_PATTERNS = [
   /^(ela vunnaru|ela unnaru)\s*[.!?]?$/,
 ];
 
+const NATIVE_GREETING_PHRASES = [
+  { pattern: /^(మీరు|నేను).*(ఎలా|ఉన్న|బాగ)/u },
+  { pattern: /^(आप\s*कैसे|कैसे\s*हैं|आप\s*कैस)/u },
+  { pattern: /^(तुम्ही\s*कसे|कसे\s*आहात)/u },
+  { pattern: /^(நீங்கள்\s*எப்படி|எப்படி\s*இர)/u },
+  { pattern: /^(ನೀವು\s*ಹೇಗ|ಹೇಗಿದ್ದ)/u },
+  { pattern: /^(നിങ്ങൾക്ക്\s*സുഖ|സുഖമാണ)/u },
+  { pattern: /^(আপনি\s*কেমন|কেমন\s*আছ)/u },
+];
+
+function isNativeSocialGreeting(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return false;
+  return NATIVE_GREETING_PHRASES.some(({ pattern }) => pattern.test(raw));
+}
+
 function isSocialGreeting(text) {
   const t = normalizeText(text);
   if (!t) return false;
@@ -176,8 +192,9 @@ function isRankBranchRecommendationQuery(text) {
  * Rule-based intent classification (Phase 1).
  * @returns {{ intent: string, confidence: 'high'|'medium'|'low' }}
  */
-function classifyIntent(text, botState, productLine) {
+function classifyIntent(text, botState, productLine, originalText = null) {
   const t = normalizeText(text);
+  const original = String(originalText || text || '').trim();
 
   if (matchesAny(t, GLOBAL_KEYWORDS.agent)) {
     return { intent: 'human_handoff', confidence: 'high' };
@@ -199,7 +216,7 @@ function classifyIntent(text, botState, productLine) {
     return { intent: 'rank_predictor_continue', confidence: 'high' };
   }
 
-  if (isSocialGreeting(t)) {
+  if (isNativeSocialGreeting(original) || isSocialGreeting(t)) {
     return { intent: 'greeting', confidence: 'high' };
   }
 
@@ -294,6 +311,7 @@ module.exports = {
   normalizeText,
   isKnowledgeQuestion,
   isKnowledgeSessionActive,
+  isNativeSocialGreeting,
   isSocialGreeting,
   isMarksBasedRankPredictorQuery,
   isRankBranchCollegePredictorQuery,

@@ -98,7 +98,7 @@ describe('multilingual outbound translation with WhatsApp formatting', () => {
             translatedResponsePreview: 'Telugu branch guidance',
           });
         }
-        return 'Telugu branch guidance';
+        return 'తెలుగు బ్రాంచ్ మార్గదర్శకత్వం';
       },
       tryLlmReply: async () => ({
         text: TABLE_REPLY,
@@ -169,7 +169,7 @@ describe('multilingual outbound translation with WhatsApp formatting', () => {
     assert.match(finalizeInput, /^CSE$/m);
 
     assert.equal(outboundCalls.length, 1);
-    assert.equal(outboundCalls[0].text, 'Telugu branch guidance');
+    assert.equal(outboundCalls[0].text, 'తెలుగు బ్రాంచ్ మార్గదర్శకత్వం');
 
     const processed = loggedEvents.find((entry) => entry.event === 'inbound_processed');
     assert.ok(processed);

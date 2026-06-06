@@ -100,4 +100,21 @@ describe('languageDetectionService.detectLanguage offline', () => {
     assert.equal(result.language, 'en');
     assert.equal(result.source, 'fallback');
   });
+
+  test('distinguishes Hindi vs Marathi Devanagari greetings offline', async () => {
+    const { detectLanguage, setLanguageDetectionProvider } = require('../services/language/languageDetectionService');
+    setLanguageDetectionProvider({
+      chatCompletion: async () => {
+        throw new Error('LLM should not be called');
+      },
+    });
+
+    const hi = await detectLanguage({ message: 'आप कैसे हैं?' });
+    assert.equal(hi.language, 'hi');
+    assert.equal(hi.source, 'devanagari_lexical');
+
+    const mr = await detectLanguage({ message: 'तुम्ही कसे आहात?' });
+    assert.equal(mr.language, 'mr');
+    assert.equal(mr.source, 'devanagari_lexical');
+  });
 });

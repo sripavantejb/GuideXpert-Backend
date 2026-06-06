@@ -69,7 +69,7 @@ describe('multilingual unknown pivot', () => {
       }),
       finalizeMultilingualOutbound: async (args) => {
         finalizeCalls += 1;
-        return `Telugu: ${args.englishResponse}`;
+        return `ఈ సమాధానం: ${args.englishResponse.slice(0, 40)}`;
       },
       tryLlmReply: async ({ inboundText }) => {
         llmInboundText = inboundText;
@@ -126,7 +126,7 @@ describe('multilingual unknown pivot', () => {
 
     assert.equal(llmInboundText, 'Which branch is good for me?');
     assert.equal(finalizeCalls, 1);
-    assert.match(outboundCalls[0].text, /^Telugu: /);
+    assert.match(outboundCalls[0].text, /[\u0C00-\u0C7F]/);
   });
 });
 

@@ -8,8 +8,11 @@ const {
   DEFAULT_OUTBOUND_MAX_TOKENS,
 } = require('../services/language/translationService');
 const { localizeKnownFallback } = require('../constants/localizedFallbackStrings');
+const { resolveSystemReply } = require('../constants/localizedSystemReplies');
 const { aiDebugLog } = require('../services/chatbot/aiDebugLog');
 const { isMultilingualEnabled } = require('../utils/multilingualFlags');
+const { formatForWhatsApp } = require('../utils/whatsappMessageFormatter');
+const { assertReplyLanguage } = require('../utils/replyLanguageVerifier');
 const {
   resolveConversationLanguage,
   recordDetectedLanguage,
@@ -164,6 +167,120 @@ async function finalizeMultilingualOutbound({
   return translated || text;
 }
 
+/**
+ * Unified outbound gate — all user-facing replies pass through here.
+ * @returns {Promise<{ text: string, verification: object, outboundTrace: object }>}
+ */
+async function applyMultilingualOutbound({
+  replyText,
+  resolvedLanguage = 'en',
+  originalMessage = '',
+  outboundTrace = null,
+  localizationTier = 'translate',
+  preLocalized = false,
+  guardrailModified = false,
+} = {}) {
+  const trace = outboundTrace || {
+    outboundTranslationExecuted: false,
+    translateFromEnglishExecuted: false,
+    outboundTranslationLanguage: normalizeLanguageCode(resolvedLanguage) || 'en',
+    outboundTranslationPassThrough: false,
+    usedLocalizedFallback: false,
+    shouldTranslateOutbound: localizationTier === 'translate',
+    translatedResponsePreview: null,
+    verifiedResponseLanguage: null,
+    languageMismatch: false,
+  };
+
+  const lang = normalizeLanguageCode(resolvedLanguage) || 'en';
+  let text = String(replyText || '').trim();
+  if (!text) {
+    if (outboundTrace) Object.assign(outboundTrace, trace);
+    return { text: '', verification: { pass: false, detected: null, reason: 'empty_reply' }, outboundTrace: trace };
+  }
+
+  if (preLocalized || localizationTier === 'static') {
+    text = formatForWhatsApp(text);
+    trace.outboundTranslationPassThrough = true;
+    trace.shouldTranslateOutbound = false;
+    const verification = assertReplyLanguage(text, lang);
+    trace.verifiedResponseLanguage = verification.detected;
+    trace.languageMismatch = !verification.pass;
+    if (outboundTrace) Object.assign(outboundTrace, trace);
+    return { text, verification, outboundTrace: trace };
+  }
+
+  text = formatForWhatsApp(text);
+  if (!isMultilingualEnabled() || lang === 'en') {
+    trace.outboundTranslationPassThrough = true;
+    trace.shouldTranslateOutbound = false;
+    const verification = assertReplyLanguage(text, lang);
+    trace.verifiedResponseLanguage = verification.detected;
+    trace.languageMismatch = !verification.pass;
+    if (outboundTrace) Object.assign(outboundTrace, trace);
+    return { text, verification, outboundTrace: trace };
+  }
+
+  trace.shouldTranslateOutbound = true;
+  try {
+    text = await module.exports.finalizeMultilingualOutbound({
+      englishResponse: text,
+      language: lang,
+      originalMessage,
+      guardrailModified,
+      outboundTrace: trace,
+    });
+  } catch (err) {
+    aiDebugLog('LANG', 'applyMultilingualOutbound failed', err.message);
+    const localized = localizeKnownFallback(text, lang);
+    if (localized !== text) {
+      text = localized;
+      trace.usedLocalizedFallback = true;
+    }
+  }
+
+  text = formatForWhatsApp(text);
+  let verification = assertReplyLanguage(text, lang);
+
+  if (
+    !verification.pass &&
+    lang !== 'en' &&
+    trace.outboundTranslationExecuted &&
+    trace.outboundTranslationPassThrough
+  ) {
+    try {
+      const retry = await translateFromEnglish(String(replyText || '').trim(), lang, {
+        timeoutMs: DEFAULT_OUTBOUND_TIMEOUT_MS,
+        maxTokens: DEFAULT_OUTBOUND_MAX_TOKENS,
+      });
+      if (retry.text && !retry.passThrough) {
+        text = formatForWhatsApp(retry.text);
+        trace.outboundTranslationPassThrough = false;
+        trace.translateFromEnglishExecuted = true;
+        trace.translatedResponsePreview = previewText(text);
+        verification = assertReplyLanguage(text, lang);
+      }
+    } catch (err) {
+      aiDebugLog('LANG', 'applyMultilingualOutbound retry failed', err.message);
+    }
+  }
+
+  if (!verification.pass && lang !== 'en') {
+    const localized = resolveSystemReply('orchestratorFallback', lang);
+    if (localized) {
+      text = formatForWhatsApp(localized);
+      trace.usedLocalizedFallback = true;
+      trace.outboundTranslationPassThrough = true;
+      verification = assertReplyLanguage(text, lang);
+    }
+  }
+
+  trace.verifiedResponseLanguage = verification.detected;
+  trace.languageMismatch = !verification.pass;
+  if (outboundTrace) Object.assign(outboundTrace, trace);
+  return { text, verification, outboundTrace: trace };
+}
+
 function multilingualExpressMiddleware() {
   return async function multilingualExpressMiddlewareHandler(req, _res, next) {
     try {
@@ -188,5 +305,6 @@ module.exports = {
   isMultilingualEnabled,
   prepareMultilingualInbound,
   finalizeMultilingualOutbound,
+  applyMultilingualOutbound,
   multilingualExpressMiddleware,
 };

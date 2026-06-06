@@ -9,6 +9,8 @@ const detectionPath = require.resolve('../services/language/languageDetectionSer
 const translationPath = require.resolve('../services/language/translationService');
 const conversationLangPath = require.resolve('../services/chatbot/conversationLanguageService');
 
+const { TRANSLATION_PROBE_MESSAGES } = require('../constants/languageMatrixProbes');
+
 describe('multilingual language switching', () => {
   beforeEach(() => {
     process.env.CHATBOT_MULTILINGUAL_ENABLED = '1';
@@ -89,6 +91,40 @@ describe('multilingual language switching', () => {
       leadContext: { iit: { preferredLanguage: 'Telugu' } },
     });
     assert.equal(taInbound.resolvedLanguage, 'ta');
+  });
+
+  test('resolved language follows all eight supported languages in one conversation', async () => {
+    const detection = require(detectionPath);
+    mock.method(detection, 'detectLanguage', async ({ message }) => {
+      const hit = Object.entries(TRANSLATION_PROBE_MESSAGES).find(([, text]) => text === message);
+      if (!hit) return { language: 'en', confidence: 0.5, source: 'fallback' };
+      return { language: hit[0], confidence: 0.88, source: 'offline' };
+    });
+
+    const translation = require(translationPath);
+    mock.method(translation, 'translateToEnglish', async (text, source) =>
+      source === 'en' ? text : `EN:${text}`
+    );
+
+    const conversationLang = require(conversationLangPath);
+    mock.method(conversationLang, 'recordDetectedLanguage', async () => {});
+
+    const { prepareMultilingualInbound } = require(middlewarePath);
+    const conversation = {
+      _id: new mongoose.Types.ObjectId(),
+      preferredLanguage: 'te',
+    };
+    const leadContext = { iit: { preferredLanguage: 'Telugu' } };
+
+    for (const [lang, message] of Object.entries(TRANSLATION_PROBE_MESSAGES)) {
+      const inbound = await prepareMultilingualInbound({
+        message,
+        conversation,
+        leadContext,
+      });
+      assert.equal(inbound.resolvedLanguage, lang, message);
+      assert.equal(inbound.resolutionReason, 'high_confidence_detection', message);
+    }
   });
 
   test('ambiguous ok keeps stored preference when detection is low confidence', async () => {

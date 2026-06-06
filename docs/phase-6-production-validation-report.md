@@ -5,11 +5,31 @@
 **Backend commit base:** `b0a526e` + Phase 6 outbound/formatting changes  
 **Flags:** `CHATBOT_MULTILINGUAL_ENABLED=1`, `CHATBOT_KNOWLEDGE_ASSISTANT_ENABLED=1`, MongoDB connected  
 
-**Verdict:** **PASS — Phase 6 complete (including language state stabilization)**
+**Verdict:** **PASS — Phase 6 complete (Same Language Reply Guarantee sprint)**
 
-Automated suite: **565/565** tests (`npm test`).  
+Automated suite: **587/587** tests (`npm test`).  
 Live regression script: **5/5** messages (`scripts/live-phase6-validation.js`).  
-Greeting language audit: **8/8** (`scripts/live-phase6-greeting-audit.js`).
+Greeting language audit: **8/8** (`scripts/live-phase6-greeting-audit.js`).  
+Translation audit: **8/8** (`scripts/live-phase6-translation-audit.js`).  
+Language accuracy matrix: **32/32** cells (`scripts/live-phase6-language-matrix-audit.js`) — see [`phase-6-language-accuracy-report.md`](phase-6-language-accuracy-report.md).
+
+---
+
+## Same Language Reply Guarantee sprint (2026-06-06)
+
+| Deliverable | Status |
+|-------------|--------|
+| Devanagari hi/mr lexical detection | PASS — `तुम्ही कसे आहात?` → `mr`, `आप कैसे हैं?` → `hi` |
+| Unified outbound gate (`applyMultilingualOutbound`) | PASS — all orchestrator paths |
+| Static catalogs (menu, counselling, system) | PASS — 8 languages |
+| Reply language verifier + strict audits | PASS — no hi\|mr OR escape in greeting audit |
+| Native greeting patterns (ta/kn/ml/mr/bn) | PASS |
+| Translation round-trip audit | PASS — 8/8 in [`translation-audit-results.json`](phase-6-validation-artifacts/translation-audit-results.json) |
+| Full 8×4 language matrix | PASS — 100% in [`language-matrix-audit-results.json`](phase-6-validation-artifacts/language-matrix-audit-results.json) |
+
+**Known residual risks (non-blockers):** LLM translation variance on long KA answers; romanized kn/ml/mr/bn without native script may still detect as English; College Predictor remains off unless `CHATBOT_COLLEGE_PREDICTOR_ENABLED=1`.
+
+**Final recommendation:** **PASS** — deploy with `CHATBOT_MULTILINGUAL_ENABLED=1`, optional `LANGUAGE_PREFERENCE_STREAK_THRESHOLD=3`, and `OUTBOUND_TRANSLATION_TIMEOUT_MS=12000`.
 
 ---
 
@@ -148,7 +168,7 @@ Raw JSON: [`live-validation-results.json`](phase-6-validation-artifacts/live-val
 
 **Note:** User already supplied rank + branch — routes to College Predictor, not Rank Predictor. With `CHATBOT_COLLEGE_PREDICTOR_ENABLED` unset, bot returns the localized unavailable message.
 
-**WhatsApp mockup:** [test3-whatsapp-mock.html](phase-6-validation-artifacts/test3-whatsapp-mock.html) _(regenerate after live validation)_
+**WhatsApp mockup:** [test3-whatsapp-mock.html](phase-6-validation-artifacts/test3-whatsapp-mock.html)
 
 ---
 
@@ -228,6 +248,6 @@ Raw JSON: [`live-validation-results.json`](phase-6-validation-artifacts/live-val
 
 ## Phase 6 status
 
-**COMPLETE** — see [`phase-6-production-validation-report.md`](phase-6-production-validation-report.md) for live 5-message validation (2026-06-06).
+**COMPLETE** — Same Language Reply Guarantee validated 2026-06-06 (587 unit tests, 8×4 matrix 100%, translation + greeting audits 8/8, live 5-message regression PASS).
 
 ---

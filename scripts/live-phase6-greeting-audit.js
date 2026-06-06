@@ -14,7 +14,7 @@ const mongoose = require('mongoose');
 const structuredLogPath = require.resolve('../services/chatbot/chatbotStructuredLog');
 const orchestratorPath = require.resolve('../services/chatbot/chatbotOrchestratorService');
 const { GREETING_REPLIES } = require('../constants/greetingReplies');
-const { inferFinalResponseLanguage } = require('../utils/finalResponseLanguage');
+const { assertReplyLanguage } = require('../utils/replyLanguageVerifier');
 
 const capturedStructuredLogs = [];
 const structuredLog = require(structuredLogPath);
@@ -40,13 +40,14 @@ function extractLogPayload(eventName = 'inbound_processed') {
   return entries.length ? entries[entries.length - 1].fields : null;
 }
 
-function devanagariLanguage(expected, finalResponse) {
-  if (expected === 'mr' || expected === 'hi') {
-    return inferFinalResponseLanguage(finalResponse) === 'hi' ||
-      inferFinalResponseLanguage(finalResponse) === 'mr' ||
-      finalResponse === GREETING_REPLIES[expected];
+function verifyGreetingReply(expected, finalResponse) {
+  if (expected === 'en') {
+    return finalResponse === GREETING_REPLIES.en;
   }
-  return inferFinalResponseLanguage(finalResponse) === expected;
+  if (finalResponse === GREETING_REPLIES[expected]) {
+    return true;
+  }
+  return assertReplyLanguage(finalResponse, expected).pass;
 }
 
 async function runGreetingCase(orchestrator, testCase) {
@@ -104,14 +105,8 @@ async function runGreetingCase(orchestrator, testCase) {
   if (log?.resolutionReason !== 'high_confidence_detection') {
     failures.push(`resolutionReason expected high_confidence_detection, got ${log?.resolutionReason}`);
   }
-  if (testCase.expected === 'en') {
-    if (finalResponse !== GREETING_REPLIES.en) {
-      failures.push('expected English greeting reply');
-    }
-  } else if (finalResponse !== GREETING_REPLIES[testCase.expected]) {
-    if (!devanagariLanguage(testCase.expected, finalResponse)) {
-      failures.push(`expected localized greeting for ${testCase.expected}`);
-    }
+  if (!verifyGreetingReply(testCase.expected, finalResponse)) {
+    failures.push(`expected localized greeting for ${testCase.expected}`);
   }
 
   return {

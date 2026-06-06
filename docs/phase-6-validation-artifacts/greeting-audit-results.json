@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-06T10:46:39.333Z",
+  "generatedAt": "2026-06-06T11:24:30.989Z",
   "results": [
     {
       "id": "greet_en",
@@ -84,7 +84,7 @@
         "finalResponseLanguage": "ml",
         "resolutionReason": "high_confidence_detection"
       },
-      "finalResponse": "എനിക്ക് സുഖമാണ്, ചോദിച്ചതിന് നന്ദി. ഇന്ന് എനിക്ക് നിങ്ങളെ എങ്ങനെ സഹായിക്കാം?"
+      "finalResponse": "ഞാൻ നന്നായിരിക്കുന്നു. എനിക്ക് നിങ്ങളെ എങ്ങനെ സഹായിക്കാനാകും?"
     },
     {
       "id": "greet_kn",
@@ -115,7 +115,7 @@
         "preferredLanguage": "te",
         "resolvedLanguage": "mr",
         "outboundLanguage": "mr",
-        "finalResponseLanguage": "hi",
+        "finalResponseLanguage": "mr",
         "resolutionReason": "high_confidence_detection"
       },
       "finalResponse": "मी ठीक आहे. मी तुम्हाला कशी मदत करू शकतो?"

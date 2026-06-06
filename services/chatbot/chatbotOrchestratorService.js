@@ -4,7 +4,6 @@ const botStateService = require('./botStateService');
 const leadContextService = require('./leadContextService');
 const { retrieveFacts } = require('./knowledgeRetrievalService');
 const { searchStaticFaq, searchBlog, formatFaqAnswerAsync } = require('./faqService');
-const { buildCounsellingSupportReply } = require('./counsellingSupportService');
 const { buildDemoSupportReply } = require('./demoSupportService');
 const { handleRankPredictorMessage, listExamsMessage } = require('./rankPredictorChatService');
 const { handleCollegePredictorMessage } = require('./collegePredictorChatService');
@@ -13,39 +12,88 @@ const whatsappOutbound = require('./whatsappOutboundService');
 const { tryLlmReply } = require('./llmReplyService');
 const { answerWithTimeout } = require('./knowledgeAssistantService');
 const { buildWelcomeMenuText } = require('./welcomeMessageService');
+const { getDemoMeetingLink } = require('../../utils/slotNotificationFormatters');
 const { emptySubflows } = require('./botSubflowContext');
 const { maskPhoneTail } = require('../../utils/chatbotPhone');
 const { logChatbotEvent, extractPredictorExam } = require('./chatbotStructuredLog');
 const {
   isMultilingualEnabled,
   prepareMultilingualInbound,
-  finalizeMultilingualOutbound,
+  applyMultilingualOutbound,
 } = require('../../middleware/multilingualMiddleware');
 const { seedPreferredLanguageFromLead } = require('./conversationLanguageService');
 const { incrementLanguageRequest } = require('../analytics/languageRequestAnalyticsService');
-const { localizeKnownFallback } = require('../../constants/localizedFallbackStrings');
 const { resolveGreetingReply } = require('../../constants/greetingReplies');
+const { buildLocalizedWelcomeMenu } = require('../../constants/localizedMenuReplies');
+const { buildLocalizedCounsellingSupportReply } = require('../../constants/localizedCounsellingReplies');
+const {
+  resolveSystemReply,
+  resolveKnowledgeAssistantFallback,
+} = require('../../constants/localizedSystemReplies');
 const {
   resolveCollegePredictorMaintenanceReply,
   resolveCollegePredictorRankQueryUnavailableReply,
 } = require('../../constants/collegePredictorUnavailableReplies');
 const { isRankBranchCollegePredictorQuery, normalizeText } = require('./intentClassifierService');
-const { formatForWhatsApp } = require('../../utils/whatsappMessageFormatter');
-const { inferFinalResponseLanguage } = require('../../utils/finalResponseLanguage');
+
+function resolvedLanguageFrom(multilingualInbound, fallback = 'en') {
+  return multilingualInbound?.resolvedLanguage || multilingualInbound?.language || fallback;
+}
+
+function localizationTierForIntent(intent) {
+  switch (intent) {
+    case 'greeting':
+    case 'main_menu':
+    case 'counselling_support':
+    case 'college_predictor':
+    case 'faq':
+      return 'static';
+    default:
+      return 'translate';
+  }
+}
+
+async function deliverOutboundReply({
+  replyText,
+  multilingualInbound,
+  intent,
+  localizationTier,
+  preLocalized = false,
+  guardrailModified = false,
+  outboundTrace = {},
+}) {
+  const inbound = multilingualInbound || { resolvedLanguage: 'en', language: 'en', originalMessage: '' };
+  const result = await applyMultilingualOutbound({
+    replyText,
+    resolvedLanguage: resolvedLanguageFrom(inbound),
+    originalMessage: inbound.originalMessage || '',
+    outboundTrace,
+    localizationTier: localizationTier || localizationTierForIntent(intent),
+    preLocalized,
+    guardrailModified,
+  });
+
+  if (
+    result.verification?.pass === false &&
+    Number(inbound.confidence || 0) >= 0.75 &&
+    resolvedLanguageFrom(inbound) !== 'en'
+  ) {
+    logChatbotEvent('language_mismatch', {
+      conversationId: inbound.conversationId || null,
+      intent,
+      resolvedLanguage: resolvedLanguageFrom(inbound),
+      verifiedResponseLanguage: result.verification?.detected || null,
+      reason: result.verification?.reason || null,
+    });
+  }
+
+  return result.text;
+}
 
 function previewLogText(text, max = 200) {
   const value = String(text || '');
   return value.length > max ? `${value.slice(0, max)}…` : value;
 }
-
-const ORCHESTRATOR_FALLBACK_REPLY =
-  'Sorry, something went wrong on our side. Please try again in a moment or reply MENU for options.';
-
-const HANDOFF_WAIT_REPLY =
-  'Our counsellor team is handling your chat. Please wait for their reply here.\n\nReply MENU to return to the assistant.';
-
-const KNOWLEDGE_ASSISTANT_FALLBACK_REPLY =
-  'I am not sure I understood. Reply MENU for options or AGENT to speak with our team.';
 
 /** Set CHATBOT_COLLEGE_PREDICTOR_ENABLED=1 to turn the WhatsApp college predictor back on. */
 function isCollegePredictorEnabled() {
@@ -168,9 +216,28 @@ function mapMenuIdToIntent(menuId, productLine = 'unknown') {
   return 'main_menu';
 }
 
-async function sendMainMenu(conversation, leadContext, inReplyToInboundId) {
+async function sendMainMenu(conversation, leadContext, inReplyToInboundId, multilingualInbound = null) {
   const h = hooks();
-  const body = buildMainMenuText(leadContext);
+  const lang = resolvedLanguageFrom(multilingualInbound);
+  let body = buildLocalizedWelcomeMenu(lang, leadContext);
+  let tier = 'static';
+  let preLocalized = Boolean(body);
+  if (!body) {
+    body = buildMainMenuText(leadContext);
+    tier = 'translate';
+    preLocalized = false;
+  }
+
+  const outboundTrace = {};
+  body = await deliverOutboundReply({
+    replyText: body,
+    multilingualInbound,
+    intent: 'main_menu',
+    localizationTier: tier,
+    preLocalized,
+    outboundTrace,
+  });
+
   logChatbotEvent('main_menu_sent', {
     conversationId: conversation._id,
     phone10: conversation.phone,
@@ -265,10 +332,11 @@ async function processInbound({ conversation, inbound, leadLinks }) {
       err_message: err.message,
     });
     try {
+      const fallbackText = resolveSystemReply('orchestratorFallback', 'en');
       const result = await h.outbound.sendBotTextReply({
         conversationId: conversation._id,
         phone10: conversation.phone,
-        text: ORCHESTRATOR_FALLBACK_REPLY,
+        text: fallbackText,
         inReplyToInboundId: inbound._id,
       });
       return { ...result, ...summarizeProcessResult(result) };
@@ -282,41 +350,8 @@ async function processInbound({ conversation, inbound, leadLinks }) {
 async function processInboundCore({ conversation, inbound, leadLinks, startedAt }) {
   const h = hooks();
   let activeConversation = conversation;
-  const paused = await h.isBotPausedForConversation(activeConversation);
-  if (paused) {
-    const menuIntent = classifyIntent(
-      inbound.text,
-      null,
-      activeConversation.productLine
-    );
-    if (menuIntent.intent === 'main_menu') {
-      await h.cancelActiveHandoffForUser(activeConversation);
-      activeConversation =
-        (await WhatsAppConversation.findById(activeConversation._id).lean()) ||
-        activeConversation;
-    } else {
-      const result = await h.outbound.sendBotTextReply({
-        conversationId: activeConversation._id,
-        phone10: activeConversation.phone,
-        text: HANDOFF_WAIT_REPLY,
-        inReplyToInboundId: inbound._id,
-      });
-      logInboundResult({
-        event: 'inbound_skipped',
-        conversation: activeConversation,
-        botState: null,
-        intent: null,
-        contextPatch: {},
-        durationMs: Date.now() - startedAt,
-      });
-      return { ...result, skipped: true, reason: 'handoff_active' };
-    }
-  }
-
   const leadContext = await h.buildLeadContext(leadLinks);
   await seedPreferredLanguageFromLead(activeConversation._id, leadContext);
-  const facts = await h.retrieveFacts(leadLinks, leadContext);
-  const botState = await h.getBotState(activeConversation._id);
 
   let multilingualInbound = null;
   if (isMultilingualEnabled() && inbound.text) {
@@ -337,6 +372,48 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     }
   }
 
+  const paused = await h.isBotPausedForConversation(activeConversation);
+  if (paused) {
+    const menuIntent = classifyIntent(
+      inbound.text,
+      null,
+      activeConversation.productLine,
+      inbound.text
+    );
+    if (menuIntent.intent === 'main_menu') {
+      await h.cancelActiveHandoffForUser(activeConversation);
+      activeConversation =
+        (await WhatsAppConversation.findById(activeConversation._id).lean()) ||
+        activeConversation;
+    } else {
+      const handoffText = await deliverOutboundReply({
+        replyText: resolveSystemReply('handoffWait', resolvedLanguageFrom(multilingualInbound)),
+        multilingualInbound,
+        intent: 'human_handoff',
+        localizationTier: 'static',
+        preLocalized: true,
+      });
+      const result = await h.outbound.sendBotTextReply({
+        conversationId: activeConversation._id,
+        phone10: activeConversation.phone,
+        text: handoffText,
+        inReplyToInboundId: inbound._id,
+      });
+      logInboundResult({
+        event: 'inbound_skipped',
+        conversation: activeConversation,
+        botState: null,
+        intent: null,
+        contextPatch: {},
+        durationMs: Date.now() - startedAt,
+      });
+      return { ...result, skipped: true, reason: 'handoff_active' };
+    }
+  }
+
+  const facts = await h.retrieveFacts(leadLinks, leadContext);
+  const botState = await h.getBotState(activeConversation._id);
+
   const intentText =
     multilingualInbound?.englishMessage ||
     String(inbound.text || '').trim();
@@ -351,7 +428,12 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       confidence: 'high',
     };
   } else {
-    intentResult = classifyIntent(intentText, botState, activeConversation.productLine);
+    intentResult = classifyIntent(
+      intentText,
+      botState,
+      activeConversation.productLine,
+      inbound.text
+    );
   }
 
   await h.updateConversationIntent(activeConversation._id, intentResult.intent);
@@ -361,10 +443,17 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       optedOut: true,
       knowledgeAssistantActive: false,
     });
+    const optOutText = await deliverOutboundReply({
+      replyText: resolveSystemReply('optOut', resolvedLanguageFrom(multilingualInbound)),
+      multilingualInbound,
+      intent: 'opt_out',
+      localizationTier: 'static',
+      preLocalized: true,
+    });
     const result = await h.outbound.sendBotTextReply({
       conversationId: activeConversation._id,
       phone10: activeConversation.phone,
-      text: 'You have been opted out of automated messages. Reply MENU anytime to start again.',
+      text: optOutText,
       inReplyToInboundId: inbound._id,
     });
     logInboundResult({
@@ -398,7 +487,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
 
   if (intentResult.intent === 'main_menu') {
     await h.transitionState(activeConversation._id, activeConversation.phone, 'main_menu', emptySubflows());
-    const result = await sendMainMenu(activeConversation, leadContext, inbound._id);
+    const result = await sendMainMenu(activeConversation, leadContext, inbound._id, multilingualInbound);
     logInboundResult({
       event: 'inbound_processed',
       conversation: activeConversation,
@@ -430,7 +519,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     case 'faq':
     case 'faq_query':
       await h.transitionState(activeConversation._id, activeConversation.phone, 'faq', contextPatch);
-      replyText = 'Send a topic (e.g. "meeting link", "IIT session", "book demo") and I will search our FAQs.';
+      replyText = resolveSystemReply('faqPrompt', resolvedLanguageFrom(multilingualInbound));
       if (intentResult.intent === 'faq_query' && inbound.text) {
         const staticHits = searchStaticFaq(inbound.text);
         const blogHits = await searchBlog(inbound.text);
@@ -439,7 +528,11 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       }
       break;
     case 'counselling_support':
-      replyText = await buildCounsellingSupportReply(leadContext);
+      replyText = buildLocalizedCounsellingSupportReply(
+        resolvedLanguageFrom(multilingualInbound),
+        leadContext,
+        { meetingLink: getDemoMeetingLink() }
+      );
       nextState = 'counselling_support';
       break;
     case 'demo_support':
@@ -497,9 +590,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       break;
     }
     case 'greeting': {
-      replyText = resolveGreetingReply(
-        multilingualInbound?.language || multilingualInbound?.resolvedLanguage || 'en'
-      );
+      replyText = resolveGreetingReply(resolvedLanguageFrom(multilingualInbound));
       nextState = 'idle';
       contextPatch = { ...contextPatch, knowledgeAssistantActive: false };
       break;
@@ -524,7 +615,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
         replyText = knowledgeAssistantResult.text;
       } else {
         console.warn('[chatbot] knowledge_assistant_fallback using orchestrator reply');
-        replyText = KNOWLEDGE_ASSISTANT_FALLBACK_REPLY;
+        replyText = resolveKnowledgeAssistantFallback(resolvedLanguageFrom(multilingualInbound));
       }
       nextState = 'idle';
       break;
@@ -559,7 +650,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
         }
       }
       if (intentResult.confidence === 'low') {
-        replyText = KNOWLEDGE_ASSISTANT_FALLBACK_REPLY;
+        replyText = resolveKnowledgeAssistantFallback(resolvedLanguageFrom(multilingualInbound));
       } else {
         replyText = await buildLeadLookupReply(leadContext);
       }
@@ -593,51 +684,38 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     shouldTranslateOutbound: false,
     outboundTranslationExecuted: false,
     translateFromEnglishExecuted: false,
-    outboundTranslationLanguage: multilingualInbound?.language || null,
+    outboundTranslationLanguage: resolvedLanguageFrom(multilingualInbound),
     outboundTranslationPassThrough: false,
     knowledgeAssistantResponse,
+    verifiedResponseLanguage: null,
+    languageMismatch: false,
   };
 
-  if (multilingualInbound && replyText) {
-    replyText = formatForWhatsApp(replyText);
+  const tier = localizationTierForIntent(intentResult.intent);
+  const preLocalized =
+    tier === 'static' &&
+    (intentResult.intent === 'greeting' ||
+      intentResult.intent === 'counselling_support' ||
+      intentResult.intent === 'faq' ||
+      (intentResult.intent === 'college_predictor' && !isCollegePredictorEnabled()));
 
-    const shouldTranslateOutbound =
-      multilingualInbound.language !== 'en' &&
-      (intentResult.intent === 'knowledge_assistant' ||
-        intentResult.intent === 'rank_predictor' ||
-        intentResult.intent === 'rank_predictor_continue' ||
-        (intentResult.intent === 'unknown' && unknownLlmUsed));
+  if (replyText) {
+    replyText = await deliverOutboundReply({
+      replyText,
+      multilingualInbound,
+      intent: intentResult.intent,
+      localizationTier: tier,
+      preLocalized,
+      guardrailModified: Boolean(assistantResult?.guardrailModified),
+      outboundTrace,
+    });
 
-    outboundTrace.shouldTranslateOutbound = shouldTranslateOutbound;
-    outboundTrace.outboundTranslationLanguage = multilingualInbound.language;
-
-    if (shouldTranslateOutbound) {
-      try {
-        replyText = await finalizeMultilingualOutbound({
-          englishResponse: replyText,
-          language: multilingualInbound.language,
-          originalMessage: multilingualInbound.originalMessage,
-          guardrailModified: Boolean(assistantResult?.guardrailModified),
-          outboundTrace,
-        });
-      } catch (err) {
-        console.warn('[chatbot] finalizeMultilingualOutbound failed', err.message);
-      }
-      replyText = formatForWhatsApp(replyText);
-      if (knowledgeAssistantResult?.languageLog) {
-        knowledgeAssistantResult.languageLog.finalResponse = replyText;
-      }
-      if (unknownLlmResult?.languageLog) {
-        unknownLlmResult.languageLog.finalResponse = replyText;
-      }
-    } else if (intentResult.intent !== 'greeting') {
-      const localized = localizeKnownFallback(replyText, multilingualInbound.language);
-      if (localized !== replyText) {
-        replyText = localized;
-      }
+    if (knowledgeAssistantResult?.languageLog) {
+      knowledgeAssistantResult.languageLog.finalResponse = replyText;
     }
-  } else if (replyText) {
-    replyText = formatForWhatsApp(replyText);
+    if (unknownLlmResult?.languageLog) {
+      unknownLlmResult.languageLog.finalResponse = replyText;
+    }
   }
 
   const result = await h.outbound.sendBotTextReply({
@@ -668,7 +746,9 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
           translatedQuery: multilingualInbound.englishMessage,
           translationApplied: multilingualInbound.translationApplied,
           outboundLanguage: multilingualInbound.language,
-          finalResponseLanguage: inferFinalResponseLanguage(replyText),
+          finalResponseLanguage: resolvedLanguageFrom(multilingualInbound),
+          verifiedResponseLanguage: outboundTrace.verifiedResponseLanguage,
+          languageMismatch: outboundTrace.languageMismatch,
           knowledgeAssistantResponse: outboundTrace.knowledgeAssistantResponse,
           shouldTranslateOutbound: outboundTrace.shouldTranslateOutbound,
           outboundTranslationExecuted: outboundTrace.outboundTranslationExecuted,

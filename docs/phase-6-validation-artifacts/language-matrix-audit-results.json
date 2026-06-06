@@ -1,0 +1,533 @@
+{
+  "generatedAt": "2026-06-06T11:35:27.921Z",
+  "matrixResults": [
+    {
+      "lang": "en",
+      "scenarios": [
+        {
+          "lang": "en",
+          "scenario": "greeting",
+          "input": "How are you?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "greeting",
+            "resolvedLanguage": "en",
+            "finalResponseLanguage": "en",
+            "verifiedResponseLanguage": "en",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "I'm doing well. How can I help you today?"
+        },
+        {
+          "lang": "en",
+          "scenario": "branch",
+          "input": "Which branch is good for me?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "unknown",
+            "resolvedLanguage": "en",
+            "finalResponseLanguage": "en",
+            "verifiedResponseLanguage": "en",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "Tell me a bit about what you enjoy and what you’re good at.\n- Are you interested in coding, design, machine learning, hardware, or something else?\n- Do you pref"
+        },
+        {
+          "lang": "en",
+          "scenario": "rank",
+          "input": "Can I get CSE with rank 15000?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "college_predictor",
+            "resolvedLanguage": "en",
+            "finalResponseLanguage": "en",
+            "verifiedResponseLanguage": "en",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "You already provided your rank, so Rank Predictor is not needed.\n\nThis query normally uses College Predictor.\n\nCollege Predictor is currently unavailable.\n\nRepl"
+        },
+        {
+          "lang": "en",
+          "scenario": "unknown",
+          "input": "What is GuideXpert?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "knowledge_assistant",
+            "resolvedLanguage": "en",
+            "finalResponseLanguage": "en",
+            "verifiedResponseLanguage": "en",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "GuideXpert is a platform that helps students make smart career choices.\nIt gives students clarity about which course, college and branch fit them best.\nCounselo"
+        }
+      ],
+      "passPct": 100
+    },
+    {
+      "lang": "te",
+      "scenarios": [
+        {
+          "lang": "te",
+          "scenario": "greeting",
+          "input": "మీరు ఎలా ఉన్నారు?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "greeting",
+            "resolvedLanguage": "te",
+            "finalResponseLanguage": "te",
+            "verifiedResponseLanguage": "te",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "నేను బాగున్నాను. మీకు ఎలా సహాయం చేయగలను?"
+        },
+        {
+          "lang": "te",
+          "scenario": "branch",
+          "input": "నాకు ఏ బ్రాంచ్ మంచిది?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "unknown",
+            "resolvedLanguage": "te",
+            "finalResponseLanguage": "te",
+            "verifiedResponseLanguage": "te",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "శాఖను ఎంచుకోవడం మీరు ఆనందించే విషయం మరియు మీరు అభివృద్ధి చేయాలనుకునే నైపుణ్యాలపై ఆధారపడుతుంది.\nస్కూల్లో మీరు ఎక్కువగా ఇష్టపడే విషయాలు ఏవో ఆలోచించండి, మీరు గణితం"
+        },
+        {
+          "lang": "te",
+          "scenario": "rank",
+          "input": "15000 rank ki cse vastunda",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "college_predictor",
+            "resolvedLanguage": "te",
+            "finalResponseLanguage": "te",
+            "verifiedResponseLanguage": "te",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "మీరు ఇప్పటికే మీ ర్యాంక్‌ను ఇచ్చారు, కాబట్టి Rank Predictor అవసరం లేదు.\n\nఈ ప్రశ్న సాధారణంగా College Predictor ఉపయోగిస్తుంది.\n\nCollege Predictor ప్రస్తుతం అందుబా"
+        },
+        {
+          "lang": "te",
+          "scenario": "unknown",
+          "input": "విద్యార్థులకు కౌన్సిలింగ్ సేవ అంటే ఏమిటి?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "knowledge_assistant",
+            "resolvedLanguage": "te",
+            "finalResponseLanguage": "te",
+            "verifiedResponseLanguage": "te",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "కౌన్సిలింగ్ సేవ విద్యార్థులు తమ భవిష్యత్తు మార్గాన్ని నిర్ణయించడంలో సహాయపడుతుంది.\n• ఇది విద్యార్థుల ఆసక్తులు మరియు బలాల ఆధారంగా ఏ ఇంజనీరింగ్ శాఖలు సరిపోతాయో వివ"
+        }
+      ],
+      "passPct": 100
+    },
+    {
+      "lang": "hi",
+      "scenarios": [
+        {
+          "lang": "hi",
+          "scenario": "greeting",
+          "input": "आप कैसे हैं?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "greeting",
+            "resolvedLanguage": "hi",
+            "finalResponseLanguage": "hi",
+            "verifiedResponseLanguage": "hi",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "मैं ठीक हूँ। मैं आपकी कैसे मदद कर सकता हूँ?"
+        },
+        {
+          "lang": "hi",
+          "scenario": "branch",
+          "input": "mujhe kaun si branch chahiye?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "unknown",
+            "resolvedLanguage": "hi",
+            "finalResponseLanguage": "hi",
+            "verifiedResponseLanguage": "hi",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "हर विकल्प की अपनी ताकत होती है। सोचें कि आपके लिए सबसे ज़्यादा क्या मायने रखता है।\n\n• यदि आप अभी तुरंत उच्च मांग और कई टेक नौकरियाँ चाहते हैं: Software, AI, dat"
+        },
+        {
+          "lang": "hi",
+          "scenario": "rank",
+          "input": "15000 rank par CSE milega kya?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "college_predictor",
+            "resolvedLanguage": "hi",
+            "finalResponseLanguage": "hi",
+            "verifiedResponseLanguage": "hi",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "आपने अपनी रैंक पहले ही दे दी है, इसलिए Rank Predictor की ज़रूरत नहीं है।\n\nयह प्रश्न सामान्यतः College Predictor से संभाला जाता है।\n\nCollege Predictor अभी उपलब्ध"
+        },
+        {
+          "lang": "hi",
+          "scenario": "unknown",
+          "input": "GuideXpert kya hai?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "knowledge_assistant",
+            "resolvedLanguage": "hi",
+            "finalResponseLanguage": "hi",
+            "verifiedResponseLanguage": "hi",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "GuideXpert एक ऐसा प्लेटफ़ॉर्म है जो छात्रों को सही करियर निर्णय लेने में मदद करता है।\nछात्र अक्सर 12th के बाद खोया हुआ महसूस करते हैं, यह नहीं जानते कि कौन सा क"
+        }
+      ],
+      "passPct": 100
+    },
+    {
+      "lang": "ta",
+      "scenarios": [
+        {
+          "lang": "ta",
+          "scenario": "greeting",
+          "input": "நீங்கள் எப்படி இருக்கிறீர்கள்?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "greeting",
+            "resolvedLanguage": "ta",
+            "finalResponseLanguage": "ta",
+            "verifiedResponseLanguage": "ta",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "நான் நன்றாக இருக்கிறேன். உங்களுக்கு எப்படி உதவலாம்?"
+        },
+        {
+          "lang": "ta",
+          "scenario": "branch",
+          "input": "எனக்கு எந்த branch நல்லது?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "unknown",
+            "resolvedLanguage": "ta",
+            "finalResponseLanguage": "ta",
+            "verifiedResponseLanguage": "ta",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "மன்னிக்கவும், எங்கள் பக்கத்தில் பிழை ஏற்பட்டது. சிறிது நேரம் கழித்து மீண்டும் try செய்யுங்கள் அல்லது MENU என reply செய்யுங்கள்."
+        },
+        {
+          "lang": "ta",
+          "scenario": "rank",
+          "input": "15000 ரேங்கில் CSE கிடைக்குமா?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "college_predictor",
+            "resolvedLanguage": "ta",
+            "finalResponseLanguage": "ta",
+            "verifiedResponseLanguage": "ta",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "நீங்கள் ஏற்கனவே உங்கள் rank-ஐ வழங்கியுள்ளீர்கள், அதனால் Rank Predictor தேவையில்லை.\n\nஇந்த கேள்வி வழக்கமாக College Predictor மூலம் கையாளப்படும்.\n\nCollege Predicto"
+        },
+        {
+          "lang": "ta",
+          "scenario": "unknown",
+          "input": "மாணவர்களுக்கு வழிகாட்டுதல் எப்படி வழங்கப்படுகிறது?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "knowledge_assistant",
+            "resolvedLanguage": "ta",
+            "finalResponseLanguage": "ta",
+            "verifiedResponseLanguage": "ta",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "மார்க்கம் நட்பான மற்றும் எளிய முறையில் வழங்கப்படுகிறது.\n• முதலில் மாணவர் கூறுவதை கவனமாக கேட்கிறோம்.\n• பின்னர் தொழில் பாதைகள், தொழில் போக்குகள், மற்றும் தேவையான "
+        }
+      ],
+      "passPct": 100
+    },
+    {
+      "lang": "kn",
+      "scenarios": [
+        {
+          "lang": "kn",
+          "scenario": "greeting",
+          "input": "ನೀವು ಹೇಗಿದ್ದೀರಿ?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "greeting",
+            "resolvedLanguage": "kn",
+            "finalResponseLanguage": "kn",
+            "verifiedResponseLanguage": "kn",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "ನಾನು ಚೆನ್ನಾಗಿದ್ದೇನೆ. ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು?"
+        },
+        {
+          "lang": "kn",
+          "scenario": "branch",
+          "input": "ನನಗೆ ಯಾವ ಶಾಖೆ ಒಳ್ಳೆಯದು?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "unknown",
+            "resolvedLanguage": "kn",
+            "finalResponseLanguage": "kn",
+            "verifiedResponseLanguage": "kn",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "• ನೀವು ಕೋಡಿಂಗ್, ಸಮಸ್ಯೆ ಪರಿಹಾರ ಮತ್ತು ಸಾಧನಗಳ ನಿರ್ಮಾಣವನ್ನು ಇಷ್ಟಪಡುತ್ತೀರಾ, ಅಂದರೆ CSE, AI, ಡೇಟಾ ಸೈನ್ಸ್, ಕ್ಲೌಡ್ ಕಂಪ್ಯೂಟಿಂಗ್ ಅಥವಾ ಸೈಬರ್‌ಸಿಕ್ಯೂರಿಟಿ ಮುಂತಾದ ತಂತ್ರಜ್ಞಾನ ವಿ"
+        },
+        {
+          "lang": "kn",
+          "scenario": "rank",
+          "input": "15000 ರ್ಯಾಂಕ್ನಲ್ಲಿ CSE ಸಿಗುತ್ತೆ?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "college_predictor",
+            "resolvedLanguage": "kn",
+            "finalResponseLanguage": "kn",
+            "verifiedResponseLanguage": "kn",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "ನೀವು ಈಗಾಗಲೇ ನಿಮ್ಮ rank ಅನ್ನು ನೀಡಿದ್ದೀರಿ, ಆದ್ದರಿಂದ Rank Predictor ಅಗತ್ಯವಿಲ್ಲ.\n\nಈ ಪ್ರಶ್ನೆಯನ್ನು ಸಾಮಾನ್ಯವಾಗಿ College Predictor ಬಳಸಿ ನಿಭಾಯಿಸಲಾಗುತ್ತದೆ.\n\nCollege Predi"
+        },
+        {
+          "lang": "kn",
+          "scenario": "unknown",
+          "input": "ವಿದ್ಯಾರ್ಥಿಗಳಿಗೆ ಮಾರ್ಗದರ್ಶನ ಹೇಗೆ ಸಿಗುತ್ತದೆ?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "knowledge_assistant",
+            "resolvedLanguage": "kn",
+            "finalResponseLanguage": "kn",
+            "verifiedResponseLanguage": "kn",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "ವಿದ್ಯಾರ್ಥಿಗಳಿಗೆ ಮಾರ್ಗದರ್ಶನವು ಕೆಲವು ಸ್ಪಷ್ಟ ಹಂತಗಳಲ್ಲಿ ಬರುತ್ತದೆ:\n\n• ಮೊದಲಿಗೆ, ನಾವು ವಿದ್ಯಾರ್ಥಿ ಏನು ಬಯಸುತ್ತಾನೆ ಮತ್ತು ಯಾವ ಆತಂಕಗಳಿವೆ ಎಂದು ಗಮನದಿಂದ ಕೇಳುತ್ತೇವೆ.\n• ನಂತರ, ನಾ"
+        }
+      ],
+      "passPct": 100
+    },
+    {
+      "lang": "ml",
+      "scenarios": [
+        {
+          "lang": "ml",
+          "scenario": "greeting",
+          "input": "നിങ്ങൾക്ക് സുഖമാണോ?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "greeting",
+            "resolvedLanguage": "ml",
+            "finalResponseLanguage": "ml",
+            "verifiedResponseLanguage": "ml",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "ഞാൻ നന്നായിരിക്കുന്നു. എനിക്ക് നിങ്ങളെ എങ്ങനെ സഹായിക്കാനാകും?"
+        },
+        {
+          "lang": "ml",
+          "scenario": "branch",
+          "input": "എനിക്ക് ഏത് branch നല്ലത്?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "unknown",
+            "resolvedLanguage": "ml",
+            "finalResponseLanguage": "ml",
+            "verifiedResponseLanguage": "ml",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "നിങ്ങൾക്ക് എന്ത് ഇഷ്ടമാണ്, എങ്ങനെ വളരാൻ ആഗ്രഹിക്കുന്നു എന്നതിനെ ആശ്രയിച്ചിരിക്കുന്നു.\n• കോഡിംഗ്, ഡാറ്റ, AI, ഉൽപ്പന്നങ്ങൾ നിർമ്മിക്കൽ എന്നിവ ഇഷ്ടപ്പെടുന്നുവെങ്കി"
+        },
+        {
+          "lang": "ml",
+          "scenario": "rank",
+          "input": "15000 റാങ്കിൽ CSE കിട്ടുമോ?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "college_predictor",
+            "resolvedLanguage": "ml",
+            "finalResponseLanguage": "ml",
+            "verifiedResponseLanguage": "ml",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "നിങ്ങൾ ഇതിനകം നിങ്ങളുടെ rank നൽകിയിട്ടുണ്ട്, അതുകൊണ്ട് Rank Predictor ആവശ്യമില്ല.\n\nഈ ചോദ്യം സാധാരണയായി College Predictor ഉപയോഗിച്ച് കൈകാര്യം ചെയ്യുന്നു.\n\nColleg"
+        },
+        {
+          "lang": "ml",
+          "scenario": "unknown",
+          "input": "വിദ്യാർത്ഥികൾക്ക് ഉപദേശം എങ്ങനെ ലഭിക്കും?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "unknown",
+            "resolvedLanguage": "ml",
+            "finalResponseLanguage": "ml",
+            "verifiedResponseLanguage": "ml",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "നല്ല ഉപദേശം ലഭിക്കാൻ, വിദ്യാർത്ഥികൾക്ക് ചില ലളിതമായ ചുവടുകൾ പിന്തുടരാം:\n\n• കൗൺസിലറുമായി നേരിട്ട് സംസാരിക്കുക. അവർക്ക് എന്ത് ആവശ്യമാണ് എന്ന് കേൾക്കുക, വ്യക്തമായ "
+        }
+      ],
+      "passPct": 100
+    },
+    {
+      "lang": "mr",
+      "scenarios": [
+        {
+          "lang": "mr",
+          "scenario": "greeting",
+          "input": "तुम्ही कसे आहात?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "greeting",
+            "resolvedLanguage": "mr",
+            "finalResponseLanguage": "mr",
+            "verifiedResponseLanguage": "mr",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "मी ठीक आहे. मी तुम्हाला कशी मदत करू शकतो?"
+        },
+        {
+          "lang": "mr",
+          "scenario": "branch",
+          "input": "मला कोणती शाखा चांगली?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "unknown",
+            "resolvedLanguage": "mr",
+            "finalResponseLanguage": "mr",
+            "verifiedResponseLanguage": "mr",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "मला मदत करण्यास आनंद आहे, परंतु प्रथम तुमच्याबद्दल थोडी माहिती असणे उपयुक्त ठरेल.\n\nशाळेत तुम्हाला सर्वाधिक आवडणारे विषय किंवा क्रियाकलाप कोणते आहेत?\nतुम्हाला सं"
+        },
+        {
+          "lang": "mr",
+          "scenario": "rank",
+          "input": "15000 रँक वर CSE मिळेल का?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "college_predictor",
+            "resolvedLanguage": "mr",
+            "finalResponseLanguage": "mr",
+            "verifiedResponseLanguage": "mr",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "तुम्ही आधीच तुमची rank दिली आहे, म्हणून Rank Predictorाची गरज नाही.\n\nहा प्रश्न सामान्यतः College Predictor वापरून हाताळला जातो.\n\nCollege Predictor सध्या उपलब्ध "
+        },
+        {
+          "lang": "mr",
+          "scenario": "unknown",
+          "input": "विद्यार्थ्यांना समुपदेशन कसे मिळते?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "knowledge_assistant",
+            "resolvedLanguage": "mr",
+            "finalResponseLanguage": "mr",
+            "verifiedResponseLanguage": "mr",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "माफ करा, आमच्या बाजूने काहीतरी चूक झाली. थोड्या वेळाने पुन्हा प्रयत्न करा किंवा MENU म्हणून reply करा."
+        }
+      ],
+      "passPct": 100
+    },
+    {
+      "lang": "bn",
+      "scenarios": [
+        {
+          "lang": "bn",
+          "scenario": "greeting",
+          "input": "আপনি কেমন আছেন?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "greeting",
+            "resolvedLanguage": "bn",
+            "finalResponseLanguage": "bn",
+            "verifiedResponseLanguage": "bn",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "আমি ভালো আছি। আমি আপনাকে কীভাবে সাহায্য করতে পারি?"
+        },
+        {
+          "lang": "bn",
+          "scenario": "branch",
+          "input": "আমার জন্য কোন branch ভালো?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "unknown",
+            "resolvedLanguage": "bn",
+            "finalResponseLanguage": "bn",
+            "verifiedResponseLanguage": "bn",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "আপনার জন্য কোন শাখা ভালো হবে তা নির্ভর করে আপনার আগ্রহ এবং যেসব দক্ষতা আপনি তৈরি করতে পছন্দ করেন তার উপর। এখানে কিছু সাধারণ পরামর্শ দেওয়া হলো:\n\n• আপনি যদি কোডিং"
+        },
+        {
+          "lang": "bn",
+          "scenario": "rank",
+          "input": "15000 র‌্যাঙ্কে CSE পাব?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "college_predictor",
+            "resolvedLanguage": "bn",
+            "finalResponseLanguage": "bn",
+            "verifiedResponseLanguage": "bn",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "আপনি ইতিমধ্যে আপনার rank দিয়েছেন, তাই Rank Predictor-এর প্রয়োজন নেই।\n\nএই প্রশ্ন সাধারণত College Predictor দিয়ে পরিচালিত হয়।\n\nCollege Predictor এখন উপলব্ধ নয"
+        },
+        {
+          "lang": "bn",
+          "scenario": "unknown",
+          "input": "শিক্ষার্থীদের পরামর্শ কীভাবে দেওয়া হয়?",
+          "pass": true,
+          "failures": [],
+          "log": {
+            "intent": "knowledge_assistant",
+            "resolvedLanguage": "bn",
+            "finalResponseLanguage": "bn",
+            "verifiedResponseLanguage": "bn",
+            "languageMismatch": false
+          },
+          "finalResponsePreview": "ছাত্রছাত্রীদের পরামর্শ বন্ধুত্বপূর্ণ ও সহজভাবে দেওয়া হয়।\n\n• প্রথমে তাদের প্রয়োজন শোনো এবং তাদের আগ্রহ বুঝো।\n• স্পষ্ট, সৎ নির্দেশনা দাও, চাপ না দিয়ে।\n• তাদের লক্"
+        }
+      ],
+      "passPct": 100
+    }
+  ]
+}
