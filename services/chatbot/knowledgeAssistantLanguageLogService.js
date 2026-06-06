@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const KnowledgeAssistantLanguageLog = require('../../models/KnowledgeAssistantLanguageLog');
 const { logChatbotEvent } = require('./chatbotStructuredLog');
 const { aiDebugLog } = require('./aiDebugLog');
-const { isMultilingualEnabled } = require('../../middleware/multilingualMiddleware');
+const { isMultilingualEnabled } = require('../../utils/multilingualFlags');
 
 function buildLanguageLogPayload(fields = {}) {
   return {

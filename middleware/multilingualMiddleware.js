@@ -7,14 +7,11 @@ const {
 } = require('../services/language/translationService');
 const { localizeKnownFallback } = require('../constants/localizedFallbackStrings');
 const { aiDebugLog } = require('../services/chatbot/aiDebugLog');
+const { isMultilingualEnabled } = require('../utils/multilingualFlags');
 const {
   resolveConversationLanguage,
   recordDetectedLanguage,
 } = require('../services/chatbot/conversationLanguageService');
-
-function isMultilingualEnabled() {
-  return String(process.env.CHATBOT_MULTILINGUAL_ENABLED || '').trim() === '1';
-}
 
 async function prepareMultilingualInbound({ message, conversation, leadContext } = {}) {
   const originalMessage = String(message || '').trim();
