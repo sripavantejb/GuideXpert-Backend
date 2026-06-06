@@ -438,6 +438,20 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
 
   await h.updateConversationIntent(activeConversation._id, intentResult.intent);
 
+  if (String(process.env.CHATBOT_INTENT_DEBUG || '').trim() === '1') {
+    console.log(
+      '[INTENT_DEBUG]',
+      JSON.stringify({
+        stage: 'orchestrator_after_classify',
+        message: inbound.text,
+        intent: intentResult.intent,
+        reason: intentResult.intentReason || null,
+        englishMessage: multilingualInbound?.englishMessage || null,
+        resolvedLanguage: multilingualInbound?.resolvedLanguage || null,
+      })
+    );
+  }
+
   if (intentResult.intent === 'opt_out') {
     await h.transitionState(activeConversation._id, activeConversation.phone, 'idle', {
       optedOut: true,
@@ -590,6 +604,18 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       break;
     }
     case 'greeting': {
+      if (String(process.env.CHATBOT_INTENT_DEBUG || '').trim() === '1') {
+        console.log(
+          '[INTENT_DEBUG]',
+          JSON.stringify({
+            stage: 'orchestrator_branch',
+            branch: 'greeting',
+            handler: 'static resolveGreetingReply',
+            knowledgeAssistantUsed: false,
+            resolvedLanguage: resolvedLanguageFrom(multilingualInbound),
+          })
+        );
+      }
       replyText = resolveGreetingReply(resolvedLanguageFrom(multilingualInbound));
       nextState = 'idle';
       contextPatch = { ...contextPatch, knowledgeAssistantActive: false };

@@ -22,7 +22,9 @@ function assertIntent(original, expectedIntent, englishMessage = null) {
 
 describe('romanized Telugu greeting routing', () => {
   test('ela unnaru routes to greeting on original text', () => {
-    assertIntent('ela unnaru', 'greeting', 'How are you doing?');
+    const r = classifyIntent('How are you doing?', null, PRODUCT_LINE, 'ela unnaru');
+    assert.equal(r.intent, 'greeting');
+    assert.equal(r.intentReason, 'romanized_telugu_greeting');
   });
 
   test('ela vunnaru routes to greeting', () => {

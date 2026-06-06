@@ -81,6 +81,10 @@ const SOCIAL_GREETING_PATTERNS = [
   /^(ela vunnaru|ela unnaru|bagunnara|bagunnava)\s*[.!?]?$/,
 ];
 
+const ROMANIZED_TELUGU_GREETING_PATTERNS = [
+  /^(ela vunnaru|ela unnaru|bagunnara|bagunnava)\s*[.!?]?$/,
+];
+
 const ROMANIZED_TELUGU_BRANCH_GUIDANCE_PATTERNS = [
   /\bnaaku\s+(cse|ece|eee|it)\s+kavali\b/i,
   /\bnaaku\s+e?\s*branch\s+manchidi\b/i,
@@ -113,6 +117,18 @@ function isSocialGreeting(text, originalText = null) {
   return candidates.some(
     (t) => t && SOCIAL_GREETING_PATTERNS.some((pattern) => pattern.test(t))
   );
+}
+
+function isRomanizedTeluguSocialGreeting(text) {
+  const raw = String(text || '').trim();
+  const t = normalizeText(raw);
+  if (!t || !isRomanizedAscii(raw)) return false;
+  return ROMANIZED_TELUGU_GREETING_PATTERNS.some((pattern) => pattern.test(t));
+}
+
+function logIntentDebug(payload) {
+  if (String(process.env.CHATBOT_INTENT_DEBUG || '').trim() !== '1') return;
+  console.log('[INTENT_DEBUG]', JSON.stringify(payload));
 }
 
 function isRomanizedAscii(text) {
@@ -250,8 +266,24 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     return { intent: 'rank_predictor_continue', confidence: 'high' };
   }
 
-  if (isNativeSocialGreeting(original) || isSocialGreeting(t, original)) {
-    return { intent: 'greeting', confidence: 'high', intentReason: 'social_greeting' };
+  const nativeGreeting = isNativeSocialGreeting(original);
+  const socialGreeting = isSocialGreeting(t, original);
+  const romanizedTeluguGreeting =
+    isRomanizedTeluguSocialGreeting(original) || isRomanizedTeluguSocialGreeting(t);
+
+  logIntentDebug({
+    stage: 'classifyIntent',
+    message: original,
+    intentText: t,
+    isSocialGreeting: socialGreeting,
+    isNativeSocialGreeting: nativeGreeting,
+    romanizedTeluguGreeting,
+  });
+
+  if (nativeGreeting || socialGreeting) {
+    const intentReason = romanizedTeluguGreeting ? 'romanized_telugu_greeting' : 'social_greeting';
+    logIntentDebug({ message: original, intent: 'greeting', reason: intentReason });
+    return { intent: 'greeting', confidence: 'high', intentReason };
   }
 
   if (isRomanizedTeluguBranchGuidanceQuery(original) || isRomanizedTeluguBranchGuidanceQuery(t)) {
@@ -355,6 +387,7 @@ module.exports = {
   isKnowledgeSessionActive,
   isNativeSocialGreeting,
   isSocialGreeting,
+  isRomanizedTeluguSocialGreeting,
   isRomanizedTeluguBranchGuidanceQuery,
   isMarksBasedRankPredictorQuery,
   isRankBranchCollegePredictorQuery,
