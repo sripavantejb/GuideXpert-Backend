@@ -560,7 +560,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
         const rankBranchCheckText = normalizeText(
           multilingualInbound?.englishMessage || inbound.text
         );
-        replyText = isRankBranchCollegePredictorQuery(rankBranchCheckText)
+        replyText = isRankBranchCollegePredictorQuery(rankBranchCheckText, inbound.text)
           ? resolveCollegePredictorRankQueryUnavailableReply(resolvedLang)
           : resolveCollegePredictorMaintenanceReply(resolvedLang);
         contextPatch = emptySubflows();
@@ -745,6 +745,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
           englishMessage: multilingualInbound.englishMessage,
           translatedQuery: multilingualInbound.englishMessage,
           translationApplied: multilingualInbound.translationApplied,
+          intentReason: intentResult.intentReason || null,
           outboundLanguage: multilingualInbound.language,
           finalResponseLanguage: resolvedLanguageFrom(multilingualInbound),
           verifiedResponseLanguage: outboundTrace.verifiedResponseLanguage,

@@ -78,7 +78,17 @@ function isKnowledgeSessionActive(botState) {
 const SOCIAL_GREETING_PATTERNS = [
   /^(how are you|how are u|how r u)\s*[.!?]?$/,
   /^(kaise ho aap|kaise ho)\s*[.!?]?$/,
-  /^(ela vunnaru|ela unnaru)\s*[.!?]?$/,
+  /^(ela vunnaru|ela unnaru|bagunnara|bagunnava)\s*[.!?]?$/,
+];
+
+const ROMANIZED_TELUGU_BRANCH_GUIDANCE_PATTERNS = [
+  /\bnaaku\s+(cse|ece|eee|it)\s+kavali\b/i,
+  /\bnaaku\s+e?\s*branch\s+manchidi\b/i,
+  /\bbranch\s+(enti|bagundhi|bagunda|manchidi)\b/i,
+  /\bsoftware\s+(jobs?|engineer)\b/i,
+  /\bkosam\s+branch\b/i,
+  /\bnenu\s+software\s+engineer\s+avvali\b/i,
+  /\b(cse|ece|eee|it)\s+kavali\b/i,
 ];
 
 const NATIVE_GREETING_PHRASES = [
@@ -97,10 +107,32 @@ function isNativeSocialGreeting(text) {
   return NATIVE_GREETING_PHRASES.some(({ pattern }) => pattern.test(raw));
 }
 
-function isSocialGreeting(text) {
+function isSocialGreeting(text, originalText = null) {
+  const candidates = [normalizeText(text)];
+  if (originalText) candidates.push(normalizeText(originalText));
+  return candidates.some(
+    (t) => t && SOCIAL_GREETING_PATTERNS.some((pattern) => pattern.test(t))
+  );
+}
+
+function isRomanizedAscii(text) {
+  const t = String(text || '').trim();
+  return t.length > 0 && /^[\x00-\x7F]+$/.test(t);
+}
+
+function isRomanizedTeluguBranchGuidanceQuery(text) {
   const t = normalizeText(text);
-  if (!t) return false;
-  return SOCIAL_GREETING_PATTERNS.some((pattern) => pattern.test(t));
+  if (!t || !isRomanizedAscii(t)) return false;
+  return ROMANIZED_TELUGU_BRANCH_GUIDANCE_PATTERNS.some((pattern) => pattern.test(t));
+}
+
+function intentTextCandidates(text, originalText = null) {
+  const normalized = normalizeText(text);
+  const original = originalText ? normalizeText(originalText) : null;
+  if (original && original !== normalized) {
+    return [normalized, original];
+  }
+  return [normalized];
 }
 
 /**
@@ -122,9 +154,8 @@ const MIXED_RANK_BRANCH_PATTERNS = [
   /\bcan\s+i\s+get\s+(cse|ece|eee|it|mech|civil)\s+with\s+rank\s+\d+/i,
   /\b(cse|ece|eee|it|mech|civil)\s+with\s+rank\s+\d+/i,
   /\brank\s+(ki|tho|lo)\s+(cse|ece|eee|it|branch)\b/i,
-  /\b(cse|ece|eee|it)\s+(kavali|vastunda|vastundi|chahiye)\b/i,
-  /\bnaaku\s+(cse|ece|eee|it|branch)\b/i,
-  /\bmujhe\s+(cse|ece|eee|it|branch)\b/i,
+  /\b\d{3,}\s+rank\s+(ki|tho|lo)\s+(cse|ece|eee|it|branch)\b/i,
+  /\bmujhe\s+(cse|ece|eee|it)\s+(?:\d{3,}\s*)?rank\s+(?:par|pe|mein)\b/i,
   /\bmeri\s+rank\b/i,
   /\b\d{3,}\s*(rank|rayank|[\u0c30\u0c4d\u0c2f\u0c3e\u0c02\u0c15])[^\s]*\s*(tho|lo|ki|\u0c24\u0c4b)\s*(cse|ece|eee|it)\b/i,
   /\b\d{3,}\s*[\u0c00-\u0c7f]+[^\s]*\s*(cse|ece|eee|it)\b/i,
@@ -156,31 +187,34 @@ function hasBranchSignal(text) {
  * Marks / score queries — route to Rank Predictor (exam asked if missing).
  * Beats Knowledge Assistant session when active.
  */
-function isMarksBasedRankPredictorQuery(text) {
-  const t = normalizeText(text);
-  if (!t || !/\d+(\.\d+)?/.test(t)) return false;
-  if (hasRankSignal(t) && hasBranchSignal(t)) return false;
-  if (hasRankSignal(t) && !MARKS_SIGNAL_PATTERN.test(t)) return false;
-  if (MARKS_SIGNAL_PATTERN.test(t) && EXAM_SIGNAL_PATTERN.test(t)) return true;
-  if (MARKS_SIGNAL_PATTERN.test(t) && /\b\d+(\.\d+)?\b/.test(t)) return true;
-  if (EXAM_SIGNAL_PATTERN.test(t) && /\b\d+(\.\d+)?\b/.test(t) && !hasRankSignal(t)) {
-    return true;
-  }
-  return false;
+function isMarksBasedRankPredictorQuery(text, originalText = null) {
+  return intentTextCandidates(text, originalText).some((t) => {
+    if (!t || !/\d+(\.\d+)?/.test(t)) return false;
+    if (hasRankSignal(t) && hasBranchSignal(t)) return false;
+    if (hasRankSignal(t) && !MARKS_SIGNAL_PATTERN.test(t)) return false;
+    if (MARKS_SIGNAL_PATTERN.test(t) && EXAM_SIGNAL_PATTERN.test(t)) return true;
+    if (MARKS_SIGNAL_PATTERN.test(t) && /\b\d+(\.\d+)?\b/.test(t)) return true;
+    if (EXAM_SIGNAL_PATTERN.test(t) && /\b\d+(\.\d+)?\b/.test(t) && !hasRankSignal(t)) {
+      return true;
+    }
+    return false;
+  });
 }
 
 /**
  * Rank + branch admission queries — route to College Predictor
  * even when a Knowledge Assistant session is active.
  */
-function isRankBranchCollegePredictorQuery(text) {
-  const t = normalizeText(text);
-  if (!t) return false;
-  if (isMarksBasedRankPredictorQuery(t)) return false;
-  if (MIXED_RANK_BRANCH_PATTERNS.some((pattern) => pattern.test(t))) {
-    return true;
-  }
-  return hasRankSignal(t) && hasBranchSignal(t);
+function isRankBranchCollegePredictorQuery(text, originalText = null) {
+  return intentTextCandidates(text, originalText).some((t) => {
+    if (!t) return false;
+    if (isMarksBasedRankPredictorQuery(t)) return false;
+    if (isRomanizedTeluguBranchGuidanceQuery(t)) return false;
+    if (MIXED_RANK_BRANCH_PATTERNS.some((pattern) => pattern.test(t))) {
+      return true;
+    }
+    return hasRankSignal(t) && hasBranchSignal(t);
+  });
 }
 
 /** @deprecated Use isRankBranchCollegePredictorQuery */
@@ -216,16 +250,24 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     return { intent: 'rank_predictor_continue', confidence: 'high' };
   }
 
-  if (isNativeSocialGreeting(original) || isSocialGreeting(t)) {
-    return { intent: 'greeting', confidence: 'high' };
+  if (isNativeSocialGreeting(original) || isSocialGreeting(t, original)) {
+    return { intent: 'greeting', confidence: 'high', intentReason: 'social_greeting' };
   }
 
-  if (isMarksBasedRankPredictorQuery(t)) {
-    return { intent: 'rank_predictor', confidence: 'high' };
+  if (isRomanizedTeluguBranchGuidanceQuery(original) || isRomanizedTeluguBranchGuidanceQuery(t)) {
+    return {
+      intent: 'knowledge_assistant',
+      confidence: 'medium',
+      intentReason: 'romanized_telugu_branch_guidance',
+    };
   }
 
-  if (isRankBranchCollegePredictorQuery(t)) {
-    return { intent: 'college_predictor', confidence: 'high' };
+  if (isMarksBasedRankPredictorQuery(t, original)) {
+    return { intent: 'rank_predictor', confidence: 'high', intentReason: 'marks_based_rank_query' };
+  }
+
+  if (isRankBranchCollegePredictorQuery(t, original)) {
+    return { intent: 'college_predictor', confidence: 'high', intentReason: 'rank_branch_college_query' };
   }
 
   if (isKnowledgeSessionActive(botState)) {
@@ -267,8 +309,8 @@ function classifyIntent(text, botState, productLine, originalText = null) {
   if (/^2$|faq|question|help me/.test(t)) {
     return { intent: 'faq', confidence: 'high' };
   }
-  if (/^3$|rank|predict rank|jee rank|eamcet rank/.test(t)) {
-    return { intent: 'rank_predictor', confidence: 'high' };
+  if (/\b(predict rank|rank predictor)\b/i.test(t)) {
+    return { intent: 'rank_predictor', confidence: 'high', intentReason: 'explicit_rank_predictor_entry' };
   }
   if (/^4$|college|which college|colleges/.test(t)) {
     return { intent: 'college_predictor', confidence: 'medium' };
@@ -313,9 +355,11 @@ module.exports = {
   isKnowledgeSessionActive,
   isNativeSocialGreeting,
   isSocialGreeting,
+  isRomanizedTeluguBranchGuidanceQuery,
   isMarksBasedRankPredictorQuery,
   isRankBranchCollegePredictorQuery,
   isRankBranchRecommendationQuery,
   hasRankSignal,
   hasBranchSignal,
+  intentTextCandidates,
 };

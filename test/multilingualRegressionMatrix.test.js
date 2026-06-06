@@ -96,7 +96,7 @@ describe('multilingual regression matrix', () => {
   for (const row of [
     { english: 'Can I get CSE with rank 15000?', intent: 'college_predictor' },
     { english: 'I need CSE', intent: 'unknown' },
-    { english: 'My rank is 15000', intent: 'rank_predictor' },
+    { english: 'My rank is 15000', intent: 'unknown' },
     { english: 'I scored 85 marks in TS EAMCET', intent: 'rank_predictor' },
     { english: 'TS EAMCET 85 marks', intent: 'rank_predictor' },
   ]) {
