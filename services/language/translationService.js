@@ -13,6 +13,23 @@ const DEFAULT_OUTBOUND_TIMEOUT_MS =
   Number(process.env.OUTBOUND_TRANSLATION_TIMEOUT_MS) || 12000;
 const DEFAULT_OUTBOUND_MAX_TOKENS = 2000;
 
+function isLangAuditEnabled() {
+  return (
+    String(process.env.LANG_AUDIT_LOG || '').trim() === '1' ||
+    String(process.env.DEBUG_AI || '').trim() === 'true'
+  );
+}
+
+function previewAuditText(text, max = 200) {
+  const value = String(text || '');
+  return value.length > max ? `${value.slice(0, max)}…` : value;
+}
+
+function logTranslationAudit(event, fields = {}) {
+  if (!isLangAuditEnabled()) return;
+  console.info('[lang:audit]', JSON.stringify({ event, ...fields }));
+}
+
 let defaultProvider = null;
 
 function getProvider() {
@@ -111,6 +128,12 @@ async function translateToEnglish(text, sourceLanguage, options = {}) {
     });
     const restored = restorePreserveTerms(translated, input, options.preserveTerms || getPreserveTerms());
     aiDebugLog('LANG', 'translateToEnglish', { source, ms: Date.now() - startedAt });
+    logTranslationAudit('translateToEnglish', {
+      source,
+      inputPreview: previewAuditText(input),
+      outputPreview: previewAuditText(restored),
+      ms: Date.now() - startedAt,
+    });
     return restored;
   } catch (err) {
     aiDebugLog('LANG', 'translateToEnglish failed', { source, message: err.message });
@@ -156,6 +179,13 @@ async function translateFromEnglish(text, targetLanguage, options = {}) {
         inputLength: input.length,
       });
     }
+    logTranslationAudit('translateFromEnglish', {
+      target,
+      inputPreview: previewAuditText(input),
+      outputPreview: previewAuditText(restored),
+      passThrough,
+      ms: Date.now() - startedAt,
+    });
     return {
       text: restored || input,
       translateFromEnglishExecuted: true,

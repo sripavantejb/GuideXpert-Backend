@@ -1,0 +1,141 @@
+{
+  "generatedAt": "2026-06-06T10:46:39.333Z",
+  "results": [
+    {
+      "id": "greet_en",
+      "input": "How are you?",
+      "expected": "en",
+      "pass": true,
+      "failures": [],
+      "log": {
+        "detectedLanguage": "en",
+        "confidence": 0.92,
+        "preferredLanguage": "te",
+        "resolvedLanguage": "en",
+        "outboundLanguage": "en",
+        "finalResponseLanguage": "en",
+        "resolutionReason": "high_confidence_detection"
+      },
+      "finalResponse": "I'm doing well. How can I help you today?"
+    },
+    {
+      "id": "greet_te",
+      "input": "మీరు ఎలా ఉన్నారు?",
+      "expected": "te",
+      "pass": true,
+      "failures": [],
+      "log": {
+        "detectedLanguage": "te",
+        "confidence": 0.88,
+        "preferredLanguage": "te",
+        "resolvedLanguage": "te",
+        "outboundLanguage": "te",
+        "finalResponseLanguage": "te",
+        "resolutionReason": "high_confidence_detection"
+      },
+      "finalResponse": "నేను బాగున్నాను. మీకు ఎలా సహాయం చేయగలను?"
+    },
+    {
+      "id": "greet_hi",
+      "input": "आप कैसे हैं?",
+      "expected": "hi",
+      "pass": true,
+      "failures": [],
+      "log": {
+        "detectedLanguage": "hi",
+        "confidence": 0.99,
+        "preferredLanguage": "te",
+        "resolvedLanguage": "hi",
+        "outboundLanguage": "hi",
+        "finalResponseLanguage": "hi",
+        "resolutionReason": "high_confidence_detection"
+      },
+      "finalResponse": "मैं ठीक हूँ। मैं आपकी कैसे मदद कर सकता हूँ?"
+    },
+    {
+      "id": "greet_ta",
+      "input": "நீங்கள் எப்படி இருக்கிறீர்கள்?",
+      "expected": "ta",
+      "pass": true,
+      "failures": [],
+      "log": {
+        "detectedLanguage": "ta",
+        "confidence": 0.88,
+        "preferredLanguage": "te",
+        "resolvedLanguage": "ta",
+        "outboundLanguage": "ta",
+        "finalResponseLanguage": "ta",
+        "resolutionReason": "high_confidence_detection"
+      },
+      "finalResponse": "நான் நன்றாக இருக்கிறேன். உங்களுக்கு எப்படி உதவலாம்?"
+    },
+    {
+      "id": "greet_ml",
+      "input": "നിങ്ങൾക്ക് സുഖമാണോ?",
+      "expected": "ml",
+      "pass": true,
+      "failures": [],
+      "log": {
+        "detectedLanguage": "ml",
+        "confidence": 0.88,
+        "preferredLanguage": "te",
+        "resolvedLanguage": "ml",
+        "outboundLanguage": "ml",
+        "finalResponseLanguage": "ml",
+        "resolutionReason": "high_confidence_detection"
+      },
+      "finalResponse": "എനിക്ക് സുഖമാണ്, ചോദിച്ചതിന് നന്ദി. ഇന്ന് എനിക്ക് നിങ്ങളെ എങ്ങനെ സഹായിക്കാം?"
+    },
+    {
+      "id": "greet_kn",
+      "input": "ನೀವು ಹೇಗಿದ್ದೀರಿ?",
+      "expected": "kn",
+      "pass": true,
+      "failures": [],
+      "log": {
+        "detectedLanguage": "kn",
+        "confidence": 0.88,
+        "preferredLanguage": "te",
+        "resolvedLanguage": "kn",
+        "outboundLanguage": "kn",
+        "finalResponseLanguage": "kn",
+        "resolutionReason": "high_confidence_detection"
+      },
+      "finalResponse": "ನಾನು ಚೆನ್ನಾಗಿದ್ದೇನೆ. ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು?"
+    },
+    {
+      "id": "greet_mr",
+      "input": "तुम्ही कसे आहात?",
+      "expected": "mr",
+      "pass": true,
+      "failures": [],
+      "log": {
+        "detectedLanguage": "mr",
+        "confidence": 0.99,
+        "preferredLanguage": "te",
+        "resolvedLanguage": "mr",
+        "outboundLanguage": "mr",
+        "finalResponseLanguage": "hi",
+        "resolutionReason": "high_confidence_detection"
+      },
+      "finalResponse": "मी ठीक आहे. मी तुम्हाला कशी मदत करू शकतो?"
+    },
+    {
+      "id": "greet_bn",
+      "input": "আপনি কেমন আছেন?",
+      "expected": "bn",
+      "pass": true,
+      "failures": [],
+      "log": {
+        "detectedLanguage": "bn",
+        "confidence": 0.88,
+        "preferredLanguage": "te",
+        "resolvedLanguage": "bn",
+        "outboundLanguage": "bn",
+        "finalResponseLanguage": "bn",
+        "resolutionReason": "high_confidence_detection"
+      },
+      "finalResponse": "আমি ভালো আছি। আমি আপনাকে কীভাবে সাহায্য করতে পারি?"
+    }
+  ]
+}

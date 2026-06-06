@@ -26,6 +26,7 @@ const { incrementLanguageRequest } = require('../analytics/languageRequestAnalyt
 const { localizeKnownFallback } = require('../../constants/localizedFallbackStrings');
 const { resolveGreetingReply } = require('../../constants/greetingReplies');
 const { formatForWhatsApp } = require('../../utils/whatsappMessageFormatter');
+const { inferFinalResponseLanguage } = require('../../utils/finalResponseLanguage');
 
 function previewLogText(text, max = 200) {
   const value = String(text || '');
@@ -654,12 +655,16 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       ? {
           originalMessage: multilingualInbound.originalMessage,
           detectedLanguage: multilingualInbound.detectedLanguage,
+          confidence: multilingualInbound.confidence,
+          preferredLanguage: multilingualInbound.preferredLanguage,
           resolvedLanguage: multilingualInbound.resolvedLanguage,
+          resolutionReason: multilingualInbound.resolutionReason,
           detectionSource: multilingualInbound.detectionSource,
           englishMessage: multilingualInbound.englishMessage,
           translatedQuery: multilingualInbound.englishMessage,
           translationApplied: multilingualInbound.translationApplied,
           outboundLanguage: multilingualInbound.language,
+          finalResponseLanguage: inferFinalResponseLanguage(replyText),
           knowledgeAssistantResponse: outboundTrace.knowledgeAssistantResponse,
           shouldTranslateOutbound: outboundTrace.shouldTranslateOutbound,
           outboundTranslationExecuted: outboundTrace.outboundTranslationExecuted,

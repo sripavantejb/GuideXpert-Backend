@@ -14,6 +14,12 @@ const {
   resolveConversationLanguage,
   recordDetectedLanguage,
 } = require('../services/chatbot/conversationLanguageService');
+const { normalizeLanguageCode } = require('../constants/languageConstants');
+
+function normalizePreferredLanguage(value) {
+  const code = normalizeLanguageCode(value);
+  return code || 'en';
+}
 
 async function prepareMultilingualInbound({ message, conversation, leadContext } = {}) {
   const originalMessage = String(message || '').trim();
@@ -25,6 +31,8 @@ async function prepareMultilingualInbound({ message, conversation, leadContext }
     confidence: 1,
     translationApplied: false,
     resolvedLanguage: 'en',
+    resolutionReason: 'fallback',
+    preferredLanguage: normalizePreferredLanguage(conversation?.preferredLanguage),
   };
 
   if (!isMultilingualEnabled() || !originalMessage) {
@@ -32,8 +40,14 @@ async function prepareMultilingualInbound({ message, conversation, leadContext }
   }
 
   const startedAt = Date.now();
+  const preferredLanguageSnapshot = normalizePreferredLanguage(conversation?.preferredLanguage);
   const detection = await detectLanguage({ message: originalMessage });
-  const resolved = resolveConversationLanguage(conversation, leadContext, detection);
+  const resolved = resolveConversationLanguage(
+    conversation,
+    leadContext,
+    detection,
+    originalMessage
+  );
 
   let englishMessage = originalMessage;
   let translationApplied = false;
@@ -59,7 +73,10 @@ async function prepareMultilingualInbound({ message, conversation, leadContext }
 
   aiDebugLog('LANG', 'prepareMultilingualInbound', {
     detectedLanguage: detection.language,
+    confidence: detection.confidence,
+    preferredLanguage: preferredLanguageSnapshot,
     resolvedLanguage: resolved.language,
+    resolutionReason: resolved.resolutionReason,
     translationApplied,
     ms: Date.now() - startedAt,
   });
@@ -73,6 +90,9 @@ async function prepareMultilingualInbound({ message, conversation, leadContext }
     translationApplied,
     resolvedLanguage: resolved.language,
     detectionSource: detection.source,
+    resolutionReason: resolved.resolutionReason,
+    resolutionSource: resolved.source,
+    preferredLanguage: preferredLanguageSnapshot,
   };
 }
 

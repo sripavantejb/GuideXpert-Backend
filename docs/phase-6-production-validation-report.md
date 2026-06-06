@@ -5,10 +5,32 @@
 **Backend commit base:** `b0a526e` + Phase 6 outbound/formatting changes  
 **Flags:** `CHATBOT_MULTILINGUAL_ENABLED=1`, `CHATBOT_KNOWLEDGE_ASSISTANT_ENABLED=1`, MongoDB connected  
 
-**Verdict:** **PASS — Phase 6 complete**
+**Verdict:** **PASS — Phase 6 complete (including language state stabilization)**
 
-Automated suite: **560/560** tests (`npm test`).  
-Live regression script: **5/5** messages (`scripts/live-phase6-validation.js`).
+Automated suite: **565/565** tests (`npm test`).  
+Live regression script: **5/5** messages (`scripts/live-phase6-validation.js`).  
+Greeting language audit: **8/8** (`scripts/live-phase6-greeting-audit.js`).
+
+---
+
+## Language state stabilization (2026-06-06)
+
+**Root cause:** `resolveConversationLanguage` preferred stored `preferredLanguage` / IIT lead over high-confidence per-message detection.
+
+**Fix:** High-confidence detection always controls outbound language; ambiguous acks (`ok`, `thanks`, `👍`) use memory; `recordDetectedLanguage` resets to `en` on high-confidence English and updates preference after 3-message streak.
+
+**Structured log fields added:** `confidence`, `preferredLanguage`, `resolutionReason`, `finalResponseLanguage`.
+
+| Script | Result |
+|--------|--------|
+| `scripts/live-phase6-greeting-audit.js` | 8/8 PASS with `preferredLanguage=te` sticky |
+| `test/multilingualLanguageSwitching.test.js` | te → hi → en → ta in one conversation |
+| `test/conversationLanguageService.test.js` | Rules 1–3 unit coverage |
+
+Greeting mockups: [`greet_en-whatsapp-mock.html`](phase-6-validation-artifacts/greet_en-whatsapp-mock.html) through `greet_bn-…`  
+Raw JSON: [`greeting-audit-results.json`](phase-6-validation-artifacts/greeting-audit-results.json)
+
+**Final recommendation:** **PASS** — deploy after setting `CHATBOT_MULTILINGUAL_ENABLED=1` and optional `LANGUAGE_PREFERENCE_STREAK_THRESHOLD=3` on Vercel.
 
 ---
 

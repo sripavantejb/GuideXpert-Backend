@@ -1,32 +1,8 @@
-#!/usr/bin/env node
-'use strict';
-
-const fs = require('fs');
-const path = require('path');
-
-const resultsPath =
-  process.argv[2] ||
-  path.join(__dirname, '..', 'docs', 'phase-6-validation-artifacts', 'live-validation-results.json');
-const outDir = path.dirname(resultsPath);
-const data = JSON.parse(fs.readFileSync(resultsPath, 'utf8'));
-
-function escapeHtml(text) {
-  return String(text || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-function renderChat(result) {
-  const user = escapeHtml(result.input);
-  const bot = escapeHtml(result.finalResponse).replace(/\n/g, '<br>');
-  const title = escapeHtml(result.name || `${result.id} (${result.expected || result.responseLanguage || ''})`);
-
-  return `<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>${title}</title>
+  <title>greet_ml (ml)</title>
   <style>
     body { margin: 0; background: #111b21; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
     .wrap { max-width: 420px; margin: 24px auto; background: #0b141a; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,.35); }
@@ -42,17 +18,10 @@ function renderChat(result) {
   <div class="wrap">
     <div class="header">GuideXpert Assistant · Live validation</div>
     <div class="chat">
-      <div class="bubble user">${user}</div>
-      <div class="bubble bot">${bot}</div>
+      <div class="bubble user">നിങ്ങൾക്ക് സുഖമാണോ?</div>
+      <div class="bubble bot">ഞാൻ നന്നായിരിക്കുന്നു. എനിക്ക് നിങ്ങളെ എങ്ങനെ സഹായിക്കാനാകും?</div>
     </div>
-    <div class="meta">${title} · ${result.responseLanguage || result.expected || ''} · PASS</div>
+    <div class="meta">greet_ml (ml) · ml · PASS</div>
   </div>
 </body>
-</html>`;
-}
-
-for (const result of data.results) {
-  const file = path.join(outDir, `${result.id}-whatsapp-mock.html`);
-  fs.writeFileSync(file, renderChat(result));
-  console.log('Wrote', file);
-}
+</html>

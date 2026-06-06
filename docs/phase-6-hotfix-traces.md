@@ -249,3 +249,44 @@ Same inbound
 3. Send `నాకు ఏ బ్రాంచ్ మంచిది?` on WhatsApp.
 4. Confirm Telugu bullet-format reply (screenshot) and structured log above.
 
+---
+
+## Fix 5 — Language state management (current message wins)
+
+### Before
+
+```
+conversation.preferredLanguage = te (streak or IIT seed)
+User: "आप कैसे हैं?" (Hindi, confidence 0.99)
+  → resolveConversationLanguage: stored te WINS
+  → outboundLanguage = te
+  → Hindi user receives Telugu reply
+resolutionReason: (none)
+```
+
+### After
+
+```
+Same inbound with preferredLanguage = te
+  → detect: hi, confidence 0.99
+  → resolve: hi (resolutionReason: high_confidence_detection)
+  → greeting reply in Hindi
+  → preferredLanguage updated via streak / immediate en reset
+```
+
+### Greeting audit (8 languages, preferredLanguage=te sticky)
+
+| Message | detected | resolved | outbound | reason |
+|---------|----------|----------|----------|--------|
+| `How are you?` | en | en | en | high_confidence_detection |
+| `మీరు ఎలా ఉన్నారు?` | te | te | te | high_confidence_detection |
+| `आप कैसे हैं?` | hi | hi | hi | high_confidence_detection |
+| `நீங்கள் எப்படி இருக்கிறீர்கள்?` | ta | ta | ta | high_confidence_detection |
+| `നിങ്ങൾക്ക് സുഖമാണോ?` | ml | ml | ml | high_confidence_detection |
+| `ನೀವು ಹೇಗಿದ್ದೀರಿ?` | kn | kn | kn | high_confidence_detection |
+| `तुम्ही कसे आहात?` | mr | mr | mr | high_confidence_detection |
+| `আপনি কেমন আছেন?` | bn | bn | bn | high_confidence_detection |
+
+Run: `node scripts/live-phase6-greeting-audit.js`  
+Artifacts: [`greeting-audit-results.json`](phase-6-validation-artifacts/greeting-audit-results.json), `greet_*-whatsapp-mock.html`
+

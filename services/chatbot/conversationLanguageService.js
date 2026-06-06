@@ -5,38 +5,102 @@ const WhatsAppConversation = require('../../models/WhatsAppConversation');
 const { normalizeLanguageCode, isSupportedLanguage } = require('../../constants/languageConstants');
 
 const DEFAULT_LANGUAGE = 'en';
-const PREFERENCE_STREAK_THRESHOLD = 2;
+
+const AMBIGUOUS_ACK_PATTERN =
+  /^(ok|okay|k|yes|yeah|yep|yup|no|nope|fine|thanks|thank you|thx|cool|sure|got it|👍|🙏|👌)\s*[.!?]?$/i;
 
 function isDbReady() {
   return mongoose.connection.readyState === 1;
 }
 
-function resolveConversationLanguage(conversation, leadContext, detected = {}) {
+function getMinConfidence() {
+  return Number(process.env.LANGUAGE_DETECT_MIN_CONFIDENCE) || 0.75;
+}
+
+function getStreakThreshold() {
+  return Number(process.env.LANGUAGE_PREFERENCE_STREAK_THRESHOLD) || 3;
+}
+
+/**
+ * Short acknowledgements / menu taps — not language signals (Rule 2).
+ */
+function isAmbiguousMessage(message) {
+  const text = String(message || '').trim();
+  if (!text) return true;
+  if (AMBIGUOUS_ACK_PATTERN.test(text)) return true;
+  if (/^[1-6]$/.test(text)) return true;
+  if (text.length <= 2 && /^[\x00-\x7F]+$/u.test(text)) return true;
+  if (/^[\u{1F300}-\u{1FAFF}\s]+$/u.test(text) && text.length <= 8) return true;
+  return false;
+}
+
+function readStoredPreference(conversation, leadContext) {
   const stored = normalizeLanguageCode(conversation?.preferredLanguage);
   if (conversation?.preferredLanguage && isSupportedLanguage(stored) && stored !== DEFAULT_LANGUAGE) {
     return { language: stored, source: 'conversation' };
   }
 
-  const iitLabel = leadContext?.iit?.preferredLanguage;
-  if (iitLabel) {
-    const fromLead = normalizeLanguageCode(iitLabel);
-    if (isSupportedLanguage(fromLead) && fromLead !== DEFAULT_LANGUAGE) {
-      return { language: fromLead, source: 'iit_lead' };
-    }
+  const fromLead = normalizeLanguageCode(leadContext?.iit?.preferredLanguage);
+  if (fromLead && fromLead !== DEFAULT_LANGUAGE && isSupportedLanguage(fromLead)) {
+    return { language: fromLead, source: 'iit_lead' };
   }
 
+  return null;
+}
+
+function resolveConversationLanguage(conversation, leadContext, detected = {}, message = '') {
   const detectedLanguage = normalizeLanguageCode(detected.language);
   const confidence = Number(detected.confidence) || 0;
-  const minConfidence = Number(process.env.LANGUAGE_DETECT_MIN_CONFIDENCE) || 0.75;
-  if (
-    isSupportedLanguage(detectedLanguage) &&
-    detectedLanguage !== DEFAULT_LANGUAGE &&
-    confidence >= minConfidence
-  ) {
-    return { language: detectedLanguage, source: 'detection' };
+  const minConfidence = getMinConfidence();
+
+  // Rule 1 & 3: high-confidence detection always wins (including English).
+  if (isSupportedLanguage(detectedLanguage) && confidence >= minConfidence) {
+    return {
+      language: detectedLanguage,
+      source: 'detection',
+      resolutionReason: 'high_confidence_detection',
+    };
   }
 
-  return { language: DEFAULT_LANGUAGE, source: 'fallback' };
+  // Rule 2: ambiguous messages may use conversation / lead memory.
+  if (isAmbiguousMessage(message)) {
+    const memory = readStoredPreference(conversation, leadContext);
+    if (memory) {
+      return {
+        language: memory.language,
+        source: memory.source,
+        resolutionReason: 'ambiguous_message_memory',
+      };
+    }
+    return {
+      language: DEFAULT_LANGUAGE,
+      source: 'fallback',
+      resolutionReason: 'ambiguous_message_memory',
+    };
+  }
+
+  const memory = readStoredPreference(conversation, leadContext);
+  if (memory) {
+    return {
+      language: memory.language,
+      source: memory.source,
+      resolutionReason: 'low_confidence_fallback',
+    };
+  }
+
+  if (isSupportedLanguage(detectedLanguage) && detectedLanguage !== DEFAULT_LANGUAGE) {
+    return {
+      language: detectedLanguage,
+      source: 'detection',
+      resolutionReason: 'low_confidence_detection',
+    };
+  }
+
+  return {
+    language: DEFAULT_LANGUAGE,
+    source: 'fallback',
+    resolutionReason: 'fallback',
+  };
 }
 
 async function updatePreferredLanguage(conversationId, language) {
@@ -76,13 +140,28 @@ async function recordDetectedLanguage(conversationId, detectedLanguage, confiden
   if (!conversationId || !isDbReady()) return;
 
   const code = normalizeLanguageCode(detectedLanguage);
-  if (!isSupportedLanguage(code) || code === DEFAULT_LANGUAGE) return;
+  if (!isSupportedLanguage(code)) return;
 
-  const minConfidence = Number(process.env.LANGUAGE_DETECT_MIN_CONFIDENCE) || 0.75;
+  const minConfidence = getMinConfidence();
   if (Number(confidence) < minConfidence) return;
 
   const conversation = await WhatsAppConversation.findById(conversationId).lean();
   if (!conversation) return;
+
+  if (code === DEFAULT_LANGUAGE) {
+    await WhatsAppConversation.updateOne(
+      { _id: conversationId },
+      {
+        $set: {
+          preferredLanguage: DEFAULT_LANGUAGE,
+          updatedAt: new Date(),
+          'metadata.langDetectStreakLang': null,
+          'metadata.langDetectStreakCount': 0,
+        },
+      }
+    );
+    return;
+  }
 
   const metadata = conversation.metadata || {};
   const streakLang = metadata.langDetectStreakLang || null;
@@ -95,7 +174,7 @@ async function recordDetectedLanguage(conversationId, detectedLanguage, confiden
     'metadata.langDetectStreakCount': nextCount,
   };
 
-  if (nextCount >= PREFERENCE_STREAK_THRESHOLD) {
+  if (nextCount >= getStreakThreshold()) {
     updates.preferredLanguage = code;
   }
 
@@ -104,7 +183,9 @@ async function recordDetectedLanguage(conversationId, detectedLanguage, confiden
 
 module.exports = {
   resolveConversationLanguage,
+  isAmbiguousMessage,
   updatePreferredLanguage,
   seedPreferredLanguageFromLead,
   recordDetectedLanguage,
+  getStreakThreshold,
 };
