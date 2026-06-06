@@ -15,11 +15,11 @@ Local trace script: `node scripts/audit-multilingual-matrix.js`
 
 | Message | Expected detected | Expected resolved | Expected source | Expected intent | Expected outbound lang | Guardrail |
 |---|---|---|---|---|---|---|
-| `Can I get CSE with rank 15000?` | `en` | `en`* | `offline` | `rank_predictor` | `en`* | none (rank path) |
-| `15000 ర్యాంక్‌తో CSE వస్తుందా?` | `te` | `te` | `offline` | `rank_predictor` | `te` | none (rank path) |
+| `Can I get CSE with rank 15000?` | `en` | `en`* | `offline` | `college_predictor` | `en`* | CP unavailable (rank known) |
+| `15000 ర్యాంక్‌తో CSE వస్తుందా?` | `te` | `te` | `offline` | `college_predictor` | `te` | CP unavailable (rank known) |
 | `నాకు ఏ బ్రాంచ్ మంచిది?` | `te` | `te` | `offline` | `unknown` → LLM | `te` | allowlist user numbers |
 | `naaku cse kavali` | `te` | `te` | `romanized` | `unknown` → LLM | `te` | allowlist if numbers |
-| `15000 rank ki cse vastunda` | `te` | `te` | `romanized` | `rank_predictor` | `te` | none (rank path) |
+| `15000 rank ki cse vastunda` | `te` | `te` | `romanized` | `college_predictor` | `te` | CP unavailable (rank known) |
 | `mujhe cse chahiye` | `hi` | `hi` | `romanized` | `unknown` → LLM | `hi` | allowlist if numbers |
 | `meri rank 15000 hai` | `hi` | `hi` | `romanized` | `rank_predictor` | `hi` | none (rank path) |
 

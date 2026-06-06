@@ -103,16 +103,29 @@ const BRANCH_SIGNAL_PATTERN =
   /\b(cse|ece|eee|mech|civil|it|branch|branches)\b/i;
 
 const MIXED_RANK_BRANCH_PATTERNS = [
+  /\bcan\s+i\s+get\s+(cse|ece|eee|it|mech|civil)\s+with\s+rank\s+\d+/i,
+  /\b(cse|ece|eee|it|mech|civil)\s+with\s+rank\s+\d+/i,
   /\brank\s+(ki|tho|lo)\s+(cse|ece|eee|it|branch)\b/i,
   /\b(cse|ece|eee|it)\s+(kavali|vastunda|vastundi|chahiye)\b/i,
   /\bnaaku\s+(cse|ece|eee|it|branch)\b/i,
   /\bmujhe\s+(cse|ece|eee|it|branch)\b/i,
   /\bmeri\s+rank\b/i,
+  /\b\d{3,}\s*(rank|rayank|[\u0c30\u0c4d\u0c2f\u0c3e\u0c02\u0c15])[^\s]*\s*(tho|lo|ki|\u0c24\u0c4b)\s*(cse|ece|eee|it)\b/i,
+  /\b\d{3,}\s*[\u0c00-\u0c7f]+[^\s]*\s*(cse|ece|eee|it)\b/i,
 ];
+
+const MARKS_SIGNAL_PATTERN =
+  /\b(marks?|score|scored|percentile|vachayi|vachindi|aaye|hai|labh|labham|labhamu)\b/i;
+
+const EXAM_SIGNAL_PATTERN =
+  /\b(jee main|jee advanced|jee|kcet|keam|ap eamcet|ts eamcet|eamcet|tnea|wbjee|mht cet|mhtcet)\b/i;
 
 function hasRankSignal(text) {
   const t = String(text || '');
   if (/\b(rank|percentile|ranku|rayank|rayanku)\b/i.test(t)) return true;
+  if (/\u0c30\u0c4d\u0c2f\u0c3e\u0c02\u0c15/i.test(t)) return true;
+  if (/\u0bb0\u0bc7\u0b99\u0bcd\u0b95/i.test(t)) return true;
+  if (/\u0cb0\u0cc6\u0c82\u0c95/i.test(t)) return true;
   if (/\bmeri\s+rank\b/i.test(t)) return true;
   if (/\brank\s+(ki|tho|lo)\b/i.test(t)) return true;
   if (/\b\d{3,}\b/.test(t) && /\brank\b/i.test(t)) return true;
@@ -124,16 +137,39 @@ function hasBranchSignal(text) {
 }
 
 /**
- * Rank + branch admission / recommendation queries — route to rank predictor
+ * Marks / score queries — route to Rank Predictor (exam asked if missing).
+ * Beats Knowledge Assistant session when active.
+ */
+function isMarksBasedRankPredictorQuery(text) {
+  const t = normalizeText(text);
+  if (!t || !/\d+(\.\d+)?/.test(t)) return false;
+  if (hasRankSignal(t) && hasBranchSignal(t)) return false;
+  if (hasRankSignal(t) && !MARKS_SIGNAL_PATTERN.test(t)) return false;
+  if (MARKS_SIGNAL_PATTERN.test(t) && EXAM_SIGNAL_PATTERN.test(t)) return true;
+  if (MARKS_SIGNAL_PATTERN.test(t) && /\b\d+(\.\d+)?\b/.test(t)) return true;
+  if (EXAM_SIGNAL_PATTERN.test(t) && /\b\d+(\.\d+)?\b/.test(t) && !hasRankSignal(t)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Rank + branch admission queries — route to College Predictor
  * even when a Knowledge Assistant session is active.
  */
-function isRankBranchRecommendationQuery(text) {
+function isRankBranchCollegePredictorQuery(text) {
   const t = normalizeText(text);
   if (!t) return false;
+  if (isMarksBasedRankPredictorQuery(t)) return false;
   if (MIXED_RANK_BRANCH_PATTERNS.some((pattern) => pattern.test(t))) {
     return true;
   }
   return hasRankSignal(t) && hasBranchSignal(t);
+}
+
+/** @deprecated Use isRankBranchCollegePredictorQuery */
+function isRankBranchRecommendationQuery(text) {
+  return isRankBranchCollegePredictorQuery(text);
 }
 
 /**
@@ -167,8 +203,12 @@ function classifyIntent(text, botState, productLine) {
     return { intent: 'greeting', confidence: 'high' };
   }
 
-  if (isRankBranchRecommendationQuery(t)) {
+  if (isMarksBasedRankPredictorQuery(t)) {
     return { intent: 'rank_predictor', confidence: 'high' };
+  }
+
+  if (isRankBranchCollegePredictorQuery(t)) {
+    return { intent: 'college_predictor', confidence: 'high' };
   }
 
   if (isKnowledgeSessionActive(botState)) {
@@ -255,6 +295,8 @@ module.exports = {
   isKnowledgeQuestion,
   isKnowledgeSessionActive,
   isSocialGreeting,
+  isMarksBasedRankPredictorQuery,
+  isRankBranchCollegePredictorQuery,
   isRankBranchRecommendationQuery,
   hasRankSignal,
   hasBranchSignal,

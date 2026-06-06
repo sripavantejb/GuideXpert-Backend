@@ -120,35 +120,35 @@ Raw JSON: [`live-validation-results.json`](phase-6-validation-artifacts/live-val
 
 ---
 
-## Test 3 — Rank + branch (Rank Predictor path)
+## Test 3 — Rank + branch (College Predictor unavailable path)
 
 **Input:** `15000 rank ki cse vastunda`
 
 | Check | Result |
 |-------|--------|
-| `intent` | `rank_predictor` |
+| `intent` | `college_predictor` |
 | Final response language | Telugu |
 | Guardrail unsupported-claim fallback | Not present |
-| `translateFromEnglishExecuted` | `true` |
+| `translateFromEnglishExecuted` | `false` (static localized reply) |
 
-**Structured log snippet:**
+**Structured log snippet (expected after Fix 6):**
 
 ```json
 {
-  "intent": "rank_predictor",
+  "intent": "college_predictor",
   "detectedLanguage": "te",
   "resolvedLanguage": "te",
-  "englishMessage": "CSE will be admitted for rank 15000",
-  "shouldTranslateOutbound": true,
-  "translateFromEnglishExecuted": true,
+  "englishMessage": "Can I get CSE with rank 15000?",
+  "shouldTranslateOutbound": false,
+  "translateFromEnglishExecuted": false,
   "guardrailModified": false,
-  "finalResponsePreview": "ఏ పరీక్ష? ఉదాహరణలు: JEE MAIn, JEE Advanced, KCET, KEAM, AP EAMCET..."
+  "finalResponsePreview": "మీరు ఇప్పటికే మీ ర్యాంక్‌ను ఇచ్చారు … College Predictor ప్రస్తుతం అందుబాటులో లేదు."
 }
 ```
 
-**Note:** Rank Predictor asks for exam type next (expected flow). Response is translated Telugu, not Knowledge Assistant guardrail fallback.
+**Note:** User already supplied rank + branch — routes to College Predictor, not Rank Predictor. With `CHATBOT_COLLEGE_PREDICTOR_ENABLED` unset, bot returns the localized unavailable message.
 
-**WhatsApp mockup:** [test3-whatsapp-mock.html](phase-6-validation-artifacts/test3-whatsapp-mock.html)
+**WhatsApp mockup:** [test3-whatsapp-mock.html](phase-6-validation-artifacts/test3-whatsapp-mock.html) _(regenerate after live validation)_
 
 ---
 

@@ -65,10 +65,10 @@ const TEST_CASES = [
   },
   {
     id: 'test3',
-    name: 'Mixed rank + branch (Rank Predictor path)',
+    name: 'Mixed rank + branch (College Predictor unavailable path)',
     input: '15000 rank ki cse vastunda',
     expect: {
-      intent: 'rank_predictor',
+      intent: 'college_predictor',
       resolvedLanguage: 'te',
       responseLanguage: 'te',
       noGuardrailFallback: true,

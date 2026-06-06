@@ -163,8 +163,13 @@ describe('knowledge_assistant intent', () => {
       { state: 'idle', context: { knowledgeAssistantActive: true } },
       PRODUCT_LINE
     );
-    assert.equal(r.intent, 'rank_predictor');
+    assert.equal(r.intent, 'college_predictor');
     assert.equal(r.confidence, 'high');
+  });
+
+  test('marks-based query routes to rank_predictor', () => {
+    const r = classifyIntent('I scored 85 marks in TS EAMCET', null, PRODUCT_LINE);
+    assert.equal(r.intent, 'rank_predictor');
   });
 
   test('branch-only question stays unknown without rank signal', () => {

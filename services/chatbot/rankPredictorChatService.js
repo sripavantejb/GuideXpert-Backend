@@ -10,6 +10,8 @@ const EXAM_ALIASES = {
   keam: 'keam',
   eamcet: 'apeamcet',
   'ap eamcet': 'apeamcet',
+  tseamcet: 'tseamcet',
+  'ts eamcet': 'tseamcet',
   tnea: 'tnea',
   wbjee: 'wbjee',
   mhtcet: 'mhcet',
@@ -27,7 +29,9 @@ function parseExamAndScore(text, context = {}) {
     return { examId: context.examId, score: Number(t) };
   }
 
-  for (const [alias, examId] of Object.entries(EXAM_ALIASES)) {
+  for (const [alias, examId] of Object.entries(EXAM_ALIASES).sort(
+    (a, b) => b[0].length - a[0].length
+  )) {
     if (t.includes(alias)) {
       const nums = t.match(/-?\d+(\.\d+)?/g);
       if (nums && nums.length) {
@@ -54,7 +58,7 @@ function handleRankPredictorMessage(text, context = {}) {
   if (!parsed.examId) {
     return {
       reply:
-        'Which exam? Examples: JEE Main, JEE Advanced, KCET, KEAM, AP EAMCET.\nThen send your score on the next message.',
+        'Which exam? Examples: JEE Main, JEE Advanced, KCET, KEAM, AP EAMCET, TS EAMCET.\nThen send your score on the next message.',
       context: { step: 'awaiting_exam_score' },
     };
   }

@@ -25,6 +25,11 @@ const { seedPreferredLanguageFromLead } = require('./conversationLanguageService
 const { incrementLanguageRequest } = require('../analytics/languageRequestAnalyticsService');
 const { localizeKnownFallback } = require('../../constants/localizedFallbackStrings');
 const { resolveGreetingReply } = require('../../constants/greetingReplies');
+const {
+  resolveCollegePredictorMaintenanceReply,
+  resolveCollegePredictorRankQueryUnavailableReply,
+} = require('../../constants/collegePredictorUnavailableReplies');
+const { isRankBranchCollegePredictorQuery, normalizeText } = require('./intentClassifierService');
 const { formatForWhatsApp } = require('../../utils/whatsappMessageFormatter');
 const { inferFinalResponseLanguage } = require('../../utils/finalResponseLanguage');
 
@@ -41,14 +46,6 @@ const HANDOFF_WAIT_REPLY =
 
 const KNOWLEDGE_ASSISTANT_FALLBACK_REPLY =
   'I am not sure I understood. Reply MENU for options or AGENT to speak with our team.';
-
-const COLLEGE_PREDICTOR_MAINTENANCE_REPLY = [
-  'College predictions are temporarily unavailable (service is under maintenance).',
-  '',
-  'Please try again later.',
-  '',
-  'Reply MENU for other options.',
-].join('\n');
 
 /** Set CHATBOT_COLLEGE_PREDICTOR_ENABLED=1 to turn the WhatsApp college predictor back on. */
 function isCollegePredictorEnabled() {
@@ -465,7 +462,14 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     case 'college_predictor':
     case 'college_predictor_continue': {
       if (!isCollegePredictorEnabled()) {
-        replyText = COLLEGE_PREDICTOR_MAINTENANCE_REPLY;
+        const resolvedLang =
+          multilingualInbound?.language || multilingualInbound?.resolvedLanguage || 'en';
+        const rankBranchCheckText = normalizeText(
+          multilingualInbound?.englishMessage || inbound.text
+        );
+        replyText = isRankBranchCollegePredictorQuery(rankBranchCheckText)
+          ? resolveCollegePredictorRankQueryUnavailableReply(resolvedLang)
+          : resolveCollegePredictorMaintenanceReply(resolvedLang);
         contextPatch = emptySubflows();
         nextState = 'main_menu';
         break;

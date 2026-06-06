@@ -290,3 +290,71 @@ Same inbound with preferredLanguage = te
 Run: `node scripts/live-phase6-greeting-audit.js`  
 Artifacts: [`greeting-audit-results.json`](phase-6-validation-artifacts/greeting-audit-results.json), `greet_*-whatsapp-mock.html`
 
+---
+
+## Fix 6 — Predictor intent split (marks vs rank+branch)
+
+### Problem
+
+`Can I get CSE with rank 15000?` routed to **Rank Predictor** even though the user already supplied a rank. Marks-based queries (`TS EAMCET 85 marks`) must stay on Rank Predictor.
+
+### Intent routing (after fix)
+
+```mermaid
+flowchart TD
+  IN[Inbound message] --> DET[Language detect + translate to English pivot]
+  DET --> CLS[classifyIntent]
+  CLS --> MARKS{Marks / score + exam?}
+  MARKS -->|yes| RP[Rank Predictor]
+  MARKS -->|no| RB{Rank + branch?}
+  RB -->|yes| CP[College Predictor]
+  RB -->|no| OTHER[Other intents / KA / unknown]
+  RP --> RP_EXAM{Exam known?}
+  RP_EXAM -->|no| RP_ASK[Ask exam: JEE Main … TS EAMCET]
+  RP_EXAM -->|yes| RP_PRED[Predict rank from marks]
+  CP --> CP_ON{CHATBOT_COLLEGE_PREDICTOR_ENABLED=1?}
+  CP_ON -->|yes| CP_FLOW[College Predictor wizard]
+  CP_ON -->|no| CP_UNAV[Localized unavailable reply]
+```
+
+| Query type | Example | Route | Reply (College Predictor off) |
+|------------|---------|-------|-------------------------------|
+| Marks-based | `I scored 85 marks in TS EAMCET` | Rank Predictor | Ask exam or predict from marks |
+| Marks-based | `TS EAMCET 85 marks` | Rank Predictor | Predict rank |
+| Rank + branch | `Can I get CSE with rank 15000?` | College Predictor | Rank already known → CP unavailable (8 langs) |
+| Rank + branch | `15000 ర్యాంక్‌తో CSE వస్తుందా?` | College Predictor | Telugu unavailable message |
+
+### Rank Predictor exam list (WhatsApp)
+
+JEE Main, JEE Advanced, KCET, KEAM, AP EAMCET, **TS EAMCET**
+
+### Example conversations
+
+**Marks → Rank Predictor**
+
+```
+User: I scored 85 marks in TS EAMCET
+Bot:  Prediction for TS EAMCET:
+      Predicted Rank: …
+      Reply MENU for main menu.
+```
+
+**Rank + branch → College Predictor unavailable (English)**
+
+```
+User: Can I get CSE with rank 15000?
+Bot:  You already provided your rank, so Rank Predictor is not needed.
+      This query normally uses College Predictor.
+      College Predictor is currently unavailable.
+      Reply MENU for other options.
+```
+
+**Rank + branch → College Predictor unavailable (Telugu)**
+
+```
+User: 15000 ర్యాంక్‌తో CSE వస్తుందా?
+Bot:  మీరు ఇప్పటికే మీ ర్యాంక్‌ను ఇచ్చారు … College Predictor ప్రస్తుతం అందుబాటులో లేదు.
+```
+
+Run: `node --test test/predictorIntentRouting.test.js`
+

@@ -90,13 +90,15 @@ describe('multilingual regression matrix', () => {
       { state: 'idle', context: { knowledgeAssistantActive: true } },
       'iit_counselling'
     );
-    assert.equal(r.intent, 'rank_predictor');
+    assert.equal(r.intent, 'college_predictor');
   });
 
   for (const row of [
-    { english: 'Can I get CSE with rank 15000?', intent: 'rank_predictor' },
+    { english: 'Can I get CSE with rank 15000?', intent: 'college_predictor' },
     { english: 'I need CSE', intent: 'unknown' },
     { english: 'My rank is 15000', intent: 'rank_predictor' },
+    { english: 'I scored 85 marks in TS EAMCET', intent: 'rank_predictor' },
+    { english: 'TS EAMCET 85 marks', intent: 'rank_predictor' },
   ]) {
     test(`intent matrix english pivot: ${row.english}`, () => {
       const { classifyIntent } = require(intentPath);
@@ -105,7 +107,7 @@ describe('multilingual regression matrix', () => {
     });
   }
 
-  test('rank_predictor outbound uses finalizeMultilingualOutbound when resolved te', async () => {
+  test('college_predictor outbound uses localized unavailable reply when resolved te', async () => {
     let finalizeCalls = 0;
     const orchestrator = loadOrchestratorWithMocks({
       prepareMultilingualInbound: async () => ({
@@ -142,6 +144,8 @@ describe('multilingual regression matrix', () => {
       },
     });
 
+    delete process.env.CHATBOT_COLLEGE_PREDICTOR_ENABLED;
+
     await orchestrator.processInbound({
       conversation: {
         _id: CONVERSATION_ID,
@@ -157,8 +161,8 @@ describe('multilingual regression matrix', () => {
       leadLinks: {},
     });
 
-    assert.ok(finalizeCalls >= 1);
-    assert.match(String(outbound[0] || ''), /^Telugu:/);
+    assert.equal(finalizeCalls, 0);
+    assert.match(String(outbound[0] || ''), /Rank Predictor అవసరం లేదు/);
 
     orchestrator.setChatbotOrchestratorTestHooks(null);
     [
