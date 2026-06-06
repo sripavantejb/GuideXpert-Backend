@@ -9,6 +9,9 @@ const {
 } = require('../../constants/translationPreserveTerms');
 
 const DEFAULT_TIMEOUT_MS = Number(process.env.TRANSLATION_TIMEOUT_MS) || 5000;
+const DEFAULT_OUTBOUND_TIMEOUT_MS =
+  Number(process.env.OUTBOUND_TRANSLATION_TIMEOUT_MS) || 12000;
+const DEFAULT_OUTBOUND_MAX_TOKENS = 2000;
 
 let defaultProvider = null;
 
@@ -75,6 +78,7 @@ async function translateWithProvider({
   systemPrompt,
   provider = getProvider(),
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  maxTokens = 1200,
 }) {
   const result = await provider.chatCompletion({
     messages: [
@@ -82,7 +86,7 @@ async function translateWithProvider({
       { role: 'user', content: String(text || '').trim() },
     ],
     temperature: 0.2,
-    maxTokens: 1200,
+    maxTokens,
     timeoutMs,
     maxRetries: 0,
   });
@@ -103,12 +107,14 @@ async function translateToEnglish(text, sourceLanguage, options = {}) {
       systemPrompt: buildToEnglishPrompt(source, preserveTerms),
       provider: options.provider,
       timeoutMs: options.timeoutMs || DEFAULT_TIMEOUT_MS,
+      maxTokens: options.maxTokens || 1200,
     });
     const restored = restorePreserveTerms(translated, input, options.preserveTerms || getPreserveTerms());
     aiDebugLog('LANG', 'translateToEnglish', { source, ms: Date.now() - startedAt });
     return restored;
   } catch (err) {
     aiDebugLog('LANG', 'translateToEnglish failed', { source, message: err.message });
+    console.warn('[lang] translateToEnglish failed', { source, message: err.message });
     return input;
   }
 }
@@ -116,9 +122,15 @@ async function translateToEnglish(text, sourceLanguage, options = {}) {
 async function translateFromEnglish(text, targetLanguage, options = {}) {
   const target = normalizeLanguageCode(targetLanguage);
   const input = String(text || '').trim();
-  if (!input) return input;
-  if (target === 'en') return input;
-  if (!isSupportedLanguage(target)) return input;
+  if (!input) {
+    return { text: input, translateFromEnglishExecuted: false, passThrough: true };
+  }
+  if (target === 'en') {
+    return { text: input, translateFromEnglishExecuted: false, passThrough: true };
+  }
+  if (!isSupportedLanguage(target)) {
+    return { text: input, translateFromEnglishExecuted: false, passThrough: true };
+  }
 
   const preserveTerms = buildPreserveTermsPrompt(options.preserveTerms || getPreserveTerms());
   const startedAt = Date.now();
@@ -127,14 +139,41 @@ async function translateFromEnglish(text, targetLanguage, options = {}) {
       text: input,
       systemPrompt: buildFromEnglishPrompt(target, preserveTerms),
       provider: options.provider,
-      timeoutMs: options.timeoutMs || DEFAULT_TIMEOUT_MS,
+      timeoutMs: options.timeoutMs || DEFAULT_OUTBOUND_TIMEOUT_MS,
+      maxTokens: options.maxTokens || DEFAULT_OUTBOUND_MAX_TOKENS,
     });
     const restored = restorePreserveTerms(translated, input, options.preserveTerms || getPreserveTerms());
-    aiDebugLog('LANG', 'translateFromEnglish', { target, ms: Date.now() - startedAt });
-    return restored;
+    const passThrough = !restored || restored === input;
+    aiDebugLog('LANG', 'translateFromEnglish', {
+      target,
+      ms: Date.now() - startedAt,
+      passThrough,
+      preview: restored.slice(0, 200),
+    });
+    if (passThrough) {
+      console.warn('[lang] translateFromEnglish pass-through (unchanged English)', {
+        target,
+        inputLength: input.length,
+      });
+    }
+    return {
+      text: restored || input,
+      translateFromEnglishExecuted: true,
+      passThrough,
+    };
   } catch (err) {
     aiDebugLog('LANG', 'translateFromEnglish failed', { target, message: err.message });
-    return input;
+    console.warn('[lang] translateFromEnglish failed', {
+      target,
+      message: err.message,
+      inputLength: input.length,
+    });
+    return {
+      text: input,
+      translateFromEnglishExecuted: true,
+      passThrough: true,
+      error: err.message,
+    };
   }
 }
 
@@ -145,4 +184,6 @@ module.exports = {
   setTranslationProvider,
   buildToEnglishPrompt,
   buildFromEnglishPrompt,
+  DEFAULT_OUTBOUND_TIMEOUT_MS,
+  DEFAULT_OUTBOUND_MAX_TOKENS,
 };

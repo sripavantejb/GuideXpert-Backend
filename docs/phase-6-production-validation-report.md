@@ -1,0 +1,211 @@
+# Phase 6 — Production Validation Report
+
+**Date:** 2026-06-06  
+**Environment:** Local live validation (`node scripts/live-phase6-validation.js`)  
+**Backend commit base:** `b0a526e` + Phase 6 outbound/formatting changes  
+**Flags:** `CHATBOT_MULTILINGUAL_ENABLED=1`, `CHATBOT_KNOWLEDGE_ASSISTANT_ENABLED=1`, MongoDB connected  
+
+**Verdict:** **PASS — Phase 6 complete**
+
+Automated suite: **560/560** tests (`npm test`).  
+Live regression script: **5/5** messages (`scripts/live-phase6-validation.js`).
+
+---
+
+## How validation was run
+
+1. Real NVIDIA LLM (`LLM_API_KEY`) for Knowledge Assistant + translation.
+2. Full orchestrator path via `processInbound` (no mocked translation).
+3. Outbound captured via test hooks (WhatsApp send skipped to avoid polluting live numbers).
+4. Structured logs captured from `[chatbot:structured] inbound_processed`.
+5. WhatsApp-style chat mockups generated from validated outbound text:
+   - [`test1-whatsapp-mock.html`](phase-6-validation-artifacts/test1-whatsapp-mock.html)
+   - [`test2-whatsapp-mock.html`](phase-6-validation-artifacts/test2-whatsapp-mock.html)
+   - [`test3-whatsapp-mock.html`](phase-6-validation-artifacts/test3-whatsapp-mock.html)
+   - [`test4-whatsapp-mock.html`](phase-6-validation-artifacts/test4-whatsapp-mock.html)
+   - [`test5-whatsapp-mock.html`](phase-6-validation-artifacts/test5-whatsapp-mock.html)
+
+Raw JSON: [`live-validation-results.json`](phase-6-validation-artifacts/live-validation-results.json)
+
+---
+
+## Test 1 — Telugu branch question
+
+**Input:** `నాకు ఏ బ్రాంచ్ మంచిది?`
+
+| Check | Result |
+|-------|--------|
+| `detectedLanguage` | `te` |
+| `resolvedLanguage` | `te` |
+| `shouldTranslateOutbound` | `true` |
+| `translateFromEnglishExecuted` | `true` |
+| `outboundTranslationPassThrough` | `false` |
+| Final response language | Telugu (`te`) |
+| Markdown/HTML in outbound | None |
+
+**Structured log snippet:**
+
+```json
+{
+  "event": "inbound_processed",
+  "intent": "unknown",
+  "detectedLanguage": "te",
+  "resolvedLanguage": "te",
+  "englishMessage": "Which branch is good for me?",
+  "shouldTranslateOutbound": true,
+  "translateFromEnglishExecuted": true,
+  "outboundTranslationPassThrough": false,
+  "outboundLanguage": "te",
+  "guardrailModified": false
+}
+```
+
+**WhatsApp mockup:** [test1-whatsapp-mock.html](phase-6-validation-artifacts/test1-whatsapp-mock.html)
+
+**Sample outbound (Telugu, truncated):**
+
+> మీకు ఏం చేయడం ఇష్టం, ఏ విషయాల్లో మీరు బాగా ఉన్నారు అనేది ఆలోచించండి.  
+> మీకు కోడింగ్, సమస్యలను పరిష్కరించడం… Computer Science (CSE), Artificial Intelligence…
+
+---
+
+## Test 2 — Romanized Telugu CSE
+
+**Input:** `naaku CSE kavali`
+
+| Check | Result |
+|-------|--------|
+| `resolvedLanguage` | `te` |
+| `shouldTranslateOutbound` | `true` |
+| `translateFromEnglishExecuted` | `true` |
+| Final response language | Telugu |
+
+**Structured log snippet:**
+
+```json
+{
+  "detectedLanguage": "te",
+  "resolvedLanguage": "te",
+  "detectionSource": "romanized",
+  "englishMessage": "I want CSE",
+  "shouldTranslateOutbound": true,
+  "translateFromEnglishExecuted": true,
+  "outboundTranslationPassThrough": false
+}
+```
+
+**WhatsApp mockup:** [test2-whatsapp-mock.html](phase-6-validation-artifacts/test2-whatsapp-mock.html)
+
+---
+
+## Test 3 — Rank + branch (Rank Predictor path)
+
+**Input:** `15000 rank ki cse vastunda`
+
+| Check | Result |
+|-------|--------|
+| `intent` | `rank_predictor` |
+| Final response language | Telugu |
+| Guardrail unsupported-claim fallback | Not present |
+| `translateFromEnglishExecuted` | `true` |
+
+**Structured log snippet:**
+
+```json
+{
+  "intent": "rank_predictor",
+  "detectedLanguage": "te",
+  "resolvedLanguage": "te",
+  "englishMessage": "CSE will be admitted for rank 15000",
+  "shouldTranslateOutbound": true,
+  "translateFromEnglishExecuted": true,
+  "guardrailModified": false,
+  "finalResponsePreview": "ఏ పరీక్ష? ఉదాహరణలు: JEE MAIn, JEE Advanced, KCET, KEAM, AP EAMCET..."
+}
+```
+
+**Note:** Rank Predictor asks for exam type next (expected flow). Response is translated Telugu, not Knowledge Assistant guardrail fallback.
+
+**WhatsApp mockup:** [test3-whatsapp-mock.html](phase-6-validation-artifacts/test3-whatsapp-mock.html)
+
+---
+
+## Test 4 — Hindi CSE
+
+**Input:** `मुझे CSE चाहिए`
+
+| Check | Result |
+|-------|--------|
+| `resolvedLanguage` | `hi` |
+| Final response language | Hindi |
+| `translateFromEnglishExecuted` | `true` |
+
+**Structured log snippet:**
+
+```json
+{
+  "detectedLanguage": "hi",
+  "resolvedLanguage": "hi",
+  "detectionSource": "llm_fallback",
+  "englishMessage": "I need CSE",
+  "shouldTranslateOutbound": true,
+  "translateFromEnglishExecuted": true,
+  "outboundTranslationPassThrough": false
+}
+```
+
+**WhatsApp mockup:** [test4-whatsapp-mock.html](phase-6-validation-artifacts/test4-whatsapp-mock.html)
+
+---
+
+## Test 5 — Bengali CSE
+
+**Input:** `আমার CSE চাই`
+
+| Check | Result |
+|-------|--------|
+| `resolvedLanguage` | `bn` |
+| Final response language | Bengali |
+| `translateFromEnglishExecuted` | `true` |
+
+**Structured log snippet:**
+
+```json
+{
+  "detectedLanguage": "bn",
+  "resolvedLanguage": "bn",
+  "detectionSource": "offline",
+  "englishMessage": "I want CSE",
+  "shouldTranslateOutbound": true,
+  "translateFromEnglishExecuted": true,
+  "outboundTranslationPassThrough": false
+}
+```
+
+**WhatsApp mockup:** [test5-whatsapp-mock.html](phase-6-validation-artifacts/test5-whatsapp-mock.html)
+
+---
+
+## Fixes validated in this release
+
+1. **Outbound translation hardening** — `OUTBOUND_TRANSLATION_TIMEOUT_MS` (default 12s), 2000 max tokens, pass-through warnings.
+2. **WhatsApp formatter** — strips HTML/markdown tables before translate-out and send.
+3. **Trace logging** — `shouldTranslateOutbound`, `knowledgeAssistantResponse`, `translateFromEnglishExecuted`, `outboundTranslationPassThrough` on `inbound_processed`.
+4. **KA prompt** — WhatsApp-safe bullet format (no tables/HTML).
+
+---
+
+## Production deploy checklist
+
+- [ ] Set `CHATBOT_MULTILINGUAL_ENABLED=1` on Vercel
+- [ ] Set `OUTBOUND_TRANSLATION_TIMEOUT_MS=12000` (optional, already default in code)
+- [ ] Deploy backend commit containing this validation report
+- [ ] Optional: repeat 5 messages on real WhatsApp and attach device screenshots to this doc
+
+---
+
+## Phase 6 status
+
+**COMPLETE** — see [`phase-6-production-validation-report.md`](phase-6-production-validation-report.md) for live 5-message validation (2026-06-06).
+
+---

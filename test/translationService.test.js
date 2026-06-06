@@ -18,7 +18,7 @@ describe('translationService', () => {
   test('short-circuits English source and target', async () => {
     const input = 'Can I get CSE with rank 15000?';
     assert.equal(await translateToEnglish(input, 'en'), input);
-    assert.equal(await translateFromEnglish(input, 'en'), input);
+    assert.equal((await translateFromEnglish(input, 'en')).text, input);
   });
 
   test('restorePreserveTerms keeps CSE and numeric ranks', () => {
@@ -53,8 +53,10 @@ describe('translationService', () => {
     });
 
     const result = await translateFromEnglish('You can get CSE around rank 15000.', 'te');
-    assert.match(result, /CSE/);
-    assert.match(result, /15000/);
+    assert.match(result.text, /CSE/);
+    assert.match(result.text, /15000/);
+    assert.equal(result.translateFromEnglishExecuted, true);
+    assert.equal(result.passThrough, false);
   });
 
   test('returns original text when provider fails', async () => {
@@ -66,6 +68,8 @@ describe('translationService', () => {
 
     const telugu = 'నాకు ఏ బ్రాంచ్ మంచిది?';
     assert.equal(await translateToEnglish(telugu, 'te'), telugu);
-    assert.equal(await translateFromEnglish('Branch guidance reply.', 'te'), 'Branch guidance reply.');
+    const outbound = await translateFromEnglish('Branch guidance reply.', 'te');
+    assert.equal(outbound.text, 'Branch guidance reply.');
+    assert.equal(outbound.passThrough, true);
   });
 });

@@ -186,7 +186,7 @@ describe('multilingual regression matrix', () => {
 
     for (const lang of ['kn', 'ml', 'mr', 'bn']) {
       const result = await translation.translateFromEnglish('CSE is a strong option.', lang);
-      assert.equal(result, `localized-${lang}`, lang);
+      assert.equal(result.text, `localized-${lang}`, lang);
     }
     assert.deepEqual(targets, ['kn', 'ml', 'mr', 'bn']);
 

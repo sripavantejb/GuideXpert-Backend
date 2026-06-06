@@ -1,0 +1,125 @@
+{
+  "generatedAt": "2026-06-06T10:30:59.511Z",
+  "results": [
+    {
+      "id": "test1",
+      "name": "Telugu branch question (Knowledge Assistant outbound)",
+      "input": "నాకు ఏ బ్రాంచ్ మంచిది?",
+      "pass": true,
+      "failures": [],
+      "log": {
+        "intent": "unknown",
+        "detectedLanguage": "te",
+        "resolvedLanguage": "te",
+        "englishMessage": "Which branch is good for me?",
+        "shouldTranslateOutbound": true,
+        "outboundTranslationExecuted": true,
+        "translateFromEnglishExecuted": true,
+        "outboundTranslationPassThrough": false,
+        "outboundLanguage": "te",
+        "guardrailModified": false,
+        "finalResponsePreview": "మీకు ఏం చేయడం ఇష్టం, ఏ విషయాల్లో మీరు బాగా ఉన్నారు అనేది ఆలోచించండి.\nమీకు కోడింగ్, సమస్యలను పరిష్కరించడం, లాజిక్‌తో పని చేయడం ఇష్టం అయితే, Computer Science (CSE), Artificial Intelligence, Data Science…",
+        "translatedResponsePreview": "మీకు ఏం చేయడం ఇష్టం, ఏ విషయాల్లో మీరు బాగా ఉన్నారు అనేది ఆలోచించండి.  \nమీకు కోడింగ్, సమస్యలను పరిష్కరించడం, లాజిక్‌తో పని చేయడం ఇష్టం అయితే, Computer Science (CSE), Artificial Intelligence, Data Scien…"
+      },
+      "finalResponse": "మీకు ఏం చేయడం ఇష్టం, ఏ విషయాల్లో మీరు బాగా ఉన్నారు అనేది ఆలోచించండి.\nమీకు కోడింగ్, సమస్యలను పరిష్కరించడం, లాజిక్‌తో పని చేయడం ఇష్టం అయితే, Computer Science (CSE), Artificial Intelligence, Data Science, Cloud Computing, లేదా Cybersecurity వంటి శాఖలు మంచి ఎంపికలు, ఎందుకంటే ఇవి ఎక్కువ డిమాండ్ మరియు వృద్ధి కలిగి ఉన్నాయి.\nమీకు చేతిపని, నిర్మాణాలు రూపొందించడం, యంత్రాలతో పని చేయడం ఇష్టం అయితే, MECHanical, CIVIL, లేదా Electrical Engineering వంటి ప్రధాన శాఖలు కూడా స్థిరమైన అవకాశాలు ఇస్తాయి, కానీ ఇవి నిరంతర నైపుణ్య నవీకరణలు అవసరం.\nఇంటర్న్‌షిప్స్ లేదా ప్రాజెక్టులు ప్రయత్నించి, ఏ రకమైన పని మీకు సరిపోతుందో చూడండి.\nమీ ఆసక్తులు, బలాలు గురించి మరింత చెప్పండి, తద్వారా మేము మీకు మరింత సరిపడే సూచన ఇవ్వగలము.",
+      "responseLanguage": "te",
+      "durationMs": 6214
+    },
+    {
+      "id": "test2",
+      "name": "Romanized Telugu CSE request",
+      "input": "naaku CSE kavali",
+      "pass": true,
+      "failures": [],
+      "log": {
+        "intent": "unknown",
+        "detectedLanguage": "te",
+        "resolvedLanguage": "te",
+        "englishMessage": "I want CSE",
+        "shouldTranslateOutbound": true,
+        "outboundTranslationExecuted": true,
+        "translateFromEnglishExecuted": true,
+        "outboundTranslationPassThrough": false,
+        "outboundLanguage": "te",
+        "guardrailModified": false,
+        "finalResponsePreview": "• CSE\n• సమస్యలను పరిష్కరించడాన్ని మరియు సాఫ్ట్‌వేర్ నిర్మాణాన్ని ఆస్వాదిస్తే, ఇది అద్భుతమైన ఎంపిక.\n• మొదటి సంవత్సరంలో ప్రారంభ కోడింగ్‌తో ప్రారంభించండి.\n• ప్రాజెక్టులు, హ్యాకథాన్లు, అసైన్‌మెంట్లలో సాధన…",
+        "translatedResponsePreview": "• CSE  \n• సమస్యలను పరిష్కరించడాన్ని మరియు సాఫ్ట్‌వేర్ నిర్మాణాన్ని ఆస్వాదిస్తే, ఇది అద్భుతమైన ఎంపిక.  \n• మొదటి సంవత్సరంలో ప్రారంభ కోడింగ్‌తో ప్రారంభించండి.  \n• ప్రాజెక్టులు, హ్యాకథాన్లు, అసైన్‌మెంట్లల…"
+      },
+      "finalResponse": "• CSE\n• సమస్యలను పరిష్కరించడాన్ని మరియు సాఫ్ట్‌వేర్ నిర్మాణాన్ని ఆస్వాదిస్తే, ఇది అద్భుతమైన ఎంపిక.\n• మొదటి సంవత్సరంలో ప్రారంభ కోడింగ్‌తో ప్రారంభించండి.\n• ప్రాజెక్టులు, హ్యాకథాన్లు, అసైన్‌మెంట్లలో సాధన చేయండి.\n• చిన్న యాప్‌లు లేదా వెబ్‌సైట్లతో పోర్ట్‌ఫోలియో నిర్మించండి.\n• అల్గోరిథమ్స్, డేటాబేస్‌లు, AI మౌలికాలు నేర్చుకుంటూ కొనసాగండి.\n• విజయం స్థిరత్వం మరియు ప్రయత్నంపై ఆధారపడి ఉంటుంది.",
+      "responseLanguage": "te",
+      "durationMs": 3625
+    },
+    {
+      "id": "test3",
+      "name": "Mixed rank + branch (Rank Predictor path)",
+      "input": "15000 rank ki cse vastunda",
+      "pass": true,
+      "failures": [],
+      "log": {
+        "intent": "rank_predictor",
+        "detectedLanguage": "te",
+        "resolvedLanguage": "te",
+        "englishMessage": "CSE will be admitted for rank 15000",
+        "shouldTranslateOutbound": true,
+        "outboundTranslationExecuted": true,
+        "translateFromEnglishExecuted": true,
+        "outboundTranslationPassThrough": false,
+        "outboundLanguage": "te",
+        "guardrailModified": false,
+        "finalResponsePreview": "ఏ పరీక్ష? ఉదాహరణలు: JEE MAIn, JEE Advanced, KCET, KEAM, AP EAMCET. తరువాత మీ స్కోర్‌ను తదుపరి సందేశంలో పంపండి.",
+        "translatedResponsePreview": "ఏ పరీక్ష? ఉదాహరణలు: JEE MAIn, JEE Advanced, KCET, KEAM, AP EAMCET. తరువాత మీ స్కోర్‌ను తదుపరి సందేశంలో పంపండి."
+      },
+      "finalResponse": "ఏ పరీక్ష? ఉదాహరణలు: JEE MAIn, JEE Advanced, KCET, KEAM, AP EAMCET. తరువాత మీ స్కోర్‌ను తదుపరి సందేశంలో పంపండి.",
+      "responseLanguage": "te",
+      "durationMs": 1728
+    },
+    {
+      "id": "test4",
+      "name": "Hindi CSE request",
+      "input": "मुझे CSE चाहिए",
+      "pass": true,
+      "failures": [],
+      "log": {
+        "intent": "unknown",
+        "detectedLanguage": "hi",
+        "resolvedLanguage": "hi",
+        "englishMessage": "I need CSE",
+        "shouldTranslateOutbound": true,
+        "outboundTranslationExecuted": true,
+        "translateFromEnglishExecuted": true,
+        "outboundTranslationPassThrough": false,
+        "outboundLanguage": "hi",
+        "guardrailModified": false,
+        "finalResponsePreview": "• आप अभी कोडिंग नहीं जानते हों तो भी CSE शुरू कर सकते हैं।\n• पहला वर्ष मूल बातें कवर करता है—गणित, तर्क, सरल प्रोग्रामिंग।\n• धीरे-धीरे अभ्यास करें और आप बेहतर होंगे।\n• CSE के बाद करियर विकल्पों में सॉ…",
+        "translatedResponsePreview": "• आप अभी कोडिंग नहीं जानते हों तो भी CSE शुरू कर सकते हैं।  \n• पहला वर्ष मूल बातें कवर करता है—गणित, तर्क, सरल प्रोग्रामिंग।  \n• धीरे-धीरे अभ्यास करें और आप बेहतर होंगे।  \n• CSE के बाद करियर विकल्पों …"
+      },
+      "finalResponse": "• आप अभी कोडिंग नहीं जानते हों तो भी CSE शुरू कर सकते हैं।\n• पहला वर्ष मूल बातें कवर करता है—गणित, तर्क, सरल प्रोग्रामिंग।\n• धीरे-धीरे अभ्यास करें और आप बेहतर होंगे।\n• CSE के बाद करियर विकल्पों में सॉफ्टवेयर विकास, AI/ML, डेटा विज्ञान, साइबर सुरक्षा, क्लाउड और कई अन्य शामिल हैं।\n• सफलता मुख्यतः सीखने, अभ्यास और निरंतरता पर निर्भर करती है।",
+      "responseLanguage": "hi",
+      "durationMs": 3157
+    },
+    {
+      "id": "test5",
+      "name": "Bengali CSE request",
+      "input": "আমার CSE চাই",
+      "pass": true,
+      "failures": [],
+      "log": {
+        "intent": "unknown",
+        "detectedLanguage": "bn",
+        "resolvedLanguage": "bn",
+        "englishMessage": "I want CSE",
+        "shouldTranslateOutbound": true,
+        "outboundTranslationExecuted": true,
+        "translateFromEnglishExecuted": true,
+        "outboundTranslationPassThrough": false,
+        "outboundLanguage": "bn",
+        "guardrailModified": false,
+        "finalResponsePreview": "CSE\n• প্রযুক্তিতে আগ্রহী যে কেউ, কোডিং না জানলেও, এটি একটি চমৎকার শুরু।\n• কলেজগুলো প্রথম বছরে মৌলিক বিষয় শেখায়, তাই আপনি ধাপে ধাপে শিখতে পারবেন।\n• এটি “future‑proof” বলা হয় কারণ প্রযুক্তি প্রায় সব চাক…",
+        "translatedResponsePreview": "CSE  \n• প্রযুক্তিতে আগ্রহী যে কেউ, কোডিং না জানলেও, এটি একটি চমৎকার শুরু।  \n• কলেজগুলো প্রথম বছরে মৌলিক বিষয় শেখায়, তাই আপনি ধাপে ধাপে শিখতে পারবেন।  \n• এটি “future‑proof” বলা হয় কারণ প্রযুক্তি প্রায় …"
+      },
+      "finalResponse": "CSE\n• প্রযুক্তিতে আগ্রহী যে কেউ, কোডিং না জানলেও, এটি একটি চমৎকার শুরু।\n• কলেজগুলো প্রথম বছরে মৌলিক বিষয় শেখায়, তাই আপনি ধাপে ধাপে শিখতে পারবেন।\n• এটি “future‑proof” বলা হয় কারণ প্রযুক্তি প্রায় সব চাকরিতে বাড়ছে।\n• সফটওয়্যার, AI, ডেটা সায়েন্স, ক্লাউড, এবং সাইবার‑নিরাপত্তিতে কাজের সুযোগ পাবেন।\n• সফলতার মূল চাবিকাঠি হলো অনুশীলন, প্রকল্প তৈরি করা, এবং নতুন টুল সম্পর্কে কৌতূহলী থাকা।",
+      "responseLanguage": "bn",
+      "durationMs": 4943
+    }
+  ]
+}

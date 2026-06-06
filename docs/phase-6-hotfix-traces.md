@@ -199,3 +199,53 @@ With `CHATBOT_MULTILINGUAL_ENABLED=1`, `DEBUG_AI=true`:
 
 **Regression screenshots:** _(attach after manual WhatsApp smoke)_
 
+---
+
+## Fix 4 — Telugu branch question: outbound translation + WhatsApp formatting
+
+### Before
+
+```
+Telugu: "నాకు ఏ బ్రాంచ్ మంచిది?"
+  → detect: te, resolve: te
+  → translate in: "Which branch is good for me?"
+  → intent: unknown → tryLlmReply(englishMessage)
+  → LLM English reply with markdown table (| Branch |), ### headings, <br> tags
+  → finalizeMultilingualOutbound → translateFromEnglish (5s / 1200 tokens)
+  → silent pass-through on timeout/error → English + raw markdown sent to WhatsApp
+```
+
+### After
+
+```
+Same inbound
+  → formatForWhatsApp (strip HTML, convert tables to • bullets, plain headings)
+  → finalizeMultilingualOutbound with OUTBOUND_TRANSLATION_TIMEOUT_MS=12000, maxTokens=2000
+  → translateFromEnglish → Telugu reply
+  → formatForWhatsApp (second pass) → sendBotTextReply
+  → inbound_processed log includes:
+      shouldTranslateOutbound, knowledgeAssistantResponse,
+      translateFromEnglishExecuted, outboundTranslationPassThrough, finalResponsePreview
+```
+
+### Expected log fields for `నాకు ఏ బ్రాంచ్ మంచిది?`
+
+| Field | Expected |
+|-------|----------|
+| `detectedLanguage` | `te` |
+| `resolvedLanguage` | `te` |
+| `englishMessage` | English pivot (e.g. Which branch is good for me?) |
+| `intent` | `unknown` (or `knowledge_assistant` if session active) |
+| `knowledgeAssistantResponse` | English pre-translate text |
+| `shouldTranslateOutbound` | `true` |
+| `translateFromEnglishExecuted` | `true` |
+| `outboundTranslationPassThrough` | `false` |
+| `finalResponse` | Telugu, no `\|`, `###`, or `<br>` |
+
+### Manual verification
+
+1. Set `CHATBOT_MULTILINGUAL_ENABLED=1` on Vercel and local `.env`.
+2. Restart backend with `DEBUG_AI=true`.
+3. Send `నాకు ఏ బ్రాంచ్ మంచిది?` on WhatsApp.
+4. Confirm Telugu bullet-format reply (screenshot) and structured log above.
+

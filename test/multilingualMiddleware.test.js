@@ -39,7 +39,11 @@ describe('multilingualMiddleware pivot', () => {
       assert.equal(lang, 'te');
       return 'Can I get CSE with rank 15000?';
     });
-    mock.method(translation, 'translateFromEnglish', async () => 'Telugu reply');
+    mock.method(translation, 'translateFromEnglish', async () => ({
+      text: 'Telugu reply',
+      translateFromEnglishExecuted: true,
+      passThrough: false,
+    }));
 
     const conversationLang = require(conversationLangPath);
     mock.method(conversationLang, 'recordDetectedLanguage', async () => {});

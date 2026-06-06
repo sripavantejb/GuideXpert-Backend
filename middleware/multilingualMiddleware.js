@@ -4,6 +4,8 @@ const { detectLanguage } = require('../services/language/languageDetectionServic
 const {
   translateToEnglish,
   translateFromEnglish,
+  DEFAULT_OUTBOUND_TIMEOUT_MS,
+  DEFAULT_OUTBOUND_MAX_TOKENS,
 } = require('../services/language/translationService');
 const { localizeKnownFallback } = require('../constants/localizedFallbackStrings');
 const { aiDebugLog } = require('../services/chatbot/aiDebugLog');
@@ -74,33 +76,71 @@ async function prepareMultilingualInbound({ message, conversation, leadContext }
   };
 }
 
+function previewText(text, max = 200) {
+  const value = String(text || '');
+  return value.length > max ? `${value.slice(0, max)}…` : value;
+}
+
 async function finalizeMultilingualOutbound({
   englishResponse,
   language,
   originalMessage,
   guardrailModified = false,
+  outboundTrace = null,
 } = {}) {
   const text = String(englishResponse || '').trim();
-  if (!text) return text;
+  const trace = {
+    outboundTranslationExecuted: false,
+    translateFromEnglishExecuted: false,
+    outboundTranslationLanguage: String(language || 'en').toLowerCase(),
+    outboundTranslationPassThrough: false,
+    usedLocalizedFallback: false,
+    translatedResponsePreview: null,
+  };
 
-  const targetLanguage = String(language || 'en').toLowerCase();
-  if (!isMultilingualEnabled() || targetLanguage === 'en') {
+  if (!text) {
+    if (outboundTrace) Object.assign(outboundTrace, trace);
     return text;
   }
 
+  const targetLanguage = trace.outboundTranslationLanguage;
+  if (!isMultilingualEnabled() || targetLanguage === 'en') {
+    trace.outboundTranslationPassThrough = true;
+    if (outboundTrace) Object.assign(outboundTrace, trace);
+    return text;
+  }
+
+  trace.outboundTranslationExecuted = true;
+
   const localizedFallback = localizeKnownFallback(text, targetLanguage);
   if (localizedFallback !== text) {
+    trace.usedLocalizedFallback = true;
+    trace.translatedResponsePreview = previewText(localizedFallback);
     aiDebugLog('LANG', 'finalizeMultilingualOutbound localized fallback');
+    if (outboundTrace) Object.assign(outboundTrace, trace);
     return localizedFallback;
   }
 
   const startedAt = Date.now();
-  const translated = await translateFromEnglish(text, targetLanguage);
+  const translation = await translateFromEnglish(text, targetLanguage, {
+    timeoutMs: DEFAULT_OUTBOUND_TIMEOUT_MS,
+    maxTokens: DEFAULT_OUTBOUND_MAX_TOKENS,
+  });
+  const translated = translation.text || text;
+  trace.translateFromEnglishExecuted = Boolean(translation.translateFromEnglishExecuted);
+  trace.outboundTranslationPassThrough = Boolean(translation.passThrough);
+  trace.translatedResponsePreview = previewText(translated);
+
   aiDebugLog('LANG', 'finalizeMultilingualOutbound', {
     targetLanguage,
     guardrailModified,
     ms: Date.now() - startedAt,
+    translateFromEnglishExecuted: trace.translateFromEnglishExecuted,
+    outboundTranslationPassThrough: trace.outboundTranslationPassThrough,
+    originalMessage: previewText(originalMessage, 120),
   });
+
+  if (outboundTrace) Object.assign(outboundTrace, trace);
   return translated || text;
 }
 

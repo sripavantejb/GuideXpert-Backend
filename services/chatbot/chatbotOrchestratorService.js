@@ -25,6 +25,12 @@ const { seedPreferredLanguageFromLead } = require('./conversationLanguageService
 const { incrementLanguageRequest } = require('../analytics/languageRequestAnalyticsService');
 const { localizeKnownFallback } = require('../../constants/localizedFallbackStrings');
 const { resolveGreetingReply } = require('../../constants/greetingReplies');
+const { formatForWhatsApp } = require('../../utils/whatsappMessageFormatter');
+
+function previewLogText(text, max = 200) {
+  const value = String(text || '');
+  return value.length > max ? `${value.slice(0, max)}…` : value;
+}
 
 const ORCHESTRATOR_FALLBACK_REPLY =
   'Sorry, something went wrong on our side. Please try again in a moment or reply MENU for options.';
@@ -573,14 +579,32 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     replyText = listExamsMessage();
   }
 
+  const assistantResult = knowledgeAssistantResult || unknownLlmResult;
+  const knowledgeAssistantResponse =
+    assistantResult?.languageLog?.englishResponse ||
+    (assistantResult?.text ? String(assistantResult.text) : null);
+
+  let outboundTrace = {
+    shouldTranslateOutbound: false,
+    outboundTranslationExecuted: false,
+    translateFromEnglishExecuted: false,
+    outboundTranslationLanguage: multilingualInbound?.language || null,
+    outboundTranslationPassThrough: false,
+    knowledgeAssistantResponse,
+  };
+
   if (multilingualInbound && replyText) {
-    const assistantResult = knowledgeAssistantResult || unknownLlmResult;
+    replyText = formatForWhatsApp(replyText);
+
     const shouldTranslateOutbound =
       multilingualInbound.language !== 'en' &&
       (intentResult.intent === 'knowledge_assistant' ||
         intentResult.intent === 'rank_predictor' ||
         intentResult.intent === 'rank_predictor_continue' ||
         (intentResult.intent === 'unknown' && unknownLlmUsed));
+
+    outboundTrace.shouldTranslateOutbound = shouldTranslateOutbound;
+    outboundTrace.outboundTranslationLanguage = multilingualInbound.language;
 
     if (shouldTranslateOutbound) {
       try {
@@ -589,10 +613,12 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
           language: multilingualInbound.language,
           originalMessage: multilingualInbound.originalMessage,
           guardrailModified: Boolean(assistantResult?.guardrailModified),
+          outboundTrace,
         });
       } catch (err) {
         console.warn('[chatbot] finalizeMultilingualOutbound failed', err.message);
       }
+      replyText = formatForWhatsApp(replyText);
       if (knowledgeAssistantResult?.languageLog) {
         knowledgeAssistantResult.languageLog.finalResponse = replyText;
       }
@@ -605,6 +631,8 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
         replyText = localized;
       }
     }
+  } else if (replyText) {
+    replyText = formatForWhatsApp(replyText);
   }
 
   const result = await h.outbound.sendBotTextReply({
@@ -613,8 +641,6 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     text: replyText,
     inReplyToInboundId: inbound._id,
   });
-
-  const assistantResult = knowledgeAssistantResult || unknownLlmResult;
 
   logInboundResult({
     event: 'inbound_processed',
@@ -634,6 +660,14 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
           translatedQuery: multilingualInbound.englishMessage,
           translationApplied: multilingualInbound.translationApplied,
           outboundLanguage: multilingualInbound.language,
+          knowledgeAssistantResponse: outboundTrace.knowledgeAssistantResponse,
+          shouldTranslateOutbound: outboundTrace.shouldTranslateOutbound,
+          outboundTranslationExecuted: outboundTrace.outboundTranslationExecuted,
+          translateFromEnglishExecuted: outboundTrace.translateFromEnglishExecuted,
+          outboundTranslationLanguage: outboundTrace.outboundTranslationLanguage,
+          outboundTranslationPassThrough: outboundTrace.outboundTranslationPassThrough,
+          translatedResponsePreview: outboundTrace.translatedResponsePreview || null,
+          finalResponsePreview: previewLogText(replyText),
           retrievedChunks: assistantResult?.languageLog?.resultIds || [],
           guardrailDecision: assistantResult
             ? {
