@@ -8,6 +8,7 @@ const { buildContext, formatUnifiedContext } = require('./contextBuilderService'
 const { validateAiResponse } = require('./aiGuardrailService');
 const { aiDebugLog } = require('./aiDebugLog');
 const { buildRetrievalQuery } = require('../../utils/knowledgeQueryBuilder');
+const { recordKnowledgeAssistantLanguageTurn } = require('./knowledgeAssistantLanguageLogService');
 
 const provider = new OpenAiCompatibleProvider();
 const DEFAULT_TIMEOUT_MS = Number(process.env.KNOWLEDGE_ASSISTANT_TIMEOUT_MS) || 8000;
@@ -106,6 +107,7 @@ async function answer({
   conversationId = null,
   leadContext = null,
   llmTimeoutMs = null,
+  languageMetadata = null,
 } = {}) {
   aiDebugLog('LLM-DEBUG', 'entered knowledgeAssistantService');
 
@@ -170,13 +172,38 @@ async function answer({
     const guarded = validateAiResponse({
       response: result?.text,
       knowledgeResults,
+      userMessage: languageMetadata?.originalMessage || text,
+      englishUserMessage: languageMetadata?.translatedQuery || text,
     });
     aiDebugLog('GUARDRAIL', 'Modified:', guarded.modified);
     if (guarded.reason) {
       aiDebugLog('GUARDRAIL', 'Reason:', guarded.reason);
     }
     aiDebugLog('LLM-DEBUG', 'received response', { model: result?.model });
-    return { text: guarded.text, model: result?.model, guardrailModified: guarded.modified };
+
+    const languageLog = {
+      conversationId,
+      originalMessage: languageMetadata?.originalMessage || text,
+      detectedLanguage: languageMetadata?.detectedLanguage || 'en',
+      resolvedLanguage: languageMetadata?.resolvedLanguage || 'en',
+      translatedQuery: languageMetadata?.translatedQuery || text,
+      englishResponse: guarded.text,
+      finalResponse: null,
+      translationApplied: Boolean(languageMetadata?.translationApplied),
+      guardrailModified: guarded.modified,
+      retrievalMode: metrics?.mode || null,
+      resultIds: knowledgeResults.map((entry) => String(entry.id)),
+    };
+
+    recordKnowledgeAssistantLanguageTurn(languageLog).catch(() => {});
+
+    return {
+      text: guarded.text,
+      model: result?.model,
+      guardrailModified: guarded.modified,
+      guardrailReason: guarded.reason,
+      languageLog,
+    };
   } catch (e) {
     console.warn('[chatbot] knowledge assistant error', e.message);
     aiDebugLog('LLM-DEBUG', 'caught error =', e.message);

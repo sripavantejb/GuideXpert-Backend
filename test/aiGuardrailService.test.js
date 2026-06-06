@@ -132,6 +132,57 @@ describe('aiGuardrailService', () => {
     assert.equal(result.text, response);
     assert.equal(result.modified, false);
   });
+
+  test('allows user-provided rank echoed in assistant response', () => {
+    const response = 'With rank 15000, CSE may be possible in some colleges depending on the exam.';
+    const result = validateAiResponse({
+      response,
+      userMessage: 'Can I get CSE with rank 15000?',
+      englishUserMessage: 'Can I get CSE with rank 15000?',
+      knowledgeResults: [],
+    });
+
+    assert.equal(result.text, response);
+    assert.equal(result.modified, false);
+  });
+
+  test('allows Telugu rank question numbers in user allowlist', () => {
+    const response = 'CSE around rank 15000 depends on the college and category.';
+    const result = validateAiResponse({
+      response,
+      userMessage: '15000 rank tho CSE vastunda?',
+      englishUserMessage: 'Can I get CSE with rank 15000?',
+      knowledgeResults: [],
+    });
+
+    assert.equal(result.text, response);
+    assert.equal(result.modified, false);
+  });
+
+  test('allows user-provided percentile in assistant response', () => {
+    const response = 'At 97.8 percentile, options depend on the exam and category.';
+    const result = validateAiResponse({
+      response,
+      userMessage: '97.8 percentile',
+      englishUserMessage: '97.8 percentile',
+      knowledgeResults: [],
+    });
+
+    assert.equal(result.text, response);
+    assert.equal(result.modified, false);
+  });
+
+  test('still blocks invented numbers when user did not provide them', () => {
+    const result = validateAiResponse({
+      response: 'NIAT has 95% placements.',
+      userMessage: 'Tell me about NIAT',
+      englishUserMessage: 'Tell me about NIAT',
+      knowledgeResults: GENERIC_KB,
+    });
+
+    assert.equal(result.text, UNSUPPORTED_CLAIM_FALLBACK);
+    assert.equal(result.reason, 'unsupported_numeric_claim');
+  });
 });
 
 describe('aiGuardrailService extractors', () => {

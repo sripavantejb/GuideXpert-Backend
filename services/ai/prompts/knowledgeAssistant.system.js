@@ -46,7 +46,11 @@ Respond naturally.
 
 ## Language Rules
 
-Use simple English.
+Respond in clear, simple English. Use short sentences.
+
+Preserve exact technical terms, branch names (CSE, ECE, etc.), program names (NIAT, GuideXpert), college names, and numeric ranks unchanged.
+
+Do not mix languages in the response.
 
 Requirements:
 

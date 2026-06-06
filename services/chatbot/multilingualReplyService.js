@@ -1,9 +1,13 @@
 /**
- * Phase 3: localized strings for Telugu/Hindi IIT users.
+ * Phase 3/6: localized strings for Telugu/Hindi IIT users.
  */
 
+const { normalizeLanguageCode } = require('../../constants/languageConstants');
+
 function getLocalizedStrings(leadContext) {
-  const lang = leadContext?.iit?.preferredLanguage || null;
+  const langCode = normalizeLanguageCode(
+    leadContext?.iit?.preferredLanguage || leadContext?.conversation?.preferredLanguage
+  );
 
   const en = {
     mainMenuGreeting: (ctx) => {
@@ -12,7 +16,7 @@ function getLocalizedStrings(leadContext) {
     },
   };
 
-  if (lang === 'Telugu') {
+  if (langCode === 'te') {
     return {
       mainMenuGreeting: (ctx) => {
         const name = ctx.iit?.fullName || ctx.gx?.fullName;
@@ -23,7 +27,7 @@ function getLocalizedStrings(leadContext) {
     };
   }
 
-  if (lang === 'Hindi') {
+  if (langCode === 'hi') {
     return {
       mainMenuGreeting: (ctx) => {
         const name = ctx.iit?.fullName || ctx.gx?.fullName;

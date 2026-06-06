@@ -17,7 +17,7 @@ describe('knowledgeSearchService', () => {
   });
 
   test('searchKnowledge returns empty results for no knowledge match', () => {
-    const results = searchKnowledge('GuideXpert', 5);
+    const results = searchKnowledge('zzzznonexistenttopicxyz123', 5);
 
     assert.deepEqual(results, []);
   });

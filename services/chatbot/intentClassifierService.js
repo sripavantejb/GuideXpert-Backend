@@ -75,6 +75,18 @@ function isKnowledgeSessionActive(botState) {
   return Boolean(botState?.context?.knowledgeAssistantActive);
 }
 
+const SOCIAL_GREETING_PATTERNS = [
+  /^(how are you|how are u|how r u)\s*[.!?]?$/,
+  /^(kaise ho aap|kaise ho)\s*[.!?]?$/,
+  /^(ela vunnaru|ela unnaru)\s*[.!?]?$/,
+];
+
+function isSocialGreeting(text) {
+  const t = normalizeText(text);
+  if (!t) return false;
+  return SOCIAL_GREETING_PATTERNS.some((pattern) => pattern.test(t));
+}
+
 /**
  * General knowledge / exploratory questions routed to the Knowledge Assistant.
  * @param {string} text - normalized (lowercase, collapsed spaces)
@@ -85,6 +97,43 @@ function isKnowledgeQuestion(text) {
     return false;
   }
   return KNOWLEDGE_QUESTION_PATTERNS.some((pattern) => pattern.test(t));
+}
+
+const BRANCH_SIGNAL_PATTERN =
+  /\b(cse|ece|eee|mech|civil|it|branch|branches)\b/i;
+
+const MIXED_RANK_BRANCH_PATTERNS = [
+  /\brank\s+(ki|tho|lo)\s+(cse|ece|eee|it|branch)\b/i,
+  /\b(cse|ece|eee|it)\s+(kavali|vastunda|vastundi|chahiye)\b/i,
+  /\bnaaku\s+(cse|ece|eee|it|branch)\b/i,
+  /\bmujhe\s+(cse|ece|eee|it|branch)\b/i,
+  /\bmeri\s+rank\b/i,
+];
+
+function hasRankSignal(text) {
+  const t = String(text || '');
+  if (/\b(rank|percentile|ranku|rayank|rayanku)\b/i.test(t)) return true;
+  if (/\bmeri\s+rank\b/i.test(t)) return true;
+  if (/\brank\s+(ki|tho|lo)\b/i.test(t)) return true;
+  if (/\b\d{3,}\b/.test(t) && /\brank\b/i.test(t)) return true;
+  return false;
+}
+
+function hasBranchSignal(text) {
+  return BRANCH_SIGNAL_PATTERN.test(String(text || ''));
+}
+
+/**
+ * Rank + branch admission / recommendation queries — route to rank predictor
+ * even when a Knowledge Assistant session is active.
+ */
+function isRankBranchRecommendationQuery(text) {
+  const t = normalizeText(text);
+  if (!t) return false;
+  if (MIXED_RANK_BRANCH_PATTERNS.some((pattern) => pattern.test(t))) {
+    return true;
+  }
+  return hasRankSignal(t) && hasBranchSignal(t);
 }
 
 /**
@@ -112,6 +161,14 @@ function classifyIntent(text, botState, productLine) {
   }
   if (botState && botState.state === 'rank_predictor') {
     return { intent: 'rank_predictor_continue', confidence: 'high' };
+  }
+
+  if (isSocialGreeting(t)) {
+    return { intent: 'greeting', confidence: 'high' };
+  }
+
+  if (isRankBranchRecommendationQuery(t)) {
+    return { intent: 'rank_predictor', confidence: 'high' };
   }
 
   if (isKnowledgeSessionActive(botState)) {
@@ -192,4 +249,13 @@ function classifyIntent(text, botState, productLine) {
   return { intent: 'unknown', confidence: 'low' };
 }
 
-module.exports = { classifyIntent, normalizeText, isKnowledgeQuestion, isKnowledgeSessionActive };
+module.exports = {
+  classifyIntent,
+  normalizeText,
+  isKnowledgeQuestion,
+  isKnowledgeSessionActive,
+  isSocialGreeting,
+  isRankBranchRecommendationQuery,
+  hasRankSignal,
+  hasBranchSignal,
+};

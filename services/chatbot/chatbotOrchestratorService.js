@@ -16,6 +16,15 @@ const { buildWelcomeMenuText } = require('./welcomeMessageService');
 const { emptySubflows } = require('./botSubflowContext');
 const { maskPhoneTail } = require('../../utils/chatbotPhone');
 const { logChatbotEvent, extractPredictorExam } = require('./chatbotStructuredLog');
+const {
+  isMultilingualEnabled,
+  prepareMultilingualInbound,
+  finalizeMultilingualOutbound,
+} = require('../../middleware/multilingualMiddleware');
+const { seedPreferredLanguageFromLead } = require('./conversationLanguageService');
+const { incrementLanguageRequest } = require('../analytics/languageRequestAnalyticsService');
+const { localizeKnownFallback } = require('../../constants/localizedFallbackStrings');
+const { resolveGreetingReply } = require('../../constants/greetingReplies');
 
 const ORCHESTRATOR_FALLBACK_REPLY =
   'Sorry, something went wrong on our side. Please try again in a moment or reply MENU for options.';
@@ -211,6 +220,7 @@ function logInboundResult({
   durationMs,
   upstreamStatus = null,
   errMessage = null,
+  multilingual = null,
 }) {
   logChatbotEvent(event, {
     conversationId: conversation._id,
@@ -222,6 +232,7 @@ function logInboundResult({
     upstreamStatus,
     durationMs,
     errMessage,
+    ...(multilingual || {}),
   });
 }
 
@@ -299,8 +310,28 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
   }
 
   const leadContext = await h.buildLeadContext(leadLinks);
+  await seedPreferredLanguageFromLead(activeConversation._id, leadContext);
   const facts = await h.retrieveFacts(leadLinks, leadContext);
   const botState = await h.getBotState(activeConversation._id);
+
+  let multilingualInbound = null;
+  if (isMultilingualEnabled() && inbound.text) {
+    multilingualInbound = await prepareMultilingualInbound({
+      message: inbound.text,
+      conversation: activeConversation,
+      leadContext,
+    });
+    if (multilingualInbound.resolvedLanguage && multilingualInbound.resolvedLanguage !== 'en') {
+      incrementLanguageRequest({
+        language: multilingualInbound.resolvedLanguage,
+        translated: multilingualInbound.translationApplied,
+      }).catch(() => {});
+    }
+  }
+
+  const intentText =
+    multilingualInbound?.englishMessage ||
+    String(inbound.text || '').trim();
 
   let intentResult;
   if (
@@ -312,7 +343,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       confidence: 'high',
     };
   } else {
-    intentResult = classifyIntent(inbound.text, botState, activeConversation.productLine);
+    intentResult = classifyIntent(intentText, botState, activeConversation.productLine);
   }
 
   await h.updateConversationIntent(activeConversation._id, intentResult.intent);
@@ -376,6 +407,8 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
   let contextPatch = botState?.context || {};
   let upstreamStatus = null;
   let knowledgeAssistantResult = null;
+  let unknownLlmResult = null;
+  let unknownLlmUsed = false;
 
   switch (intentResult.intent) {
     case 'lead_lookup':
@@ -408,9 +441,10 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     case 'rank_predictor':
     case 'rank_predictor_continue': {
       await h.transitionState(activeConversation._id, activeConversation.phone, 'rank_predictor', contextPatch);
-      const r = handleRankPredictorMessage(inbound.text, contextPatch.rank || {});
+      const rankInboundText = multilingualInbound?.englishMessage || inbound.text;
+      const r = handleRankPredictorMessage(rankInboundText, contextPatch.rank || {});
       replyText = r.reply;
-      contextPatch = { rank: r.context };
+      contextPatch = { ...contextPatch, rank: r.context, knowledgeAssistantActive: false };
       nextState = 'rank_predictor';
       if (contextPatch.rank?.step === 'done') {
         nextState = 'main_menu';
@@ -447,11 +481,29 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       }
       break;
     }
+    case 'greeting': {
+      replyText = resolveGreetingReply(
+        multilingualInbound?.language || multilingualInbound?.resolvedLanguage || 'en'
+      );
+      nextState = 'idle';
+      contextPatch = { ...contextPatch, knowledgeAssistantActive: false };
+      break;
+    }
     case 'knowledge_assistant': {
+      const assistantInboundText = multilingualInbound?.englishMessage || inbound.text;
       knowledgeAssistantResult = await answerWithTimeout({
-        inboundText: inbound.text,
+        inboundText: assistantInboundText,
         conversationId: activeConversation._id,
         leadContext,
+        languageMetadata: multilingualInbound
+          ? {
+              originalMessage: multilingualInbound.originalMessage,
+              detectedLanguage: multilingualInbound.detectedLanguage,
+              resolvedLanguage: multilingualInbound.resolvedLanguage,
+              translatedQuery: assistantInboundText,
+              translationApplied: multilingualInbound.translationApplied,
+            }
+          : null,
       });
       if (knowledgeAssistantResult?.text) {
         replyText = knowledgeAssistantResult.text;
@@ -463,18 +515,31 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       break;
     }
     default: {
+      const assistantInboundText = multilingualInbound?.englishMessage || inbound.text;
+      const languageMetadata = multilingualInbound
+        ? {
+            originalMessage: multilingualInbound.originalMessage,
+            detectedLanguage: multilingualInbound.detectedLanguage,
+            resolvedLanguage: multilingualInbound.resolvedLanguage,
+            translatedQuery: assistantInboundText,
+            translationApplied: multilingualInbound.translationApplied,
+          }
+        : null;
       if (
         String(process.env.CHATBOT_KNOWLEDGE_ASSISTANT_ENABLED || '').trim() === '1' ||
         String(process.env.CHATBOT_LLM_ENABLED || '').trim() === '1'
       ) {
         const llm = await tryLlmReply({
-          inboundText: inbound.text,
+          inboundText: assistantInboundText,
           conversationId: activeConversation._id,
           facts,
           leadContext,
+          languageMetadata,
         });
         if (llm && llm.text) {
           replyText = llm.text;
+          unknownLlmUsed = true;
+          unknownLlmResult = llm;
           break;
         }
       }
@@ -504,12 +569,44 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     replyText = listExamsMessage();
   }
 
+  if (multilingualInbound && replyText) {
+    const assistantResult = knowledgeAssistantResult || unknownLlmResult;
+    const shouldTranslateOutbound =
+      multilingualInbound.language !== 'en' &&
+      (intentResult.intent === 'knowledge_assistant' ||
+        intentResult.intent === 'rank_predictor' ||
+        intentResult.intent === 'rank_predictor_continue' ||
+        (intentResult.intent === 'unknown' && unknownLlmUsed));
+
+    if (shouldTranslateOutbound) {
+      replyText = await finalizeMultilingualOutbound({
+        englishResponse: replyText,
+        language: multilingualInbound.language,
+        originalMessage: multilingualInbound.originalMessage,
+        guardrailModified: Boolean(assistantResult?.guardrailModified),
+      });
+      if (knowledgeAssistantResult?.languageLog) {
+        knowledgeAssistantResult.languageLog.finalResponse = replyText;
+      }
+      if (unknownLlmResult?.languageLog) {
+        unknownLlmResult.languageLog.finalResponse = replyText;
+      }
+    } else if (intentResult.intent !== 'greeting') {
+      const localized = localizeKnownFallback(replyText, multilingualInbound.language);
+      if (localized !== replyText) {
+        replyText = localized;
+      }
+    }
+  }
+
   const result = await h.outbound.sendBotTextReply({
     conversationId: activeConversation._id,
     phone10: activeConversation.phone,
     text: replyText,
     inReplyToInboundId: inbound._id,
   });
+
+  const assistantResult = knowledgeAssistantResult || unknownLlmResult;
 
   logInboundResult({
     event: 'inbound_processed',
@@ -519,6 +616,27 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     contextPatch,
     durationMs: Date.now() - startedAt,
     upstreamStatus,
+    multilingual: multilingualInbound
+      ? {
+          originalMessage: multilingualInbound.originalMessage,
+          detectedLanguage: multilingualInbound.detectedLanguage,
+          resolvedLanguage: multilingualInbound.resolvedLanguage,
+          detectionSource: multilingualInbound.detectionSource,
+          englishMessage: multilingualInbound.englishMessage,
+          translatedQuery: multilingualInbound.englishMessage,
+          translationApplied: multilingualInbound.translationApplied,
+          outboundLanguage: multilingualInbound.language,
+          retrievedChunks: assistantResult?.languageLog?.resultIds || [],
+          guardrailDecision: assistantResult
+            ? {
+                modified: Boolean(assistantResult.guardrailModified),
+                reason: assistantResult.guardrailReason || null,
+              }
+            : null,
+          guardrailModified: Boolean(assistantResult?.guardrailModified),
+          finalResponse: replyText,
+        }
+      : null,
   });
 
   return result;

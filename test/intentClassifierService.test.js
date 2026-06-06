@@ -114,6 +114,9 @@ describe('knowledge_assistant intent', () => {
   test('Tell me about GuideXpert.', () =>
     assertKnowledgeAssistant('Tell me about GuideXpert.'));
 
+  test('English-translated Telugu question routes to knowledge_assistant', () =>
+    assertKnowledgeAssistant('Tell me about NIAT placements'));
+
   test('menu stays main_menu', () => {
     const r = classifyIntent('menu', null, PRODUCT_LINE);
     assert.equal(r.intent, 'main_menu');
@@ -154,12 +157,48 @@ describe('knowledge_assistant intent', () => {
     assert.equal(r.confidence, 'medium');
   });
 
+  test('rank and branch together beats knowledge session', () => {
+    const r = classifyIntent(
+      'Can I get CSE with rank 15000?',
+      { state: 'idle', context: { knowledgeAssistantActive: true } },
+      PRODUCT_LINE
+    );
+    assert.equal(r.intent, 'rank_predictor');
+    assert.equal(r.confidence, 'high');
+  });
+
+  test('branch-only question stays unknown without rank signal', () => {
+    const r = classifyIntent('Which branch is good for me?', null, PRODUCT_LINE);
+    assert.equal(r.intent, 'unknown');
+  });
+
   test('menu clears knowledge session routing priority', () => {
     const r = classifyIntent(
       'menu',
       { state: 'idle', context: { knowledgeAssistantActive: true } },
       PRODUCT_LINE
     );
+    assert.equal(r.intent, 'main_menu');
+  });
+});
+
+describe('greeting intent', () => {
+  function assertGreeting(text) {
+    const r = classifyIntent(text, null, PRODUCT_LINE);
+    assert.equal(r.intent, 'greeting');
+    assert.equal(r.confidence, 'high');
+  }
+
+  test('how are you routes to greeting', () => assertGreeting('how are you'));
+  test('How are you? routes to greeting', () => assertGreeting('How are you?'));
+  test('ela vunnaru routes to greeting', () => assertGreeting('ela vunnaru'));
+  test('kaise ho aap routes to greeting', () => assertGreeting('kaise ho aap'));
+  test('how are placements at niat stays knowledge_assistant', () => {
+    const r = classifyIntent('how are placements at niat', null, PRODUCT_LINE);
+    assert.equal(r.intent, 'knowledge_assistant');
+  });
+  test('hello stays main_menu', () => {
+    const r = classifyIntent('hello', null, PRODUCT_LINE);
     assert.equal(r.intent, 'main_menu');
   });
 });

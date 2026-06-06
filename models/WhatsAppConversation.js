@@ -46,6 +46,11 @@ const whatsAppConversationSchema = new mongoose.Schema(
     },
     messageCount: { type: Number, default: 0, min: 0 },
     lastIntent: { type: String, trim: true, maxlength: 64, default: null },
+    preferredLanguage: {
+      type: String,
+      enum: ['en', 'te', 'hi', 'ta', 'kn', 'ml', 'mr', 'bn'],
+      default: 'en',
+    },
     metadata: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
   },
   { timestamps: true }

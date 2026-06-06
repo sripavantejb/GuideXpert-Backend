@@ -75,6 +75,7 @@
     "csv-parse": "^5.6.0",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "franc": "^6.2.0",
     "googleapis": "^170.1.0",
     "jsonwebtoken": "^9.0.2",
     "jspdf": "^4.2.1",

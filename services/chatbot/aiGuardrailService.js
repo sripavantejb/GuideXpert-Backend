@@ -136,16 +136,50 @@ function isClaimSupportedInKnowledge(claim, knowledgeText) {
   return kbNorm.includes(claimNorm);
 }
 
+function normalizeNumericToken(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/,/g, '');
+}
+
+function extractUserProvidedNumbers(...messages) {
+  const allowed = new Set();
+
+  for (const message of messages) {
+    const text = String(message || '');
+    if (!text) continue;
+
+    for (const claim of extractNumericClaims(text)) {
+      allowed.add(normalizeNumericToken(claim));
+    }
+
+    for (const match of text.matchAll(/\b\d+(?:\.\d+)?\b/g)) {
+      allowed.add(normalizeNumericToken(match[0]));
+    }
+  }
+
+  return allowed;
+}
+
+function isAllowedUserNumber(claim, allowedNumbers) {
+  if (!allowedNumbers || allowedNumbers.size === 0) return false;
+  return allowedNumbers.has(normalizeNumericToken(claim));
+}
+
 function containsGuaranteeClaim(response) {
   return GUARANTEE_PATTERNS.some((pattern) => pattern.test(String(response || '')));
 }
 
-function hasUnsupportedNumericClaim(response, knowledgeResults) {
+function hasUnsupportedNumericClaim(response, knowledgeResults, allowedNumbers = new Set()) {
   const claims = extractNumericClaims(response);
   if (claims.length === 0) return false;
 
   const knowledgeText = buildKnowledgeText(knowledgeResults);
-  return claims.some((claim) => !knowledgeText.toLowerCase().includes(claim.toLowerCase()));
+  return claims.some((claim) => {
+    if (isAllowedUserNumber(claim, allowedNumbers)) return false;
+    return !knowledgeText.toLowerCase().includes(claim.toLowerCase());
+  });
 }
 
 function findUnsupportedEntityClaim(response, knowledgeResults, extractClaims, reason) {
@@ -177,8 +211,14 @@ function hasUnsupportedEntityClaim(response, knowledgeResults) {
   return { unsupported: false, reason: null, claim: null };
 }
 
-function validateAiResponse({ response, knowledgeResults } = {}) {
+function validateAiResponse({
+  response,
+  knowledgeResults,
+  userMessage = null,
+  englishUserMessage = null,
+} = {}) {
   const text = String(response || '').trim();
+  const allowedNumbers = extractUserProvidedNumbers(userMessage, englishUserMessage);
 
   if (!text) {
     return { text: UNKNOWN_FALLBACK, modified: true, reason: 'empty_response' };
@@ -188,7 +228,7 @@ function validateAiResponse({ response, knowledgeResults } = {}) {
     return { text: OPPORTUNITY_FALLBACK, modified: true, reason: 'guarantee_claim' };
   }
 
-  if (hasUnsupportedNumericClaim(text, knowledgeResults)) {
+  if (hasUnsupportedNumericClaim(text, knowledgeResults, allowedNumbers)) {
     return { text: UNSUPPORTED_CLAIM_FALLBACK, modified: true, reason: 'unsupported_numeric_claim' };
   }
 
@@ -210,6 +250,7 @@ module.exports = {
   OPPORTUNITY_FALLBACK,
   UNSUPPORTED_CLAIM_FALLBACK,
   extractNumericClaims,
+  extractUserProvidedNumbers,
   extractPartnershipClaims,
   extractCompanyTieupClaims,
   extractMentorNameClaims,
