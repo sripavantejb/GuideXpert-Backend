@@ -316,16 +316,20 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
 
   let multilingualInbound = null;
   if (isMultilingualEnabled() && inbound.text) {
-    multilingualInbound = await prepareMultilingualInbound({
-      message: inbound.text,
-      conversation: activeConversation,
-      leadContext,
-    });
-    if (multilingualInbound.resolvedLanguage && multilingualInbound.resolvedLanguage !== 'en') {
-      incrementLanguageRequest({
-        language: multilingualInbound.resolvedLanguage,
-        translated: multilingualInbound.translationApplied,
-      }).catch(() => {});
+    try {
+      multilingualInbound = await prepareMultilingualInbound({
+        message: inbound.text,
+        conversation: activeConversation,
+        leadContext,
+      });
+      if (multilingualInbound.resolvedLanguage && multilingualInbound.resolvedLanguage !== 'en') {
+        incrementLanguageRequest({
+          language: multilingualInbound.resolvedLanguage,
+          translated: multilingualInbound.translationApplied,
+        }).catch(() => {});
+      }
+    } catch (err) {
+      console.warn('[chatbot] prepareMultilingualInbound failed', err.message);
     }
   }
 
@@ -579,12 +583,16 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
         (intentResult.intent === 'unknown' && unknownLlmUsed));
 
     if (shouldTranslateOutbound) {
-      replyText = await finalizeMultilingualOutbound({
-        englishResponse: replyText,
-        language: multilingualInbound.language,
-        originalMessage: multilingualInbound.originalMessage,
-        guardrailModified: Boolean(assistantResult?.guardrailModified),
-      });
+      try {
+        replyText = await finalizeMultilingualOutbound({
+          englishResponse: replyText,
+          language: multilingualInbound.language,
+          originalMessage: multilingualInbound.originalMessage,
+          guardrailModified: Boolean(assistantResult?.guardrailModified),
+        });
+      } catch (err) {
+        console.warn('[chatbot] finalizeMultilingualOutbound failed', err.message);
+      }
       if (knowledgeAssistantResult?.languageLog) {
         knowledgeAssistantResult.languageLog.finalResponse = replyText;
       }

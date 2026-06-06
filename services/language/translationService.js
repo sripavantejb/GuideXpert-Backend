@@ -97,15 +97,20 @@ async function translateToEnglish(text, sourceLanguage, options = {}) {
 
   const preserveTerms = buildPreserveTermsPrompt(options.preserveTerms || getPreserveTerms());
   const startedAt = Date.now();
-  const translated = await translateWithProvider({
-    text: input,
-    systemPrompt: buildToEnglishPrompt(source, preserveTerms),
-    provider: options.provider,
-    timeoutMs: options.timeoutMs || DEFAULT_TIMEOUT_MS,
-  });
-  const restored = restorePreserveTerms(translated, input, options.preserveTerms || getPreserveTerms());
-  aiDebugLog('LANG', 'translateToEnglish', { source, ms: Date.now() - startedAt });
-  return restored;
+  try {
+    const translated = await translateWithProvider({
+      text: input,
+      systemPrompt: buildToEnglishPrompt(source, preserveTerms),
+      provider: options.provider,
+      timeoutMs: options.timeoutMs || DEFAULT_TIMEOUT_MS,
+    });
+    const restored = restorePreserveTerms(translated, input, options.preserveTerms || getPreserveTerms());
+    aiDebugLog('LANG', 'translateToEnglish', { source, ms: Date.now() - startedAt });
+    return restored;
+  } catch (err) {
+    aiDebugLog('LANG', 'translateToEnglish failed', { source, message: err.message });
+    return input;
+  }
 }
 
 async function translateFromEnglish(text, targetLanguage, options = {}) {
@@ -117,15 +122,20 @@ async function translateFromEnglish(text, targetLanguage, options = {}) {
 
   const preserveTerms = buildPreserveTermsPrompt(options.preserveTerms || getPreserveTerms());
   const startedAt = Date.now();
-  const translated = await translateWithProvider({
-    text: input,
-    systemPrompt: buildFromEnglishPrompt(target, preserveTerms),
-    provider: options.provider,
-    timeoutMs: options.timeoutMs || DEFAULT_TIMEOUT_MS,
-  });
-  const restored = restorePreserveTerms(translated, input, options.preserveTerms || getPreserveTerms());
-  aiDebugLog('LANG', 'translateFromEnglish', { target, ms: Date.now() - startedAt });
-  return restored;
+  try {
+    const translated = await translateWithProvider({
+      text: input,
+      systemPrompt: buildFromEnglishPrompt(target, preserveTerms),
+      provider: options.provider,
+      timeoutMs: options.timeoutMs || DEFAULT_TIMEOUT_MS,
+    });
+    const restored = restorePreserveTerms(translated, input, options.preserveTerms || getPreserveTerms());
+    aiDebugLog('LANG', 'translateFromEnglish', { target, ms: Date.now() - startedAt });
+    return restored;
+  } catch (err) {
+    aiDebugLog('LANG', 'translateFromEnglish failed', { target, message: err.message });
+    return input;
+  }
 }
 
 module.exports = {

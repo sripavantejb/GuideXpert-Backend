@@ -37,12 +37,22 @@ async function prepareMultilingualInbound({ message, conversation, leadContext }
   let translationApplied = false;
 
   if (resolved.language !== 'en') {
-    englishMessage = await translateToEnglish(originalMessage, resolved.language);
-    translationApplied = englishMessage !== originalMessage;
+    try {
+      englishMessage = await translateToEnglish(originalMessage, resolved.language);
+      translationApplied = englishMessage !== originalMessage;
+    } catch (err) {
+      aiDebugLog('LANG', 'prepareMultilingualInbound translate failed', err.message);
+      englishMessage = originalMessage;
+      translationApplied = false;
+    }
   }
 
   if (conversation?._id) {
-    await recordDetectedLanguage(conversation._id, detection.language, detection.confidence);
+    try {
+      await recordDetectedLanguage(conversation._id, detection.language, detection.confidence);
+    } catch (err) {
+      aiDebugLog('LANG', 'recordDetectedLanguage failed', err.message);
+    }
   }
 
   aiDebugLog('LANG', 'prepareMultilingualInbound', {

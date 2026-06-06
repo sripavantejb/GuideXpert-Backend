@@ -56,4 +56,16 @@ describe('translationService', () => {
     assert.match(result, /CSE/);
     assert.match(result, /15000/);
   });
+
+  test('returns original text when provider fails', async () => {
+    setTranslationProvider({
+      chatCompletion: async () => {
+        throw new Error('LLM unavailable');
+      },
+    });
+
+    const telugu = 'నాకు ఏ బ్రాంచ్ మంచిది?';
+    assert.equal(await translateToEnglish(telugu, 'te'), telugu);
+    assert.equal(await translateFromEnglish('Branch guidance reply.', 'te'), 'Branch guidance reply.');
+  });
 });
