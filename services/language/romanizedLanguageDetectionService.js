@@ -32,6 +32,19 @@ const HINDI_MIXED_PHRASES = [
   'cse chahiye',
 ];
 
+const HINDI_CAPABILITY_PHRASES = [
+  'kya kya kar sakte',
+  'kya kar sakte',
+  'kitne tarike',
+  'kitne tariko',
+  'konse tareeke',
+  'tum mere liye',
+  'aap kya kar sakte',
+  'aap kya kya kar sakte',
+];
+
+const HINDI_ROMANIZED_SIGNAL_TOKENS = ['tum', 'sakte', 'tarike', 'tariko', 'tareeke'];
+
 const TELUGU_MIXED_PHRASES = [
   'naaku cse kavali',
   'rank tho cse',
@@ -39,7 +52,7 @@ const TELUGU_MIXED_PHRASES = [
   'cse kavali',
 ];
 
-const HINDI_COUNSELLING_TOKENS = ['mujhe', 'chahiye', 'meri', 'hai', 'milega', 'milta'];
+const HINDI_COUNSELLING_TOKENS = ['mujhe', 'chahiye', 'meri', 'hai', 'milega', 'milta', 'kya', 'mere'];
 
 const TELUGU_STRONG_TOKENS = [
   'chesthunnav',
@@ -89,6 +102,24 @@ function matchesAnyWordBoundary(normalized, tokens) {
   return tokens.some((token) => matchesWordBoundary(normalized, token));
 }
 
+function matchesRomanizedHindiSignals(normalized) {
+  if (matchesAnyWordBoundary(normalized, HINDI_ROMANIZED_SIGNAL_TOKENS)) {
+    if (
+      matchesWordBoundary(normalized, 'tum') &&
+      (matchesWordBoundary(normalized, 'sakte') || matchesMultiWordPhrase(normalized, 'kya kya'))
+    ) {
+      return { language: 'hi', confidence: ROMANIZED_CONFIDENCE, matched: 'tum_kar_sakte' };
+    }
+    if (
+      matchesWordBoundary(normalized, 'kya') &&
+      matchesWordBoundary(normalized, 'sakte')
+    ) {
+      return { language: 'hi', confidence: ROMANIZED_CONFIDENCE, matched: 'kya_kar_sakte' };
+    }
+  }
+  return null;
+}
+
 function detectRomanizedLanguage(message) {
   const normalized = normalizeRomanizedText(message);
   if (!normalized || !/^[\x00-\x7F]+$/.test(normalized)) {
@@ -99,6 +130,17 @@ function detectRomanizedLanguage(message) {
     if (matchesExactPhrase(normalized, phrase) || matchesMultiWordPhrase(normalized, phrase)) {
       return { language: 'hi', confidence: ROMANIZED_CONFIDENCE, matched: phrase };
     }
+  }
+
+  for (const phrase of HINDI_CAPABILITY_PHRASES) {
+    if (matchesMultiWordPhrase(normalized, phrase)) {
+      return { language: 'hi', confidence: ROMANIZED_CONFIDENCE, matched: phrase };
+    }
+  }
+
+  const hindiSignals = matchesRomanizedHindiSignals(normalized);
+  if (hindiSignals) {
+    return hindiSignals;
   }
 
   for (const phrase of TELUGU_MIXED_PHRASES) {

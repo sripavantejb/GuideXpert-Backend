@@ -71,6 +71,20 @@ const KNOWLEDGE_QUESTION_PATTERNS = [
   /\bpricing\b/i,
 ];
 
+const CAPABILITY_QUESTION_PATTERNS = [
+  /\bwhat can you do\b/i,
+  /\bhow can you help\b/i,
+  /\bwhat do you do\b/i,
+  /\bwhat all can you do\b/i,
+  /\bkya kya kar sakte\b/i,
+  /\bkya kar sakte\b/i,
+  /\bkitne tarike\b/i,
+  /\bkitne tariko\b/i,
+  /\bkonse tareeke\b/i,
+  /\btum mere liye\b/i,
+  /\baap kya kar sakte\b/i,
+];
+
 function isKnowledgeSessionActive(botState) {
   return Boolean(botState?.context?.knowledgeAssistantActive);
 }
@@ -161,6 +175,12 @@ function isKnowledgeQuestion(text) {
     return false;
   }
   return KNOWLEDGE_QUESTION_PATTERNS.some((pattern) => pattern.test(t));
+}
+
+function isCapabilityQuestion(text, originalText = null) {
+  return intentTextCandidates(text, originalText).some(
+    (t) => t && CAPABILITY_QUESTION_PATTERNS.some((pattern) => pattern.test(t))
+  );
 }
 
 const BRANCH_SIGNAL_PATTERN =
@@ -306,6 +326,14 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     return { intent: 'knowledge_assistant', confidence: 'medium' };
   }
 
+  if (isCapabilityQuestion(t, original)) {
+    return {
+      intent: 'knowledge_assistant',
+      confidence: 'medium',
+      intentReason: 'capability_question',
+    };
+  }
+
   if (/^again$/.test(t)) {
     return { intent: 'college_predictor', confidence: 'high' };
   }
@@ -384,6 +412,7 @@ module.exports = {
   classifyIntent,
   normalizeText,
   isKnowledgeQuestion,
+  isCapabilityQuestion,
   isKnowledgeSessionActive,
   isNativeSocialGreeting,
   isSocialGreeting,

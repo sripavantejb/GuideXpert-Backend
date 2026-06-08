@@ -78,5 +78,15 @@ const whatsAppOutboundMessageSchema = new mongoose.Schema(
 whatsAppOutboundMessageSchema.index({ conversationId: 1, createdAt: -1 });
 whatsAppOutboundMessageSchema.index({ phone: 1, createdAt: -1 });
 whatsAppOutboundMessageSchema.index({ status: 1, updatedAt: -1 });
+whatsAppOutboundMessageSchema.index(
+  { inReplyToInboundId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      senderType: 'bot',
+      inReplyToInboundId: { $type: 'objectId' },
+    },
+  }
+);
 
 module.exports = mongoose.model('WhatsAppOutboundMessage', whatsAppOutboundMessageSchema);

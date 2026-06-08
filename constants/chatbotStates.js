@@ -32,7 +32,13 @@ const INBOUND_MESSAGE_TYPES = Object.freeze([
   'unknown',
 ]);
 
-const INBOUND_PROCESS_STATUSES = Object.freeze(['pending', 'processed', 'skipped', 'failed']);
+const INBOUND_PROCESS_STATUSES = Object.freeze([
+  'pending',
+  'processing',
+  'processed',
+  'skipped',
+  'failed',
+]);
 
 const OUTBOUND_MESSAGE_TYPES = Object.freeze([
   'text',

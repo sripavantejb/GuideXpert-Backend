@@ -10,10 +10,28 @@ const { maskPhoneTail } = require('../../utils/chatbotPhone');
 const { verifyGupshupWebhookRequest } = require('../../utils/gupshupWebhookAuth');
 const { getOrCreateConversation, touchInbound } = require('./conversationService');
 const { processInbound } = require('./chatbotOrchestratorService');
+const { DEFAULT_TIMEOUT_MS } = require('./knowledgeAssistantService');
 
 const rateLimitMap = new Map();
 
+const SUCCESSFUL_OUTBOUND_STATUSES = ['queued', 'submitted', 'sent', 'delivered', 'read'];
+
+function inboundProcessingStaleMs() {
+  const configured = Number(process.env.CHATBOT_INBOUND_PROCESSING_STALE_MS);
+  if (Number.isFinite(configured) && configured > 0) {
+    return configured;
+  }
+  const kaTimeout = Number(process.env.KNOWLEDGE_ASSISTANT_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS;
+  return Math.max(120000, kaTimeout * 2);
+}
+
 function resolveInboundProcessUpdate(result) {
+  if (result && result.skipped && result.reason === 'already_processing') {
+    return {
+      processStatus: 'processing',
+      processError: null,
+    };
+  }
   if (result && (result.outboundSuccess === true || result.delivered === true)) {
     return {
       processStatus: 'processed',
@@ -74,6 +92,139 @@ function buildInboundMessageFields({
     dedupeKey,
     whatsappWebhookEventId: webhookEventId,
   };
+}
+
+/**
+ * Atomically claim a pending inbound row for processing.
+ * @returns {Promise<object|null>}
+ */
+async function claimInboundForProcessing(inboundId) {
+  return WhatsAppInboundMessage.findOneAndUpdate(
+    { _id: inboundId, processStatus: 'pending' },
+    { $set: { processStatus: 'processing', updatedAt: new Date() } },
+    { new: true, lean: true }
+  );
+}
+
+/**
+ * Reset stale processing rows so cron can retry them.
+ */
+async function recoverStaleProcessingInbound(limit = 50) {
+  const cutoff = new Date(Date.now() - inboundProcessingStaleMs());
+  const stale = await WhatsAppInboundMessage.find({
+    processStatus: 'processing',
+    updatedAt: { $lt: cutoff },
+  })
+    .sort({ updatedAt: 1 })
+    .limit(limit)
+    .select('_id')
+    .lean();
+
+  if (stale.length === 0) {
+    return { recovered: 0 };
+  }
+
+  const ids = stale.map((row) => row._id);
+  const result = await WhatsAppInboundMessage.updateMany(
+    { _id: { $in: ids }, processStatus: 'processing' },
+    {
+      $set: {
+        processStatus: 'pending',
+        processError: 'processing_stale_recovered',
+        updatedAt: new Date(),
+      },
+    }
+  );
+
+  return { recovered: result.modifiedCount || 0 };
+}
+
+async function markInboundProcessedFromExistingReply(inboundId) {
+  await WhatsAppInboundMessage.updateOne(
+    { _id: inboundId },
+    {
+      $set: {
+        processStatus: 'processed',
+        processError: null,
+        processedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    }
+  );
+}
+
+async function findSuccessfulBotReply(inboundId) {
+  return WhatsAppOutboundMessage.findOne({
+    inReplyToInboundId: inboundId,
+    senderType: 'bot',
+    status: { $in: SUCCESSFUL_OUTBOUND_STATUSES },
+  })
+    .select('_id status')
+    .lean();
+}
+
+/**
+ * Run processInbound once for a claimed inbound row.
+ */
+async function executeClaimedInboundProcessing({ conversation, inbound, leadLinks, phone10 }) {
+  const inboundId = inbound._id || inbound.id;
+  const claimed = await claimInboundForProcessing(inboundId);
+  if (!claimed) {
+    const existingReply = await findSuccessfulBotReply(inboundId);
+    if (existingReply) {
+      await markInboundProcessedFromExistingReply(inboundId);
+      return {
+        skipped: true,
+        reason: 'already_replied',
+        outboundSuccess: true,
+        delivered: true,
+      };
+    }
+    return { skipped: true, reason: 'already_processing' };
+  }
+
+  try {
+    const result = await processInbound({
+      conversation,
+      inbound: claimed,
+      leadLinks,
+    });
+    const processUpdate = resolveInboundProcessUpdate(result);
+    if (processUpdate.processStatus === 'pending') {
+      console.error('[chatbot] outbound_send_failed', {
+        phone_tail: maskPhoneTail(phone10 || conversation.phone),
+        inbound_id: String(inboundId),
+        error: processUpdate.processError,
+      });
+    }
+    await WhatsAppInboundMessage.updateOne(
+      { _id: inboundId },
+      {
+        $set: {
+          processStatus: processUpdate.processStatus,
+          processError: processUpdate.processError,
+          processedAt:
+            processUpdate.processStatus === 'processed' ? new Date() : null,
+          updatedAt: new Date(),
+        },
+      }
+    );
+    return result;
+  } catch (err) {
+    console.error('[chatbot] process error', maskPhoneTail(phone10 || conversation.phone), err.message);
+    await WhatsAppInboundMessage.updateOne(
+      { _id: inboundId },
+      {
+        $set: {
+          processStatus: 'failed',
+          processError: String(err.message).slice(0, 2000),
+          processedAt: new Date(),
+          updatedAt: new Date(),
+        },
+      }
+    );
+    throw err;
+  }
 }
 
 /**
@@ -146,42 +297,14 @@ async function handleInboundWebhook(req, body, receivedAt = new Date()) {
   await touchInbound(conversation._id, receivedAt);
 
   try {
-    const result = await processInbound({
+    await executeClaimedInboundProcessing({
       conversation,
       inbound: inboundDoc,
       leadLinks,
+      phone10: parsed.phone10,
     });
-    const processUpdate = resolveInboundProcessUpdate(result);
-    if (processUpdate.processStatus === 'pending') {
-      console.error('[chatbot] outbound_send_failed', {
-        phone_tail: maskPhoneTail(parsed.phone10),
-        inbound_id: String(inboundDoc._id),
-        error: processUpdate.processError,
-      });
-    }
-    await WhatsAppInboundMessage.updateOne(
-      { _id: inboundDoc._id },
-      {
-        $set: {
-          processStatus: processUpdate.processStatus,
-          processError: processUpdate.processError,
-          processedAt:
-            processUpdate.processStatus === 'processed' ? new Date() : null,
-        },
-      }
-    );
-  } catch (err) {
-    console.error('[chatbot] process error', maskPhoneTail(parsed.phone10), err.message);
-    await WhatsAppInboundMessage.updateOne(
-      { _id: inboundDoc._id },
-      {
-        $set: {
-          processStatus: 'failed',
-          processError: String(err.message).slice(0, 2000),
-          processedAt: new Date(),
-        },
-      }
-    );
+  } catch (_err) {
+    // executeClaimedInboundProcessing already persisted failed status
   }
 
   return { handled: true, inboundId: String(inboundDoc._id) };
@@ -191,6 +314,8 @@ async function handleInboundWebhook(req, body, receivedAt = new Date()) {
  * Replay pending inbound messages (cron).
  */
 async function replayPendingInbound(limit = 30) {
+  await recoverStaleProcessingInbound();
+
   const pending = await WhatsAppInboundMessage.find({ processStatus: 'pending' })
     .sort({ receivedAt: 1 })
     .limit(limit)
@@ -198,6 +323,7 @@ async function replayPendingInbound(limit = 30) {
 
   let processed = 0;
   let failed = 0;
+  let skipped = 0;
 
   for (const row of pending) {
     try {
@@ -205,70 +331,46 @@ async function replayPendingInbound(limit = 30) {
         continue;
       }
 
-      const existingReply = await WhatsAppOutboundMessage.findOne({
-        inReplyToInboundId: row._id,
-        status: { $in: ['queued', 'submitted', 'sent', 'delivered', 'read'] },
-      })
-        .select('_id status')
-        .lean();
+      const existingReply = await findSuccessfulBotReply(row._id);
       if (existingReply) {
-        await WhatsAppInboundMessage.updateOne(
-          { _id: row._id },
-          {
-            $set: {
-              processStatus: 'processed',
-              processError: null,
-              processedAt: new Date(),
-            },
-          }
-        );
+        await markInboundProcessedFromExistingReply(row._id);
         processed += 1;
         continue;
       }
+
       const conversation = await require('../../models/WhatsAppConversation').findById(
         row.conversationId
       );
       if (!conversation) continue;
+
       const { resolveLeadLinks } = require('../../utils/chatbotPhone');
       const leadLinks = await resolveLeadLinks(row.phone);
-      const result = await processInbound({
+      const result = await executeClaimedInboundProcessing({
         conversation,
         inbound: row,
         leadLinks,
+        phone10: row.phone,
       });
+
+      if (result && result.skipped) {
+        skipped += 1;
+        continue;
+      }
+
       const processUpdate = resolveInboundProcessUpdate(result);
-      await WhatsAppInboundMessage.updateOne(
-        { _id: row._id },
-        {
-          $set: {
-            processStatus: processUpdate.processStatus,
-            processError: processUpdate.processError,
-            processedAt:
-              processUpdate.processStatus === 'processed' ? new Date() : null,
-          },
-        }
-      );
       if (processUpdate.processStatus === 'processed') {
         processed += 1;
+      } else if (processUpdate.processStatus === 'failed') {
+        failed += 1;
       } else {
         failed += 1;
       }
-    } catch (e) {
-      await WhatsAppInboundMessage.updateOne(
-        { _id: row._id },
-        {
-          $set: {
-            processStatus: 'failed',
-            processError: String(e.message).slice(0, 500),
-            processedAt: new Date(),
-          },
-        }
-      );
+    } catch (_e) {
       failed += 1;
     }
   }
 
-  return { processed, failed, scanned: pending.length };
+  return { processed, failed, skipped, scanned: pending.length };
 }
 
 module.exports = {
@@ -277,4 +379,9 @@ module.exports = {
   buildInboundMessageFields,
   verifyGupshupWebhookRequest,
   resolveInboundProcessUpdate,
+  claimInboundForProcessing,
+  recoverStaleProcessingInbound,
+  executeClaimedInboundProcessing,
+  inboundProcessingStaleMs,
+  findSuccessfulBotReply,
 };

@@ -2,8 +2,11 @@ const mongoose = require('mongoose');
 const WhatsAppOutboundMessage = require('../../models/WhatsAppOutboundMessage');
 const { parseGupshupTemplateSendResponse } = require('../../utils/gupshupMessageIds');
 const { maskPhoneTail } = require('../../utils/chatbotPhone');
+const { isMongoDuplicateKeyError } = require('../../utils/mongoDuplicateKey');
 const gupshupSession = require('./gupshupSessionService');
 const { sendSessionInactiveTemplateFallback } = require('./sessionFallbackService');
+
+const SUCCESSFUL_OUTBOUND_STATUSES = ['queued', 'submitted', 'sent', 'delivered', 'read'];
 
 function isReengagementSendError(error) {
   const msg = String(error || '').toLowerCase();
@@ -54,6 +57,23 @@ function snippetFromResult(result, max = 1000) {
   }
 }
 
+async function findExistingBotReply(inReplyToInboundId) {
+  if (!inReplyToInboundId) return null;
+  return WhatsAppOutboundMessage.findOne({
+    inReplyToInboundId,
+    senderType: 'bot',
+  }).lean();
+}
+
+async function findSuccessfulBotReply(inReplyToInboundId) {
+  if (!inReplyToInboundId) return null;
+  return WhatsAppOutboundMessage.findOne({
+    inReplyToInboundId,
+    senderType: 'bot',
+    status: { $in: SUCCESSFUL_OUTBOUND_STATUSES },
+  }).lean();
+}
+
 /**
  * Send bot text reply and persist outbound row.
  */
@@ -65,18 +85,66 @@ async function sendBotTextReply({
   handoffId = null,
   messageType = 'text',
 }) {
+  if (inReplyToInboundId) {
+    const existingSuccess = await findSuccessfulBotReply(inReplyToInboundId);
+    if (existingSuccess) {
+      return {
+        success: true,
+        outboundId: existingSuccess._id,
+        duplicatePrevented: true,
+      };
+    }
+  }
+
   const now = new Date();
-  const outbound = await WhatsAppOutboundMessage.create({
-    conversationId,
-    phone: phone10,
-    senderType: 'bot',
-    messageType,
-    content: { type: 'text', text },
-    textPreview: String(text || '').slice(0, 500),
-    status: 'queued',
-    inReplyToInboundId: inReplyToInboundId || null,
-    handoffId: handoffId || null,
-  });
+  let outbound;
+  try {
+    outbound = await WhatsAppOutboundMessage.create({
+      conversationId,
+      phone: phone10,
+      senderType: 'bot',
+      messageType,
+      content: { type: 'text', text },
+      textPreview: String(text || '').slice(0, 500),
+      status: 'queued',
+      inReplyToInboundId: inReplyToInboundId || null,
+      handoffId: handoffId || null,
+    });
+  } catch (err) {
+    if (isMongoDuplicateKeyError(err) && inReplyToInboundId) {
+      const existing = await findExistingBotReply(inReplyToInboundId);
+      if (existing) {
+        if (SUCCESSFUL_OUTBOUND_STATUSES.includes(existing.status)) {
+          return {
+            success: true,
+            outboundId: existing._id,
+            duplicatePrevented: true,
+          };
+        }
+        outbound = existing;
+      } else {
+        throw err;
+      }
+    } else {
+      throw err;
+    }
+  }
+
+  if (outbound.status !== 'queued') {
+    await WhatsAppOutboundMessage.updateOne(
+      { _id: outbound._id },
+      {
+        $set: {
+          content: { type: 'text', text },
+          textPreview: String(text || '').slice(0, 500),
+          status: 'queued',
+          messageType,
+          handoffId: handoffId || null,
+          updatedAt: now,
+        },
+      }
+    );
+  }
 
   const result = await gupshupSession.sendTextMessage(phone10, text);
   const ids = parseGupshupTemplateSendResponse(result && result.data);
