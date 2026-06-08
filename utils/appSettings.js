@@ -65,10 +65,41 @@ async function setOsviAbandonedDelayMs(delayMs) {
   return value;
 }
 
+const AI_CALLS_SCHEDULING_MODE_KEY = 'aiCallsSchedulingMode';
+const AI_CALLS_SCHEDULING_MODES = ['manual_approval', 'automatic'];
+
+async function getAiCallsSchedulingMode() {
+  try {
+    const doc = await AppSettings.findOne({ key: AI_CALLS_SCHEDULING_MODE_KEY }).lean();
+    if (!doc || typeof doc.value !== 'string') return 'manual_approval';
+    const v = doc.value.trim();
+    return AI_CALLS_SCHEDULING_MODES.includes(v) ? v : 'manual_approval';
+  } catch (err) {
+    console.error('[AppSettings] getAiCallsSchedulingMode error — defaulting to manual_approval:', err.message);
+    return 'manual_approval';
+  }
+}
+
+async function setAiCallsSchedulingMode(mode) {
+  const v = typeof mode === 'string' ? mode.trim() : '';
+  if (!AI_CALLS_SCHEDULING_MODES.includes(v)) {
+    throw new Error(`schedulingMode must be one of: ${AI_CALLS_SCHEDULING_MODES.join(', ')}`);
+  }
+  await AppSettings.findOneAndUpdate(
+    { key: AI_CALLS_SCHEDULING_MODE_KEY },
+    { key: AI_CALLS_SCHEDULING_MODE_KEY, value: v },
+    { upsert: true, new: true }
+  );
+  return v;
+}
+
 module.exports = {
   getOsviEnabled,
   setOsviEnabled,
   getOsviAbandonedDelayMs,
   setOsviAbandonedDelayMs,
   DEFAULT_OSVI_ABANDONED_DELAY_MS,
+  getAiCallsSchedulingMode,
+  setAiCallsSchedulingMode,
+  AI_CALLS_SCHEDULING_MODES,
 };

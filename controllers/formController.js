@@ -1294,6 +1294,17 @@ exports.saveIitSection1 = async (req, res) => {
       }
     }
 
+    if (slotUtc) {
+      try {
+        const { createPendingReminder } = require('../services/aiCallReminderService');
+        createPendingReminder(submission.toObject ? submission.toObject() : submission).catch((aiErr) => {
+          console.error('[saveIitSection1] AI call reminder create failed:', aiErr?.message || aiErr);
+        });
+      } catch (aiHookErr) {
+        console.error('[saveIitSection1] AI call reminder hook error:', aiHookErr?.message || aiHookErr);
+      }
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Section 1 saved successfully.',
@@ -1569,6 +1580,15 @@ exports.saveIitSection2 = async (req, res) => {
       }
     }
 
+    try {
+      const { enrichReminderFromSubmission } = require('../services/aiCallReminderService');
+      enrichReminderFromSubmission(updated.toObject ? updated.toObject() : updated).catch((aiErr) => {
+        console.warn('[saveIitSection2] AI call reminder enrich failed:', aiErr?.message || aiErr);
+      });
+    } catch (aiHookErr) {
+      console.warn('[saveIitSection2] AI call reminder enrich hook error:', aiHookErr?.message || aiHookErr);
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Section 2 saved successfully.',
@@ -1639,6 +1659,15 @@ exports.saveIitSection3 = async (req, res) => {
 
     if (!updated) {
       return res.status(404).json({ success: false, message: 'IIT counselling submission not found' });
+    }
+
+    try {
+      const { enrichReminderFromSubmission } = require('../services/aiCallReminderService');
+      enrichReminderFromSubmission(updated.toObject ? updated.toObject() : updated).catch((aiErr) => {
+        console.warn('[saveIitSection3] AI call reminder enrich failed:', aiErr?.message || aiErr);
+      });
+    } catch (aiHookErr) {
+      console.warn('[saveIitSection3] AI call reminder enrich hook error:', aiHookErr?.message || aiHookErr);
     }
 
     return res.status(200).json({

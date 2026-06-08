@@ -81,6 +81,8 @@ function mapLeadToDTO(doc) {
     bookingStatus: doc.bookingStatus || 'Not Booked',
     selectedSlotId: doc.selectedSlotId ? String(doc.selectedSlotId) : '',
     oneOnOneCounselorId: doc.oneOnOneCounselorId ? String(doc.oneOnOneCounselorId) : '',
+    formCompleted: !!doc.formCompleted,
+    currentStep: doc.currentStep || 0,
     parentAttendanceConfirmed: !!doc.parentAttendanceConfirmed,
     whatsappConsent: !!doc.whatsappConsent,
     bookingConfirmedAt: doc.bookingConfirmedAt || null,
@@ -185,6 +187,8 @@ function validateSubmitBody(b) {
       preferredTimeSlot: slotMeta.label,
       preferredTimeSlotDate: slotMeta.slotDate,
       additionalQuestions,
+      formCompleted: true,
+      currentStep: 3,
       utm_source: (b.utm_source && String(b.utm_source).trim().slice(0, 120)) || undefined,
       utm_medium: (b.utm_medium && String(b.utm_medium).trim().slice(0, 120)) || undefined,
       utm_campaign: (b.utm_campaign && String(b.utm_campaign).trim().slice(0, 120)) || undefined,
@@ -193,20 +197,120 @@ function validateSubmitBody(b) {
   };
 }
 
-/**
- * POST /api/one-on-one-counseling — public form submission
- */
-exports.submitOneOnOneCounselingLead = async (req, res) => {
+function validateSection1Body(b) {
+  const studentName = (b.studentName && String(b.studentName).trim()) || '';
+  const mobileNumber = to10Digits(b.mobileNumber);
+  const currentClass = (b.currentClass && String(b.currentClass).trim()) || '';
+  const city = (b.city && String(b.city).trim()) || '';
+  const entranceExamRank = (b.entranceExamRank && String(b.entranceExamRank).trim()) || '';
+
+  if (studentName.length < 2 || studentName.length > 100) {
+    return { error: 'Student name must be 2–100 characters.' };
+  }
+  if (!INDIAN_MOBILE_REGEX.test(mobileNumber)) {
+    return { error: 'Enter a valid 10-digit Indian mobile number for the student.' };
+  }
+  if (!CURRENT_CLASS_OPTIONS.includes(currentClass)) {
+    return { error: 'Please select a valid current class.' };
+  }
+  if (city.length < 2 || city.length > 80) {
+    return { error: 'City / town must be 2–80 characters.' };
+  }
+  if (!entranceExamRank || entranceExamRank.length > 120) {
+    return { error: 'Entrance exam rank is required (max 120 characters).' };
+  }
+
+  return {
+    data: {
+      studentName,
+      mobileNumber,
+      currentClass,
+      city,
+      entranceExamRank,
+      currentStep: 1,
+      formCompleted: false,
+      utm_source: (b.utm_source && String(b.utm_source).trim().slice(0, 120)) || undefined,
+      utm_medium: (b.utm_medium && String(b.utm_medium).trim().slice(0, 120)) || undefined,
+      utm_campaign: (b.utm_campaign && String(b.utm_campaign).trim().slice(0, 120)) || undefined,
+      utm_content: (b.utm_content && String(b.utm_content).trim().slice(0, 120)) || undefined,
+    },
+  };
+}
+
+function validateSection2Body(b) {
+  const parentName = (b.parentName && String(b.parentName).trim()) || '';
+  const parentMobileNumber = to10Digits(b.parentMobileNumber);
+  const sessionAttendee = (b.sessionAttendee && String(b.sessionAttendee).trim()) || '';
+  const interestedBranch = (b.interestedBranch && String(b.interestedBranch).trim()) || '';
+  const collegeBudget = (b.collegeBudget && String(b.collegeBudget).trim()) || '';
+  const biggestConcern = (b.biggestConcern && String(b.biggestConcern).trim()) || '';
+
+  if (parentName.length < 2 || parentName.length > 100) {
+    return { error: 'Parent name must be 2–100 characters.' };
+  }
+  if (!INDIAN_MOBILE_REGEX.test(parentMobileNumber)) {
+    return { error: 'Enter a valid 10-digit Indian mobile number for the parent.' };
+  }
+  if (!SESSION_ATTENDEE_OPTIONS.includes(sessionAttendee)) {
+    return { error: 'Please select who will attend the session.' };
+  }
+  if (!INTERESTED_BRANCH_OPTIONS.includes(interestedBranch)) {
+    return { error: 'Please select a valid branch.' };
+  }
+  if (!COLLEGE_BUDGET_OPTIONS.includes(collegeBudget)) {
+    return { error: 'Please select a valid college budget.' };
+  }
+  if (!BIGGEST_CONCERN_OPTIONS.includes(biggestConcern)) {
+    return { error: 'Please select a valid concern.' };
+  }
+
+  return {
+    data: {
+      parentName,
+      parentMobileNumber,
+      sessionAttendee,
+      interestedBranch,
+      collegeBudget,
+      biggestConcern,
+      currentStep: 2,
+      formCompleted: false,
+    },
+  };
+}
+
+function validateSection3Body(b) {
+  const preferredLanguage = (b.preferredLanguage && String(b.preferredLanguage).trim()) || '';
+  const preferredTimeSlotKey = (b.preferredTimeSlot && String(b.preferredTimeSlot).trim()) || '';
+  const additionalQuestions =
+    (b.additionalQuestions && String(b.additionalQuestions).trim().slice(0, 2000)) || '';
+
+  if (!PREFERRED_LANGUAGE_OPTIONS.includes(preferredLanguage)) {
+    return { error: 'Please select a valid language.' };
+  }
+  if (!isValidPreferredTimeSlot(preferredTimeSlotKey)) {
+    return { error: 'Please select a valid session slot for the next 2 days.' };
+  }
+  const slotMeta = resolveSlotMeta(preferredTimeSlotKey);
+  if (!slotMeta) {
+    return { error: 'Please select a valid session slot for the next 2 days.' };
+  }
+
+  return {
+    data: {
+      preferredLanguage,
+      preferredTimeSlot: slotMeta.label,
+      preferredTimeSlotDate: slotMeta.slotDate,
+      additionalQuestions,
+      currentStep: 3,
+      formCompleted: true,
+    },
+  };
+}
+
+async function linkOneOnOneLeadToVisit(doc, body) {
   try {
-    const validated = validateSubmitBody(req.body || {});
-    if (validated.error) {
-      return res.status(400).json({ success: false, message: validated.error });
-    }
-
-    const doc = await OneOnOneCounselingLead.create(validated.data);
-
     const visitorFingerprint =
-      typeof req.body?.visitorFingerprint === 'string' ? req.body.visitorFingerprint.trim() : '';
+      typeof body?.visitorFingerprint === 'string' ? body.visitorFingerprint.trim() : '';
     if (visitorFingerprint) {
       await IitCounsellingVisit.findOneAndUpdate(
         { visitorFingerprint, pageKey: 'oneOnOneSession', oneOnOneCounselingLeadId: null },
@@ -228,73 +332,278 @@ exports.submitOneOnOneCounselingLead = async (req, res) => {
         { sort: { visitedAt: -1 } }
       );
     }
+  } catch (linkErr) {
+    console.warn(
+      '[oneOnOneCounseling] visit attribution link failed (lead saved):',
+      linkErr?.message || linkErr
+    );
+  }
+}
 
-    /** @type {{ attempted: boolean, success?: boolean, skippedReason?: string, error?: string, idempotent?: boolean }|null} */
-    let whatsappSubmit = null;
+async function dispatchOneOnOneSubmitWhatsApp(doc) {
+  /** @type {{ attempted: boolean, success?: boolean, skippedReason?: string, error?: string, idempotent?: boolean }|null} */
+  let whatsappSubmit = null;
 
-    if (!isGupshupConfigured()) {
-      whatsappSubmit = { attempted: false, skippedReason: 'gupshup_not_configured' };
-    } else {
-      try {
-        const cohortSlotUtc = parsePreferredSlotInstantUtc(doc);
-        const submitGroup = await WhatsAppRetryGroup.create({
-          messageKind: 'one_on_one_submit',
-          cronRunId: null,
-          trigger: 'one_on_one_submit',
-          status: 'open',
-        });
-        const waResult = await safeSendWhatsApp({
-          phone10: doc.mobileNumber,
-          formSubmissionId: null,
-          vars: buildOneOnOneSubmitVars(doc),
-          retryKind: 'one_on_one_submit',
-          source: 'one_on_one_submit',
-          cronRunId: null,
-          cronJobKey: null,
-          sendFn: sendOneOnOneSubmitWhatsApp,
-          retryGroupId: submitGroup._id,
-          attemptNumber: 1,
-          opsProduct: 'one_on_one_counseling',
-          cohortSlotInstantUtc: cohortSlotUtc,
-          oneOnOneCounselingLeadId: doc._id,
-          explicitTemplateEnvKey: GUPSHUP_TEMPLATE_ONE_ON_ONE_CONFIRM,
-        });
+  if (!isGupshupConfigured()) {
+    whatsappSubmit = { attempted: false, skippedReason: 'gupshup_not_configured' };
+  } else {
+    try {
+      const cohortSlotUtc = parsePreferredSlotInstantUtc(doc);
+      const submitGroup = await WhatsAppRetryGroup.create({
+        messageKind: 'one_on_one_submit',
+        cronRunId: null,
+        trigger: 'one_on_one_submit',
+        status: 'open',
+      });
+      const waResult = await safeSendWhatsApp({
+        phone10: doc.mobileNumber,
+        formSubmissionId: null,
+        vars: buildOneOnOneSubmitVars(doc),
+        retryKind: 'one_on_one_submit',
+        source: 'one_on_one_submit',
+        cronRunId: null,
+        cronJobKey: null,
+        sendFn: sendOneOnOneSubmitWhatsApp,
+        retryGroupId: submitGroup._id,
+        attemptNumber: 1,
+        opsProduct: 'one_on_one_counseling',
+        cohortSlotInstantUtc: cohortSlotUtc,
+        oneOnOneCounselingLeadId: doc._id,
+        explicitTemplateEnvKey: GUPSHUP_TEMPLATE_ONE_ON_ONE_CONFIRM,
+      });
 
-        if (waResult && waResult.success) {
-          whatsappSubmit = {
-            attempted: true,
-            success: true,
-            ...(waResult.idempotent ? { idempotent: true } : {}),
-          };
-        } else {
-          const errText =
-            waResult && waResult.error ? String(waResult.error).slice(0, 240) : 'send_failed';
-          const skippedReason = waResult?.duplicateInFlight
-            ? 'duplicate_in_flight'
-            : waResult?.skippedOutsideWindow
-              ? 'outside_reminder_window'
-              : undefined;
-          whatsappSubmit = {
-            attempted: true,
-            success: false,
-            error: errText,
-            ...(skippedReason ? { skippedReason } : {}),
-          };
-          console.warn('[submitOneOnOneCounselingLead] WhatsApp one_on_one_submit unsuccessful:', errText);
-        }
-      } catch (waErr) {
-        const msg = String(waErr?.message || waErr || 'exception').slice(0, 240);
-        whatsappSubmit = { attempted: true, success: false, error: msg };
-        if (waErr?.name === 'ValidationError') {
-          console.error(
-            '[submitOneOnOneCounselingLead] retry_group_validation_failed',
-            msg
-          );
-        } else {
-          console.error('[submitOneOnOneCounselingLead] WhatsApp dispatch error:', msg);
-        }
+      if (waResult && waResult.success) {
+        whatsappSubmit = {
+          attempted: true,
+          success: true,
+          ...(waResult.idempotent ? { idempotent: true } : {}),
+        };
+      } else {
+        const errText =
+          waResult && waResult.error ? String(waResult.error).slice(0, 240) : 'send_failed';
+        const skippedReason = waResult?.duplicateInFlight
+          ? 'duplicate_in_flight'
+          : waResult?.skippedOutsideWindow
+            ? 'outside_reminder_window'
+            : undefined;
+        whatsappSubmit = {
+          attempted: true,
+          success: false,
+          error: errText,
+          ...(skippedReason ? { skippedReason } : {}),
+        };
+        console.warn('[oneOnOneCounseling] WhatsApp one_on_one_submit unsuccessful:', errText);
+      }
+    } catch (waErr) {
+      const msg = String(waErr?.message || waErr || 'exception').slice(0, 240);
+      whatsappSubmit = { attempted: true, success: false, error: msg };
+      if (waErr?.name === 'ValidationError') {
+        console.error('[oneOnOneCounseling] retry_group_validation_failed', msg);
+      } else {
+        console.error('[oneOnOneCounseling] WhatsApp dispatch error:', msg);
       }
     }
+  }
+
+  return whatsappSubmit;
+}
+
+function parseLeadId(body) {
+  const leadId = typeof body?.leadId === 'string' ? body.leadId.trim() : '';
+  if (!leadId || !mongoose.Types.ObjectId.isValid(leadId)) {
+    return { error: 'Valid leadId is required.' };
+  }
+  return { leadId };
+}
+
+/**
+ * POST /api/one-on-one-counseling/section1 — save step 1 (student details)
+ */
+exports.saveOneOnOneSection1 = async (req, res) => {
+  try {
+    const validated = validateSection1Body(req.body || {});
+    if (validated.error) {
+      return res.status(400).json({ success: false, message: validated.error });
+    }
+
+    const doc = await OneOnOneCounselingLead.findOneAndUpdate(
+      { mobileNumber: validated.data.mobileNumber, formCompleted: { $ne: true } },
+      { $set: validated.data },
+      { upsert: true, new: true, runValidators: true, validateModifiedOnly: true }
+    );
+
+    await linkOneOnOneLeadToVisit(doc, req.body || {});
+
+    return res.status(200).json({
+      success: true,
+      message: 'Step 1 saved successfully.',
+      data: { leadId: doc._id.toString(), currentStep: 1, formCompleted: false },
+    });
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'An in-progress booking with this mobile number already exists.',
+      });
+    }
+    if (err.name === 'ValidationError') {
+      const msg = Object.values(err.errors)
+        .map((e) => e.message)
+        .join('; ');
+      return res.status(400).json({ success: false, message: msg || 'Validation failed.' });
+    }
+    console.error('[saveOneOnOneSection1]', err);
+    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  }
+};
+
+/**
+ * POST /api/one-on-one-counseling/section2 — save step 2 (parent & preferences)
+ */
+exports.saveOneOnOneSection2 = async (req, res) => {
+  try {
+    const idParsed = parseLeadId(req.body || {});
+    if (idParsed.error) {
+      return res.status(400).json({ success: false, message: idParsed.error });
+    }
+
+    const validated = validateSection2Body(req.body || {});
+    if (validated.error) {
+      return res.status(400).json({ success: false, message: validated.error });
+    }
+
+    const doc = await OneOnOneCounselingLead.findOneAndUpdate(
+      { _id: idParsed.leadId, formCompleted: { $ne: true } },
+      { $set: validated.data },
+      { new: true, runValidators: true, validateModifiedOnly: true }
+    );
+
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found or already completed. Please start from step 1.',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Step 2 saved successfully.',
+      data: { leadId: doc._id.toString(), currentStep: 2, formCompleted: false },
+    });
+  } catch (err) {
+    if (err.name === 'ValidationError') {
+      const msg = Object.values(err.errors)
+        .map((e) => e.message)
+        .join('; ');
+      return res.status(400).json({ success: false, message: msg || 'Validation failed.' });
+    }
+    console.error('[saveOneOnOneSection2]', err);
+    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  }
+};
+
+/**
+ * POST /api/one-on-one-counseling/section3 — save step 3 and complete booking
+ */
+exports.saveOneOnOneSection3 = async (req, res) => {
+  try {
+    const idParsed = parseLeadId(req.body || {});
+    if (idParsed.error) {
+      return res.status(400).json({ success: false, message: idParsed.error });
+    }
+
+    const validated = validateSection3Body(req.body || {});
+    if (validated.error) {
+      return res.status(400).json({ success: false, message: validated.error });
+    }
+
+    const existing = await OneOnOneCounselingLead.findOne({
+      _id: idParsed.leadId,
+      formCompleted: { $ne: true },
+    }).lean();
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found or already completed. Please start from step 1.',
+      });
+    }
+
+    if (
+      !existing.studentName ||
+      !existing.mobileNumber ||
+      !existing.currentClass ||
+      !existing.city ||
+      !existing.entranceExamRank
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please complete step 1 before submitting.',
+      });
+    }
+
+    if (
+      !existing.parentName ||
+      !existing.parentMobileNumber ||
+      !existing.sessionAttendee ||
+      !existing.interestedBranch ||
+      !existing.collegeBudget ||
+      !existing.biggestConcern
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please complete step 2 before submitting.',
+      });
+    }
+
+    const doc = await OneOnOneCounselingLead.findOneAndUpdate(
+      { _id: idParsed.leadId, formCompleted: { $ne: true } },
+      { $set: validated.data },
+      { new: true, runValidators: true, validateModifiedOnly: true }
+    );
+
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found or already completed. Please start from step 1.',
+      });
+    }
+
+    const whatsappSubmit = await dispatchOneOnOneSubmitWhatsApp(doc);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Submitted successfully',
+      data: mapLeadToDTO(doc.toObject()),
+      whatsappSubmit,
+    });
+  } catch (err) {
+    if (err.name === 'ValidationError') {
+      const msg = Object.values(err.errors)
+        .map((e) => e.message)
+        .join('; ');
+      return res.status(400).json({ success: false, message: msg || 'Validation failed.' });
+    }
+    console.error('[saveOneOnOneSection3]', err);
+    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  }
+};
+
+/**
+ * POST /api/one-on-one-counseling — public form submission (single-shot, backward compatible)
+ */
+exports.submitOneOnOneCounselingLead = async (req, res) => {
+  try {
+    const validated = validateSubmitBody(req.body || {});
+    if (validated.error) {
+      return res.status(400).json({ success: false, message: validated.error });
+    }
+
+    const doc = await OneOnOneCounselingLead.create(validated.data);
+
+    await linkOneOnOneLeadToVisit(doc, req.body || {});
+
+    const whatsappSubmit = await dispatchOneOnOneSubmitWhatsApp(doc);
 
     return res.status(201).json({
       success: true,

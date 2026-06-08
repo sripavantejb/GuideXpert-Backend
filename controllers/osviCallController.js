@@ -50,6 +50,19 @@ exports.saveCallSession = async (req, res) => {
 
     const savedCall = await callSession.save();
 
+    try {
+      const { syncReminderFromWebhook } = require('../services/aiCallReminderService');
+      const additionalData = req.body?.additional_data || req.body?.additionalData || {};
+      const source = additionalData?.source || '';
+      if (source === 'iitian_career_counselling' || callType === 'callback') {
+        syncReminderFromWebhook({ phone, status, callId }).catch((syncErr) => {
+          console.warn('[OSVI] AI reminder webhook sync failed:', syncErr?.message || syncErr);
+        });
+      }
+    } catch (syncHookErr) {
+      console.warn('[OSVI] AI reminder webhook hook error:', syncHookErr?.message || syncHookErr);
+    }
+
     return res.status(201).json({
       success: true,
       message: 'Call session stored successfully',

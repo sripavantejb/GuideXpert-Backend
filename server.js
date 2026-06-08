@@ -51,6 +51,7 @@ const osviRoutes = require('./routes/osviRoutes');
 const counsellorSupportRoutes = require('./routes/counsellorSupportRoutes');
 const gupshupWebhookRoutes = require('./routes/gupshupWebhookRoutes');
 const whatsappChatAdminRoutes = require('./routes/whatsappChatAdminRoutes');
+const aiCallsAdminRoutes = require('./routes/aiCallsAdminRoutes');
 const whatsappChatBdaRoutes = require('./routes/whatsappChatBdaRoutes');
 const { configStatus: counsellorConfigStatus } = require('./controllers/counsellorAuthController');
 const { getPosterDownloads, getPosterDownloadStats } = require('./controllers/posterDownloadController');
@@ -152,6 +153,32 @@ app.use(express.urlencoded({ extended: true }));
 
 // Ensure MongoDB is connected before handling requests (Vercel serverless cold start)
 let dbConnectPromise = null;
+
+function resetDbConnectPromise() {
+  dbConnectPromise = null;
+}
+
+mongoose.connection.on('disconnected', () => {
+  console.warn('[ensureDB] MongoDB disconnected — will reconnect on next request');
+  resetDbConnectPromise();
+});
+
+mongoose.connection.on('error', (err) => {
+  console.error('[ensureDB] MongoDB connection error:', err?.message || err);
+  resetDbConnectPromise();
+});
+
+async function ensureDbConnected() {
+  if (mongoose.connection.readyState === 1) return;
+  if (!dbConnectPromise) {
+    dbConnectPromise = connectDB().catch((err) => {
+      resetDbConnectPromise();
+      throw err;
+    });
+  }
+  await dbConnectPromise;
+}
+
 function shouldBypassDbGate(req) {
   if (req.path === '/api/health') return true;
   if (req.method !== 'GET') return false;
@@ -160,13 +187,10 @@ function shouldBypassDbGate(req) {
 
 app.use(async (req, res, next) => {
   if (shouldBypassDbGate(req)) return next();
-  if (mongoose.connection.readyState === 1) return next();
-  if (!dbConnectPromise) dbConnectPromise = connectDB();
   try {
-    await dbConnectPromise;
+    await ensureDbConnected();
     next();
   } catch (err) {
-    dbConnectPromise = null;
     console.error('[ensureDB]', err?.message || err);
     next(err);
   }
@@ -221,6 +245,7 @@ app.use('/api/posters', posterTemplatePublicRoutes);
 // WhatsApp Messaging Ops console — explicit mount before generic /api/admin (same middleware stack elsewhere).
 app.use('/api/admin/whatsapp-ops', requireAdmin, whatsappOpsAdminRoutes);
 app.use('/api/admin/whatsapp-chat', requireAdmin, whatsappChatAdminRoutes);
+app.use('/api/admin/ai-calls', requireAdmin, aiCallsAdminRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/bda', require('./routes/bdaRoutes'));
 app.use('/api/bda/whatsapp-chat', whatsappChatBdaRoutes);

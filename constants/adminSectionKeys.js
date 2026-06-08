@@ -29,6 +29,7 @@ const ADMIN_SECTION_KEYS = [
   'blogs',
   'osvi-calls',
   'osvi-calls-data',
+  'ai-calls',
   'whatsapp-ops',
   'settings',
 ];
