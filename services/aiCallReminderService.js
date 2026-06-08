@@ -415,19 +415,17 @@ function previewTestCallPayload(input) {
 
 async function createTestCall(input, admin) {
   const phone = normalizePhone(input.phone);
-  const callbackTime = new Date(input.callbackTime);
+  let callbackTime = new Date(input.callbackTime);
   if (!input.personName || !/^\d{10}$/.test(phone) || Number.isNaN(callbackTime.getTime())) {
     return { ok: false, error: 'invalid_input' };
   }
-  if (isCallbackTimeInPast(callbackTime)) {
-    return { ok: false, error: 'callback_time_in_past' };
-  }
-  if (isCallbackTimeTooSoon(callbackTime)) {
-    return {
-      ok: false,
-      error: 'callback_time_too_soon',
-      message: 'Callback time must be at least 1 minute in the future. OSVI schedules the call for that time — it does not ring immediately.',
-    };
+
+  const now = new Date();
+  const minTestCallbackTime = new Date(now.getTime() + 90 * 1000);
+  let callbackTimeAdjusted = false;
+  if (callbackTime.getTime() < minTestCallbackTime.getTime()) {
+    callbackTime = minTestCallbackTime;
+    callbackTimeAdjusted = true;
   }
 
   const payload = buildOsviPayloadFromTestCall({
@@ -466,13 +464,21 @@ async function createTestCall(input, admin) {
     admin,
   });
 
+  const istLabel = callbackTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+  let message = null;
+  if (osviResult.success) {
+    message = `Test call scheduled with OSVI. Phone will ring at ${istLabel} IST.`;
+    if (callbackTimeAdjusted) {
+      message += ' (Callback time was moved slightly forward to stay in the future.)';
+    }
+  }
+
   return {
     ok: osviResult.success,
     testCall: testCall.toObject(),
     error: osviResult.success ? null : testCall.lastError,
-    message: osviResult.success
-      ? `Test call scheduled with OSVI. Phone will ring at ${callbackTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST.`
-      : null,
+    message,
+    callbackTimeAdjusted,
   };
 }
 
