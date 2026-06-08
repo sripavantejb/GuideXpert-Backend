@@ -40,6 +40,8 @@ describe('aiCallReminderPayload', () => {
     assert.equal(payload.callback_timestamp, callbackTime.toISOString());
     assert.equal(payload.additional_data.source, 'iitian_career_counselling');
     assert.equal(payload.additional_data.biggest_concern, 'Course');
+    assert.ok(payload.prev_call_summary);
+    assert.match(payload.prev_call_summary, /Booked slot/);
   });
 
   it('builds test call payload', () => {
@@ -53,5 +55,16 @@ describe('aiCallReminderPayload', () => {
     assert.equal(payload.additional_data.type, 'test_call');
     assert.equal(payload.additional_data.source, 'admin_panel');
     assert.equal(payload.additional_data.notes, 'hello');
+    assert.equal(payload.prev_call_summary, 'hello');
+  });
+
+  it('uses default prev_call_summary when test notes empty', () => {
+    const payload = buildOsviPayloadFromTestCall({
+      personName: 'Admin',
+      phone: '9876543210',
+      callbackTime: new Date('2026-06-15T11:30:00.000Z'),
+    });
+    assert.ok(payload.prev_call_summary);
+    assert.match(payload.prev_call_summary, /No previous call|First IIT/i);
   });
 });

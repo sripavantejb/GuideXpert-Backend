@@ -14,6 +14,29 @@ function formatPhoneForOsvi(phone10) {
   return `91${last10}`;
 }
 
+function defaultPrevCallSummary() {
+  const env = process.env.OSVI_DEFAULT_PREV_CALL_SUMMARY;
+  if (typeof env === 'string' && env.trim()) return env.trim().slice(0, 2000);
+  return 'No previous call with this student. First IIT career counselling reminder.';
+}
+
+function buildPrevCallSummaryForReminder(reminder) {
+  const parts = [];
+  if (reminder.selectedSlot) parts.push(`Booked slot: ${reminder.selectedSlot}`);
+  if (reminder.biggestConcern) parts.push(`Main concern: ${reminder.biggestConcern}`);
+  if (reminder.careerGoal) parts.push(`Career goal: ${reminder.careerGoal}`);
+  if (reminder.class) parts.push(`Class: ${reminder.class}`);
+  if (reminder.city) parts.push(`City: ${reminder.city}`);
+  const summary = parts.join('. ').trim();
+  return summary || defaultPrevCallSummary();
+}
+
+function buildPrevCallSummaryForTest(input) {
+  const notes = typeof input.notes === 'string' ? input.notes.trim() : '';
+  if (notes) return notes.slice(0, 2000);
+  return defaultPrevCallSummary();
+}
+
 /**
  * @param {object} reminder lean AiCallReminder or mapped fields
  */
@@ -28,6 +51,7 @@ function buildOsviPayloadFromReminder(reminder) {
     phone,
     person_name: reminder.studentName || reminder.personName || '',
     callback_timestamp: callbackTime.toISOString(),
+    prev_call_summary: buildPrevCallSummaryForReminder(reminder),
     additional_data: {
       source: 'iitian_career_counselling',
       student_name: reminder.studentName || null,
@@ -54,6 +78,7 @@ function buildOsviPayloadFromTestCall(input) {
     phone,
     person_name: input.personName || '',
     callback_timestamp: callbackTime.toISOString(),
+    prev_call_summary: buildPrevCallSummaryForTest(input),
     additional_data: {
       type: 'test_call',
       source: 'admin_panel',
@@ -65,6 +90,8 @@ function buildOsviPayloadFromTestCall(input) {
 module.exports = {
   getAgentUuid,
   formatPhoneForOsvi,
+  buildPrevCallSummaryForReminder,
+  buildPrevCallSummaryForTest,
   buildOsviPayloadFromReminder,
   buildOsviPayloadFromTestCall,
 };
