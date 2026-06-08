@@ -10,18 +10,19 @@ const {
 
 describe('aiCallReminderPayload', () => {
   const origIit = process.env.OSVI_IIT_AGENT_UUID;
-  const origAgent = process.env.OSVI_AGENT_UUID;
 
   before(() => {
     delete process.env.OSVI_IIT_AGENT_UUID;
-    delete process.env.OSVI_AGENT_UUID;
   });
 
   after(() => {
     if (origIit === undefined) delete process.env.OSVI_IIT_AGENT_UUID;
     else process.env.OSVI_IIT_AGENT_UUID = origIit;
-    if (origAgent === undefined) delete process.env.OSVI_AGENT_UUID;
-    else process.env.OSVI_AGENT_UUID = origAgent;
+  });
+
+  it('ignores OSVI_AGENT_UUID for IIT callbacks', () => {
+    process.env.OSVI_AGENT_UUID = 'agent_WRONG_should_not_use';
+    assert.equal(getAgentUuid(), DEFAULT_IIT_AGENT_UUID);
   });
 
   it('uses default IIT agent UUID', () => {
@@ -47,7 +48,7 @@ describe('aiCallReminderPayload', () => {
     assert.equal(payload.person_name, 'Tej');
     assert.equal(payload.callback_timestamp, callbackTime.toISOString());
     assert.deepEqual(payload.additional_data, { biggest_concern: 'Course' });
-    assert.equal(payload.prev_call_summary, undefined);
+    assert.equal(payload.prev_call_summary, 'Course');
   });
 
   it('builds strict test call payload', () => {
@@ -60,7 +61,8 @@ describe('aiCallReminderPayload', () => {
     });
     assert.equal(payload.phone, '+919876543210');
     assert.deepEqual(payload.additional_data, { biggest_concern: 'registered for wednesday 6PM' });
-    assert.equal(Object.keys(payload).length, 5);
+    assert.equal(payload.prev_call_summary, 'registered for wednesday 6PM');
+    assert.equal(Object.keys(payload).length, 6);
   });
 
   it('defaults biggest_concern to test when empty', () => {

@@ -5,8 +5,9 @@
 
 const DEFAULT_IIT_AGENT_UUID = 'agent_XIOeYW9_MC5G9vHNsKTnD_dW4w';
 
+/** IIT counselling callbacks always use the IIT agent — never OSVI_AGENT_UUID (abandoned-apply flow). */
 function getAgentUuid() {
-  const raw = process.env.OSVI_IIT_AGENT_UUID || process.env.OSVI_AGENT_UUID || DEFAULT_IIT_AGENT_UUID;
+  const raw = process.env.OSVI_IIT_AGENT_UUID || DEFAULT_IIT_AGENT_UUID;
   const v = typeof raw === 'string' ? raw.trim() : '';
   return v || DEFAULT_IIT_AGENT_UUID;
 }
@@ -19,12 +20,19 @@ function formatPhoneForOsvi(phone10) {
   return `+91${last10}`;
 }
 
+function buildBiggestConcern(biggestConcern) {
+  return typeof biggestConcern === 'string' && biggestConcern.trim()
+    ? biggestConcern.trim().slice(0, 500)
+    : 'test';
+}
+
 function buildAdditionalData(biggestConcern) {
-  const value =
-    typeof biggestConcern === 'string' && biggestConcern.trim()
-      ? biggestConcern.trim().slice(0, 500)
-      : 'test';
-  return { biggest_concern: value };
+  return { biggest_concern: buildBiggestConcern(biggestConcern) };
+}
+
+/** OSVI /callback requires top-level prev_call_summary (non-empty). */
+function buildPrevCallSummary(biggestConcern) {
+  return buildBiggestConcern(biggestConcern);
 }
 
 /**
@@ -36,12 +44,14 @@ function buildOsviPayloadFromReminder(reminder) {
     ? reminder.callbackTime
     : new Date(reminder.callbackTime);
 
+  const concern = reminder.biggestConcern || reminder.notes || null;
   return {
     agent_uuid: getAgentUuid(),
     phone,
     person_name: reminder.studentName || reminder.personName || '',
     callback_timestamp: callbackTime.toISOString(),
-    additional_data: buildAdditionalData(reminder.biggestConcern),
+    prev_call_summary: buildPrevCallSummary(concern),
+    additional_data: buildAdditionalData(concern),
   };
 }
 
@@ -59,6 +69,7 @@ function buildOsviPayloadFromTestCall(input) {
     phone,
     person_name: input.personName || '',
     callback_timestamp: callbackTime.toISOString(),
+    prev_call_summary: buildPrevCallSummary(input.notes),
     additional_data: buildAdditionalData(input.notes),
   };
 }
