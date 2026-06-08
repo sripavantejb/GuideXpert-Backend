@@ -1,40 +1,30 @@
 /**
- * Build OSVI callback payload from reminder or test-call input.
+ * Build OSVI /callback payload — strict format:
+ * { agent_uuid, phone (+91…), person_name, callback_timestamp, additional_data: { biggest_concern } }
  */
 
+const DEFAULT_IIT_AGENT_UUID = 'agent_XIOeYW9_MC5G9vHNsKTnD_dW4w';
+
 function getAgentUuid() {
-  const raw = process.env.OSVI_IIT_AGENT_UUID || process.env.OSVI_AGENT_UUID || '';
-  return typeof raw === 'string' ? raw.trim() : '';
+  const raw = process.env.OSVI_IIT_AGENT_UUID || process.env.OSVI_AGENT_UUID || DEFAULT_IIT_AGENT_UUID;
+  const v = typeof raw === 'string' ? raw.trim() : '';
+  return v || DEFAULT_IIT_AGENT_UUID;
 }
 
+/** E.164-style India: +91XXXXXXXXXX */
 function formatPhoneForOsvi(phone10) {
   const digits = String(phone10 || '').replace(/\D/g, '');
   const last10 = digits.length >= 10 ? digits.slice(-10) : digits;
   if (last10.length !== 10) return null;
-  return `91${last10}`;
+  return `+91${last10}`;
 }
 
-function defaultPrevCallSummary() {
-  const env = process.env.OSVI_DEFAULT_PREV_CALL_SUMMARY;
-  if (typeof env === 'string' && env.trim()) return env.trim().slice(0, 2000);
-  return 'No previous call with this student. First IIT career counselling reminder.';
-}
-
-function buildPrevCallSummaryForReminder(reminder) {
-  const parts = [];
-  if (reminder.selectedSlot) parts.push(`Booked slot: ${reminder.selectedSlot}`);
-  if (reminder.biggestConcern) parts.push(`Main concern: ${reminder.biggestConcern}`);
-  if (reminder.careerGoal) parts.push(`Career goal: ${reminder.careerGoal}`);
-  if (reminder.class) parts.push(`Class: ${reminder.class}`);
-  if (reminder.city) parts.push(`City: ${reminder.city}`);
-  const summary = parts.join('. ').trim();
-  return summary || defaultPrevCallSummary();
-}
-
-function buildPrevCallSummaryForTest(input) {
-  const notes = typeof input.notes === 'string' ? input.notes.trim() : '';
-  if (notes) return notes.slice(0, 2000);
-  return defaultPrevCallSummary();
+function buildAdditionalData(biggestConcern) {
+  const value =
+    typeof biggestConcern === 'string' && biggestConcern.trim()
+      ? biggestConcern.trim().slice(0, 500)
+      : 'test';
+  return { biggest_concern: value };
 }
 
 /**
@@ -51,16 +41,7 @@ function buildOsviPayloadFromReminder(reminder) {
     phone,
     person_name: reminder.studentName || reminder.personName || '',
     callback_timestamp: callbackTime.toISOString(),
-    prev_call_summary: buildPrevCallSummaryForReminder(reminder),
-    additional_data: {
-      source: 'iitian_career_counselling',
-      student_name: reminder.studentName || null,
-      parent_name: reminder.parentName || null,
-      class: reminder.class || null,
-      city: reminder.city || null,
-      biggest_concern: reminder.biggestConcern || null,
-      selected_slot: reminder.selectedSlot || null,
-    },
+    additional_data: buildAdditionalData(reminder.biggestConcern),
   };
 }
 
@@ -78,20 +59,14 @@ function buildOsviPayloadFromTestCall(input) {
     phone,
     person_name: input.personName || '',
     callback_timestamp: callbackTime.toISOString(),
-    prev_call_summary: buildPrevCallSummaryForTest(input),
-    additional_data: {
-      type: 'test_call',
-      source: 'admin_panel',
-      notes: input.notes || null,
-    },
+    additional_data: buildAdditionalData(input.notes),
   };
 }
 
 module.exports = {
+  DEFAULT_IIT_AGENT_UUID,
   getAgentUuid,
   formatPhoneForOsvi,
-  buildPrevCallSummaryForReminder,
-  buildPrevCallSummaryForTest,
   buildOsviPayloadFromReminder,
   buildOsviPayloadFromTestCall,
 };
