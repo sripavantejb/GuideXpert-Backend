@@ -415,11 +415,15 @@ exports.createTestCall = async (req, res) => {
     if (!result.ok) {
       return res.status(400).json({
         success: false,
-        message: result.error,
+        message: result.message || result.error,
         data: result.testCall ? { testCall: result.testCall } : undefined,
       });
     }
-    return res.json({ success: true, data: { testCall: result.testCall } });
+    return res.json({
+      success: true,
+      message: result.message || 'Test call scheduled with OSVI.',
+      data: { testCall: result.testCall },
+    });
   } catch (err) {
     console.error('[aiCalls] createTestCall error:', err);
     return res.status(500).json({ success: false, message: 'Test call failed.' });

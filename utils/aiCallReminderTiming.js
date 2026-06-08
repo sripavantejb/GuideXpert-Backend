@@ -12,6 +12,8 @@ function computeCallbackTimeFromSlot(slotInstantUtc) {
   return new Date(slotInstantUtc.getTime() - ONE_HOUR_MS);
 }
 
+const MIN_SCHEDULE_LEAD_MS = 60 * 1000;
+
 function isCallbackTimeInPast(callbackTime, now = new Date()) {
   if (!callbackTime || !(callbackTime instanceof Date) || Number.isNaN(callbackTime.getTime())) {
     return true;
@@ -19,8 +21,23 @@ function isCallbackTimeInPast(callbackTime, now = new Date()) {
   return callbackTime.getTime() <= now.getTime();
 }
 
+/** OSVI requires callback_timestamp far enough in the future. */
+function isCallbackTimeTooSoon(callbackTime, now = new Date(), leadMs = MIN_SCHEDULE_LEAD_MS) {
+  if (!callbackTime || !(callbackTime instanceof Date) || Number.isNaN(callbackTime.getTime())) {
+    return true;
+  }
+  return callbackTime.getTime() < now.getTime() + leadMs;
+}
+
+function defaultTestCallbackTime(now = new Date()) {
+  return new Date(now.getTime() + 2 * MIN_SCHEDULE_LEAD_MS);
+}
+
 module.exports = {
   ONE_HOUR_MS,
+  MIN_SCHEDULE_LEAD_MS,
   computeCallbackTimeFromSlot,
   isCallbackTimeInPast,
+  isCallbackTimeTooSoon,
+  defaultTestCallbackTime,
 };

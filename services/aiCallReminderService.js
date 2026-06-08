@@ -6,6 +6,7 @@ const { mapSubmissionToReminderFields } = require('../utils/aiCallReminderFieldM
 const {
   computeCallbackTimeFromSlot,
   isCallbackTimeInPast,
+  isCallbackTimeTooSoon,
 } = require('../utils/aiCallReminderTiming');
 const {
   buildOsviPayloadFromReminder,
@@ -418,6 +419,16 @@ async function createTestCall(input, admin) {
   if (!input.personName || !/^\d{10}$/.test(phone) || Number.isNaN(callbackTime.getTime())) {
     return { ok: false, error: 'invalid_input' };
   }
+  if (isCallbackTimeInPast(callbackTime)) {
+    return { ok: false, error: 'callback_time_in_past' };
+  }
+  if (isCallbackTimeTooSoon(callbackTime)) {
+    return {
+      ok: false,
+      error: 'callback_time_too_soon',
+      message: 'Callback time must be at least 1 minute in the future. OSVI schedules the call for that time — it does not ring immediately.',
+    };
+  }
 
   const payload = buildOsviPayloadFromTestCall({
     personName: input.personName.trim(),
@@ -459,6 +470,9 @@ async function createTestCall(input, admin) {
     ok: osviResult.success,
     testCall: testCall.toObject(),
     error: osviResult.success ? null : testCall.lastError,
+    message: osviResult.success
+      ? `Test call scheduled with OSVI. Phone will ring at ${callbackTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST.`
+      : null,
   };
 }
 

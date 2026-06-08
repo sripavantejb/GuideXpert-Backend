@@ -155,12 +155,23 @@ async function scheduleOsviCallback(payload) {
       const errMsg =
         (typeof data?.error === 'string' && data.error) ||
         (typeof data?.message === 'string' && data.message) ||
+        (Array.isArray(data?.errors) && data.errors[0]) ||
         `HTTP ${res.status}`;
       return { success: false, error: errMsg, data };
     }
 
+    if (data && data.success === false) {
+      const errMsg =
+        (typeof data.error === 'string' && data.error) ||
+        (typeof data.message === 'string' && data.message) ||
+        (Array.isArray(data.errors) && data.errors[0]) ||
+        'OSVI callback rejected';
+      console.error(`[OSVI] callback rejected for ***${last4}`, data);
+      return { success: false, error: errMsg, data };
+    }
+
     console.log(`[OSVI] HTTP ${res.status} callback OK for ***${last4}`);
-    return { success: true, data };
+    return { success: true, data: data?.data ?? data };
   } catch (err) {
     const msg = err && typeof err.message === 'string' ? err.message : String(err);
     console.error(`[OSVI] callback network error for ***${last4}`, msg);
