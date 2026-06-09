@@ -52,6 +52,8 @@ const aiCallReminderSchema = new mongoose.Schema({
   osviCallbackId: { type: String, trim: true, default: null },
   lastError: { type: String, trim: true, maxlength: 1000, default: null },
   retryCount: { type: Number, default: 0, min: 0 },
+  /** Full IIT form fields for OSVI additional_data (snake_case) */
+  formSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
 }, {
   timestamps: true,
   versionKey: false,

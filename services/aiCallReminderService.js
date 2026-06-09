@@ -139,6 +139,7 @@ async function enrichReminderFromSubmission(submission) {
     selectedSlot: mapped.selectedSlot,
     selectedSlotInstantUtc: mapped.selectedSlotInstantUtc,
     slotDayIst: mapped.slotDayIst,
+    formSnapshot: mapped.formSnapshot,
   };
 
   if (mapped.selectedSlotInstantUtc) {
@@ -301,6 +302,18 @@ async function updateReminderFields(reminderId, fields, admin) {
   }
 
   Object.assign(reminder, changes);
+
+  if (reminder.formSnapshot && typeof reminder.formSnapshot === 'object') {
+    const snap = { ...reminder.formSnapshot };
+    if (changes.studentName !== undefined) snap.student_name = changes.studentName;
+    if (changes.phone !== undefined) snap.phone = changes.phone;
+    if (changes.class !== undefined) snap.class = changes.class;
+    if (changes.city !== undefined) snap.city = changes.city;
+    if (changes.biggestConcern !== undefined) snap.biggest_concern = changes.biggestConcern;
+    if (changes.callbackTime !== undefined) snap.reminder_at = changes.callbackTime.toISOString();
+    reminder.formSnapshot = snap;
+  }
+
   await reminder.save();
 
   await logActivity({
