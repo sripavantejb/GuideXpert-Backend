@@ -29,6 +29,7 @@ const gupshupService = require('../services/gupshupService');
 const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
 const { computeIitCounsellingSlotInstantUtc } = require('../utils/iitCounsellingSlotUtc');
 const { getEnabledIitSlotBookings, isIitSlotBookingEnabled, getIitSlotDateOverridesInRange } = require('../utils/iitSlotAvailability');
+const { buildIitCounsellingSlotOptions } = require('../utils/iitCounsellingSlotOptions');
 const { isPrivilegedPhone, getPrivilegedOtp } = require('../utils/privilegedAccess');
 const { resolveIitSlotBookedTemplateEnvKey } = require('../utils/iitCounsellingWhatsApp');
 const { shouldSendCampaignReminderImmediately } = require('../utils/waReminderEligibility');
@@ -564,9 +565,13 @@ exports.getIitCounsellingSlots = async (req, res) => {
     const toDate = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
     const toYmd = toDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     const dateOverrides = await getIitSlotDateOverridesInRange(fromYmd, toYmd);
+    const slotOptions = buildIitCounsellingSlotOptions(now, enabledSlotBookings, dateOverrides);
     return res.status(200).json({
       success: true,
-      data: { enabledSlotBookings, dateOverrides },
+      enabledSlotBookings,
+      dateOverrides,
+      slotOptions,
+      data: { enabledSlotBookings, dateOverrides, slotOptions },
     });
   } catch (err) {
     console.error('[getIitCounsellingSlots] Error:', err);
