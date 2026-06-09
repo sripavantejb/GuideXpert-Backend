@@ -11,6 +11,7 @@ const AssessmentSubmission4 = require('../models/AssessmentSubmission4');
 const AssessmentSubmission5 = require('../models/AssessmentSubmission5');
 const SlotConfig = require('../models/SlotConfig');
 const SlotDateOverride = require('../models/SlotDateOverride');
+const IitSlotConfig = require('../models/IitSlotConfig');
 const MeetingAttendance = require('../models/MeetingAttendance');
 const TrainingFeedback = require('../models/TrainingFeedback');
 const TrainingFormSubmission = require('../models/TrainingFormSubmission');
@@ -23,6 +24,12 @@ const { resolveUtmAnalyticsPageKey } = require('../utils/utmAnalyticsPageKey');
 const { getISTCalendarDateUTC, getISTDayRangeFromString } = require('../utils/dateHelpers');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 const { ALL_SLOT_IDS } = require('../constants/slotIds');
+const {
+  ALL_IIT_SLOT_IDS,
+  IIT_SLOT_ID_TO_BOOKING_LABEL,
+  IIT_SLOT_ID_DISPLAY_LABEL,
+} = require('../constants/iitSlotIds');
+const { ensureIitSlotConfigs } = require('../utils/iitSlotAvailability');
 const { getEnabledSlotIdsForISTDate } = require('../utils/slotAvailabilityForDate');
 const { updateLeadSlotByQuery } = require('../services/leadSlotUpdateService');
 
@@ -1714,6 +1721,73 @@ exports.updateSlotConfig = async (req, res) => {
     });
   } catch (error) {
     console.error('[updateSlotConfig] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.getIitSlotConfigs = async (req, res) => {
+  try {
+    const [configMap, bookingCounts] = await Promise.all([
+      ensureIitSlotConfigs(),
+      IitCounsellingSubmission.aggregate([
+        {
+          $match: {
+            'iitCounselling.section1Data.slotBooking': { $exists: true, $ne: null, $ne: '' },
+          },
+        },
+        {
+          $group: {
+            _id: '$iitCounselling.section1Data.slotBooking',
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+    ]);
+
+    const countMap = Object.fromEntries((bookingCounts || []).map((c) => [c._id, c.count]));
+
+    const slots = ALL_IIT_SLOT_IDS.map((slotId) => {
+      const bookingLabel = IIT_SLOT_ID_TO_BOOKING_LABEL[slotId];
+      return {
+        slotId,
+        label: IIT_SLOT_ID_DISPLAY_LABEL[slotId] || bookingLabel,
+        bookingLabel,
+        enabled: configMap[slotId] !== false,
+        bookedCount: countMap[bookingLabel] ?? 0,
+      };
+    });
+
+    return res.status(200).json({ success: true, data: { slots } });
+  } catch (error) {
+    console.error('[getIitSlotConfigs] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.updateIitSlotConfig = async (req, res) => {
+  try {
+    const { slotId } = req.params;
+    const { enabled } = req.body || {};
+
+    if (!slotId || !ALL_IIT_SLOT_IDS.includes(slotId)) {
+      return res.status(400).json({ success: false, message: 'Invalid IIT slot ID' });
+    }
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'enabled must be a boolean' });
+    }
+
+    const config = await IitSlotConfig.findOneAndUpdate(
+      { slotId },
+      { $set: { enabled, updatedAt: new Date() } },
+      { upsert: true, new: true }
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: { slotId: config.slotId, enabled: config.enabled },
+    });
+  } catch (error) {
+    console.error('[updateIitSlotConfig] Error:', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };

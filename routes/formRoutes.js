@@ -16,7 +16,8 @@ const {
   saveIitSection1,
   saveIitSection2,
   saveIitSection3,
-  trackIitCounsellingVisit
+  trackIitCounsellingVisit,
+  getIitCounsellingSlots,
 } = require('../controllers/formController');
 const { submitTrainingForm } = require('../controllers/trainingFormController');
 
@@ -33,6 +34,7 @@ router.get('/check-registration/:phone', checkRegistrationStatus);
 router.post('/save-post-registration', savePostRegistrationData);
 router.post('/save-rank-predictor-prediction', saveRankPredictorPrediction);
 router.get('/submissions', getAllSubmissions); // Diagnostic endpoint
+router.get('/iit-counselling/slots', getIitCounsellingSlots);
 router.post('/iit-counselling/section1', saveIitSection1);
 router.post('/iit-counselling/section2', saveIitSection2);
 router.post('/iit-counselling/section3', saveIitSection3);
