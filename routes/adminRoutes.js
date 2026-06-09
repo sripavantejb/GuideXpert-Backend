@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { login, loginWithPhone, getAdminLeads, getLeadById, updateLeadNotes, updateLeadSlotBooking, updateLeadSlotByPhone, getAdminStats, exportLeads, getSlotConfigs, getSlotsForDate, updateSlotConfig, getIitSlotConfigs, updateIitSlotConfig, getSlotBookingCounts, getSlotOverrides, setSlotOverride, getAssessmentSubmissions, getAssessment2Submissions, getAssessment3Submissions, getAssessmentSubmissionById, getAssessment2SubmissionById, getAssessment3SubmissionById, getAssessment4Submissions, getAssessment4SubmissionById, getAssessment5Submissions, getAssessment5SubmissionById, getMissingLeads, getIitCounsellingSubmissions, getIitCounsellingSubmissionById, getIitCounsellingVisitAnalytics, getIitCounsellingUtmAnalytics, getCounsellorSupportRequests } = require('../controllers/adminController');
+const { login, loginWithPhone, getAdminLeads, getLeadById, updateLeadNotes, updateLeadSlotBooking, updateLeadSlotByPhone, getAdminStats, exportLeads, getSlotConfigs, getSlotsForDate, updateSlotConfig, getIitSlotConfigs, updateIitSlotConfig, getIitSlotOverrides, setIitSlotOverride, getIitSlotBookingCounts, getSlotBookingCounts, getSlotOverrides, setSlotOverride, getAssessmentSubmissions, getAssessment2Submissions, getAssessment3Submissions, getAssessmentSubmissionById, getAssessment2SubmissionById, getAssessment3SubmissionById, getAssessment4Submissions, getAssessment4SubmissionById, getAssessment5Submissions, getAssessment5SubmissionById, getMissingLeads, getIitCounsellingSubmissions, getIitCounsellingSubmissionById, getIitCounsellingVisitAnalytics, getIitCounsellingUtmAnalytics, getCounsellorSupportRequests } = require('../controllers/adminController');
 const {
   listIitCounsellingSavedUtmLinks,
   createIitCounsellingSavedUtmLink,
@@ -120,6 +120,9 @@ router.put('/slots/overrides', requireAdmin, setSlotOverride);
 router.put('/slots/:slotId', requireAdmin, updateSlotConfig);
 router.get('/iit-slots', requireAdmin, getIitSlotConfigs);
 router.put('/iit-slots/:slotId', requireAdmin, updateIitSlotConfig);
+router.get('/iit-slots/booking-counts', requireAdmin, getIitSlotBookingCounts);
+router.get('/iit-slots/overrides', requireAdmin, getIitSlotOverrides);
+router.put('/iit-slots/overrides', requireAdmin, setIitSlotOverride);
 router.get('/demo-meet-schedule', requireAdmin, getDemoMeetSchedule);
 router.put('/demo-meet-schedule', requireAdmin, putDemoMeetSchedule);
 router.get('/meeting-attendance', requireAdmin, getMeetingAttendance);

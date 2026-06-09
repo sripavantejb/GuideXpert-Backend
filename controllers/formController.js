@@ -28,7 +28,7 @@ const { buildSlotNotificationVariables } = require('../utils/slotNotificationFor
 const gupshupService = require('../services/gupshupService');
 const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
 const { computeIitCounsellingSlotInstantUtc } = require('../utils/iitCounsellingSlotUtc');
-const { getEnabledIitSlotBookings, isIitSlotBookingEnabled } = require('../utils/iitSlotAvailability');
+const { getEnabledIitSlotBookings, isIitSlotBookingEnabled, getIitSlotDateOverridesInRange } = require('../utils/iitSlotAvailability');
 const { isPrivilegedPhone, getPrivilegedOtp } = require('../utils/privilegedAccess');
 const { resolveIitSlotBookedTemplateEnvKey } = require('../utils/iitCounsellingWhatsApp');
 const { shouldSendCampaignReminderImmediately } = require('../utils/waReminderEligibility');
@@ -559,7 +559,15 @@ exports.getDemoSlots = async (req, res) => {
 exports.getIitCounsellingSlots = async (req, res) => {
   try {
     const enabledSlotBookings = await getEnabledIitSlotBookings();
-    return res.status(200).json({ success: true, data: { enabledSlotBookings } });
+    const now = new Date();
+    const fromYmd = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const toDate = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+    const toYmd = toDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const dateOverrides = await getIitSlotDateOverridesInRange(fromYmd, toYmd);
+    return res.status(200).json({
+      success: true,
+      data: { enabledSlotBookings, dateOverrides },
+    });
   } catch (err) {
     console.error('[getIitCounsellingSlots] Error:', err);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
@@ -1150,12 +1158,12 @@ exports.saveIitSection1 = async (req, res) => {
     }
 
     const slotBookingTrimmed = payload.slotBooking.trim();
-    if (!(await isIitSlotBookingEnabled(slotBookingTrimmed))) {
-      return res.status(400).json({ success: false, message: 'Selected demo slot is not available' });
-    }
     const slotDateNorm = normalizeOptionalSlotBookingDate(payload, slotBookingTrimmed);
     if (!slotDateNorm.ok) {
       return res.status(400).json({ success: false, message: slotDateNorm.message });
+    }
+    if (!(await isIitSlotBookingEnabled(slotBookingTrimmed, slotDateNorm.value || undefined))) {
+      return res.status(400).json({ success: false, message: 'Selected demo slot is not available' });
     }
 
     const now = new Date();

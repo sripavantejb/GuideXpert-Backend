@@ -12,6 +12,7 @@ const AssessmentSubmission5 = require('../models/AssessmentSubmission5');
 const SlotConfig = require('../models/SlotConfig');
 const SlotDateOverride = require('../models/SlotDateOverride');
 const IitSlotConfig = require('../models/IitSlotConfig');
+const IitSlotDateOverride = require('../models/IitSlotDateOverride');
 const MeetingAttendance = require('../models/MeetingAttendance');
 const TrainingFeedback = require('../models/TrainingFeedback');
 const TrainingFormSubmission = require('../models/TrainingFormSubmission');
@@ -27,6 +28,7 @@ const { ALL_SLOT_IDS } = require('../constants/slotIds');
 const {
   ALL_IIT_SLOT_IDS,
   IIT_SLOT_ID_TO_BOOKING_LABEL,
+  IIT_BOOKING_LABEL_TO_SLOT_ID,
   IIT_SLOT_ID_DISPLAY_LABEL,
 } = require('../constants/iitSlotIds');
 const { ensureIitSlotConfigs } = require('../utils/iitSlotAvailability');
@@ -1788,6 +1790,137 @@ exports.updateIitSlotConfig = async (req, res) => {
     });
   } catch (error) {
     console.error('[updateIitSlotConfig] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * GET /admin/iit-slots/overrides?from=YYYY-MM-DD&to=YYYY-MM-DD
+ */
+exports.getIitSlotOverrides = async (req, res) => {
+  try {
+    const fromStr = (req.query.from || '').trim();
+    const toStr = (req.query.to || '').trim();
+    if (!fromStr || !toStr) {
+      return res.status(400).json({ success: false, message: 'Query params from and to (YYYY-MM-DD) are required' });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fromStr) || !/^\d{4}-\d{2}-\d{2}$/.test(toStr)) {
+      return res.status(400).json({ success: false, message: 'Invalid from or to date format (use YYYY-MM-DD)' });
+    }
+    const fromDate = getISTCalendarDateUTC(new Date(fromStr + 'T12:00:00.000Z'));
+    const endOfTo = new Date(getISTCalendarDateUTC(new Date(toStr + 'T12:00:00.000Z')).getTime() + 24 * 60 * 60 * 1000);
+
+    const overrides = await IitSlotDateOverride.find({
+      date: { $gte: fromDate, $lt: endOfTo },
+      slotId: { $in: ALL_IIT_SLOT_IDS },
+    }).lean();
+
+    const data = overrides.map((o) => ({
+      date: new Date(o.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+      slotId: o.slotId,
+      enabled: o.enabled,
+    }));
+
+    return res.status(200).json({ success: true, data: { overrides: data } });
+  } catch (error) {
+    console.error('[getIitSlotOverrides] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * PUT /admin/iit-slots/overrides — body: { date, slotId, enabled }
+ */
+exports.setIitSlotOverride = async (req, res) => {
+  try {
+    const { date: dateStr, slotId, enabled } = req.body || {};
+    if (!dateStr || typeof dateStr !== 'string') {
+      return res.status(400).json({ success: false, message: 'date (YYYY-MM-DD) is required' });
+    }
+    if (!slotId || !ALL_IIT_SLOT_IDS.includes(slotId)) {
+      return res.status(400).json({ success: false, message: 'Invalid IIT slotId' });
+    }
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'enabled must be a boolean' });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return res.status(400).json({ success: false, message: 'Invalid date format (use YYYY-MM-DD)' });
+    }
+
+    const istDayRange = getISTDayRangeFromString(dateStr);
+    if (!istDayRange) {
+      return res.status(400).json({ success: false, message: 'Invalid date' });
+    }
+    const expectedDow = { SUNDAY_11AM: 0, WEDNESDAY_6PM: 3, SATURDAY_6PM: 6 }[slotId];
+    const actualDow = new Date(istDayRange.start.getTime() + (5 * 60 + 30) * 60 * 1000).getUTCDay();
+    if (expectedDow !== actualDow) {
+      return res.status(400).json({
+        success: false,
+        message: 'Date weekday does not match this IIT session slot',
+      });
+    }
+
+    const override = await IitSlotDateOverride.findOneAndUpdate(
+      { date: istDayRange.start, slotId },
+      { $set: { enabled, updatedAt: new Date() } },
+      { upsert: true, new: true }
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        date: new Date(override.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+        slotId: override.slotId,
+        enabled: override.enabled,
+      },
+    });
+  } catch (error) {
+    console.error('[setIitSlotOverride] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * GET /admin/iit-slots/booking-counts?from=YYYY-MM-DD&to=YYYY-MM-DD
+ */
+exports.getIitSlotBookingCounts = async (req, res) => {
+  try {
+    const fromStr = (req.query.from || '').trim();
+    const toStr = (req.query.to || '').trim();
+    if (!fromStr || !toStr) {
+      return res.status(400).json({ success: false, message: 'Query params from and to (YYYY-MM-DD) are required' });
+    }
+
+    const rows = await IitCounsellingSubmission.aggregate([
+      {
+        $match: {
+          'iitCounselling.section1Data.slotBookingDate': { $gte: fromStr, $lte: toStr },
+          'iitCounselling.section1Data.slotBooking': { $exists: true, $nin: [null, ''] },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            date: '$iitCounselling.section1Data.slotBookingDate',
+            slotBooking: '$iitCounselling.section1Data.slotBooking',
+          },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const counts = rows
+      .map((row) => {
+        const date = String(row._id.date || '').slice(0, 10);
+        const slotId = IIT_BOOKING_LABEL_TO_SLOT_ID[row._id.slotBooking];
+        if (!date || !slotId) return null;
+        return { date, slotId, count: row.count };
+      })
+      .filter(Boolean);
+
+    return res.status(200).json({ success: true, data: { counts } });
+  } catch (error) {
+    console.error('[getIitSlotBookingCounts] Error:', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
