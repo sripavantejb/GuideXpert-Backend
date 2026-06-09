@@ -1,4 +1,34 @@
 const CallSession = require('../models/CallSession');
+const { ingestIitAiCallWebhook } = require('../services/iitAiCallRecordService');
+
+exports.saveIitAiCallAnalysis = async (req, res) => {
+  try {
+    const result = await ingestIitAiCallWebhook(req.body || {});
+    if (!result.ok) {
+      const status = result.error === 'call_log_id_required' || result.error === 'invalid_phone' ? 400 : 500;
+      return res.status(status).json({
+        success: false,
+        message: result.error === 'call_log_id_required'
+          ? 'call_log_id is required'
+          : result.error === 'invalid_phone'
+            ? 'phone is required'
+            : 'Failed to store IIT AI call record',
+      });
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: 'IIT AI call analysis stored successfully',
+      data: result.record,
+    });
+  } catch (error) {
+    console.error('[OSVI] saveIitAiCallAnalysis error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to store IIT AI call analysis',
+    });
+  }
+};
 
 exports.saveCallSession = async (req, res) => {
   try {
@@ -49,6 +79,10 @@ exports.saveCallSession = async (req, res) => {
     });
 
     const savedCall = await callSession.save();
+
+    ingestIitAiCallWebhook(req.body || {}).catch((ingestErr) => {
+      console.warn('[OSVI] IIT AI call ingest failed:', ingestErr?.message || ingestErr);
+    });
 
     try {
       const { syncReminderFromWebhook } = require('../services/aiCallReminderService');

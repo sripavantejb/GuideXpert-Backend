@@ -30,6 +30,7 @@ const ADMIN_SECTION_KEYS = [
   'osvi-calls',
   'osvi-calls-data',
   'ai-calls',
+  'iit-ai-calls-summary',
   'whatsapp-ops',
   'settings',
 ];

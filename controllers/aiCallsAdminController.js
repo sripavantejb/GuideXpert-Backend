@@ -22,6 +22,11 @@ const {
   previewTestCallPayload,
   createTestCall,
 } = require('../services/aiCallReminderService');
+const {
+  listIitAiCallRecords,
+  getIitAiCallRecordById,
+  getIitAiCallStats,
+} = require('../services/iitAiCallRecordService');
 
 function todayIstIso() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
@@ -427,5 +432,42 @@ exports.createTestCall = async (req, res) => {
   } catch (err) {
     console.error('[aiCalls] createTestCall error:', err);
     return res.status(500).json({ success: false, message: 'Test call failed.' });
+  }
+};
+
+exports.getIitAiCallSummaryStats = async (req, res) => {
+  try {
+    const data = await getIitAiCallStats();
+    return res.json({ success: true, data });
+  } catch (err) {
+    console.error('[aiCalls] getIitAiCallSummaryStats error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load IIT AI call stats.' });
+  }
+};
+
+exports.listIitAiCallSummaries = async (req, res) => {
+  try {
+    const result = await listIitAiCallRecords(req.query || {});
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('[aiCalls] listIitAiCallSummaries error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load IIT AI call summaries.' });
+  }
+};
+
+exports.getIitAiCallSummary = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid id.' });
+    }
+    const record = await getIitAiCallRecordById(id);
+    if (!record) {
+      return res.status(404).json({ success: false, message: 'Call record not found.' });
+    }
+    return res.json({ success: true, data: { record } });
+  } catch (err) {
+    console.error('[aiCalls] getIitAiCallSummary error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load call record.' });
   }
 };
