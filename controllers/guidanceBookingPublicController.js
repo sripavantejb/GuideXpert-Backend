@@ -25,10 +25,12 @@ exports.checkMobile = async (req, res) => {
 
     const lead = await findLeadByMobile(mobileNumber);
     if (!lead) {
-      return res.status(404).json({
-        success: false,
+      const slots = await getAvailableActiveSlots();
+      return res.status(200).json({
+        success: true,
         found: false,
-        message: 'This mobile number is not found. Please contact the GuideXpert team.',
+        needsProfile: true,
+        data: { slots },
       });
     }
 
@@ -76,6 +78,16 @@ exports.bookSlot = async (req, res) => {
     const parentAttendanceConfirmed = req.body?.parentAttendanceConfirmed === true;
     const whatsappConsent = req.body?.whatsappConsent === true;
     const { collegeBudget, parentOccupation, preferredColleges } = req.body || {};
+    const {
+      studentName,
+      currentClass,
+      city,
+      preferredLanguage,
+      utm_source,
+      utm_medium,
+      utm_campaign,
+      utm_content,
+    } = req.body || {};
 
     if (!validateMobile(mobileNumber)) {
       return res.status(400).json({ success: false, message: 'Enter a valid 10-digit Indian mobile number.' });
@@ -92,13 +104,17 @@ exports.bookSlot = async (req, res) => {
       collegeBudget,
       parentOccupation,
       preferredColleges,
+      studentName,
+      currentClass,
+      city,
+      preferredLanguage,
+      utm_source,
+      utm_medium,
+      utm_campaign,
+      utm_content,
     });
 
     if (result.error) {
-      const lead = await findLeadByMobile(mobileNumber);
-      if (!lead && result.status === 404) {
-        return res.status(404).json({ success: false, message: result.error });
-      }
       return res.status(result.status || 400).json({ success: false, message: result.error });
     }
 

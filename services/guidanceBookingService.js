@@ -2,7 +2,12 @@ const mongoose = require('mongoose');
 const GuidanceSlot = require('../models/GuidanceSlot');
 const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
 const OneOnOneCounselor = require('../models/OneOnOneCounselor');
-const { COLLEGE_BUDGET_OPTIONS, INDIAN_MOBILE_REGEX } = require('../constants/oneOnOneCounseling');
+const {
+  COLLEGE_BUDGET_OPTIONS,
+  CURRENT_CLASS_OPTIONS,
+  PREFERRED_LANGUAGE_OPTIONS,
+  INDIAN_MOBILE_REGEX,
+} = require('../constants/oneOnOneCounseling');
 
 function normalizePreferredColleges(raw) {
   const arr = Array.isArray(raw) ? raw : [];
@@ -121,6 +126,71 @@ async function findLeadByMobile(mobileNumber) {
   return OneOnOneCounselingLead.findOne({ mobileNumber }).lean();
 }
 
+function validateGuidanceStudentProfile({ studentName, currentClass, city, preferredLanguage }) {
+  const name = String(studentName || '').trim();
+  if (name.length < 2 || name.length > 100) {
+    return { error: 'Student name must be 2–100 characters.', status: 400 };
+  }
+  const cls = String(currentClass || '').trim();
+  if (!CURRENT_CLASS_OPTIONS.includes(cls)) {
+    return { error: 'Please select a valid current class.', status: 400 };
+  }
+  const cityVal = String(city || '').trim();
+  if (cityVal.length < 2 || cityVal.length > 80) {
+    return { error: 'City / town must be 2–80 characters.', status: 400 };
+  }
+  const lang = String(preferredLanguage || '').trim();
+  if (!PREFERRED_LANGUAGE_OPTIONS.includes(lang)) {
+    return { error: 'Please select a valid preferred language.', status: 400 };
+  }
+  return {
+    studentName: name,
+    currentClass: cls,
+    city: cityVal,
+    preferredLanguage: lang,
+  };
+}
+
+function trimUtmField(val, maxLen = 120) {
+  const s = typeof val === 'string' ? val.trim() : '';
+  return s ? s.slice(0, maxLen) : undefined;
+}
+
+async function createLeadFromGuidanceBooking({
+  mobileNumber,
+  studentName,
+  currentClass,
+  city,
+  preferredLanguage,
+  collegeBudget,
+  parentOccupation,
+  preferredColleges,
+  utm_source,
+  utm_medium,
+  utm_campaign,
+  utm_content,
+}) {
+  const lead = new OneOnOneCounselingLead({
+    studentName,
+    mobileNumber,
+    currentClass,
+    city,
+    preferredLanguage,
+    collegeBudget,
+    parentOccupation,
+    preferredColleges,
+    formCompleted: false,
+    currentStep: 0,
+    leadStatus: 'New Lead',
+    utm_source: trimUtmField(utm_source),
+    utm_medium: trimUtmField(utm_medium),
+    utm_campaign: trimUtmField(utm_campaign),
+    utm_content: trimUtmField(utm_content),
+  });
+  await lead.save();
+  return lead;
+}
+
 async function bookSlotForLead({
   mobileNumber,
   slotId,
@@ -129,14 +199,15 @@ async function bookSlotForLead({
   collegeBudget,
   parentOccupation,
   preferredColleges,
+  studentName,
+  currentClass,
+  city,
+  preferredLanguage,
+  utm_source,
+  utm_medium,
+  utm_campaign,
+  utm_content,
 }) {
-  const lead = await OneOnOneCounselingLead.findOne({ mobileNumber });
-  if (!lead) {
-    return { error: 'This mobile number is not found. Please contact the GuideXpert team.', status: 404 };
-  }
-  if (lead.bookingConfirmed) {
-    return { error: 'A slot is already booked with this mobile number.', status: 409 };
-  }
   if (!parentAttendanceConfirmed || !whatsappConsent) {
     return { error: 'Parent attendance and WhatsApp consent are required.', status: 400 };
   }
@@ -147,6 +218,47 @@ async function bookSlotForLead({
     preferredColleges,
   });
   if (prefs.error) return { error: prefs.error, status: prefs.status };
+
+  let lead = await OneOnOneCounselingLead.findOne({ mobileNumber });
+  if (!lead) {
+    const profile = validateGuidanceStudentProfile({
+      studentName,
+      currentClass,
+      city,
+      preferredLanguage,
+    });
+    if (profile.error) return { error: profile.error, status: profile.status };
+
+    try {
+      lead = await createLeadFromGuidanceBooking({
+        mobileNumber,
+        studentName: profile.studentName,
+        currentClass: profile.currentClass,
+        city: profile.city,
+        preferredLanguage: profile.preferredLanguage,
+        collegeBudget: prefs.collegeBudget,
+        parentOccupation: prefs.parentOccupation,
+        preferredColleges: prefs.preferredColleges,
+        utm_source,
+        utm_medium,
+        utm_campaign,
+        utm_content,
+      });
+    } catch (err) {
+      if (err?.code === 11000) {
+        lead = await OneOnOneCounselingLead.findOne({ mobileNumber });
+        if (!lead) {
+          return { error: 'Could not create your profile. Please try again.', status: 409 };
+        }
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  if (lead.bookingConfirmed) {
+    return { error: 'A slot is already booked with this mobile number.', status: 409 };
+  }
 
   if (!mongoose.Types.ObjectId.isValid(slotId)) {
     return { error: 'Invalid slot selected.', status: 400 };
@@ -218,5 +330,7 @@ module.exports = {
   bookSlotForLead,
   validateMobile,
   validateBookingPreferences,
+  validateGuidanceStudentProfile,
+  createLeadFromGuidanceBooking,
   normalizePreferredColleges,
 };
