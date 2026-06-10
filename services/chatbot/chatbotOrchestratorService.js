@@ -11,6 +11,11 @@ const handoffService = require('./handoffService');
 const whatsappOutbound = require('./whatsappOutboundService');
 const { tryLlmReply } = require('./llmReplyService');
 const { answerWithTimeout } = require('./knowledgeAssistantService');
+const {
+  answerWithTimeout: answerCounsellorProgramWithTimeout,
+} = require('./counsellorProgram/counsellorProgramAssistantService');
+const { isCounsellorProgramAssistantEnabled } = require('./counsellorProgram/counsellorProgramFlags');
+const { UNKNOWN_FALLBACK: COUNSELLOR_PROGRAM_FALLBACK } = require('./counsellorProgram/counsellorProgramGuardrailService');
 const { buildWelcomeMenuText } = require('./welcomeMessageService');
 const { getDemoMeetingLink } = require('../../utils/slotNotificationFormatters');
 const { emptySubflows } = require('./botSubflowContext');
@@ -518,6 +523,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
   let contextPatch = botState?.context || {};
   let upstreamStatus = null;
   let knowledgeAssistantResult = null;
+  let counsellorProgramResult = null;
   let unknownLlmResult = null;
   let unknownLlmUsed = false;
 
@@ -559,7 +565,12 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       const rankInboundText = multilingualInbound?.englishMessage || inbound.text;
       const r = handleRankPredictorMessage(rankInboundText, contextPatch.rank || {});
       replyText = r.reply;
-      contextPatch = { ...contextPatch, rank: r.context, knowledgeAssistantActive: false };
+      contextPatch = {
+        ...contextPatch,
+        rank: r.context,
+        knowledgeAssistantActive: false,
+        counsellorProgramAssistantActive: false,
+      };
       nextState = 'rank_predictor';
       if (contextPatch.rank?.step === 'done') {
         nextState = 'main_menu';
@@ -618,7 +629,47 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       }
       replyText = resolveGreetingReply(resolvedLanguageFrom(multilingualInbound));
       nextState = 'idle';
-      contextPatch = { ...contextPatch, knowledgeAssistantActive: false };
+      contextPatch = {
+        ...contextPatch,
+        knowledgeAssistantActive: false,
+        counsellorProgramAssistantActive: false,
+      };
+      break;
+    }
+    case 'counsellor_program_assistant': {
+      const assistantInboundText = multilingualInbound?.englishMessage || inbound.text;
+      const languageMetadata = multilingualInbound
+        ? {
+            originalMessage: multilingualInbound.originalMessage,
+            detectedLanguage: multilingualInbound.detectedLanguage,
+            resolvedLanguage: multilingualInbound.resolvedLanguage,
+            translatedQuery: assistantInboundText,
+            translationApplied: multilingualInbound.translationApplied,
+          }
+        : null;
+
+      if (!isCounsellorProgramAssistantEnabled()) {
+        knowledgeAssistantResult = await answerWithTimeout({
+          inboundText: assistantInboundText,
+          conversationId: activeConversation._id,
+          leadContext,
+          languageMetadata,
+        });
+        replyText = knowledgeAssistantResult?.text
+          ? knowledgeAssistantResult.text
+          : resolveKnowledgeAssistantFallback(resolvedLanguageFrom(multilingualInbound));
+        nextState = 'idle';
+        break;
+      }
+
+      counsellorProgramResult = await answerCounsellorProgramWithTimeout({
+        inboundText: assistantInboundText,
+        conversationId: activeConversation._id,
+        leadContext,
+        languageMetadata,
+      });
+      replyText = counsellorProgramResult?.text || COUNSELLOR_PROGRAM_FALLBACK;
+      nextState = 'idle';
       break;
     }
     case 'knowledge_assistant': {
@@ -684,15 +735,33 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     }
   }
 
-  if (intentResult.intent === 'knowledge_assistant') {
+  if (intentResult.intent === 'counsellor_program_assistant') {
+    const kaFallbackActive =
+      !isCounsellorProgramAssistantEnabled() &&
+      Boolean(knowledgeAssistantResult?.model && knowledgeAssistantResult?.text);
+    const cpaActive =
+      isCounsellorProgramAssistantEnabled() &&
+      Boolean(counsellorProgramResult?.model && counsellorProgramResult?.text);
+
+    contextPatch = {
+      ...contextPatch,
+      counsellorProgramAssistantActive: cpaActive,
+      knowledgeAssistantActive: kaFallbackActive,
+    };
+  } else if (intentResult.intent === 'knowledge_assistant') {
     contextPatch = {
       ...contextPatch,
       knowledgeAssistantActive: Boolean(
         knowledgeAssistantResult?.model && knowledgeAssistantResult?.text
       ),
+      counsellorProgramAssistantActive: false,
     };
   } else {
-    contextPatch = { ...contextPatch, knowledgeAssistantActive: false };
+    contextPatch = {
+      ...contextPatch,
+      knowledgeAssistantActive: false,
+      counsellorProgramAssistantActive: false,
+    };
   }
 
   await h.transitionState(activeConversation._id, activeConversation.phone, nextState, contextPatch);
@@ -701,7 +770,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     replyText = listExamsMessage();
   }
 
-  const assistantResult = knowledgeAssistantResult || unknownLlmResult;
+  const assistantResult = counsellorProgramResult || knowledgeAssistantResult || unknownLlmResult;
   const knowledgeAssistantResponse =
     assistantResult?.languageLog?.englishResponse ||
     (assistantResult?.text ? String(assistantResult.text) : null);
@@ -736,6 +805,9 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       outboundTrace,
     });
 
+    if (counsellorProgramResult?.languageLog) {
+      counsellorProgramResult.languageLog.finalResponse = replyText;
+    }
     if (knowledgeAssistantResult?.languageLog) {
       knowledgeAssistantResult.languageLog.finalResponse = replyText;
     }
