@@ -418,6 +418,7 @@ function previewTestCallPayload(input) {
   return {
     ok: true,
     payload: buildOsviPayloadFromTestCall({
+      ...input,
       personName: input.personName,
       phone,
       callbackTime,
@@ -442,6 +443,7 @@ async function createTestCall(input, admin) {
   }
 
   const payload = buildOsviPayloadFromTestCall({
+    ...input,
     personName: input.personName.trim(),
     phone,
     callbackTime,

@@ -109,15 +109,42 @@ describe('aiCallReminderPayload', () => {
     assert.equal(snap.form_completed, true);
   });
 
-  it('builds test call additional_data with notes', () => {
+  it('builds test call additional_data matching real reminder queue fields', () => {
     const payload = buildOsviPayloadFromTestCall({
       personName: 'Tej',
       phone: '9876543210',
       callbackTime: new Date('2026-06-15T11:30:00.000Z'),
       notes: 'registered for wednesday 6PM',
+      selectedSlot: 'Wednesday 6PM, 2026-06-15',
+      class: 'Studying 12th/Intermediate 2nd Year',
+      city: 'Hyderabad',
+      stream: 'MPC',
+      preferredLanguage: 'Telugu',
+      top5CollegesText: 'IIT Hyderabad, NIT Warangal',
     });
     assert.equal(payload.additional_data.type, 'test_call');
+    assert.equal(payload.additional_data.source, 'iitian_career_counselling');
+    assert.equal(payload.additional_data.student_name, 'Tej');
     assert.equal(payload.additional_data.biggest_concern, 'registered for wednesday 6PM');
-    assert.equal(payload.additional_data.notes, 'registered for wednesday 6PM');
+    assert.equal(payload.additional_data.selected_slot, 'Wednesday 6PM, 2026-06-15');
+    assert.equal(payload.additional_data.stream, 'MPC');
+    assert.equal(payload.additional_data.preferred_language, 'Telugu');
+    assert.equal(payload.additional_data.top5_colleges_text, 'IIT Hyderabad, NIT Warangal');
+    assert.ok(payload.prev_call_summary.includes('Tej'));
+    assert.ok(payload.prev_call_summary.includes('Wednesday 6PM'));
+  });
+
+  it('fills default sample fields when test call omits optional inputs', () => {
+    const payload = buildOsviPayloadFromTestCall({
+      personName: 'Ravi Kumar',
+      phone: '9876543210',
+      callbackTime: new Date('2026-06-15T11:30:00.000Z'),
+    });
+    assert.equal(payload.additional_data.class, 'Studying 12th/Intermediate 2nd Year');
+    assert.equal(payload.additional_data.city, 'Hyderabad');
+    assert.equal(payload.additional_data.stream, 'MPC');
+    assert.ok(payload.additional_data.selected_slot);
+    assert.equal(payload.additional_data.preferred_language, 'Telugu');
+    assert.ok(payload.additional_data.top5_colleges_text);
   });
 });

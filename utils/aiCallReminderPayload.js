@@ -72,30 +72,65 @@ function buildAdditionalDataFromReminder(reminder) {
   return mergeFormSnapshot(reminder);
 }
 
-function buildAdditionalDataFromTestCall(input) {
-  const notes = typeof input.notes === 'string' ? input.notes.trim() : '';
-  return {
-    source: 'admin_panel',
-    type: 'test_call',
-    student_name: input.personName || null,
-    phone: input.phone || null,
-    biggest_concern: notes || 'test',
-    career_goal: null,
-    selected_slot: null,
-    notes: notes || null,
-    class: null,
-    city: null,
-    stream: null,
-    preferred_language: null,
-    help_needed: null,
-    wants_one_to_one_session: null,
-    top5_colleges: null,
-    form_completed: null,
-  };
+/** Default sample fields for admin test calls — mirrors real IIT counselling reminder queue. */
+const DEFAULT_TEST_CALL_SAMPLE = {
+  class: 'Studying 12th/Intermediate 2nd Year',
+  city: 'Hyderabad',
+  stream: 'MPC',
+  biggestConcern: 'College selection',
+  careerGoal: 'Career Counseling with IITian',
+  preferredLanguage: 'Telugu',
+  top5Colleges: ['IIT Hyderabad', 'NIT Warangal', 'BITS Pilani'],
+  top5CollegesText: 'IIT Hyderabad, NIT Warangal, BITS Pilani',
+  studentOrParent: 'Student',
+  helpNeeded: 'Career Counseling with IITian',
+  wantsOneToOneSession: 'Yes',
+  expectedBudget: '3-6L',
+  careerDecisionClarity: 'Somewhat clear',
+  collegeDecisionStakeholder: 'Both',
+  topCollegePriority: 'Placements',
+  formCompleted: true,
+  applicationStatus: 'completed',
+};
+
+function pickStringField(input, ...keys) {
+  for (const key of keys) {
+    const v = input?.[key];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return null;
 }
 
-function buildPrevCallSummaryFromReminder(reminder) {
-  const data = mergeFormSnapshot(reminder);
+/** Next/upcoming Saturday 7 PM IST label for agent {{additional_data.selected_slot}}. */
+function formatUpcomingSaturday7pmSlotLabel(fromDate = new Date()) {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'short',
+    hour: 'numeric',
+    hour12: true,
+  });
+  const parts = fmt.formatToParts(fromDate);
+  const get = (type) => parts.find((p) => p.type === type)?.value || '';
+  const weekday = get('weekday');
+  const dayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const currentDay = dayMap[weekday] ?? 0;
+  let daysUntilSat = (6 - currentDay + 7) % 7;
+  const hour = Number(get('hour')) || 0;
+  const dayPeriod = get('dayPeriod');
+  const hour24 = dayPeriod === 'PM' && hour < 12 ? hour + 12 : (dayPeriod === 'AM' && hour === 12 ? 0 : hour);
+  if (daysUntilSat === 0 && hour24 >= 19) daysUntilSat = 7;
+  if (daysUntilSat === 0 && currentDay === 6) daysUntilSat = 0;
+
+  const base = new Date(fromDate.getTime());
+  base.setUTCDate(base.getUTCDate() + (daysUntilSat || 7));
+  const dateIst = base.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  return `Saturday 7 PM, ${dateIst}`;
+}
+
+function buildPrevCallSummaryFromAdditionalData(data) {
   const parts = [];
   if (data.student_name) parts.push(`Student ${data.student_name}`);
   if (data.selected_slot) parts.push(`Session ${data.selected_slot}`);
@@ -109,8 +144,91 @@ function buildPrevCallSummaryFromReminder(reminder) {
   return summary || nonEmptyString(data.biggest_concern);
 }
 
+function buildAdditionalDataFromTestCall(input) {
+  const sample = DEFAULT_TEST_CALL_SAMPLE;
+  const notes = typeof input.notes === 'string' ? input.notes.trim() : '';
+  const personName = pickStringField(input, 'personName', 'studentName') || 'Ravi Kumar';
+  const phone10 = String(input.phone || '').replace(/\D/g, '').slice(-10) || null;
+  const selectedSlot = pickStringField(input, 'selectedSlot', 'selected_slot')
+    || formatUpcomingSaturday7pmSlotLabel(
+      input.callbackTime instanceof Date ? input.callbackTime : new Date(input.callbackTime || Date.now()),
+    );
+  const top5Colleges = Array.isArray(input.top5Colleges)
+    ? input.top5Colleges.filter(Boolean).map((c) => String(c).trim()).filter(Boolean)
+    : (pickStringField(input, 'top5CollegesText', 'top5_colleges_text') || sample.top5CollegesText)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  const top5CollegesText = pickStringField(input, 'top5CollegesText', 'top5_colleges_text')
+    || (top5Colleges.length ? top5Colleges.join(', ') : sample.top5CollegesText);
+
+  const callbackTime = input.callbackTime instanceof Date
+    ? input.callbackTime
+    : new Date(input.callbackTime || Date.now());
+  const slotDayIst = !Number.isNaN(callbackTime.getTime())
+    ? callbackTime.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+    : null;
+
+  return {
+    source: 'iitian_career_counselling',
+    type: 'test_call',
+    student_name: personName,
+    phone: phone10,
+    parent_name: null,
+    email: null,
+    class: pickStringField(input, 'class') || sample.class,
+    city: pickStringField(input, 'city') || sample.city,
+    school: null,
+    biggest_concern: pickStringField(input, 'biggestConcern', 'biggest_concern') || notes || sample.biggestConcern,
+    career_goal: pickStringField(input, 'careerGoal', 'career_goal') || sample.careerGoal,
+    selected_slot: selectedSlot,
+    slot_booking: 'Saturday 7PM',
+    slot_booking_date: selectedSlot.includes(',') ? selectedSlot.split(',').pop().trim() : null,
+    counselling_session_at: null,
+    reminder_at: !Number.isNaN(callbackTime.getTime()) ? callbackTime.toISOString() : null,
+    slot_day_ist: slotDayIst,
+    student_or_parent: pickStringField(input, 'studentOrParent', 'student_or_parent') || sample.studentOrParent,
+    occupation: pickStringField(input, 'occupation') || 'Student',
+    stream: pickStringField(input, 'stream') || sample.stream,
+    top5_colleges: top5Colleges.length ? top5Colleges : sample.top5Colleges,
+    top5_colleges_text: top5CollegesText,
+    career_decision_clarity: pickStringField(input, 'careerDecisionClarity', 'career_decision_clarity') || sample.careerDecisionClarity,
+    college_decision_stakeholder: pickStringField(input, 'collegeDecisionStakeholder', 'college_decision_stakeholder') || sample.collegeDecisionStakeholder,
+    expected_budget: pickStringField(input, 'expectedBudget', 'expected_budget') || sample.expectedBudget,
+    top_college_priority: pickStringField(input, 'topCollegePriority', 'top_college_priority') || sample.topCollegePriority,
+    preferred_language: pickStringField(input, 'preferredLanguage', 'preferred_language') || sample.preferredLanguage,
+    help_needed: pickStringField(input, 'helpNeeded', 'help_needed') || sample.helpNeeded,
+    wants_one_to_one_session: pickStringField(input, 'wantsOneToOneSession', 'wants_one_to_one_session') || sample.wantsOneToOneSession,
+    form_step: 3,
+    form_completed: input.formCompleted ?? sample.formCompleted,
+    application_status: pickStringField(input, 'applicationStatus', 'application_status') || sample.applicationStatus,
+    notes: notes || null,
+  };
+}
+
+function buildPrevCallSummaryFromReminder(reminder) {
+  return buildPrevCallSummaryFromAdditionalData(mergeFormSnapshot(reminder));
+}
+
 function buildPrevCallSummaryFromTest(input) {
-  return nonEmptyString(input.notes);
+  return buildPrevCallSummaryFromAdditionalData(buildAdditionalDataFromTestCall(input));
+}
+
+/** Prefill values for the admin Request Test Call form. */
+function getDefaultTestCallFormValues() {
+  return {
+    personName: 'Ravi Kumar',
+    phone: '',
+    callbackTime: null,
+    notes: 'Registered for free IITian career counselling session — college selection guidance.',
+    class: DEFAULT_TEST_CALL_SAMPLE.class,
+    city: DEFAULT_TEST_CALL_SAMPLE.city,
+    stream: DEFAULT_TEST_CALL_SAMPLE.stream,
+    selectedSlot: formatUpcomingSaturday7pmSlotLabel(),
+    biggestConcern: DEFAULT_TEST_CALL_SAMPLE.biggestConcern,
+    preferredLanguage: DEFAULT_TEST_CALL_SAMPLE.preferredLanguage,
+    top5CollegesText: DEFAULT_TEST_CALL_SAMPLE.top5CollegesText,
+  };
 }
 
 /**
@@ -162,11 +280,14 @@ function buildOsviPayloadFromTestCall(input) {
 
 module.exports = {
   DEFAULT_IIT_AGENT_UUID,
+  DEFAULT_TEST_CALL_SAMPLE,
   getAgentUuid,
   formatPhoneForOsvi,
+  formatUpcomingSaturday7pmSlotLabel,
   mergeFormSnapshot,
   buildAdditionalDataFromReminder,
   buildAdditionalDataFromTestCall,
   buildOsviPayloadFromReminder,
   buildOsviPayloadFromTestCall,
+  getDefaultTestCallFormValues,
 };
