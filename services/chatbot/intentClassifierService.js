@@ -85,8 +85,62 @@ const CAPABILITY_QUESTION_PATTERNS = [
   /\baap kya kar sakte\b/i,
 ];
 
+const COUNSELLOR_PROGRAM_PATTERNS = [
+  /\b(counselling|counseling) services\b/i,
+  /\bwhich program\b/i,
+  /\bbenefits of (your )?(counselling|counseling|program|guidance)\b/i,
+  /\bhow does the (counselling|counseling) process work\b/i,
+  /\bdo you provide\b.*\b(iit counselling|iit counseling|college predict|mentorship|career guidance|counselling|counseling)\b/i,
+  /\bwhat is included in (your )?program\b/i,
+  /\bhow long does the program\b/i,
+  /\bhow (can i join|do i join)\b/i,
+  /\b(program|package) fees\b/i,
+  /\bhow much.*\bfees\b/i,
+  /\bwhat are the fees\b/i,
+  /\b(program|package|counselling|counseling)\s+fees\b/i,
+  /\bfees for (the )?(program|package|counselling|counseling)\b/i,
+  /\b(career|admission) guidance\b/i,
+  /\b(iit|college) counselling\b/i,
+  /\b(iit|college) counseling\b/i,
+  /\bcollege (prediction|predictor) support\b/i,
+  /\b(do you (offer|provide)|what).*\bmentor(ship)?\b/i,
+  /\bguidexpert (program|services|counselling|counseling)\b/i,
+  /\bwhat programs?\b/i,
+  /\bhow to join\b/i,
+  /\bwhat (counselling|counseling) (programs?|packages?)\b/i,
+  /\b(counselling|counseling) (programs?|packages?)\b/i,
+];
+
+const IIT_LEAD_SUPPORT_PATTERNS = [
+  /\bmy (session|slot|counselling|counseling|booking|meeting)\b/i,
+  /\bassigned expert\b/i,
+  /\bmy counsellor\b/i,
+  /\bmy counselor\b/i,
+  /\bmy bda\b/i,
+  /\bmeeting link\b/i,
+  /\bwhen is my\b/i,
+];
+
 function isKnowledgeSessionActive(botState) {
   return Boolean(botState?.context?.knowledgeAssistantActive);
+}
+
+function isCounsellorProgramSessionActive(botState) {
+  return Boolean(botState?.context?.counsellorProgramAssistantActive);
+}
+
+function isIitLeadSupportQuery(text) {
+  const t = String(text || '');
+  return IIT_LEAD_SUPPORT_PATTERNS.some((pattern) => pattern.test(t));
+}
+
+function isCounsellorProgramQuestion(text, originalText = null) {
+  if (isIitLeadSupportQuery(text) || isIitLeadSupportQuery(originalText)) {
+    return false;
+  }
+  return intentTextCandidates(text, originalText).some(
+    (t) => t && COUNSELLOR_PROGRAM_PATTERNS.some((pattern) => pattern.test(t))
+  );
 }
 
 const SOCIAL_GREETING_PATTERNS = [
@@ -266,7 +320,10 @@ function classifyIntent(text, botState, productLine, originalText = null) {
   const t = normalizeText(text);
   const original = String(originalText || text || '').trim();
 
-  if (matchesAny(t, GLOBAL_KEYWORDS.agent)) {
+  if (
+    matchesAny(t, GLOBAL_KEYWORDS.agent) &&
+    !isCounsellorProgramQuestion(t, original)
+  ) {
     return { intent: 'human_handoff', confidence: 'high' };
   }
   if (matchesMainMenuTrigger(t)) {
@@ -324,6 +381,22 @@ function classifyIntent(text, botState, productLine, originalText = null) {
 
   if (isKnowledgeSessionActive(botState)) {
     return { intent: 'knowledge_assistant', confidence: 'medium' };
+  }
+
+  if (isCounsellorProgramSessionActive(botState)) {
+    return {
+      intent: 'counsellor_program_assistant',
+      confidence: 'medium',
+      intentReason: 'counsellor_program_session_active',
+    };
+  }
+
+  if (isCounsellorProgramQuestion(t, original)) {
+    return {
+      intent: 'counsellor_program_assistant',
+      confidence: 'medium',
+      intentReason: 'counsellor_program_question',
+    };
   }
 
   if (isCapabilityQuestion(t, original)) {
@@ -413,6 +486,9 @@ module.exports = {
   normalizeText,
   isKnowledgeQuestion,
   isCapabilityQuestion,
+  isCounsellorProgramQuestion,
+  isCounsellorProgramSessionActive,
+  isIitLeadSupportQuery,
   isKnowledgeSessionActive,
   isNativeSocialGreeting,
   isSocialGreeting,
