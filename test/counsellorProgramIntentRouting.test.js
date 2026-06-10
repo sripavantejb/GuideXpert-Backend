@@ -90,6 +90,40 @@ describe('counsellor program intent routing', () => {
     }
   });
 
+  test('guidexpert discovery phrases are not classified as unknown', () => {
+    const messages = [
+      'what is guidexpert',
+      'i want to know about guidexpert',
+      'tell me about guidexpert',
+      'tell me about niat',
+      'know about guidexpert',
+    ];
+    for (const message of messages) {
+      const result = classifyIntent(message, null, 'iit_counselling', message);
+      assert.notEqual(result.intent, 'unknown', `expected routed intent for: ${message}`);
+    }
+  });
+
+  test('what counselling programs do you provide routes to counsellor_program_assistant', () => {
+    const result = classifyIntent(
+      'what counselling programs do you provide',
+      null,
+      'iit_counselling',
+      'what counselling programs do you provide'
+    );
+    assert.equal(result.intent, 'counsellor_program_assistant');
+  });
+
+  test('fees follow-up continues counsellor program session', () => {
+    const botState = {
+      state: 'idle',
+      context: { counsellorProgramAssistantActive: true },
+    };
+    const result = classifyIntent('fees', botState, 'iit_counselling', 'fees');
+    assert.equal(result.intent, 'counsellor_program_assistant');
+    assert.equal(result.intentReason, 'counsellor_program_session_active');
+  });
+
   test('program questions with support keyword still route to CPA not handoff', () => {
     const result = classifyIntent(
       'Do you provide college prediction support?',

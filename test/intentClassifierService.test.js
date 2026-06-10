@@ -114,8 +114,10 @@ describe('knowledge_assistant intent', () => {
     assertKnowledgeAssistant('Why do I need GuideXpert?'));
   test('How is GuideXpert different?', () =>
     assertKnowledgeAssistant('How is GuideXpert different?'));
-  test('Tell me about GuideXpert.', () =>
-    assertKnowledgeAssistant('Tell me about GuideXpert.'));
+  test('Tell me about GuideXpert routes to counsellor_program_assistant', () => {
+    const r = classifyIntent('Tell me about GuideXpert.', null, PRODUCT_LINE);
+    assert.equal(r.intent, 'counsellor_program_assistant');
+  });
 
   test('English-translated Telugu question routes to knowledge_assistant', () =>
     assertKnowledgeAssistant('Tell me about NIAT placements'));

@@ -69,6 +69,9 @@ const KNOWLEDGE_QUESTION_PATTERNS = [
   /\bcost\b/i,
   /\bfee\b/i,
   /\bpricing\b/i,
+  /\bwant to know\b/i,
+  /\bknow about\b/i,
+  /\b(tell me|want to know|know) about guidexpert\b/i,
 ];
 
 const CAPABILITY_QUESTION_PATTERNS = [
@@ -109,6 +112,8 @@ const COUNSELLOR_PROGRAM_PATTERNS = [
   /\bhow to join\b/i,
   /\bwhat (counselling|counseling) (programs?|packages?)\b/i,
   /\b(counselling|counseling) (programs?|packages?)\b/i,
+  /\bwhat (counselling|counseling) programs?\b/i,
+  /\b(tell me|want to know|know) about guidexpert\b/i,
 ];
 
 const IIT_LEAD_SUPPORT_PATTERNS = [
