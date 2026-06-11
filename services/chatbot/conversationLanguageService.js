@@ -56,6 +56,65 @@ function isShortCpaFollowUp(message) {
   return /\b(fees kya hai|price kya hai|benefits kya hai|fees enti|benefits enti)\b/i.test(text);
 }
 
+const SHORT_IIT_COUNSELLING_FOLLOWUP_PATTERN =
+  /^(rounds?|float|slide|freeze|quota)\s*[.!?]?$/i;
+
+function isShortIitCounsellingFollowUp(message) {
+  const text = String(message || '').trim();
+  if (!text) return false;
+  if (SHORT_IIT_COUNSELLING_FOLLOWUP_PATTERN.test(text)) return true;
+  return /\b(how many rounds|what is float|what is slide|what is freeze|rounds kitne|float ante enti|slide ante enti)\b/i.test(
+    text
+  );
+}
+
+function resolveIitCounsellingSessionAwareLanguage({
+  conversation,
+  leadContext,
+  detected = {},
+  message = '',
+  sessionLanguage = null,
+} = {}) {
+  const session = normalizeLanguageCode(sessionLanguage);
+  if (!session || session === DEFAULT_LANGUAGE || !isSupportedLanguage(session)) {
+    return resolveConversationLanguage(conversation, leadContext, detected, message);
+  }
+
+  if (isExplicitEnglishMenuGreeting(message)) {
+    return resolveConversationLanguage(conversation, leadContext, detected, message);
+  }
+
+  if (isRomanizedTeluguSocialGreeting(message)) {
+    return resolveConversationLanguage(conversation, leadContext, detected, message);
+  }
+
+  if (isShortIitCounsellingFollowUp(message) || isAmbiguousMessage(message)) {
+    return {
+      language: session,
+      source: 'iit_counselling_session',
+      resolutionReason: 'iit_counselling_session_language',
+    };
+  }
+
+  const base = resolveConversationLanguage(conversation, leadContext, detected, message);
+  if (
+    base.resolutionReason === 'explicit_english_greeting' ||
+    base.resolutionReason === 'explicit_telugu_greeting'
+  ) {
+    return base;
+  }
+
+  if (base.language === DEFAULT_LANGUAGE && base.resolutionReason === 'high_confidence_detection') {
+    return {
+      language: session,
+      source: 'iit_counselling_session',
+      resolutionReason: 'iit_counselling_session_language',
+    };
+  }
+
+  return base;
+}
+
 function resolveSessionAwareLanguage({
   conversation,
   leadContext,
@@ -271,6 +330,8 @@ module.exports = {
   resolveSessionAwareLanguage,
   isAmbiguousMessage,
   isShortCpaFollowUp,
+  isShortIitCounsellingFollowUp,
+  resolveIitCounsellingSessionAwareLanguage,
   isExplicitEnglishMenuGreeting,
   updatePreferredLanguage,
   seedPreferredLanguageFromLead,

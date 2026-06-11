@@ -69,6 +69,10 @@ const {
   getCounsellorProgramAssistantConfigStatus,
   logCounsellorProgramAssistantConfigStatus,
 } = require('./utils/counsellorProgramConfigStatus');
+const {
+  getIitCounsellingExpertConfigStatus,
+  logIitCounsellingExpertConfigStatus,
+} = require('./utils/iitCounsellingExpertConfigStatus');
 
 const app = express();
 
@@ -103,6 +107,7 @@ if (!process.env.WEBINAR_JWT_SECRET && !process.env.COUNSELLOR_JWT_SECRET) {
 logWhatsAppConfigWarnings();
 logKnowledgeAssistantConfigStatus();
 logCounsellorProgramAssistantConfigStatus();
+logIitCounsellingExpertConfigStatus();
 
 const allowedOrigins = [
   process.env.FRONTEND_URL,
@@ -211,6 +216,7 @@ app.get('/api/health', (req, res) => {
   const whatsapp = getWhatsAppConfigStatus();
   const knowledgeAssistant = getKnowledgeAssistantConfigStatus();
   const counsellorProgramAssistant = getCounsellorProgramAssistantConfigStatus();
+  const iitCounsellingExpert = getIitCounsellingExpertConfigStatus();
   res.json({
     status: 'ok',
     message: 'GuideXpert API is running',
@@ -224,6 +230,10 @@ app.get('/api/health', (req, res) => {
     counsellorProgramAssistant: {
       enabled: counsellorProgramAssistant.enabled,
       ready: counsellorProgramAssistant.ready,
+    },
+    iitCounsellingExpert: {
+      enabled: iitCounsellingExpert.enabled,
+      ready: iitCounsellingExpert.ready,
     },
   });
 });

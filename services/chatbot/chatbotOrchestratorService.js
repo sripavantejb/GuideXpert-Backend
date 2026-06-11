@@ -22,6 +22,14 @@ const { isCounsellorProgramAssistantEnabled } = require('./counsellorProgram/cou
 const {
   CPA_EMPTY_FALLBACK: COUNSELLOR_PROGRAM_FALLBACK,
 } = require('./counsellorProgram/counsellorProgramGuardrailService');
+const {
+  answerWithTimeout: answerIitCounsellingWithTimeout,
+} = require('./iitCounsellingExpert/iitCounsellingExpertService');
+const { isIitCounsellingExpertEnabled } = require('./iitCounsellingExpert/iitCounsellingFlags');
+const {
+  ICE_EMPTY_FALLBACK: IIT_COUNSELLING_FALLBACK,
+} = require('./iitCounsellingExpert/iitCounsellingGuardrailService');
+const { isIitCounsellingExpertQuestion } = require('./iitCounsellingExpert/iitCounsellingIntentService');
 const { buildWelcomeMenuText } = require('./welcomeMessageService');
 const { getDemoMeetingLink } = require('../../utils/slotNotificationFormatters');
 const { emptySubflows } = require('./botSubflowContext');
@@ -35,6 +43,7 @@ const {
 const {
   seedPreferredLanguageFromLead,
   resolveSessionAwareLanguage,
+  resolveIitCounsellingSessionAwareLanguage,
   updatePreferredLanguage,
 } = require('./conversationLanguageService');
 const { incrementLanguageRequest } = require('../analytics/languageRequestAnalyticsService');
@@ -429,6 +438,39 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
   const facts = await h.retrieveFacts(leadLinks, leadContext);
   const botState = await h.getBotState(activeConversation._id);
 
+  if (multilingualInbound && botState?.context?.iitCounsellingExpertActive) {
+    const detectedLang = normalizeLanguageCode(multilingualInbound.detectedLanguage);
+    const minConfidence = Number(process.env.LANGUAGE_DETECT_MIN_CONFIDENCE) || 0.75;
+    const iitLanguageSwitch =
+      detectedLang &&
+      detectedLang !== 'en' &&
+      isSupportedLanguage(detectedLang) &&
+      Number(multilingualInbound.confidence || 0) >= minConfidence &&
+      isIitCounsellingExpertQuestion(inbound.text, inbound.text);
+
+    if (iitLanguageSwitch) {
+      multilingualInbound.resolvedLanguage = detectedLang;
+      multilingualInbound.language = detectedLang;
+      multilingualInbound.resolutionReason = 'iit_counselling_language_detected';
+      multilingualInbound.resolutionSource = 'iit_counselling_session';
+    } else if (botState.context.iitCounsellingExpertSessionLanguage) {
+      const sessionResolved = resolveIitCounsellingSessionAwareLanguage({
+        conversation: activeConversation,
+        leadContext,
+        detected: {
+          language: multilingualInbound.detectedLanguage,
+          confidence: multilingualInbound.confidence,
+        },
+        message: inbound.text,
+        sessionLanguage: botState.context.iitCounsellingExpertSessionLanguage,
+      });
+      multilingualInbound.resolvedLanguage = sessionResolved.language;
+      multilingualInbound.language = sessionResolved.language;
+      multilingualInbound.resolutionReason = sessionResolved.resolutionReason;
+      multilingualInbound.resolutionSource = sessionResolved.source;
+    }
+  }
+
   if (multilingualInbound && botState?.context?.counsellorProgramAssistantActive) {
     const detectedLang = normalizeLanguageCode(multilingualInbound.detectedLanguage);
     const minConfidence = Number(process.env.LANGUAGE_DETECT_MIN_CONFIDENCE) || 0.75;
@@ -567,6 +609,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
   let upstreamStatus = null;
   let knowledgeAssistantResult = null;
   let counsellorProgramResult = null;
+  let iitCounsellingResult = null;
   let unknownLlmResult = null;
   let unknownLlmUsed = false;
 
@@ -613,6 +656,8 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
         rank: r.context,
         knowledgeAssistantActive: false,
         counsellorProgramAssistantActive: false,
+        iitCounsellingExpertActive: false,
+        iitCounsellingExpertSessionLanguage: null,
       };
       nextState = 'rank_predictor';
       if (contextPatch.rank?.step === 'done') {
@@ -676,7 +721,45 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
         ...contextPatch,
         knowledgeAssistantActive: false,
         counsellorProgramAssistantActive: false,
+        iitCounsellingExpertActive: false,
+        iitCounsellingExpertSessionLanguage: null,
       };
+      break;
+    }
+    case 'iit_counselling_expert': {
+      const assistantInboundText = multilingualInbound?.englishMessage || inbound.text;
+      const languageMetadata = multilingualInbound
+        ? {
+            originalMessage: multilingualInbound.originalMessage,
+            detectedLanguage: multilingualInbound.detectedLanguage,
+            resolvedLanguage: multilingualInbound.resolvedLanguage,
+            translatedQuery: assistantInboundText,
+            translationApplied: multilingualInbound.translationApplied,
+          }
+        : null;
+
+      if (!isIitCounsellingExpertEnabled()) {
+        knowledgeAssistantResult = await answerWithTimeout({
+          inboundText: assistantInboundText,
+          conversationId: activeConversation._id,
+          leadContext,
+          languageMetadata,
+        });
+        replyText = knowledgeAssistantResult?.text
+          ? knowledgeAssistantResult.text
+          : resolveKnowledgeAssistantFallback(resolvedLanguageFrom(multilingualInbound));
+        nextState = 'idle';
+        break;
+      }
+
+      iitCounsellingResult = await answerIitCounsellingWithTimeout({
+        inboundText: assistantInboundText,
+        conversationId: activeConversation._id,
+        leadContext,
+        languageMetadata,
+      });
+      replyText = iitCounsellingResult?.text || IIT_COUNSELLING_FALLBACK;
+      nextState = 'idle';
       break;
     }
     case 'counsellor_program_assistant': {
@@ -778,7 +861,34 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     }
   }
 
-  if (intentResult.intent === 'counsellor_program_assistant') {
+  if (intentResult.intent === 'iit_counselling_expert') {
+    const kaFallbackActive =
+      !isIitCounsellingExpertEnabled() &&
+      Boolean(knowledgeAssistantResult?.model && knowledgeAssistantResult?.text);
+    const iceReplyOk = Boolean(iitCounsellingResult?.model && iitCounsellingResult?.text);
+    const hadIceSession = Boolean(botState?.context?.iitCounsellingExpertActive);
+    const iceActive =
+      isIitCounsellingExpertEnabled() && (iceReplyOk || hadIceSession);
+    const sessionLanguage = resolvedLanguageFrom(multilingualInbound);
+    const persistedSessionLanguage =
+      sessionLanguage ||
+      botState?.context?.iitCounsellingExpertSessionLanguage ||
+      contextPatch.iitCounsellingExpertSessionLanguage ||
+      null;
+
+    if (iceActive && persistedSessionLanguage && persistedSessionLanguage !== 'en') {
+      updatePreferredLanguage(activeConversation._id, persistedSessionLanguage).catch(() => {});
+    }
+
+    contextPatch = {
+      ...contextPatch,
+      iitCounsellingExpertActive: iceActive,
+      iitCounsellingExpertSessionLanguage: iceActive ? persistedSessionLanguage : null,
+      knowledgeAssistantActive: kaFallbackActive,
+      counsellorProgramAssistantActive: false,
+      counsellorProgramSessionLanguage: null,
+    };
+  } else if (intentResult.intent === 'counsellor_program_assistant') {
     const kaFallbackActive =
       !isCounsellorProgramAssistantEnabled() &&
       Boolean(knowledgeAssistantResult?.model && knowledgeAssistantResult?.text);
@@ -802,6 +912,8 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       counsellorProgramAssistantActive: cpaActive,
       knowledgeAssistantActive: kaFallbackActive,
       counsellorProgramSessionLanguage: cpaActive ? persistedSessionLanguage : null,
+      iitCounsellingExpertActive: false,
+      iitCounsellingExpertSessionLanguage: null,
     };
   } else if (intentResult.intent === 'knowledge_assistant') {
     contextPatch = {
@@ -810,12 +922,18 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
         knowledgeAssistantResult?.model && knowledgeAssistantResult?.text
       ),
       counsellorProgramAssistantActive: false,
+      counsellorProgramSessionLanguage: null,
+      iitCounsellingExpertActive: false,
+      iitCounsellingExpertSessionLanguage: null,
     };
   } else {
     contextPatch = {
       ...contextPatch,
       knowledgeAssistantActive: false,
       counsellorProgramAssistantActive: false,
+      counsellorProgramSessionLanguage: null,
+      iitCounsellingExpertActive: false,
+      iitCounsellingExpertSessionLanguage: null,
     };
   }
 
@@ -825,7 +943,8 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     replyText = listExamsMessage();
   }
 
-  const assistantResult = counsellorProgramResult || knowledgeAssistantResult || unknownLlmResult;
+  const assistantResult =
+    iitCounsellingResult || counsellorProgramResult || knowledgeAssistantResult || unknownLlmResult;
   const knowledgeAssistantResponse =
     assistantResult?.languageLog?.englishResponse ||
     (assistantResult?.text ? String(assistantResult.text) : null);
@@ -860,6 +979,9 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       outboundTrace,
     });
 
+    if (iitCounsellingResult?.languageLog) {
+      iitCounsellingResult.languageLog.finalResponse = replyText;
+    }
     if (counsellorProgramResult?.languageLog) {
       counsellorProgramResult.languageLog.finalResponse = replyText;
     }

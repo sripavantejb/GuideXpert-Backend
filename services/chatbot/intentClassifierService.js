@@ -1,4 +1,11 @@
 const { GLOBAL_KEYWORDS } = require('../../constants/chatbotStates');
+const {
+  isIitCounsellingExpertEnabled,
+} = require('./iitCounsellingExpert/iitCounsellingFlags');
+const {
+  isIitCounsellingExpertSessionActive,
+  isIitCounsellingExpertQuestion,
+} = require('./iitCounsellingExpert/iitCounsellingIntentService');
 
 const MENU_COMMAND_WORDS = ['menu', 'help', 'start'];
 
@@ -421,6 +428,22 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     };
   }
 
+  if (isIitCounsellingExpertEnabled() && isIitCounsellingExpertSessionActive(botState)) {
+    return {
+      intent: 'iit_counselling_expert',
+      confidence: 'medium',
+      intentReason: 'iit_counselling_session_active',
+    };
+  }
+
+  if (isIitCounsellingExpertQuestion(t, original)) {
+    return {
+      intent: 'iit_counselling_expert',
+      confidence: 'medium',
+      intentReason: 'iit_counselling_question',
+    };
+  }
+
   if (isCounsellorProgramSessionActive(botState)) {
     const programTopicSignal =
       /\b(fees?|benefits?|mentorship|counsell?ing|counseling|programs?|packages?|duration|join|iit|guidexpert)\b/i;
@@ -547,6 +570,7 @@ module.exports = {
   isGuideXpertIdentityQuestion,
   isCounsellorProgramSessionActive,
   isIitLeadSupportQuery,
+  isIitCounsellingExpertEnabled,
   isKnowledgeSessionActive,
   isNativeSocialGreeting,
   isSocialGreeting,

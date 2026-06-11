@@ -1594,5 +1594,305 @@
     "category": "guidexpert",
     "question": "How long is the GuideXpert counselling program? What is the duration?",
     "answer": "Duration depends on the program you choose. Demo counselling is a single session; structured guidance can span multiple sessions over weeks with follow-ups and mentorship. We tailor the timeline to your goals—career clarity, college shortlisting, or end-to-end admission support."
+  },
+  {
+    "id": 267,
+    "category": "iit_counselling",
+    "question": "How does branch allocation work in JoSAA?",
+    "answer": "Branch allocation depends on your rank, category, quota, seat availability, and the order of choices you submit. Higher preference choices are considered first when your rank is eligible for a seat in a given round."
+  },
+  {
+    "id": 268,
+    "category": "iit_counselling",
+    "question": "Can I change my branch after allotment?",
+    "answer": "During active JoSAA rounds, you may use float or slide options to seek a better branch or institute if rules allow. After accepting a seat and completing admission formalities, branch changes follow institute rules and are generally not guaranteed through counselling."
+  },
+  {
+    "id": 269,
+    "category": "iit_counselling",
+    "question": "What is choice filling order?",
+    "answer": "Choice filling order is the priority list of institute-branch combinations you submit. The system tries to give you the highest choice on your list for which your rank and category are eligible in that round."
+  },
+  {
+    "id": 270,
+    "category": "iit_counselling",
+    "question": "What is a dual degree or special program seat?",
+    "answer": "Some IITs offer dual degree or special program seats listed separately in the JoSAA choice list. These have distinct seat codes and eligibility; candidates should read the official seat matrix before filling choices."
+  },
+  {
+    "id": 271,
+    "category": "iit_counselling",
+    "question": "Which factors affect branch allotment?",
+    "answer": "Key factors include JEE rank (CRL or category rank as applicable), category, home/other state quota for NITs, seat availability, and your choice order. Personal preferences should be aligned with realistic rank ranges from official data."
+  },
+  {
+    "id": 272,
+    "category": "iit_counselling",
+    "question": "What is branch sliding?",
+    "answer": "In JoSAA, slide (branch sliding) means you accept your currently allotted seat but remain open to moving to a higher preferred choice in later rounds if your rank becomes eligible. You keep your current seat unless a better choice is allotted."
+  },
+  {
+    "id": 273,
+    "category": "iit_counselling",
+    "question": "What is freezing and floating?",
+    "answer": "Freeze means you accept the allotted seat and stop participating in further upgradation. Float means you accept the seat for now but stay in counselling for a possible upgrade to a higher choice in later rounds. Freeze is final for that admission path once confirmed as per rules."
+  },
+  {
+    "id": 274,
+    "category": "iit_counselling",
+    "question": "What is float?",
+    "answer": "Float is a JoSAA option where you provisionally accept your allotted seat while staying eligible for upgradation to a higher preference in subsequent rounds. If no upgrade happens, you retain the current seat."
+  },
+  {
+    "id": 275,
+    "category": "iit_counselling",
+    "question": "What is slide?",
+    "answer": "Slide is similar to float in that you accept the current allotment but remain in the upgradation process. Official JoSAA documentation uses freeze, float, and slide with specific definitions candidates must follow on the portal each year."
+  },
+  {
+    "id": 276,
+    "category": "iit_counselling",
+    "question": "When should I freeze my seat?",
+    "answer": "Freeze when you are satisfied with your allotted institute-branch and do not want further upgradation risk. Candidates close to the last rounds often freeze to secure admission. The decision should be based on realistic upgrade chances from official round data, not assumptions."
+  },
+  {
+    "id": 277,
+    "category": "iit_counselling",
+    "question": "What is CSAB?",
+    "answer": "CSAB (Central Seat Allocation Board) conducts special rounds of counselling for vacant seats in NITs, IIITs, and CFTIs after JoSAA regular rounds end. It gives candidates another opportunity to secure seats that remain unfilled."
+  },
+  {
+    "id": 278,
+    "category": "iit_counselling",
+    "question": "How is CSAB different from JoSAA?",
+    "answer": "JoSAA handles the main multi-round allocation for IITs, NITs, IIITs, and GFTIs. CSAB focuses on special rounds for leftover seats, mainly in NITs, IIITs, and CFTIs. IIT seats are generally not part of CSAB special rounds."
+  },
+  {
+    "id": 279,
+    "category": "iit_counselling",
+    "question": "Who can participate in CSAB?",
+    "answer": "Eligibility for CSAB is defined in the official CSAB information brochure each year. Typically, candidates who were registered in JoSAA and meet the special-round criteria can participate, subject to seat availability and category rules."
+  },
+  {
+    "id": 280,
+    "category": "iit_counselling",
+    "question": "What is a CSAB special round?",
+    "answer": "A CSAB special round is an additional counselling round where vacant seats are offered to eligible registered candidates. Choice filling and seat acceptance rules are published in the CSAB portal for that academic year."
+  },
+  {
+    "id": 281,
+    "category": "iit_counselling",
+    "question": "When does CSAB counselling happen?",
+    "answer": "CSAB counselling is conducted after JoSAA regular rounds conclude. Dates and registration windows are announced on the official CSAB website and should be verified each year from official sources."
+  },
+  {
+    "id": 282,
+    "category": "iit_counselling",
+    "question": "What is the difference between IIT and NIT?",
+    "answer": "IITs (Indian Institutes of Technology) are premier engineering institutes admitting through JEE Advanced. NITs (National Institutes of Technology) are centrally funded institutes admitting mainly through JEE Main ranks via JoSAA. Both offer undergraduate engineering programs but differ in admission exam, institute set, and seat rules."
+  },
+  {
+    "id": 283,
+    "category": "iit_counselling",
+    "question": "Which IIT is best for CSE?",
+    "answer": "There is no single official \"best\" IIT for CSE for every student. Older IITs with strong computer science departments are often highly preferred, but the right choice depends on rank, campus fit, location, and career goals. Counsellors should use official seat data rather than subjective guarantees."
+  },
+  {
+    "id": 284,
+    "category": "iit_counselling",
+    "question": "Are NITs a good alternative to IITs?",
+    "answer": "NITs are well-regarded engineering institutes with national recognition. For many students whose ranks align with NIT seat ranges, they are strong options. The best choice depends on available branches, campus, and personal priorities."
+  },
+  {
+    "id": 285,
+    "category": "iit_counselling",
+    "question": "Do IITs and NITs use the same counselling process?",
+    "answer": "Both participate in JoSAA seat allocation, but IIT seats require JEE Advanced qualification while most NIT seats are filled through JEE Main ranks. Choice lists include separate IIT and NIT options with different eligibility rules."
+  },
+  {
+    "id": 286,
+    "category": "iit_counselling",
+    "question": "What are IIITs in JoSAA?",
+    "answer": "IIITs (Indian Institutes of Information Technology) are also part of JoSAA counselling. Some are funded differently (government or public-private). Candidates should review institute type, fees, and campus details in the official JoSAA seat matrix."
+  },
+  {
+    "id": 287,
+    "category": "iit_counselling",
+    "question": "What is JoSAA?",
+    "answer": "JoSAA (Joint Seat Allocation Authority) is the central body that conducts seat allocation for IITs, NITs, IIITs, and other GFTIs based on JEE Main and JEE Advanced ranks. It coordinates multiple rounds of online counselling where candidates fill choices, get seat allotments, and accept or modify options."
+  },
+  {
+    "id": 288,
+    "category": "iit_counselling",
+    "question": "How many rounds are there in JoSAA?",
+    "answer": "JoSAA typically conducts six regular rounds of seat allocation. After the regular rounds, CSAB may conduct additional special rounds for remaining vacant seats in NITs, IIITs, and CFTIs. The exact schedule is published on the official JoSAA website each year."
+  },
+  {
+    "id": 289,
+    "category": "iit_counselling",
+    "question": "What happens in each JoSAA round?",
+    "answer": "In each round, candidates who have registered and paid fees can submit or reorder their college-branch choices. The system allocates seats based on rank, category, quota, and choice order. Candidates must then log in to accept, float, slide, or freeze the allotted seat before the round deadline."
+  },
+  {
+    "id": 290,
+    "category": "iit_counselling",
+    "question": "Who is eligible for JoSAA counselling?",
+    "answer": "Candidates who qualify in JEE Main and/or JEE Advanced (for IITs) and meet the eligibility criteria published for that year can register for JoSAA. Eligibility includes age limits, subject requirements, and qualifying exam criteria as per official notices."
+  },
+  {
+    "id": 291,
+    "category": "iit_counselling",
+    "question": "What is JoSAA registration?",
+    "answer": "JoSAA registration is the mandatory online process where candidates create a counselling account, pay the registration fee, and become eligible to fill choices in the seat allocation rounds. Without registration, a candidate cannot participate in JoSAA counselling."
+  },
+  {
+    "id": 292,
+    "category": "iit_counselling",
+    "question": "What are opening and closing ranks?",
+    "answer": "Opening rank is the best (lowest) rank that received a seat in a particular institute-branch-quota combination in a given round. Closing rank is the worst (highest) rank that still received a seat. They describe historical seat allocation ranges, not personal predictions."
+  },
+  {
+    "id": 293,
+    "category": "iit_counselling",
+    "question": "Where can I find opening and closing ranks?",
+    "answer": "JoSAA publishes round-wise seat allotment statistics on the official portal after each round. These should be checked from official JoSAA data for the relevant year and round."
+  },
+  {
+    "id": 294,
+    "category": "iit_counselling",
+    "question": "Do opening and closing ranks change every round?",
+    "answer": "Yes. As candidates accept, float, slide, or freeze seats, vacancy and competition change, so opening and closing ranks can shift between rounds and between years."
+  },
+  {
+    "id": 295,
+    "category": "iit_counselling",
+    "question": "Can I use last year's closing rank to plan choices?",
+    "answer": "Last year's closing ranks are useful for rough planning only. They are not guarantees for the current year because seat availability, number of applicants, and ranks change annually."
+  },
+  {
+    "id": 296,
+    "category": "iit_counselling",
+    "question": "What is a seat matrix?",
+    "answer": "The seat matrix is the official table listing available seats by institute, branch, category, and quota for JoSAA counselling. It is published on the JoSAA website and should be used together with historical allotment data for choice planning."
+  },
+  {
+    "id": 297,
+    "category": "iit_counselling",
+    "question": "What is home state quota?",
+    "answer": "Home state quota reserves a portion of seats in NITs for candidates whose home state matches the NIT's location. For example, an NIT in a given state may have separate seat pools for home-state and other-state candidates."
+  },
+  {
+    "id": 298,
+    "category": "iit_counselling",
+    "question": "What is other state quota?",
+    "answer": "Other state quota refers to seats in an NIT allocated to candidates from states other than the NIT's home state. Cutoffs and competition can differ between home state and other state quotas for the same branch."
+  },
+  {
+    "id": 299,
+    "category": "iit_counselling",
+    "question": "What are category quotas in JEE counselling?",
+    "answer": "Category quotas include seats reserved for GEN-EWS, OBC-NCL, SC, ST, and PwD candidates as per government rules. Each category has its own merit list and seat allocation rules during JoSAA counselling."
+  },
+  {
+    "id": 300,
+    "category": "iit_counselling",
+    "question": "What is the female supernumerary quota?",
+    "answer": "Some institutes may offer supernumerary seats for female candidates in certain branches as per official policy for that year. Details are published in the JoSAA business rules and institute-specific notices."
+  },
+  {
+    "id": 301,
+    "category": "iit_counselling",
+    "question": "What is PwD quota?",
+    "answer": "PwD (Persons with Disabilities) quota provides reserved seats for eligible candidates with specified disabilities, subject to certificate requirements and horizontal reservation rules defined in the official counselling brochure."
+  },
+  {
+    "id": 302,
+    "category": "iit_counselling",
+    "question": "What is CRL rank?",
+    "answer": "CRL (Common Rank List) rank is your overall rank among all candidates in JEE Main or JEE Advanced, without category reservation. It is used for general category seat allocation and as a reference merit position."
+  },
+  {
+    "id": 303,
+    "category": "iit_counselling",
+    "question": "What is OBC-NCL rank?",
+    "answer": "OBC-NCL rank is the rank of a candidate within the OBC-NCL category list. Seat allocation for OBC-NCL reserved seats uses this category rank, not the CRL rank, subject to eligibility certificate requirements."
+  },
+  {
+    "id": 304,
+    "category": "iit_counselling",
+    "question": "What is category rank?",
+    "answer": "Category rank is the merit position within a specific reserved category such as OBC-NCL, SC, ST, or GEN-EWS. JoSAA uses the appropriate rank type for seat allocation in each category quota."
+  },
+  {
+    "id": 305,
+    "category": "iit_counselling",
+    "question": "What is JEE Advanced rank?",
+    "answer": "JEE Advanced rank is the merit rank assigned to candidates who appear in JEE Advanced. IIT seat allocation is based on JEE Advanced ranks and category ranks as per JoSAA rules for that year."
+  },
+  {
+    "id": 306,
+    "category": "iit_counselling",
+    "question": "What is the difference between CRL and category rank?",
+    "answer": "CRL rank compares you with all candidates nationally. Category rank compares you only within your reserved category. Reserved seats are allotted using category rank; open/general seats use CRL or category rules as published."
+  },
+  {
+    "id": 307,
+    "category": "iit_counselling",
+    "question": "How does JoSAA seat allocation work?",
+    "answer": "JoSAA uses a computerized seat allocation process based on candidate ranks, categories, quotas, seat availability, and choice order. Allotment results are published online after each round for candidates to accept or modify options."
+  },
+  {
+    "id": 308,
+    "category": "iit_counselling",
+    "question": "What is seat acceptance?",
+    "answer": "Seat acceptance is the step where a candidate confirms their allotted seat by choosing freeze, float, or slide within the deadline. Failure to complete this step in time can lead to forfeiture of the allotment for that round."
+  },
+  {
+    "id": 309,
+    "category": "iit_counselling",
+    "question": "What is reporting to an institute?",
+    "answer": "After seat acceptance and payment of fees as required, candidates must complete reporting or admission formalities at the allotted institute within published timelines. Procedures vary by institute and are listed in JoSAA and institute notices."
+  },
+  {
+    "id": 310,
+    "category": "iit_counselling",
+    "question": "What happens if I reject a seat?",
+    "answer": "If you do not accept an allotment or miss deadlines, the seat may be cancelled for that round and you may participate in later rounds if still eligible. Exact consequences are defined in the JoSAA business rules for that year."
+  },
+  {
+    "id": 311,
+    "category": "iit_counselling",
+    "question": "What is seat withdrawal?",
+    "answer": "Seat withdrawal is the formal process to exit an accepted seat under allowed conditions, such as before certain deadlines or when upgrading. Rules and financial implications are specified in official JoSAA documents and should be verified each year."
+  },
+  {
+    "id": 312,
+    "category": "iit_counselling",
+    "question": "What is choice locking?",
+    "answer": "Choice locking is the deadline by which candidates must finalize their preference list for an upcoming allocation round. After locking, choices may not be edited until the next choice-filling window opens."
+  },
+  {
+    "id": 313,
+    "category": "iit_counselling",
+    "question": "What is a mock allotment?",
+    "answer": "Mock allotment is a practice result published by JoSAA before a real round to help candidates understand likely outcomes based on current choices and ranks. It is indicative only and not the final allotment."
+  },
+  {
+    "id": 314,
+    "category": "iit_counselling",
+    "question": "What is a GFTI?",
+    "answer": "GFTI (Government Funded Technical Institute) refers to participating technical institutes in JoSAA other than IITs, NITs, and IIITs. They have separate seat codes in the choice list and follow JoSAA allocation rules."
+  },
+  {
+    "id": 315,
+    "category": "iit_counselling",
+    "question": "What is a spot round?",
+    "answer": "Spot round or special round refers to additional counselling rounds (often under CSAB) to fill vacant seats after regular JoSAA rounds. Rules and participating institutes are announced officially each year."
+  },
+  {
+    "id": 316,
+    "category": "iit_counselling",
+    "question": "What is document verification in counselling?",
+    "answer": "Document verification confirms category certificates, identity, and academic eligibility during admission. Candidates must carry original documents as per institute and JoSAA checklists when reporting for admission."
   }
 ]

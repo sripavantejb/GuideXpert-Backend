@@ -70,6 +70,11 @@ async function main() {
   } else {
     console.log('  counsellorProgramAssistant: (missing — deploy Phase 7 health probe and set CHATBOT_COUNSELLOR_PROGRAM_ASSISTANT_ENABLED=1 on Vercel)');
   }
+  if (health.body?.iitCounsellingExpert) {
+    console.log('  iitCounsellingExpert:', JSON.stringify(health.body.iitCounsellingExpert, null, 2));
+  } else {
+    console.log('  iitCounsellingExpert: (missing — deploy Phase 8 health probe and set CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED=1 on Vercel)');
+  }
 
   const webhook = await postWebhook();
   console.log('\nPOST /webhook/gupshup (no auth)', webhook.status);
