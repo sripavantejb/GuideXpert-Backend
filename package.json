@@ -29,6 +29,7 @@
     "test:llm-reply-local": "node scripts/test-llm-reply-local.js",
     "index:knowledge-base": "node scripts/index-knowledge-base.js",
     "import:iit-counselling-knowledge": "node scripts/import-iit-counselling-knowledge.js",
+    "import:iit-strategy-knowledge": "node scripts/import-iit-strategy-knowledge.js",
     "test:gupshup-webhook": "node --test test/gupshupWebhookFlow.test.js",
     "test:whatsapp-retry-rules": "node --test test/whatsappRetryRules.test.js",
     "test:demo-meet-live-windows": "node --test test/demoMeetLiveWindows.test.js",

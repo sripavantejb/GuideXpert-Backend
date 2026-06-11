@@ -1,7 +1,7 @@
 'use strict';
 
 const { OpenAiCompatibleProvider } = require('../../ai/providers/OpenAiCompatibleProvider');
-const { buildIitCounsellingExpertSystemPrompt } = require('../../ai/prompts/iitCounsellingExpert.system');
+const { buildIitCounsellingStrategySystemPrompt } = require('../../ai/prompts/iitCounsellingStrategy.system');
 const { buildRetrievalQuery } = require('../../../utils/knowledgeQueryBuilder');
 const { aiDebugLog } = require('../aiDebugLog');
 const {
@@ -11,20 +11,20 @@ const {
   DEFAULT_TIMEOUT_MS,
 } = require('../knowledgeAssistantService');
 const { getConversationHistory } = require('../conversationHistoryService');
-const { isIitCounsellingExpertEnabled } = require('./iitCounsellingFlags');
+const { isIitCounsellingStrategyEnabled } = require('./iitCounsellingStrategyFlags');
 const {
-  searchIitCounsellingKnowledge,
-  buildIitCounsellingContext,
+  searchIitCounsellingStrategyKnowledge,
+  buildIitCounsellingStrategyContext,
   resolveDirectKbAnswer,
-} = require('./iitCounsellingKnowledgeService');
+} = require('./iitCounsellingStrategyKnowledgeService');
 const {
-  validateIitCounsellingResponse,
+  validateIitCounsellingStrategyResponse,
   UNKNOWN_FALLBACK,
-} = require('./iitCounsellingGuardrailService');
+} = require('./iitCounsellingStrategyGuardrailService');
 
 const provider = new OpenAiCompatibleProvider();
-const ICE_ANSWER_TIMEOUT_MS =
-  Number(process.env.IIT_COUNSELLING_EXPERT_TIMEOUT_MS) ||
+const ICS_ANSWER_TIMEOUT_MS =
+  Number(process.env.IIT_COUNSELLING_STRATEGY_TIMEOUT_MS) ||
   Number(process.env.KNOWLEDGE_ASSISTANT_TIMEOUT_MS) ||
   DEFAULT_TIMEOUT_MS;
 const LLM_MAX_ATTEMPTS = 2;
@@ -34,7 +34,7 @@ async function loadConversationHistory(conversationId) {
   try {
     return await getConversationHistory({ conversationId, limit: 8 });
   } catch (e) {
-    console.warn('[chatbot] IIT counselling expert history load failed', e.message);
+    console.warn('[chatbot] IIT counselling strategy history load failed', e.message);
     return [];
   }
 }
@@ -53,10 +53,10 @@ async function callLlmWithRetry({ messages, timeoutMs }) {
       if (text) {
         return { result, attempt };
       }
-      console.warn('[chatbot] iit_counselling_expert empty_answer', { attempt });
+      console.warn('[chatbot] iit_counselling_strategy empty_answer', { attempt });
     } catch (error) {
       const reason = /timeout/i.test(error.message) ? 'timeout' : 'provider_error';
-      console.warn('[chatbot] iit_counselling_expert llm_failure', {
+      console.warn('[chatbot] iit_counselling_strategy llm_failure', {
         attempt,
         reason,
         error: error.message,
@@ -74,9 +74,9 @@ async function answer({
   llmTimeoutMs = null,
   languageMetadata = null,
 } = {}) {
-  aiDebugLog('ICE', 'entered iitCounsellingExpertService');
+  aiDebugLog('ICS', 'entered iitCounsellingStrategyService');
 
-  if (!isIitCounsellingExpertEnabled()) {
+  if (!isIitCounsellingStrategyEnabled()) {
     return null;
   }
 
@@ -96,23 +96,23 @@ async function answer({
       removeCurrentInboundFromHistory(rawHistory, text)
     );
     const retrievalQuery = buildRetrievalQuery({ currentMessage: text, history });
-    const retrieval = await searchIitCounsellingKnowledge(text, {
+    const retrieval = await searchIitCounsellingStrategyKnowledge(text, {
       retrievalQuery,
       limit: 5,
     });
-    const unifiedContext = buildIitCounsellingContext({
+    const unifiedContext = buildIitCounsellingStrategyContext({
       knowledgeContext: retrieval.knowledgeContext,
       leadContext,
     });
 
     const messages = [
-      { role: 'system', content: buildIitCounsellingExpertSystemPrompt() },
+      { role: 'system', content: buildIitCounsellingStrategySystemPrompt() },
       { role: 'system', content: unifiedContext },
       ...history,
       { role: 'user', content: text },
     ];
 
-    const llmBudgetMs = llmTimeoutMs || ICE_ANSWER_TIMEOUT_MS;
+    const llmBudgetMs = llmTimeoutMs || ICS_ANSWER_TIMEOUT_MS;
     const llmOutcome = await callLlmWithRetry({ messages, timeoutMs: llmBudgetMs });
     let responseText = llmOutcome?.result?.text || '';
     let answerSource = llmOutcome ? 'llm' : null;
@@ -122,13 +122,13 @@ async function answer({
       if (groundedAnswer) {
         responseText = groundedAnswer;
         answerSource = 'grounded_kb';
-        console.warn('[chatbot] iit_counselling_expert grounded_direct_answer', { query: text });
+        console.warn('[chatbot] iit_counselling_strategy grounded_direct_answer', { query: text });
       }
     }
 
     const knowledgeResults = retrieval.kbResults;
 
-    const guarded = validateIitCounsellingResponse({
+    const guarded = validateIitCounsellingStrategyResponse({
       response: responseText,
       knowledgeResults,
       userMessage: languageMetadata?.originalMessage || text,
@@ -150,7 +150,7 @@ async function answer({
       },
     };
   } catch (e) {
-    console.warn('[chatbot] iit_counselling_expert error', e.message);
+    console.warn('[chatbot] iit_counselling_strategy error', e.message);
     return null;
   }
 }
@@ -169,7 +169,7 @@ async function runAnswerWithTimeout(params, timeoutMs) {
   const timeoutPromise = new Promise((_, reject) => {
     setTimeout(() => {
       timedOut = true;
-      reject(new Error('iit_counselling_expert_timeout'));
+      reject(new Error('iit_counselling_strategy_timeout'));
     }, timeoutMs);
   });
 
@@ -177,12 +177,12 @@ async function runAnswerWithTimeout(params, timeoutMs) {
     return await Promise.race([answerPromise, timeoutPromise]);
   } catch (e) {
     const reason = /timeout/i.test(e.message) ? 'timeout' : 'provider_error';
-    console.warn('[chatbot] iit_counselling_expert_fallback', { reason, error: e.message });
+    console.warn('[chatbot] iit_counselling_strategy_fallback', { reason, error: e.message });
     return null;
   }
 }
 
-async function answerWithTimeout(params, timeoutMs = ICE_ANSWER_TIMEOUT_MS) {
+async function answerWithTimeout(params, timeoutMs = ICS_ANSWER_TIMEOUT_MS) {
   const maxAttempts = 2;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -191,7 +191,7 @@ async function answerWithTimeout(params, timeoutMs = ICE_ANSWER_TIMEOUT_MS) {
       return result;
     }
     if (attempt < maxAttempts) {
-      console.warn('[chatbot] iit_counselling_expert_retry', {
+      console.warn('[chatbot] iit_counselling_strategy_retry', {
         attempt,
         reason: 'timeout_or_null',
       });
@@ -205,5 +205,5 @@ module.exports = {
   answer,
   answerWithTimeout,
   callLlmWithRetry,
-  ICE_ANSWER_TIMEOUT_MS,
+  ICS_ANSWER_TIMEOUT_MS,
 };

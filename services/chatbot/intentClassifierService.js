@@ -6,6 +6,13 @@ const {
   isIitCounsellingExpertSessionActive,
   isIitCounsellingExpertQuestion,
 } = require('./iitCounsellingExpert/iitCounsellingIntentService');
+const {
+  isIitCounsellingStrategyEnabled,
+} = require('./iitCounsellingStrategy/iitCounsellingStrategyFlags');
+const {
+  isIitCounsellingStrategySessionActive,
+  isIitCounsellingStrategyQuestion,
+} = require('./iitCounsellingStrategy/iitCounsellingStrategyIntentService');
 
 const MENU_COMMAND_WORDS = ['menu', 'help', 'start'];
 
@@ -402,6 +409,22 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     const intentReason = romanizedTeluguGreeting ? 'romanized_telugu_greeting' : 'social_greeting';
     logIntentDebug({ message: original, intent: 'greeting', reason: intentReason });
     return { intent: 'greeting', confidence: 'high', intentReason };
+  }
+
+  if (isIitCounsellingStrategyEnabled() && isIitCounsellingStrategySessionActive(botState)) {
+    return {
+      intent: 'iit_counselling_strategy',
+      confidence: 'medium',
+      intentReason: 'iit_counselling_strategy_session_active',
+    };
+  }
+
+  if (isIitCounsellingStrategyQuestion(t, original)) {
+    return {
+      intent: 'iit_counselling_strategy',
+      confidence: 'medium',
+      intentReason: 'iit_counselling_strategy_question',
+    };
   }
 
   if (isRomanizedTeluguBranchGuidanceQuery(original) || isRomanizedTeluguBranchGuidanceQuery(t)) {

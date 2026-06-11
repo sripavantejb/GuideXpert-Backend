@@ -5,17 +5,17 @@ const knowledgeSearchService = require('../knowledgeSearchService');
 const { normalizeText } = require('../intentClassifierService');
 const {
   ALLOWED_KB_CATEGORIES,
-  SHORT_IIT_QUERY_EXPANSIONS,
+  SHORT_STRATEGY_QUERY_EXPANSIONS,
   TOPIC_FALLBACK_PATTERNS,
-} = require('./iitCounsellingConstants');
+} = require('./iitCounsellingStrategyConstants');
 
-function expandIitQuery(query) {
+function expandStrategyQuery(query) {
   const normalized = normalizeText(query);
   if (!normalized) return query;
-  return SHORT_IIT_QUERY_EXPANSIONS[normalized] || query;
+  return SHORT_STRATEGY_QUERY_EXPANSIONS[normalized] || query;
 }
 
-function filterIitCounsellingKbResults(results = []) {
+function filterStrategyKbResults(results = []) {
   return results.filter((entry) =>
     ALLOWED_KB_CATEGORIES.has(String(entry.category || '').toLowerCase())
   );
@@ -43,9 +43,9 @@ function normalizeQuestionKey(value) {
     .trim();
 }
 
-function searchKeywordIitCounselling(query, recallLimit = 20) {
+function searchKeywordStrategy(query, recallLimit = 20) {
   const keywordResults = knowledgeSearchService.searchKnowledgeKeyword(query, recallLimit);
-  return filterIitCounsellingKbResults(keywordResults);
+  return filterStrategyKbResults(keywordResults);
 }
 
 function resolveTopicFallbackChunks(query) {
@@ -104,9 +104,9 @@ function resolveDirectKbAnswer(kbResults = [], userMessage = '') {
   return null;
 }
 
-async function searchIitCounsellingKnowledge(query, { retrievalQuery, limit = 5 } = {}) {
+async function searchIitCounsellingStrategyKnowledge(query, { retrievalQuery, limit = 5 } = {}) {
   const text = String(query || '').trim();
-  const expandedQuery = expandIitQuery(text);
+  const expandedQuery = expandStrategyQuery(text);
   const searchText = expandedQuery !== text ? expandedQuery : text;
   const recallLimit = Math.max(limit * 4, 20);
   const stages = [];
@@ -117,7 +117,7 @@ async function searchIitCounsellingKnowledge(query, { retrievalQuery, limit = 5 
     recallLimit,
   });
 
-  let kbResults = filterIitCounsellingKbResults(results).slice(0, limit);
+  let kbResults = filterStrategyKbResults(results).slice(0, limit);
   stages.push({
     stage: 'hybrid_filtered',
     count: kbResults.length,
@@ -125,17 +125,17 @@ async function searchIitCounsellingKnowledge(query, { retrievalQuery, limit = 5 
     scores: kbResults.map((entry) => entry.score ?? entry.keywordScore ?? null),
   });
 
-  const keywordIit = searchKeywordIitCounselling(searchText, recallLimit);
-  kbResults = mergeKbResults(kbResults, keywordIit, limit);
+  const keywordHits = searchKeywordStrategy(searchText, recallLimit);
+  kbResults = mergeKbResults(kbResults, keywordHits, limit);
   stages.push({
     stage: 'keyword_merge',
-    count: keywordIit.length,
-    resultIds: keywordIit.map((entry) => entry.id),
-    scores: keywordIit.map((entry) => entry.score ?? entry.keywordScore ?? null),
+    count: keywordHits.length,
+    resultIds: keywordHits.map((entry) => entry.id),
+    scores: keywordHits.map((entry) => entry.score ?? entry.keywordScore ?? null),
   });
 
   if (!kbResults.length && searchText !== text) {
-    const keywordExpanded = searchKeywordIitCounselling(expandedQuery, recallLimit);
+    const keywordExpanded = searchKeywordStrategy(expandedQuery, recallLimit);
     kbResults = mergeKbResults(kbResults, keywordExpanded, limit);
     stages.push({
       stage: 'keyword_expanded',
@@ -155,12 +155,12 @@ async function searchIitCounsellingKnowledge(query, { retrievalQuery, limit = 5 
       scores: kbResults.map((entry) => entry.score ?? null),
     });
     metrics.retrievalFallback = 'topic';
-  } else if (!filterIitCounsellingKbResults(results).length) {
+  } else if (!filterStrategyKbResults(results).length) {
     metrics.retrievalFallback = metrics.vectorCount === 0 ? 'keyword' : 'keyword_merge';
   }
 
   metrics.stages = stages;
-  metrics.keywordIitCount = keywordIit.length;
+  metrics.keywordStrategyCount = keywordHits.length;
 
   return {
     kbResults,
@@ -169,7 +169,7 @@ async function searchIitCounsellingKnowledge(query, { retrievalQuery, limit = 5 
   };
 }
 
-function buildIitCounsellingContext({ knowledgeContext, leadContext } = {}) {
+function buildIitCounsellingStrategyContext({ knowledgeContext, leadContext } = {}) {
   const blocks = [];
 
   if (leadContext?.productLine) {
@@ -178,7 +178,7 @@ function buildIitCounsellingContext({ knowledgeContext, leadContext } = {}) {
   if (knowledgeContext) {
     blocks.push(`Knowledge Context:\n${knowledgeContext}`);
   } else {
-    blocks.push('Knowledge Context: No matching IIT counselling entries were found.');
+    blocks.push('Knowledge Context: No matching IIT counselling strategy entries were found.');
   }
 
   return blocks.join('\n\n');
@@ -186,12 +186,12 @@ function buildIitCounsellingContext({ knowledgeContext, leadContext } = {}) {
 
 module.exports = {
   ALLOWED_KB_CATEGORIES,
-  expandIitQuery,
-  filterIitCounsellingKbResults,
+  expandStrategyQuery,
+  filterStrategyKbResults,
   mergeKbResults,
-  searchKeywordIitCounselling,
+  searchKeywordStrategy,
   resolveTopicFallbackChunks,
   resolveDirectKbAnswer,
-  searchIitCounsellingKnowledge,
-  buildIitCounsellingContext,
+  searchIitCounsellingStrategyKnowledge,
+  buildIitCounsellingStrategyContext,
 };

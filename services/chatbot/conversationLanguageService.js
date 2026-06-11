@@ -68,6 +68,83 @@ function isShortIitCounsellingFollowUp(message) {
   );
 }
 
+function isShortIitCounsellingStrategyFollowUp(message) {
+  const text = String(message || '').trim();
+  if (!text) return false;
+  if (/^(placements?|coding|branch|college)\s*[.!?]?$/i.test(text)) return true;
+  return (
+    /\b(placements?|coding|better|safer|useful|prefer|branch|college|nachite|leda|ya|pasand)\b/i.test(text) ||
+    /\bwhat if i\b/i.test(text) ||
+    /\bwhich (has|is)\b/i.test(text) ||
+    /\bcoding\s+nachite\b/i.test(text) ||
+    /\bbranch kaun sa better\b/i.test(text)
+  );
+}
+
+function resolveIitCounsellingStrategySessionAwareLanguage({
+  conversation,
+  leadContext,
+  detected = {},
+  message = '',
+  sessionLanguage = null,
+} = {}) {
+  const session = normalizeLanguageCode(sessionLanguage);
+  if (!session || session === DEFAULT_LANGUAGE || !isSupportedLanguage(session)) {
+    return resolveConversationLanguage(conversation, leadContext, detected, message);
+  }
+
+  if (isExplicitEnglishMenuGreeting(message)) {
+    return resolveConversationLanguage(conversation, leadContext, detected, message);
+  }
+
+  if (isRomanizedTeluguSocialGreeting(message)) {
+    return resolveConversationLanguage(conversation, leadContext, detected, message);
+  }
+
+  const detectedLang = normalizeLanguageCode(detected.language);
+  const confidence = Number(detected.confidence) || 0;
+  const minConfidence = getMinConfidence();
+  if (
+    detectedLang &&
+    detectedLang !== DEFAULT_LANGUAGE &&
+    isSupportedLanguage(detectedLang) &&
+    confidence >= minConfidence &&
+    detectedLang !== session
+  ) {
+    return {
+      language: detectedLang,
+      source: 'iit_counselling_strategy_session',
+      resolutionReason: 'iit_counselling_strategy_language_detected',
+    };
+  }
+
+  if (isShortIitCounsellingStrategyFollowUp(message) || isAmbiguousMessage(message)) {
+    return {
+      language: session,
+      source: 'iit_counselling_strategy_session',
+      resolutionReason: 'iit_counselling_strategy_session_language',
+    };
+  }
+
+  const base = resolveConversationLanguage(conversation, leadContext, detected, message);
+  if (
+    base.resolutionReason === 'explicit_english_greeting' ||
+    base.resolutionReason === 'explicit_telugu_greeting'
+  ) {
+    return base;
+  }
+
+  if (base.language === DEFAULT_LANGUAGE && base.resolutionReason === 'high_confidence_detection') {
+    return {
+      language: session,
+      source: 'iit_counselling_strategy_session',
+      resolutionReason: 'iit_counselling_strategy_session_language',
+    };
+  }
+
+  return base;
+}
+
 function resolveIitCounsellingSessionAwareLanguage({
   conversation,
   leadContext,
@@ -331,7 +408,9 @@ module.exports = {
   isAmbiguousMessage,
   isShortCpaFollowUp,
   isShortIitCounsellingFollowUp,
+  isShortIitCounsellingStrategyFollowUp,
   resolveIitCounsellingSessionAwareLanguage,
+  resolveIitCounsellingStrategySessionAwareLanguage,
   isExplicitEnglishMenuGreeting,
   updatePreferredLanguage,
   seedPreferredLanguageFromLead,

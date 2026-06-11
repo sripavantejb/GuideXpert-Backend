@@ -1894,5 +1894,371 @@
     "category": "iit_counselling",
     "question": "What is document verification in counselling?",
     "answer": "Document verification confirms category certificates, identity, and academic eligibility during admission. Candidates must carry original documents as per institute and JoSAA checklists when reporting for admission."
+  },
+  {
+    "id": 317,
+    "category": "iit_counselling",
+    "question": "What is GEN-EWS rank?",
+    "answer": "GEN-EWS rank is the merit position of a General category candidate who qualifies under the Economically Weaker Section (EWS) reservation. EWS reserved seats in JoSAA are allotted using this GEN-EWS category rank, not the CRL rank, when the candidate has a valid EWS certificate."
+  },
+  {
+    "id": 318,
+    "category": "iit_counselling",
+    "question": "What is SC rank?",
+    "answer": "SC rank is the category rank of a candidate within the Scheduled Caste (SC) merit list. Reserved seats for SC candidates are allocated using this SC category rank according to JoSAA rules for that admission year."
+  },
+  {
+    "id": 319,
+    "category": "iit_counselling",
+    "question": "What is ST rank?",
+    "answer": "ST rank is the category rank of a candidate within the Scheduled Tribe (ST) merit list. ST reserved seats are allotted based on this ST category rank, separate from CRL and other category ranks."
+  },
+  {
+    "id": 320,
+    "category": "iit_counselling_strategy",
+    "question": "Is branch sliding useful?",
+    "answer": "Branch sliding can be useful when you are happy with your institute but want a higher-preference branch there. It is less useful if your main goal is to change institutes. Evaluate whether remaining branches at the same college are meaningfully better for you."
+  },
+  {
+    "id": 321,
+    "category": "iit_counselling_strategy",
+    "question": "When should I slide vs float?",
+    "answer": "Float can change both institute and branch if a higher overall preference is allotted. Slide focuses on branch improvement within the same institute. Choose slide when the institute is right but branch is not; choose float when a better institute-branch combination is still possible."
+  },
+  {
+    "id": 322,
+    "category": "iit_counselling_strategy",
+    "question": "Should I slide if I already have a decent branch?",
+    "answer": "Sliding only makes sense if higher branches on your list at that institute are significantly better for your goals. If current branch already matches your plan, freezing may be simpler than chasing small upgrades."
+  },
+  {
+    "id": 323,
+    "category": "iit_counselling_strategy",
+    "question": "What are risks of relying on branch sliding?",
+    "answer": "You may not get the upgraded branch if seats do not open in your category and quota. Always maintain a realistic choice list and meet reporting deadlines. Do not assume sliding will automatically improve outcomes."
+  },
+  {
+    "id": 324,
+    "category": "iit_counselling_strategy",
+    "question": "How do I order choices to support sliding strategy?",
+    "answer": "Group strong institute-branch combinations together and place preferred branches at the same institute above weaker branches there. Official choice ordering rules should be followed as published on the JoSAA portal each year."
+  },
+  {
+    "id": 325,
+    "category": "iit_counselling_strategy",
+    "question": "Should I prioritize branch or college?",
+    "answer": "Prioritize based on your career direction and rank reality. If you are clear about a field (for example software, electronics, or mechanical design), branch often matters more. If you are flexible and value alumni network or campus exposure, a stronger college with an acceptable branch may work better."
+  },
+  {
+    "id": 326,
+    "category": "iit_counselling_strategy",
+    "question": "Branch or college — which matters more for placements?",
+    "answer": "Placements are influenced by both, but branch choice often shapes which roles you can target naturally. A top college with a branch misaligned to your interests can be harder to sustain. Use placement reports as context, not guarantees."
+  },
+  {
+    "id": 327,
+    "category": "iit_counselling_strategy",
+    "question": "When is college brand more important than branch?",
+    "answer": "College brand may matter more when branches are similar, you value peer network and research exposure broadly, or you plan higher studies where institute reputation helps. It is less helpful if you strongly dislike the branch you accepted."
+  },
+  {
+    "id": 328,
+    "category": "iit_counselling_strategy",
+    "question": "When should branch come first in JoSAA choices?",
+    "answer": "Put branch first when you have a clear interest (coding, core engineering, design) and would be unhappy in another field. Order choices so that preferred branches at realistic institutes appear above higher-brand but unwanted branches."
+  },
+  {
+    "id": 329,
+    "category": "iit_counselling_strategy",
+    "question": "How do I balance parents wanting college and my branch preference?",
+    "answer": "Discuss trade-offs openly: branch affects daily study and career direction; college affects environment and network. List pros and cons for each realistic option from the official seat matrix and involve a counsellor for neutral guidance."
+  },
+  {
+    "id": 330,
+    "category": "iit_counselling_strategy",
+    "question": "Should I prefer circuit branches?",
+    "answer": "Circuit branches (CSE, ECE, EEE, IT) often align with software, electronics, and power industries. Prefer them if you want computing or electronics careers. Non-circuit branches suit students interested in civil, chemical, mechanical, or other core domains. Match branch to interest, not hype."
+  },
+  {
+    "id": 331,
+    "category": "iit_counselling_strategy",
+    "question": "ECE vs EEE — which should I choose?",
+    "answer": "ECE typically covers electronics and communication with software interfaces. EEE focuses on electrical machines, power systems, and energy. Choose ECE for broader electronics and communication paths; EEE if power and electrical systems interest you more."
+  },
+  {
+    "id": 332,
+    "category": "iit_counselling_strategy",
+    "question": "Are circuit branches always better for placements?",
+    "answer": "Circuit branches often see larger tech hiring pools, but outcomes still depend on institute, skills, and market conditions. Core branches can also have strong placements in relevant industries. Avoid treating \"circuit\" as a guarantee."
+  },
+  {
+    "id": 333,
+    "category": "iit_counselling_strategy",
+    "question": "Should I take ECE if I missed CSE?",
+    "answer": "ECE can be a strong alternative for students interested in electronics who may also pursue software through projects. It is weaker as a choice if you dislike hardware subjects and only want CSE for placement pressure."
+  },
+  {
+    "id": 334,
+    "category": "iit_counselling_strategy",
+    "question": "Is IT the same as CSE for career planning?",
+    "answer": "IT and CSE overlap in software careers at many institutes, but curricula and department focus may differ. Compare official course structures at the specific institute before assuming they are identical."
+  },
+  {
+    "id": 335,
+    "category": "iit_counselling_strategy",
+    "question": "What are common JoSAA counselling mistakes?",
+    "answer": "Common mistakes include: filling choices based on hearsay cutoffs, freezing too early out of fear, ignoring quota and category rules, not reading reporting deadlines, and chasing only brand without branch fit. Use official JoSAA data and counsellor guidance."
+  },
+  {
+    "id": 336,
+    "category": "iit_counselling_strategy",
+    "question": "Is freezing too early a mistake?",
+    "answer": "It can be if you might still get significantly better preferences in later rounds and your rank historically moves into those seats. It is not a mistake if your current seat is already a top realistic choice and further waiting adds stress without likely benefit."
+  },
+  {
+    "id": 337,
+    "category": "iit_counselling_strategy",
+    "question": "Is chasing college brand over branch a mistake?",
+    "answer": "It often becomes a mistake when students dislike the branch they accepted and struggle academically or switch paths later. Brand helps, but four years of the wrong field is costly. Align brand with genuine interest."
+  },
+  {
+    "id": 338,
+    "category": "iit_counselling_strategy",
+    "question": "Is ignoring home state and other state quota a mistake?",
+    "answer": "Yes. Quota rules affect which seats you compete for at NITs and other institutes. Candidates who ignore quota may misunderstand why certain options are or are not reachable. Check official quota definitions in the brochure."
+  },
+  {
+    "id": 339,
+    "category": "iit_counselling_strategy",
+    "question": "Should I rely on social media cutoff posts?",
+    "answer": "Relying on unverified social media cutoffs is risky. Use official JoSAA opening and closing ranks from the portal. Informal numbers may be wrong, outdated, or for a different category or quota."
+  },
+  {
+    "id": 340,
+    "category": "iit_counselling_strategy",
+    "question": "Should I choose CSE or ECE?",
+    "answer": "Choose CSE if your primary interest is software, algorithms, and computing careers. Choose ECE if you are drawn to electronics, signals, embedded systems, and hardware-software interfaces. Both can lead to tech careers, but the daily coursework and default pathways differ."
+  },
+  {
+    "id": 341,
+    "category": "iit_counselling_strategy",
+    "question": "CSE vs ECE — which has better placements?",
+    "answer": "Both branches can lead to strong placement opportunities at good institutes, but CSE pools often align more directly with mass software hiring. ECE students may pursue core electronics, embedded, or software roles with extra preparation. No branch guarantees a specific package."
+  },
+  {
+    "id": 342,
+    "category": "iit_counselling_strategy",
+    "question": "What if I like coding — should I still consider ECE?",
+    "answer": "If coding is your main passion, CSE or IT is usually the more direct fit. ECE can still work if you enjoy hardware and plan to self-learn software, but be honest about whether you will enjoy ECE core courses. Interest sustains performance."
+  },
+  {
+    "id": 343,
+    "category": "iit_counselling_strategy",
+    "question": "Is ECE a good backup if I miss CSE?",
+    "answer": "ECE can be a reasonable backup when CSE is unavailable at your target institutes, especially if you like electronics. Avoid choosing ECE only because of pressure if you dislike the subjects — branch regret is common in counselling."
+  },
+  {
+    "id": 344,
+    "category": "iit_counselling_strategy",
+    "question": "CSE vs ECE for higher studies abroad?",
+    "answer": "Both can support higher studies depending on your projects, grades, and research exposure. CSE may align with MS in computer science; ECE with electrical/electronics programs. Plan early if higher studies are a goal."
+  },
+  {
+    "id": 345,
+    "category": "iit_counselling_strategy",
+    "question": "CSE vs Mechanical — how do I choose?",
+    "answer": "CSE suits students interested in programming, software systems, and digital careers. Mechanical suits those interested in machines, thermodynamics, design, and manufacturing. The choice should reflect what you enjoy studying, not only short-term placement trends."
+  },
+  {
+    "id": 346,
+    "category": "iit_counselling_strategy",
+    "question": "Which branch is safer for tech jobs — CSE or Mechanical?",
+    "answer": "CSE often has a larger volume of software-oriented campus roles at many institutes. Mechanical students can move into software with effort, or pursue core mechanical, automotive, and design roles. \"Safer\" depends on your skills and target industry, not universal rules."
+  },
+  {
+    "id": 347,
+    "category": "iit_counselling_strategy",
+    "question": "Should I take Mechanical at a top IIT over CSE at a lower institute?",
+    "answer": "If you genuinely want mechanical engineering, a top IIT mechanical program can be excellent. If you want software careers but are taking mechanical only for the IIT tag, consider whether you will invest years in a field you dislike. Branch fit matters."
+  },
+  {
+    "id": 348,
+    "category": "iit_counselling_strategy",
+    "question": "Can Mechanical students switch to software careers?",
+    "answer": "Many do through self-learning, projects, and internships, but it requires extra work outside core curriculum. If software is your goal, CSE is the more direct path unless mechanical is a strong personal interest."
+  },
+  {
+    "id": 349,
+    "category": "iit_counselling_strategy",
+    "question": "How do I discuss CSE vs Mechanical with family?",
+    "answer": "Explain that both are respected but lead to different daily work. Share official curriculum summaries and alumni pathways without promising specific salaries. A counsellor can help align family expectations with realistic options at your rank."
+  },
+  {
+    "id": 350,
+    "category": "iit_counselling_strategy",
+    "question": "When should I use float?",
+    "answer": "Use float when you accept your current allotment but still want a chance at a higher preference in later rounds, and you understand you must complete round formalities on time. Float keeps you in the upgradation process while holding the current seat provisionally."
+  },
+  {
+    "id": 351,
+    "category": "iit_counselling_strategy",
+    "question": "When should I freeze?",
+    "answer": "Freeze when you are satisfied with your allotted seat and do not want further upgradation attempts. Freezing is appropriate when further rounds are unlikely to improve your outcome meaningfully or when the risk of losing a good seat outweighs possible gains."
+  },
+  {
+    "id": 352,
+    "category": "iit_counselling_strategy",
+    "question": "Which JoSAA option is safer — float or freeze?",
+    "answer": "Freeze is safer if you want certainty and your current seat is already a strong fit. Float carries strategic upside if better preferences might open, but requires careful tracking of deadlines and reporting rules. Safety depends on your rank range and remaining preferences, not a universal rule."
+  },
+  {
+    "id": 353,
+    "category": "iit_counselling_strategy",
+    "question": "Should I float if I got a lower preference branch?",
+    "answer": "Floating can make sense if higher preferences might still be reachable in upcoming rounds based on official trends — without treating past data as a guarantee. If the gap is large and preferences above are unlikely, freezing may reduce stress."
+  },
+  {
+    "id": 354,
+    "category": "iit_counselling_strategy",
+    "question": "When should I use slide instead of float?",
+    "answer": "Slide (branch sliding) applies when you want to remain at the same institute but seek a better branch. Use it when institute matters more than branch change across colleges. Follow official JoSAA definitions for the current year."
+  },
+  {
+    "id": 355,
+    "category": "iit_counselling_strategy",
+    "question": "IIT vs IIIT — what are the trade-offs?",
+    "answer": "IITs are comprehensive engineering institutes with broad departments and long-established ecosystems. IIITs often focus more on computer science and IT, sometimes with different funding models and fee structures. Compare curriculum, fees, campus life, and branch availability for your rank."
+  },
+  {
+    "id": 356,
+    "category": "iit_counselling_strategy",
+    "question": "When does an IIIT make sense over an IIT?",
+    "answer": "An IIIT may make sense when you want a computing-focused environment and your rank gives you a strong CSE or IT seat at a reputed IIIT while IIT options are lower-preference branches. Review institute type (government, PPP, private) and official fee details in the JoSAA seat matrix."
+  },
+  {
+    "id": 357,
+    "category": "iit_counselling_strategy",
+    "question": "Should I choose IIIT Hyderabad over a lower IIT?",
+    "answer": "If your primary goal is computer science depth and IIIT Hyderabad offers a strong program at your rank, it can be a rational choice. If you value the broader IIT ecosystem or a different branch, a lower IIT may still fit. Avoid deciding only on popular opinion — check official program details."
+  },
+  {
+    "id": 358,
+    "category": "iit_counselling_strategy",
+    "question": "Are IIIT placements comparable to IITs?",
+    "answer": "Placement outcomes vary by institute, branch, and batch. Some IIITs report strong tech placements, but comparisons should use official placement data without assuming guarantees. Focus on whether the institute supports your intended career path."
+  },
+  {
+    "id": 359,
+    "category": "iit_counselling_strategy",
+    "question": "What should I check before choosing an IIIT in JoSAA?",
+    "answer": "Verify institute category, fees, hostel costs, branch curriculum, and location. Some IIITs have different rules or dual-degree options. Read the official JoSAA brochure and seat matrix rather than relying on informal cutoff rumors."
+  },
+  {
+    "id": 360,
+    "category": "iit_counselling_strategy",
+    "question": "Which is better, IIT or NIT?",
+    "answer": "There is no single answer for every student. IITs generally offer strong brand recognition and JEE Advanced-level peer groups, while top NITs can offer excellent branches at ranks where IIT options may be limited. Compare available branches, campus, fees, and your career goals rather than assuming one label is always better."
+  },
+  {
+    "id": 361,
+    "category": "iit_counselling_strategy",
+    "question": "When should I prefer an NIT over an IIT?",
+    "answer": "Consider preferring a strong NIT when your rank gives you a much better branch at an NIT than a lower-preference branch at an IIT. If your priority is a specific branch (for example CSE) and the IIT option is a less preferred branch or remote campus, a top NIT with that branch may be a better fit."
+  },
+  {
+    "id": 362,
+    "category": "iit_counselling_strategy",
+    "question": "IIT or NIT — which should I choose for placements?",
+    "answer": "Placements depend on branch, campus culture, student effort, and opportunities — not just the IIT or NIT tag. Circuit branches at reputed institutes often have strong placement ecosystems, but no institute guarantees a specific company or package. Use official placement reports as reference, not promises."
+  },
+  {
+    "id": 363,
+    "category": "iit_counselling_strategy",
+    "question": "Is brand name more important than branch at IIT vs NIT?",
+    "answer": "Brand can help with initial visibility, but branch and skills often matter more for long-term career direction. A student strongly interested in software roles may prioritize CSE or related branches; someone interested in core engineering may accept a different trade-off. Align brand with branch fit."
+  },
+  {
+    "id": 364,
+    "category": "iit_counselling_strategy",
+    "question": "How do I compare IIT Hyderabad ECE vs NIT Trichy CSE?",
+    "answer": "Compare branch interest, curriculum focus, campus environment, and your rank comfort with each choice. ECE keeps hardware and electronics pathways open; CSE is more software-focused. Neither choice guarantees a specific outcome — weigh which branch aligns with your interests and whether you value the IIT tag enough to take ECE over NIT CSE."
+  },
+  {
+    "id": 365,
+    "category": "iit_counselling_strategy",
+    "question": "Should I wait for later JoSAA rounds?",
+    "answer": "Waiting can help if your rank may reach higher preferences in later rounds based on historical movement patterns — but past movement is not a guarantee. Consider how close your rank is to official published data and whether you can accept interim seats with float."
+  },
+  {
+    "id": 366,
+    "category": "iit_counselling_strategy",
+    "question": "How should I order my JoSAA choice list?",
+    "answer": "Place choices in true preference order: institute-branch combinations you would actually accept, from most to least desired. Avoid putting unrealistic dream options far above safe accepts without understanding round dynamics."
+  },
+  {
+    "id": 367,
+    "category": "iit_counselling_strategy",
+    "question": "Is early round acceptance a mistake?",
+    "answer": "Accepting in an early round is not automatically wrong if the seat is already among your top realistic preferences. Waiting for perfect outcomes can backfire if preferences do not materialize. Balance ambition with acceptable backups."
+  },
+  {
+    "id": 368,
+    "category": "iit_counselling_strategy",
+    "question": "What is a safe vs ambitious choice list strategy?",
+    "answer": "Include a mix: a few ambitious choices, several realistic targets, and safe accepts you can live with. Safe does not mean lowest only — it means options aligned with your rank band using official data, not rumors."
+  },
+  {
+    "id": 369,
+    "category": "iit_counselling_strategy",
+    "question": "When should I consider CSAB in my strategy?",
+    "answer": "Consider CSAB if you still have realistic preferences among NITs, IIITs, or CFTIs after JoSAA regular rounds and vacant seats match your goals. CSAB is not a substitute for careful JoSAA choice filling. Read the official CSAB brochure each year."
+  },
+  {
+    "id": 370,
+    "category": "iit_counselling_strategy",
+    "question": "Placements vs interest — which should I prioritize?",
+    "answer": "Prioritize interest when you know which field you want to study for four years; strong performance follows genuine interest. Consider placements as one factor among curriculum, campus, and career direction — not the only factor. Official placement reports are references, not guarantees."
+  },
+  {
+    "id": 371,
+    "category": "iit_counselling_strategy",
+    "question": "What if I like coding — which branch should I choose?",
+    "answer": "If coding is your primary interest, CSE or IT is usually the most direct path. ECE can work only if you also enjoy electronics coursework and plan extra software projects. Choose based on what you will enjoy studying daily, not only short-term trends."
+  },
+  {
+    "id": 372,
+    "category": "iit_counselling_strategy",
+    "question": "Should I use slide?",
+    "answer": "Use slide when you accept your current institute but want a better branch there in later rounds. It is not for changing institutes. Compare slide with float based on whether you want to keep the same college while seeking branch upgradation."
+  },
+  {
+    "id": 373,
+    "category": "iit_counselling_strategy",
+    "question": "When to float in JoSAA counselling?",
+    "answer": "Float when your allotted seat is acceptable for now but you still want a shot at a higher preference in upcoming rounds. Confirm you can meet reporting deadlines and understand that float keeps you in the upgradation pool."
+  },
+  {
+    "id": 374,
+    "category": "iit_counselling_strategy",
+    "question": "When to freeze in JoSAA counselling?",
+    "answer": "Freeze when you are content with the allotted seat and do not want to risk losing it for uncertain upgrades. This is often wise when further improvement is unlikely for your rank band."
+  },
+  {
+    "id": 375,
+    "category": "iit_counselling_strategy",
+    "question": "Coding nachite — which branch is better?",
+    "answer": "If you like coding (coding nachite), CSE or IT is usually the better fit because the core curriculum aligns with software development. ECE is an option only if you also like electronics subjects and will invest in coding through projects alongside core courses."
+  },
+  {
+    "id": 376,
+    "category": "iit_counselling_strategy",
+    "question": "CSE leda ECE — which branch should I choose?",
+    "answer": "CSE leda ECE (CSE or ECE) is a common choice dilemma. Pick CSE if software and coding are your main interests. Pick ECE if you enjoy electronics and embedded systems and may pursue software roles with extra project work. Compare official curricula at your target institutes before deciding."
+  },
+  {
+    "id": 377,
+    "category": "iit_counselling_strategy",
+    "question": "Coding pasand ho to — which branch should I choose?",
+    "answer": "If coding pasand ho (you like coding), CSE or IT is usually the better branch because daily coursework aligns with software skills. ECE works only if you also enjoy electronics subjects and will build coding skills through projects outside core classes."
   }
 ]
