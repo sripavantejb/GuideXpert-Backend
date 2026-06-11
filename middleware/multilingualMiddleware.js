@@ -16,6 +16,7 @@ const { assertReplyLanguage } = require('../utils/replyLanguageVerifier');
 const {
   resolveConversationLanguage,
   recordDetectedLanguage,
+  updatePreferredLanguage,
 } = require('../services/chatbot/conversationLanguageService');
 const { normalizeLanguageCode } = require('../constants/languageConstants');
 
@@ -68,7 +69,11 @@ async function prepareMultilingualInbound({ message, conversation, leadContext }
 
   if (conversation?._id) {
     try {
-      await recordDetectedLanguage(conversation._id, detection.language, detection.confidence);
+      if (resolved.resolutionReason === 'explicit_english_greeting') {
+        await updatePreferredLanguage(conversation._id, 'en');
+      } else {
+        await recordDetectedLanguage(conversation._id, detection.language, detection.confidence);
+      }
     } catch (err) {
       aiDebugLog('LANG', 'recordDetectedLanguage failed', err.message);
     }

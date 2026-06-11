@@ -68,5 +68,17 @@ describe('conversationLanguageService', () => {
     assert.equal(isAmbiguousMessage('thanks'), true);
     assert.equal(isAmbiguousMessage('👍'), true);
     assert.equal(isAmbiguousMessage('How are you?'), false);
+    assert.equal(isAmbiguousMessage('hi'), false);
+  });
+
+  test('explicit English greeting hi switches to English over stored Telugu', () => {
+    const result = resolveConversationLanguage(
+      { preferredLanguage: 'te' },
+      { iit: { preferredLanguage: 'Telugu' } },
+      { language: 'en', confidence: 0.5 },
+      'hi'
+    );
+    assert.equal(result.language, 'en');
+    assert.equal(result.resolutionReason, 'explicit_english_greeting');
   });
 });

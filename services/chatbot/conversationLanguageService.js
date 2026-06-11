@@ -6,6 +6,9 @@ const { normalizeLanguageCode, isSupportedLanguage } = require('../../constants/
 
 const DEFAULT_LANGUAGE = 'en';
 
+const EXPLICIT_ENGLISH_MENU_GREETING_PATTERN =
+  /^(hi|hello|hey|hola|start|menu|help)$/i;
+
 const AMBIGUOUS_ACK_PATTERN =
   /^(ok|okay|k|yes|yeah|yep|yup|no|nope|fine|thanks|thank you|thx|cool|sure|got it|👍|🙏|👌)\s*[.!?]?$/i;
 
@@ -22,11 +25,19 @@ function getStreakThreshold() {
 }
 
 /**
+ * Standalone English menu/greeting triggers — explicit language switch to English.
+ */
+function isExplicitEnglishMenuGreeting(message) {
+  return EXPLICIT_ENGLISH_MENU_GREETING_PATTERN.test(String(message || '').trim());
+}
+
+/**
  * Short acknowledgements / menu taps — not language signals (Rule 2).
  */
 function isAmbiguousMessage(message) {
   const text = String(message || '').trim();
   if (!text) return true;
+  if (isExplicitEnglishMenuGreeting(text)) return false;
   if (AMBIGUOUS_ACK_PATTERN.test(text)) return true;
   if (/^[1-6]$/.test(text)) return true;
   if (text.length <= 2 && /^[\x00-\x7F]+$/u.test(text)) return true;
@@ -52,6 +63,14 @@ function resolveConversationLanguage(conversation, leadContext, detected = {}, m
   const detectedLanguage = normalizeLanguageCode(detected.language);
   const confidence = Number(detected.confidence) || 0;
   const minConfidence = getMinConfidence();
+
+  if (isExplicitEnglishMenuGreeting(message)) {
+    return {
+      language: DEFAULT_LANGUAGE,
+      source: 'message',
+      resolutionReason: 'explicit_english_greeting',
+    };
+  }
 
   // Rule 1 & 3: high-confidence detection always wins (including English).
   if (isSupportedLanguage(detectedLanguage) && confidence >= minConfidence) {
@@ -184,6 +203,7 @@ async function recordDetectedLanguage(conversationId, detectedLanguage, confiden
 module.exports = {
   resolveConversationLanguage,
   isAmbiguousMessage,
+  isExplicitEnglishMenuGreeting,
   updatePreferredLanguage,
   seedPreferredLanguageFromLead,
   recordDetectedLanguage,
