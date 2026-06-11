@@ -13,6 +13,7 @@ const HINDI_PHRASES = [
 const TELUGU_PHRASES = [
   'em chesthunnav',
   'nenu bagunnanu',
+  'ela vunnav',
   'ela vunnaru',
   'ela unnaru',
   'bagunnava',
@@ -61,6 +62,7 @@ const TELUGU_STRONG_TOKENS = [
   'bagunnanu',
   'bagunnava',
   'bagunnara',
+  'vunnav',
   'vunnaru',
   'unnaru',
   'ledhu',

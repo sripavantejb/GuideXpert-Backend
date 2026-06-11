@@ -151,11 +151,11 @@ function isCounsellorProgramQuestion(text, originalText = null) {
 const SOCIAL_GREETING_PATTERNS = [
   /^(how are you|how are u|how r u)\s*[.!?]?$/,
   /^(kaise ho aap|kaise ho)\s*[.!?]?$/,
-  /^(ela vunnaru|ela unnaru|bagunnara|bagunnava)\s*[.!?]?$/,
+  /^(ela vunnav|ela vunnaru|ela unnaru|bagunnara|bagunnava)\s*[.!?]?$/,
 ];
 
 const ROMANIZED_TELUGU_GREETING_PATTERNS = [
-  /^(ela vunnaru|ela unnaru|bagunnara|bagunnava)\s*[.!?]?$/,
+  /^(ela vunnav|ela vunnaru|ela unnaru|bagunnara|bagunnava)\s*[.!?]?$/,
 ];
 
 const ROMANIZED_TELUGU_BRANCH_GUIDANCE_PATTERNS = [

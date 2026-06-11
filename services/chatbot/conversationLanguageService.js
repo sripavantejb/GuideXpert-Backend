@@ -3,6 +3,7 @@
 const mongoose = require('mongoose');
 const WhatsAppConversation = require('../../models/WhatsAppConversation');
 const { normalizeLanguageCode, isSupportedLanguage } = require('../../constants/languageConstants');
+const { isRomanizedTeluguSocialGreeting } = require('../chatbot/intentClassifierService');
 
 const DEFAULT_LANGUAGE = 'en';
 
@@ -69,6 +70,14 @@ function resolveConversationLanguage(conversation, leadContext, detected = {}, m
       language: DEFAULT_LANGUAGE,
       source: 'message',
       resolutionReason: 'explicit_english_greeting',
+    };
+  }
+
+  if (isRomanizedTeluguSocialGreeting(message)) {
+    return {
+      language: 'te',
+      source: 'message',
+      resolutionReason: 'explicit_telugu_greeting',
     };
   }
 

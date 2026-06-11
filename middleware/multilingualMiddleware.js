@@ -71,6 +71,8 @@ async function prepareMultilingualInbound({ message, conversation, leadContext }
     try {
       if (resolved.resolutionReason === 'explicit_english_greeting') {
         await updatePreferredLanguage(conversation._id, 'en');
+      } else if (resolved.resolutionReason === 'explicit_telugu_greeting') {
+        await updatePreferredLanguage(conversation._id, 'te');
       } else {
         await recordDetectedLanguage(conversation._id, detection.language, detection.confidence);
       }

@@ -81,4 +81,15 @@ describe('conversationLanguageService', () => {
     assert.equal(result.language, 'en');
     assert.equal(result.resolutionReason, 'explicit_english_greeting');
   });
+
+  test('explicit Telugu greeting ela vunnav switches to Telugu over stored English', () => {
+    const result = resolveConversationLanguage(
+      { preferredLanguage: 'en' },
+      {},
+      { language: 'en', confidence: 0.92 },
+      'ela vunnav'
+    );
+    assert.equal(result.language, 'te');
+    assert.equal(result.resolutionReason, 'explicit_telugu_greeting');
+  });
 });
