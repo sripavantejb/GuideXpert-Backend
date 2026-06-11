@@ -196,6 +196,16 @@ describe('counsellor program intent routing', () => {
     }
   });
 
+  test('NIAT knowledge question breaks out of CPA session to knowledge_assistant', () => {
+    const botState = {
+      state: 'idle',
+      context: { counsellorProgramAssistantActive: true },
+    };
+    const result = classifyIntent('tell me about niat', botState, 'unknown', 'tell me about niat');
+    assert.equal(result.intent, 'knowledge_assistant');
+    assert.equal(result.intentReason, 'knowledge_breakout_from_cpa_session');
+  });
+
   test('follow-up conversation stays in counsellor_program_assistant session', () => {
     const botState = {
       state: 'idle',

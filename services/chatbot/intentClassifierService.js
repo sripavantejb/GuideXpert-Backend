@@ -422,6 +422,21 @@ function classifyIntent(text, botState, productLine, originalText = null) {
   }
 
   if (isCounsellorProgramSessionActive(botState)) {
+    const programTopicSignal =
+      /\b(fees?|benefits?|mentorship|counsell?ing|counseling|programs?|packages?|duration|join|iit|guidexpert)\b/i;
+    if (
+      isKnowledgeQuestion(t) &&
+      !isCounsellorProgramQuestion(t, original) &&
+      !isGuideXpertIdentityQuestion(t, original) &&
+      !programTopicSignal.test(t) &&
+      !programTopicSignal.test(original)
+    ) {
+      return {
+        intent: 'knowledge_assistant',
+        confidence: 'medium',
+        intentReason: 'knowledge_breakout_from_cpa_session',
+      };
+    }
     return {
       intent: 'counsellor_program_assistant',
       confidence: 'medium',
