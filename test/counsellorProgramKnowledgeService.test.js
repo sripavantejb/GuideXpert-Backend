@@ -61,4 +61,22 @@ describe('counsellorProgramKnowledgeService', () => {
     assert.equal(retrieval.kbResults[0].category, 'guidexpert');
     assert.equal(retrieval.faqHits.some((entry) => entry.slug === 'niat-placements'), false);
   });
+
+  test('searchCounsellorProgramKnowledge returns GuideXpert chunks for short program queries', async () => {
+    delete require.cache[knowledgePath];
+    delete require.cache[faqServicePath];
+    delete require.cache[searchPath];
+
+    const { searchCounsellorProgramKnowledge } = require(knowledgePath);
+
+    for (const query of ['benefits', 'mentorship', 'duration', 'fees']) {
+      const retrieval = await searchCounsellorProgramKnowledge(query);
+      assert.ok(retrieval.faqHits.length > 0 || retrieval.kbResults.length > 0, query);
+      assert.ok(
+        retrieval.kbResults.every((entry) => entry.category === 'guidexpert'),
+        query
+      );
+      assert.ok(retrieval.knowledgeContext.length > 0, query);
+    }
+  });
 });

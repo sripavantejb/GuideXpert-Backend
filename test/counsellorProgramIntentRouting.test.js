@@ -134,4 +134,62 @@ describe('counsellor program intent routing', () => {
     assert.equal(result.intent, 'counsellor_program_assistant');
     assert.equal(result.intentReason, 'counsellor_program_question');
   });
+
+  test('standalone program keywords route to counsellor_program_assistant without session', () => {
+    const messages = [
+      'fees',
+      'fee',
+      'price',
+      'pricing',
+      'cost',
+      'benefits',
+      'duration',
+      'mentorship',
+      'sessions',
+      'fees kya hai',
+      'price kya hai',
+      'benefits kya hai',
+      'fees enti',
+      'benefits enti',
+    ];
+    for (const message of messages) {
+      const result = classifyIntent(message, null, 'unknown', message);
+      assert.equal(
+        result.intent,
+        'counsellor_program_assistant',
+        `expected CPA for: ${message}`
+      );
+    }
+  });
+
+  test('multilingual program discovery routes to counsellor_program_assistant', () => {
+    const messages = [
+      'aap kaunse counselling programs provide karte ho',
+      'mee counselling programs enti',
+    ];
+    for (const message of messages) {
+      const result = classifyIntent(message, null, 'unknown', message);
+      assert.equal(result.intent, 'counsellor_program_assistant');
+    }
+  });
+
+  test('follow-up conversation stays in counsellor_program_assistant session', () => {
+    const botState = {
+      state: 'idle',
+      context: { counsellorProgramAssistantActive: true },
+    };
+    const followUps = [
+      'fees',
+      'benefits',
+      'mentorship',
+      'duration',
+      'fees kya hai',
+      'benefits enti',
+    ];
+    for (const message of followUps) {
+      const result = classifyIntent(message, botState, 'unknown', message);
+      assert.equal(result.intent, 'counsellor_program_assistant', message);
+      assert.equal(result.intentReason, 'counsellor_program_session_active', message);
+    }
+  });
 });

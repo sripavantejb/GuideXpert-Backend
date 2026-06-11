@@ -114,6 +114,14 @@ const COUNSELLOR_PROGRAM_PATTERNS = [
   /\b(counselling|counseling) (programs?|packages?)\b/i,
   /\bwhat (counselling|counseling) programs?\b/i,
   /\b(tell me|want to know|know) about guidexpert\b/i,
+  /^(fees?|fee|price|pricing|cost|benefits?|duration|mentorship|sessions?)\s*[.!?]?$/i,
+  /\bfees kya hai\b/i,
+  /\bprice kya hai\b/i,
+  /\bbenefits kya hai\b/i,
+  /\bfees enti\b/i,
+  /\bbenefits enti\b/i,
+  /\baap kaunse counselling programs provide karte ho\b/i,
+  /\bmee counselling programs enti\b/i,
 ];
 
 const IIT_LEAD_SUPPORT_PATTERNS = [

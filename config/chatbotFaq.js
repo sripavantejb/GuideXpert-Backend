@@ -37,6 +37,34 @@ const CHATBOT_FAQ = [
     title: 'Talk to an agent',
     answer: 'Reply AGENT or type "talk to human" and we will connect you with our team.',
   },
+  {
+    slug: 'program-fees',
+    keywords: ['fees', 'fee', 'price', 'pricing', 'cost', 'fees kya hai', 'price kya hai', 'fees enti'],
+    title: 'GuideXpert program fees',
+    answer:
+      'GuideXpert offers demo counselling and structured guidance programs. Fees depend on the program you choose—demo sessions are often free or low-cost, while full packages vary by services (career guidance, college planning, IIT counselling, mentorship). Tell us your needs and we will share the exact fee structure.',
+  },
+  {
+    slug: 'program-benefits',
+    keywords: ['benefits', 'benefit', 'benefits kya hai', 'benefits enti'],
+    title: 'Benefits of GuideXpert programs',
+    answer:
+      'GuideXpert helps students and parents move from confusion to clarity with structured career counselling, college and branch fit guidance, demo sessions, college predictor tools, IIT counselling slot support, and ongoing mentorship—not random college pushes.',
+  },
+  {
+    slug: 'program-mentorship',
+    keywords: ['mentorship', 'mentor', 'mentoring'],
+    title: 'GuideXpert mentorship',
+    answer:
+      'Yes, GuideXpert programs include mentorship and ongoing guidance. Experts support career direction, college choices, follow-ups, and admission planning so students are supported throughout the journey.',
+  },
+  {
+    slug: 'program-duration',
+    keywords: ['duration', 'how long', 'program length', 'sessions'],
+    title: 'Program duration and sessions',
+    answer:
+      'Duration depends on the program. Demo counselling is a single session; structured guidance can span multiple sessions over weeks with follow-ups and mentorship. We tailor the timeline to your goals—career clarity, college shortlisting, or end-to-end admission support.',
+  },
 ];
 
 module.exports = { CHATBOT_FAQ };

@@ -65,6 +65,11 @@ async function main() {
   } else {
     console.log('  (deploy backend with whatsapp health flags to see details)');
   }
+  if (health.body?.counsellorProgramAssistant) {
+    console.log('  counsellorProgramAssistant:', JSON.stringify(health.body.counsellorProgramAssistant, null, 2));
+  } else {
+    console.log('  counsellorProgramAssistant: (missing — deploy Phase 7 health probe and set CHATBOT_COUNSELLOR_PROGRAM_ASSISTANT_ENABLED=1 on Vercel)');
+  }
 
   const webhook = await postWebhook();
   console.log('\nPOST /webhook/gupshup (no auth)', webhook.status);

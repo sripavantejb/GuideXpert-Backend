@@ -214,4 +214,34 @@ describe('chatbot counsellor_program_assistant orchestration', () => {
     assert.equal(counsellorCalls, 0);
     assert.equal(lastContextPatch?.knowledgeAssistantActive, true);
   });
+
+  test('multi-turn CPA conversation sends one outbound per message and keeps CPA session', async () => {
+    process.env.CHATBOT_COUNSELLOR_PROGRAM_ASSISTANT_ENABLED = '1';
+
+    const messages = [
+      'what counselling programs do you provide',
+      'fees',
+      'benefits',
+      'mentorship',
+      'duration',
+    ];
+
+    for (const text of messages) {
+      await orchestrator.processInbound({
+        conversation: makeConversation(),
+        inbound: {
+          _id: new mongoose.Types.ObjectId(),
+          text,
+          messageType: 'text',
+        },
+        leadLinks: [],
+      });
+    }
+
+    assert.equal(outboundCalls.length, messages.length);
+    assert.equal(counsellorCalls, messages.length);
+    assert.equal(knowledgeCalls, 0);
+    assert.equal(lastContextPatch?.counsellorProgramAssistantActive, true);
+    assert.equal(lastContextPatch?.knowledgeAssistantActive, false);
+  });
 });
