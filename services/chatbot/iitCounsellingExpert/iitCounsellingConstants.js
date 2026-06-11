@@ -24,9 +24,17 @@ const SHORT_IIT_QUERY_EXPANSIONS = {
   'slide ante enti': 'JoSAA slide option branch allocation Telugu',
   'rounds kitne': 'JoSAA counselling rounds how many Hindi',
   'josaa kya hai': 'JoSAA joint seat allocation authority Hindi',
+  'what is josaa': 'What is JoSAA joint seat allocation authority IIT NIT IIIT',
+  'what is csab': 'What is CSAB special round counselling NIT IIIT CFTI',
+  'what is crl rank': 'What is CRL common rank list JEE Main rank',
+  'what is obc ncl rank': 'What is OBC-NCL rank category reserved seat allocation JoSAA',
+  'what is obc-ncl rank': 'What is OBC-NCL rank category reserved seat allocation JoSAA',
 };
 
 const TOPIC_FALLBACK_PATTERNS = [
+  { pattern: /\bwhat is jos+a+a?\b/i, questionPrefix: 'What is JoSAA' },
+  { pattern: /\bwhat is csab\b/i, questionPrefix: 'What is CSAB' },
+  { pattern: /\bwhat is crl rank\b/i, questionPrefix: 'What is CRL rank' },
   { pattern: /\bobc[\s-]?ncl\b/i, questionPrefix: 'What is OBC-NCL rank' },
   { pattern: /\bcrl\b/i, questionPrefix: 'What is CRL rank' },
   { pattern: /\bgen[\s-]?ews\b|\bews rank\b/i, questionPrefix: 'What is GEN-EWS rank' },

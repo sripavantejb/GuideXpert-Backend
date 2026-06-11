@@ -101,6 +101,61 @@ describe('iitCounsellingStrategyService reliability', () => {
     assert.equal(result.languageLog.answerSource, 'llm');
   });
 
+  test('prefers grounded KB for coding preference without calling LLM', async () => {
+    process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED = '1';
+    process.env.CHATBOT_IIT_COUNSELLING_STRATEGY_ENABLED = '1';
+    process.env.LLM_API_KEY = 'test-key';
+
+    delete require.cache[historyPath];
+    const historyService = require(historyPath);
+    mock.method(historyService, 'getConversationHistory', async () => []);
+
+    delete require.cache[knowledgePath];
+    const knowledgeService = require(knowledgePath);
+    mock.method(knowledgeService, 'searchIitCounsellingStrategyKnowledge', async () => ({
+      kbResults: [
+        {
+          id: 'kb-coding',
+          question: 'Coding pasand ho to — which branch should I choose?',
+          answer:
+            'If you like coding, CSE or IT is usually the better fit because the core curriculum is software-focused.',
+        },
+      ],
+      knowledgeContext:
+        'Q: Coding pasand ho to — which branch should I choose?\nA: If you like coding, CSE or IT is usually the better fit because the core curriculum is software-focused.',
+      metrics: { mode: 'keyword', retrievalFallback: 'topic' },
+    }));
+
+    delete require.cache[providerPath];
+    const { OpenAiCompatibleProvider } = require(providerPath);
+    mock.method(OpenAiCompatibleProvider.prototype, 'chatCompletion', async () => {
+      throw new Error('should not call LLM');
+    });
+
+    const { answer } = require(expertPath);
+    const result = await answer({ inboundText: 'Coding pasand ho to?' });
+
+    assert.match(result.text, /CSE or IT/i);
+    assert.equal(result.model, 'grounded_kb');
+    assert.equal(result.languageLog.answerSource, 'grounded_kb');
+    assert.equal(result.languageLog.llmAttempts, 0);
+  });
+
+  test('replaces generic assistant LLM output with grounded KB', async () => {
+    mockHappyPath({
+      llmResponses: [
+        { text: 'Yes, I can help you with coding questions any time.', model: 'test-model' },
+        { text: 'Yes, I can help you with coding questions any time.', model: 'test-model' },
+      ],
+    });
+
+    const { answer } = require(expertPath);
+    const result = await answer({ inboundText: 'CSE vs ECE?' });
+
+    assert.match(result.text, /Choose CSE for software/i);
+    assert.equal(result.languageLog.answerSource, 'grounded_kb');
+  });
+
   test('uses grounded KB answer when LLM stays empty', async () => {
     mockHappyPath({
       llmResponses: [{ text: '   ' }, { text: '' }],

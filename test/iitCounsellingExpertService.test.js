@@ -83,7 +83,7 @@ describe('iitCounsellingExpertService reliability', () => {
     });
 
     const { answer } = require(expertPath);
-    const result = await answer({ inboundText: 'What is OBC-NCL rank?' });
+    const result = await answer({ inboundText: 'How is OBC-NCL rank used in counselling?' });
 
     assert.match(result.text, /OBC-NCL rank/i);
     assert.equal(result.languageLog.llmAttempts, 2);
@@ -96,11 +96,51 @@ describe('iitCounsellingExpertService reliability', () => {
     });
 
     const { answer } = require(expertPath);
-    const result = await answer({ inboundText: 'What is OBC-NCL rank?' });
+    const result = await answer({ inboundText: 'How is OBC-NCL rank used in counselling?' });
 
-    assert.match(result.text, /OBC-NCL rank is used for OBC-NCL reserved seat allocation/i);
+    assert.match(result.text, /OBC-NCL rank/i);
     assert.equal(result.model, 'grounded_kb');
     assert.equal(result.languageLog.answerSource, 'grounded_kb');
+    assert.equal(result.languageLog.llmAttempts, 2);
+  });
+
+  test('prefers grounded JoSAA KB for direct factual query', async () => {
+    process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED = '1';
+    process.env.LLM_API_KEY = 'test-key';
+
+    delete require.cache[historyPath];
+    const historyService = require(historyPath);
+    mock.method(historyService, 'getConversationHistory', async () => []);
+
+    delete require.cache[knowledgePath];
+    const knowledgeService = require(knowledgePath);
+    mock.method(knowledgeService, 'searchIitCounsellingKnowledge', async () => ({
+      kbResults: [
+        {
+          id: 'kb-josaa',
+          question: 'What is JoSAA?',
+          answer:
+            'JoSAA (Joint Seat Allocation Authority) conducts seat allocation for IITs, NITs, IIITs, and GFTIs.',
+        },
+      ],
+      knowledgeContext:
+        'Q: What is JoSAA?\nA: JoSAA (Joint Seat Allocation Authority) conducts seat allocation for IITs, NITs, IIITs, and GFTIs.',
+      metrics: { mode: 'keyword', retrievalFallback: 'topic' },
+    }));
+
+    delete require.cache[providerPath];
+    const { OpenAiCompatibleProvider } = require(providerPath);
+    mock.method(OpenAiCompatibleProvider.prototype, 'chatCompletion', async () => {
+      throw new Error('should not call LLM');
+    });
+
+    const { answer } = require(expertPath);
+    const result = await answer({ inboundText: 'What is JoSAA?' });
+
+    assert.match(result.text, /Joint Seat Allocation Authority/i);
+    assert.equal(result.model, 'grounded_kb');
+    assert.equal(result.languageLog.answerSource, 'grounded_kb');
+    assert.equal(result.languageLog.llmAttempts, 0);
   });
 
   test('answerWithTimeout retries once after timeout', async () => {
@@ -122,7 +162,7 @@ describe('iitCounsellingExpertService reliability', () => {
     });
 
     const result = await expertModule.answerWithTimeout({
-      inboundText: 'What is OBC-NCL rank?',
+      inboundText: 'How is OBC-NCL rank used in counselling?',
     });
 
     assert.match(result.text, /OBC-NCL rank/i);

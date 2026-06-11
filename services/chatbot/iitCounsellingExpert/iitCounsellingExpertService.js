@@ -15,7 +15,7 @@ const { isIitCounsellingExpertEnabled } = require('./iitCounsellingFlags');
 const {
   searchIitCounsellingKnowledge,
   buildIitCounsellingContext,
-  resolveDirectKbAnswer,
+  resolveGroundedKbFallback,
 } = require('./iitCounsellingKnowledgeService');
 const {
   validateIitCounsellingResponse,
@@ -28,6 +28,21 @@ const ICE_ANSWER_TIMEOUT_MS =
   Number(process.env.KNOWLEDGE_ASSISTANT_TIMEOUT_MS) ||
   DEFAULT_TIMEOUT_MS;
 const LLM_MAX_ATTEMPTS = 2;
+
+const DIRECT_FACTUAL_ICE_PATTERN =
+  /\bwhat is (jos+a+a?|csab|crl rank|obc-?ncl rank|home state quota|other state quota|float|slide|freeze)\b/i;
+
+function isDirectFactualIceQuery(text) {
+  return DIRECT_FACTUAL_ICE_PATTERN.test(String(text || '').trim());
+}
+
+function isUnsupportedIceFallbackText(text) {
+  const value = String(text || '').trim();
+  return (
+    value === UNKNOWN_FALLBACK ||
+    /don't currently have verified information (about|on) that topic/i.test(value)
+  );
+}
 
 async function loadConversationHistory(conversationId) {
   if (!conversationId) return [];
@@ -100,6 +115,25 @@ async function answer({
       retrievalQuery,
       limit: 5,
     });
+    const knowledgeResults = retrieval.kbResults;
+    const groundedPref = resolveGroundedKbFallback(knowledgeResults, text);
+    if (isDirectFactualIceQuery(text) && groundedPref) {
+      return {
+        text: groundedPref,
+        model: 'grounded_kb',
+        guardrailModified: false,
+        guardrailReason: null,
+        languageLog: {
+          englishResponse: groundedPref,
+          resultIds: knowledgeResults.map((entry) => String(entry.id || '')),
+          retrievalMode: retrieval.metrics?.mode || null,
+          retrievalFallback: retrieval.metrics?.retrievalFallback || null,
+          answerSource: 'grounded_kb',
+          llmAttempts: 0,
+        },
+      };
+    }
+
     const unifiedContext = buildIitCounsellingContext({
       knowledgeContext: retrieval.knowledgeContext,
       leadContext,
@@ -118,7 +152,7 @@ async function answer({
     let answerSource = llmOutcome ? 'llm' : null;
 
     if (!String(responseText || '').trim()) {
-      const groundedAnswer = resolveDirectKbAnswer(retrieval.kbResults, text);
+      const groundedAnswer = resolveGroundedKbFallback(knowledgeResults, text);
       if (groundedAnswer) {
         responseText = groundedAnswer;
         answerSource = 'grounded_kb';
@@ -126,14 +160,30 @@ async function answer({
       }
     }
 
-    const knowledgeResults = retrieval.kbResults;
-
-    const guarded = validateIitCounsellingResponse({
+    let guarded = validateIitCounsellingResponse({
       response: responseText,
       knowledgeResults,
       userMessage: languageMetadata?.originalMessage || text,
       englishUserMessage: languageMetadata?.translatedQuery || text,
     });
+
+    if (
+      guarded.modified &&
+      (isUnsupportedIceFallbackText(guarded.text) ||
+        guarded.reason === 'no_grounding' ||
+        guarded.reason === 'empty_response')
+    ) {
+      const groundedAnswer = resolveGroundedKbFallback(knowledgeResults, text);
+      if (groundedAnswer) {
+        guarded = {
+          text: groundedAnswer,
+          modified: true,
+          reason: 'grounded_kb_fallback',
+        };
+        answerSource = answerSource || 'grounded_kb';
+        console.warn('[chatbot] iit_counselling_expert grounded_kb_fallback', { query: text });
+      }
+    }
 
     return {
       text: guarded.text || UNKNOWN_FALLBACK,

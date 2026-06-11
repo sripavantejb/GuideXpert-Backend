@@ -69,6 +69,14 @@ describe('iitCounsellingStrategyKnowledgeService', () => {
     assert.match(expanded, /float/i);
   });
 
+  test('resolveTopicFallbackChunks returns coding preference chunk', () => {
+    const { resolveTopicFallbackChunks } = require(knowledgePath);
+    const chunks = resolveTopicFallbackChunks('Coding pasand ho to?');
+    assert.ok(chunks.length >= 1);
+    assert.match(chunks[0].question, /Coding pasand/i);
+    assert.ok(String(chunks[0].answer || '').trim().length > 20);
+  });
+
   test('resolveTopicFallbackChunks returns slide strategy chunk', () => {
     const { resolveTopicFallbackChunks } = require(knowledgePath);
     const chunks = resolveTopicFallbackChunks('Should I use slide?');

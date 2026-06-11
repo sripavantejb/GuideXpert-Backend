@@ -20,6 +20,7 @@ const {
 } = require('./iitCounsellingStrategyKnowledgeService');
 const {
   validateIitCounsellingStrategyResponse,
+  isGenericAssistantResponse,
   UNKNOWN_FALLBACK,
 } = require('./iitCounsellingStrategyGuardrailService');
 
@@ -29,6 +30,36 @@ const ICS_ANSWER_TIMEOUT_MS =
   Number(process.env.KNOWLEDGE_ASSISTANT_TIMEOUT_MS) ||
   DEFAULT_TIMEOUT_MS;
 const LLM_MAX_ATTEMPTS = 2;
+
+const CODING_PREFERENCE_PATTERN =
+  /\b(coding pasand|coding nachite|like coding|what if i like coding|coding preference)\b/i;
+
+function isCodingPreferenceQuery(text) {
+  return CODING_PREFERENCE_PATTERN.test(String(text || '').trim());
+}
+
+function buildGroundedStrategyResult({
+  text,
+  knowledgeResults,
+  retrieval,
+  answerSource = 'grounded_kb',
+  guardrailReason = 'grounded_kb_preferred',
+}) {
+  return {
+    text,
+    model: 'grounded_kb',
+    guardrailModified: true,
+    guardrailReason,
+    languageLog: {
+      englishResponse: text,
+      resultIds: knowledgeResults.map((entry) => String(entry.id || '')),
+      retrievalMode: retrieval.metrics?.mode || null,
+      retrievalFallback: retrieval.metrics?.retrievalFallback || null,
+      answerSource,
+      llmAttempts: 0,
+    },
+  };
+}
 
 async function loadConversationHistory(conversationId) {
   if (!conversationId) return [];
@@ -101,6 +132,17 @@ async function answer({
       retrievalQuery,
       limit: 5,
     });
+    const knowledgeResults = retrieval.kbResults;
+    const groundedPref = resolveGroundedKbFallback(knowledgeResults, text);
+    if (isCodingPreferenceQuery(text) && groundedPref) {
+      console.warn('[chatbot] iit_counselling_strategy grounded_kb_preferred', { query: text });
+      return buildGroundedStrategyResult({
+        text: groundedPref,
+        knowledgeResults,
+        retrieval,
+      });
+    }
+
     const unifiedContext = buildIitCounsellingStrategyContext({
       knowledgeContext: retrieval.knowledgeContext,
       leadContext,
@@ -127,7 +169,14 @@ async function answer({
       }
     }
 
-    const knowledgeResults = retrieval.kbResults;
+    if (isGenericAssistantResponse(responseText)) {
+      const groundedAnswer = resolveGroundedKbFallback(knowledgeResults, text);
+      if (groundedAnswer) {
+        responseText = groundedAnswer;
+        answerSource = 'grounded_kb';
+        console.warn('[chatbot] iit_counselling_strategy generic_assistant_replaced', { query: text });
+      }
+    }
 
     let guarded = validateIitCounsellingStrategyResponse({
       response: responseText,
@@ -140,7 +189,8 @@ async function answer({
       guarded.modified &&
       (guarded.text === UNKNOWN_FALLBACK ||
         guarded.reason === 'no_grounding' ||
-        guarded.reason === 'empty_response')
+        guarded.reason === 'empty_response' ||
+        guarded.reason === 'generic_assistant_rejected')
     ) {
       const groundedAnswer = resolveGroundedKbFallback(knowledgeResults, text);
       if (groundedAnswer) {

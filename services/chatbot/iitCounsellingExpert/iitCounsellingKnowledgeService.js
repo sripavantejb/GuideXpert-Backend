@@ -104,6 +104,22 @@ function resolveDirectKbAnswer(kbResults = [], userMessage = '') {
   return null;
 }
 
+function resolveGroundedKbFallback(kbResults = [], userMessage = '') {
+  const direct = resolveDirectKbAnswer(kbResults, userMessage);
+  if (direct) return direct;
+
+  const topicFallback = resolveTopicFallbackChunks(userMessage);
+  if (topicFallback[0]?.answer) {
+    return String(topicFallback[0].answer).trim() || null;
+  }
+
+  if (kbResults[0]?.answer) {
+    return String(kbResults[0].answer).trim() || null;
+  }
+
+  return null;
+}
+
 async function searchIitCounsellingKnowledge(query, { retrievalQuery, limit = 5 } = {}) {
   const text = String(query || '').trim();
   const expandedQuery = expandIitQuery(text);
@@ -192,6 +208,7 @@ module.exports = {
   searchKeywordIitCounselling,
   resolveTopicFallbackChunks,
   resolveDirectKbAnswer,
+  resolveGroundedKbFallback,
   searchIitCounsellingKnowledge,
   buildIitCounsellingContext,
 };

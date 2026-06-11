@@ -51,6 +51,20 @@ describe('iitCounsellingStrategyGuardrailService', () => {
     assert.equal(result.modified, false);
   });
 
+  test('rejects generic coding assistant responses', () => {
+    const result = validateIitCounsellingStrategyResponse({
+      response: 'Yes, I can help you with coding questions.',
+      knowledgeResults: [
+        {
+          question: 'Coding pasand ho to — which branch should I choose?',
+          answer: 'If you like coding, CSE or IT is usually the better fit.',
+        },
+      ],
+    });
+    assert.equal(result.text, '');
+    assert.equal(result.reason, 'generic_assistant_rejected');
+  });
+
   test('returns unknown fallback when no grounding exists', () => {
     const result = validateIitCounsellingStrategyResponse({
       response: 'Always choose IIT Bombay CSE.',
