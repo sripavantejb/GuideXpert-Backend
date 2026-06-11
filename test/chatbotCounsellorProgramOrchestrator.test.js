@@ -9,7 +9,7 @@ const knowledgeAssistantPath = require.resolve('../services/chatbot/knowledgeAss
 const counsellorProgramPath = require.resolve(
   '../services/chatbot/counsellorProgram/counsellorProgramAssistantService'
 );
-const { UNKNOWN_FALLBACK } = require('../services/chatbot/counsellorProgram/counsellorProgramGuardrailService');
+const { CPA_EMPTY_FALLBACK } = require('../services/chatbot/counsellorProgram/counsellorProgramGuardrailService');
 
 const CONVERSATION_ID = new mongoose.Types.ObjectId();
 const INBOUND_ID = new mongoose.Types.ObjectId();
@@ -179,7 +179,7 @@ describe('chatbot counsellor_program_assistant orchestration', () => {
       leadLinks: [],
     });
 
-    assert.equal(outboundCalls[0].text, UNKNOWN_FALLBACK);
+    assert.equal(outboundCalls[0].text, CPA_EMPTY_FALLBACK);
   });
 
   test('flag-off KA fallback preserves knowledgeAssistantActive for follow-ups', async () => {

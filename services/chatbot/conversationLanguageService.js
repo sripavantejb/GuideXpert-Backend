@@ -46,6 +46,63 @@ function isAmbiguousMessage(message) {
   return false;
 }
 
+const SHORT_CPA_FOLLOWUP_PATTERN =
+  /^(fees?|fee|price|pricing|cost|benefits?|duration|mentorship|sessions?)\s*[.!?]?$/i;
+
+function isShortCpaFollowUp(message) {
+  const text = String(message || '').trim();
+  if (!text) return false;
+  if (SHORT_CPA_FOLLOWUP_PATTERN.test(text)) return true;
+  return /\b(fees kya hai|price kya hai|benefits kya hai|fees enti|benefits enti)\b/i.test(text);
+}
+
+function resolveSessionAwareLanguage({
+  conversation,
+  leadContext,
+  detected = {},
+  message = '',
+  sessionLanguage = null,
+} = {}) {
+  const session = normalizeLanguageCode(sessionLanguage);
+  if (!session || session === DEFAULT_LANGUAGE || !isSupportedLanguage(session)) {
+    return resolveConversationLanguage(conversation, leadContext, detected, message);
+  }
+
+  if (isExplicitEnglishMenuGreeting(message)) {
+    return resolveConversationLanguage(conversation, leadContext, detected, message);
+  }
+
+  if (isRomanizedTeluguSocialGreeting(message)) {
+    return resolveConversationLanguage(conversation, leadContext, detected, message);
+  }
+
+  if (isShortCpaFollowUp(message) || isAmbiguousMessage(message)) {
+    return {
+      language: session,
+      source: 'cpa_session',
+      resolutionReason: 'cpa_session_language',
+    };
+  }
+
+  const base = resolveConversationLanguage(conversation, leadContext, detected, message);
+  if (
+    base.resolutionReason === 'explicit_english_greeting' ||
+    base.resolutionReason === 'explicit_telugu_greeting'
+  ) {
+    return base;
+  }
+
+  if (base.language === DEFAULT_LANGUAGE && base.resolutionReason === 'high_confidence_detection') {
+    return {
+      language: session,
+      source: 'cpa_session',
+      resolutionReason: 'cpa_session_language',
+    };
+  }
+
+  return base;
+}
+
 function readStoredPreference(conversation, leadContext) {
   const stored = normalizeLanguageCode(conversation?.preferredLanguage);
   if (conversation?.preferredLanguage && isSupportedLanguage(stored) && stored !== DEFAULT_LANGUAGE) {
@@ -211,7 +268,9 @@ async function recordDetectedLanguage(conversationId, detectedLanguage, confiden
 
 module.exports = {
   resolveConversationLanguage,
+  resolveSessionAwareLanguage,
   isAmbiguousMessage,
+  isShortCpaFollowUp,
   isExplicitEnglishMenuGreeting,
   updatePreferredLanguage,
   seedPreferredLanguageFromLead,

@@ -67,4 +67,10 @@ const CHATBOT_FAQ = [
   },
 ];
 
-module.exports = { CHATBOT_FAQ };
+function getGuideXpertIdentityFaqAnswer() {
+  const entry = CHATBOT_FAQ.find((faq) => faq.slug === 'what-is-guidexpert');
+  if (!entry?.answer) return null;
+  return String(entry.answer).trim();
+}
+
+module.exports = { CHATBOT_FAQ, getGuideXpertIdentityFaqAnswer };

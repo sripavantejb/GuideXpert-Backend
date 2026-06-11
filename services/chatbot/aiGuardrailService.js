@@ -1,10 +1,17 @@
 'use strict';
 
 const UNKNOWN_FALLBACK =
-  'I do not have verified information about that. Please contact the NIAT counselling team for accurate details.';
+  "I don't currently have verified information about that topic. Please contact the GuideXpert counselling team for accurate guidance.";
 const OPPORTUNITY_FALLBACK =
   'Opportunities depend on skills, performance, and individual circumstances.';
-const UNSUPPORTED_CLAIM_FALLBACK = 'I do not have verified information to support that claim.';
+const UNSUPPORTED_CLAIM_FALLBACK =
+  "I don't currently have verified information about that topic. Please contact the GuideXpert counselling team for accurate guidance.";
+
+const { isGuideXpertIdentityQuestion } = require('./intentClassifierService');
+const {
+  coerceGuideXpertIdentityAnswer,
+  isUnsupportedFallbackText,
+} = require('../../utils/guideXpertIdentity');
 
 const GUARANTEE_PATTERNS = [
   /\bguarantee(?:d|s)?\b.{0,40}\b(?:job|jobs|placement|placements|internship|internships|salary|admission|admissions)\b/i,
@@ -211,6 +218,25 @@ function hasUnsupportedEntityClaim(response, knowledgeResults) {
   return { unsupported: false, reason: null, claim: null };
 }
 
+function applyGuideXpertIdentitySafetyNet({
+  response,
+  knowledgeResults,
+  userMessage,
+  englishUserMessage,
+  reason,
+} = {}) {
+  const identityQuestion = isGuideXpertIdentityQuestion(userMessage, englishUserMessage);
+  const grounded = coerceGuideXpertIdentityAnswer({
+    response,
+    knowledgeResults,
+    isIdentityQuestion: identityQuestion,
+  });
+  if (grounded) {
+    return { text: grounded, modified: true, reason: reason || 'guidexpert_identity_grounded' };
+  }
+  return null;
+}
+
 function validateAiResponse({
   response,
   knowledgeResults,
@@ -219,9 +245,29 @@ function validateAiResponse({
 } = {}) {
   const text = String(response || '').trim();
   const allowedNumbers = extractUserProvidedNumbers(userMessage, englishUserMessage);
+  const identityQuestion = isGuideXpertIdentityQuestion(userMessage, englishUserMessage);
 
   if (!text) {
+    const identitySafe = applyGuideXpertIdentitySafetyNet({
+      response: text,
+      knowledgeResults,
+      userMessage,
+      englishUserMessage,
+      reason: 'guidexpert_identity_grounded',
+    });
+    if (identitySafe) return identitySafe;
     return { text: UNKNOWN_FALLBACK, modified: true, reason: 'empty_response' };
+  }
+
+  if (identityQuestion && isUnsupportedFallbackText(text)) {
+    const identitySafe = applyGuideXpertIdentitySafetyNet({
+      response: text,
+      knowledgeResults,
+      userMessage,
+      englishUserMessage,
+      reason: 'guidexpert_identity_grounded',
+    });
+    if (identitySafe) return identitySafe;
   }
 
   if (containsGuaranteeClaim(text)) {
@@ -229,11 +275,31 @@ function validateAiResponse({
   }
 
   if (hasUnsupportedNumericClaim(text, knowledgeResults, allowedNumbers)) {
+    if (identityQuestion) {
+      const identitySafe = applyGuideXpertIdentitySafetyNet({
+        response: text,
+        knowledgeResults,
+        userMessage,
+        englishUserMessage,
+        reason: 'guidexpert_identity_grounded',
+      });
+      if (identitySafe) return identitySafe;
+    }
     return { text: UNSUPPORTED_CLAIM_FALLBACK, modified: true, reason: 'unsupported_numeric_claim' };
   }
 
   const entityClaim = hasUnsupportedEntityClaim(text, knowledgeResults);
   if (entityClaim.unsupported) {
+    if (identityQuestion) {
+      const identitySafe = applyGuideXpertIdentitySafetyNet({
+        response: text,
+        knowledgeResults,
+        userMessage,
+        englishUserMessage,
+        reason: 'guidexpert_identity_grounded',
+      });
+      if (identitySafe) return identitySafe;
+    }
     return {
       text: UNSUPPORTED_CLAIM_FALLBACK,
       modified: true,

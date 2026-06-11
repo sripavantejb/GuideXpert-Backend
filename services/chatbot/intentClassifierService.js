@@ -147,9 +147,30 @@ function isIitLeadSupportQuery(text) {
   return IIT_LEAD_SUPPORT_PATTERNS.some((pattern) => pattern.test(t));
 }
 
+const GUIDEXPERT_IDENTITY_PATTERNS = [
+  /^what is guidexpert\s*[.!?]?$/,
+  /^tell me about guidexpert\s*[.!?]?$/,
+  /^i want to know about guidexpert\s*[.!?]?$/,
+  /^about guidexpert\s*[.!?]?$/,
+  /^who are you\s*[.!?]?$/,
+  /\bwhat is guidexpert\b/i,
+  /\btell me about guidexpert\b/i,
+  /\bi want to know about guidexpert\b/i,
+  /\b(know|want to know) about guidexpert\b/i,
+];
+
+function isGuideXpertIdentityQuestion(text, originalText = null) {
+  return intentTextCandidates(text, originalText).some(
+    (t) => t && GUIDEXPERT_IDENTITY_PATTERNS.some((pattern) => pattern.test(t))
+  );
+}
+
 function isCounsellorProgramQuestion(text, originalText = null) {
   if (isIitLeadSupportQuery(text) || isIitLeadSupportQuery(originalText)) {
     return false;
+  }
+  if (isGuideXpertIdentityQuestion(text, originalText)) {
+    return true;
   }
   return intentTextCandidates(text, originalText).some(
     (t) => t && COUNSELLOR_PROGRAM_PATTERNS.some((pattern) => pattern.test(t))
@@ -404,6 +425,14 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     };
   }
 
+  if (isGuideXpertIdentityQuestion(t, original)) {
+    return {
+      intent: 'counsellor_program_assistant',
+      confidence: 'medium',
+      intentReason: 'guidexpert_identity_question',
+    };
+  }
+
   if (isCounsellorProgramQuestion(t, original)) {
     return {
       intent: 'counsellor_program_assistant',
@@ -500,6 +529,7 @@ module.exports = {
   isKnowledgeQuestion,
   isCapabilityQuestion,
   isCounsellorProgramQuestion,
+  isGuideXpertIdentityQuestion,
   isCounsellorProgramSessionActive,
   isIitLeadSupportQuery,
   isKnowledgeSessionActive,

@@ -15,7 +15,9 @@ const {
   answerWithTimeout: answerCounsellorProgramWithTimeout,
 } = require('./counsellorProgram/counsellorProgramAssistantService');
 const { isCounsellorProgramAssistantEnabled } = require('./counsellorProgram/counsellorProgramFlags');
-const { UNKNOWN_FALLBACK: COUNSELLOR_PROGRAM_FALLBACK } = require('./counsellorProgram/counsellorProgramGuardrailService');
+const {
+  CPA_EMPTY_FALLBACK: COUNSELLOR_PROGRAM_FALLBACK,
+} = require('./counsellorProgram/counsellorProgramGuardrailService');
 const { buildWelcomeMenuText } = require('./welcomeMessageService');
 const { getDemoMeetingLink } = require('../../utils/slotNotificationFormatters');
 const { emptySubflows } = require('./botSubflowContext');
@@ -26,7 +28,11 @@ const {
   prepareMultilingualInbound,
   applyMultilingualOutbound,
 } = require('../../middleware/multilingualMiddleware');
-const { seedPreferredLanguageFromLead } = require('./conversationLanguageService');
+const {
+  seedPreferredLanguageFromLead,
+  resolveSessionAwareLanguage,
+  updatePreferredLanguage,
+} = require('./conversationLanguageService');
 const { incrementLanguageRequest } = require('../analytics/languageRequestAnalyticsService');
 const { resolveGreetingReply } = require('../../constants/greetingReplies');
 const { buildLocalizedWelcomeMenu } = require('../../constants/localizedMenuReplies');
@@ -419,6 +425,27 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
   const facts = await h.retrieveFacts(leadLinks, leadContext);
   const botState = await h.getBotState(activeConversation._id);
 
+  if (
+    multilingualInbound &&
+    botState?.context?.counsellorProgramAssistantActive &&
+    botState.context.counsellorProgramSessionLanguage
+  ) {
+    const sessionResolved = resolveSessionAwareLanguage({
+      conversation: activeConversation,
+      leadContext,
+      detected: {
+        language: multilingualInbound.detectedLanguage,
+        confidence: multilingualInbound.confidence,
+      },
+      message: inbound.text,
+      sessionLanguage: botState.context.counsellorProgramSessionLanguage,
+    });
+    multilingualInbound.resolvedLanguage = sessionResolved.language;
+    multilingualInbound.language = sessionResolved.language;
+    multilingualInbound.resolutionReason = sessionResolved.resolutionReason;
+    multilingualInbound.resolutionSource = sessionResolved.source;
+  }
+
   const intentText =
     multilingualInbound?.englishMessage ||
     String(inbound.text || '').trim();
@@ -739,14 +766,26 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     const kaFallbackActive =
       !isCounsellorProgramAssistantEnabled() &&
       Boolean(knowledgeAssistantResult?.model && knowledgeAssistantResult?.text);
+    const cpaReplyOk = Boolean(counsellorProgramResult?.model && counsellorProgramResult?.text);
+    const hadCpaSession = Boolean(botState?.context?.counsellorProgramAssistantActive);
     const cpaActive =
-      isCounsellorProgramAssistantEnabled() &&
-      Boolean(counsellorProgramResult?.model && counsellorProgramResult?.text);
+      isCounsellorProgramAssistantEnabled() && (cpaReplyOk || hadCpaSession);
+    const sessionLanguage = resolvedLanguageFrom(multilingualInbound);
+    const persistedSessionLanguage =
+      sessionLanguage ||
+      botState?.context?.counsellorProgramSessionLanguage ||
+      contextPatch.counsellorProgramSessionLanguage ||
+      null;
+
+    if (cpaActive && persistedSessionLanguage && persistedSessionLanguage !== 'en') {
+      updatePreferredLanguage(activeConversation._id, persistedSessionLanguage).catch(() => {});
+    }
 
     contextPatch = {
       ...contextPatch,
       counsellorProgramAssistantActive: cpaActive,
       knowledgeAssistantActive: kaFallbackActive,
+      counsellorProgramSessionLanguage: cpaActive ? persistedSessionLanguage : null,
     };
   } else if (intentResult.intent === 'knowledge_assistant') {
     contextPatch = {

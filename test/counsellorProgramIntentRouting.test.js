@@ -90,6 +90,19 @@ describe('counsellor program intent routing', () => {
     }
   });
 
+  test('GuideXpert identity questions route to counsellor_program_assistant', () => {
+    const messages = [
+      'What is GuideXpert?',
+      'Tell me about GuideXpert.',
+      'I want to know about GuideXpert.',
+    ];
+    for (const message of messages) {
+      const result = classifyIntent(message, null, 'unknown', message);
+      assert.equal(result.intent, 'counsellor_program_assistant', message);
+      assert.equal(result.intentReason, 'guidexpert_identity_question', message);
+    }
+  });
+
   test('guidexpert discovery phrases are not classified as unknown', () => {
     const messages = [
       'what is guidexpert',

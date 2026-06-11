@@ -88,7 +88,11 @@ describe('knowledge_assistant intent', () => {
     assert.equal(r.confidence, 'medium');
   }
 
-  test('What is GuideXpert?', () => assertKnowledgeAssistant('What is GuideXpert?'));
+  test('What is GuideXpert? routes to counsellor_program_assistant', () => {
+    const r = classifyIntent('What is GuideXpert?', null, PRODUCT_LINE);
+    assert.equal(r.intent, 'counsellor_program_assistant');
+    assert.equal(r.intentReason, 'guidexpert_identity_question');
+  });
   test('What do they do?', () => assertKnowledgeAssistant('What do they do?'));
   test('How much does it cost?', () => assertKnowledgeAssistant('How much does it cost?'));
   test('Tell me about IIT counselling routes to counsellor_program_assistant', () => {

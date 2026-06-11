@@ -35,6 +35,11 @@ const SHORT_PROGRAM_QUERY_EXPANSIONS = {
   'benefits kya hai': 'GuideXpert counselling program benefits',
   'fees enti': 'GuideXpert counselling program fees pricing cost',
   'benefits enti': 'GuideXpert counselling program benefits',
+  'what is guidexpert': 'GuideXpert what exactly do we do platform career counselling',
+  'tell me about guidexpert': 'GuideXpert what exactly do we do platform career counselling',
+  'i want to know about guidexpert': 'GuideXpert what exactly do we do platform career counselling',
+  'about guidexpert': 'GuideXpert what exactly do we do platform career counselling',
+  'who are you': 'GuideXpert what exactly do we do platform career counselling',
 };
 
 function expandProgramQuery(query) {

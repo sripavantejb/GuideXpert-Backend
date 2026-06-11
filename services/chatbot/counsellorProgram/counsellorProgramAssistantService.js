@@ -96,6 +96,7 @@ async function answer({
     const guarded = validateCounsellorProgramResponse({
       response: result?.text,
       knowledgeResults,
+      faqHits: retrieval.faqHits,
       userMessage: languageMetadata?.originalMessage || text,
       englishUserMessage: languageMetadata?.translatedQuery || text,
     });
