@@ -79,15 +79,25 @@ describe('counsellor program intent routing', () => {
     assert.equal(result.intent, 'human_handoff');
   });
 
-  test('active KA session keeps fee questions in knowledge_assistant', () => {
+  test('program questions route to CPA even when KA session is active', () => {
     const botState = {
       state: 'idle',
       context: { knowledgeAssistantActive: true },
     };
-    for (const message of ['What are the fees?', 'How much does it cost?']) {
+    for (const message of ['What are the fees?', 'fees']) {
       const result = classifyIntent(message, botState, 'unknown', message);
-      assert.equal(result.intent, 'knowledge_assistant', `expected KA for: ${message}`);
+      assert.equal(result.intent, 'counsellor_program_assistant', `expected CPA for: ${message}`);
     }
+  });
+
+  test('GuideXpert identity routes to CPA even when KA session is active', () => {
+    const botState = {
+      state: 'idle',
+      context: { knowledgeAssistantActive: true },
+    };
+    const result = classifyIntent('What is GuideXpert?', botState, 'unknown', 'What is GuideXpert?');
+    assert.equal(result.intent, 'counsellor_program_assistant');
+    assert.equal(result.intentReason, 'guidexpert_identity_question');
   });
 
   test('GuideXpert identity questions route to counsellor_program_assistant', () => {

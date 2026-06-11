@@ -413,8 +413,12 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     return { intent: 'college_predictor', confidence: 'high', intentReason: 'rank_branch_college_query' };
   }
 
-  if (isKnowledgeSessionActive(botState)) {
-    return { intent: 'knowledge_assistant', confidence: 'medium' };
+  if (isGuideXpertIdentityQuestion(t, original)) {
+    return {
+      intent: 'counsellor_program_assistant',
+      confidence: 'medium',
+      intentReason: 'guidexpert_identity_question',
+    };
   }
 
   if (isCounsellorProgramSessionActive(botState)) {
@@ -425,20 +429,16 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     };
   }
 
-  if (isGuideXpertIdentityQuestion(t, original)) {
-    return {
-      intent: 'counsellor_program_assistant',
-      confidence: 'medium',
-      intentReason: 'guidexpert_identity_question',
-    };
-  }
-
   if (isCounsellorProgramQuestion(t, original)) {
     return {
       intent: 'counsellor_program_assistant',
       confidence: 'medium',
       intentReason: 'counsellor_program_question',
     };
+  }
+
+  if (isKnowledgeSessionActive(botState)) {
+    return { intent: 'knowledge_assistant', confidence: 'medium' };
   }
 
   if (isCapabilityQuestion(t, original)) {
