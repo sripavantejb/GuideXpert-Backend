@@ -206,4 +206,55 @@ describe('CPA orchestrator session language patch', () => {
     assert.match(outbound[1], /GuideXpert counselling programs|मदद कर सकता/i);
     orchestrator.setChatbotOrchestratorTestHooks(null);
   });
+
+  test('Hindi CPA opener after English CPA session switches outbound to Hindi', async () => {
+    const orchestrator = loadOrchestrator();
+    const outbound = [];
+    let contextPatch = {
+      counsellorProgramAssistantActive: true,
+      counsellorProgramSessionLanguage: 'en',
+    };
+
+    orchestrator.setChatbotOrchestratorTestHooks({
+      buildLeadContext: async () => ({ productLine: 'unknown' }),
+      retrieveFacts: async () => ({ links: [] }),
+      getBotState: async () => ({
+        state: 'idle',
+        context: contextPatch,
+      }),
+      transitionState: async (_id, _phone, _state, patch) => {
+        contextPatch = { ...contextPatch, ...patch };
+      },
+      isBotPausedForConversation: async () => false,
+      createHandoff: async () => {},
+      cancelActiveHandoffForUser: async () => {},
+      updateConversationIntent: async () => {},
+      outbound: {
+        sendBotTextReply: async (args) => {
+          outbound.push(args.text);
+          return { success: true };
+        },
+      },
+    });
+
+    await orchestrator.processInbound({
+      conversation: {
+        _id: CONVERSATION_ID,
+        phone: '9347763131',
+        productLine: 'unknown',
+        status: 'active',
+        preferredLanguage: 'en',
+      },
+      inbound: {
+        _id: new mongoose.Types.ObjectId(),
+        text: 'aap kaunse counselling programs provide karte ho',
+        messageType: 'text',
+      },
+      leadLinks: [],
+    });
+
+    assert.equal(contextPatch?.counsellorProgramSessionLanguage, 'hi');
+    assert.match(outbound[0], /मदद कर सकता|GuideXpert counselling programs/i);
+    orchestrator.setChatbotOrchestratorTestHooks(null);
+  });
 });

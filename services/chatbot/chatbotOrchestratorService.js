@@ -1,5 +1,9 @@
 const WhatsAppConversation = require('../../models/WhatsAppConversation');
-const { classifyIntent } = require('./intentClassifierService');
+const {
+  classifyIntent,
+  isCounsellorProgramQuestion,
+} = require('./intentClassifierService');
+const { isSupportedLanguage, normalizeLanguageCode } = require('../../constants/languageConstants');
 const botStateService = require('./botStateService');
 const leadContextService = require('./leadContextService');
 const { retrieveFacts } = require('./knowledgeRetrievalService');
@@ -425,25 +429,37 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
   const facts = await h.retrieveFacts(leadLinks, leadContext);
   const botState = await h.getBotState(activeConversation._id);
 
-  if (
-    multilingualInbound &&
-    botState?.context?.counsellorProgramAssistantActive &&
-    botState.context.counsellorProgramSessionLanguage
-  ) {
-    const sessionResolved = resolveSessionAwareLanguage({
-      conversation: activeConversation,
-      leadContext,
-      detected: {
-        language: multilingualInbound.detectedLanguage,
-        confidence: multilingualInbound.confidence,
-      },
-      message: inbound.text,
-      sessionLanguage: botState.context.counsellorProgramSessionLanguage,
-    });
-    multilingualInbound.resolvedLanguage = sessionResolved.language;
-    multilingualInbound.language = sessionResolved.language;
-    multilingualInbound.resolutionReason = sessionResolved.resolutionReason;
-    multilingualInbound.resolutionSource = sessionResolved.source;
+  if (multilingualInbound && botState?.context?.counsellorProgramAssistantActive) {
+    const detectedLang = normalizeLanguageCode(multilingualInbound.detectedLanguage);
+    const minConfidence = Number(process.env.LANGUAGE_DETECT_MIN_CONFIDENCE) || 0.75;
+    const programLanguageSwitch =
+      detectedLang &&
+      detectedLang !== 'en' &&
+      isSupportedLanguage(detectedLang) &&
+      Number(multilingualInbound.confidence || 0) >= minConfidence &&
+      isCounsellorProgramQuestion(inbound.text, inbound.text);
+
+    if (programLanguageSwitch) {
+      multilingualInbound.resolvedLanguage = detectedLang;
+      multilingualInbound.language = detectedLang;
+      multilingualInbound.resolutionReason = 'cpa_program_language_detected';
+      multilingualInbound.resolutionSource = 'cpa_session';
+    } else if (botState.context.counsellorProgramSessionLanguage) {
+      const sessionResolved = resolveSessionAwareLanguage({
+        conversation: activeConversation,
+        leadContext,
+        detected: {
+          language: multilingualInbound.detectedLanguage,
+          confidence: multilingualInbound.confidence,
+        },
+        message: inbound.text,
+        sessionLanguage: botState.context.counsellorProgramSessionLanguage,
+      });
+      multilingualInbound.resolvedLanguage = sessionResolved.language;
+      multilingualInbound.language = sessionResolved.language;
+      multilingualInbound.resolutionReason = sessionResolved.resolutionReason;
+      multilingualInbound.resolutionSource = sessionResolved.source;
+    }
   }
 
   const intentText =
