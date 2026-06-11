@@ -10,8 +10,10 @@ const {
   isIitCounsellingStrategyEnabled,
 } = require('./iitCounsellingStrategy/iitCounsellingStrategyFlags');
 const {
+  isFactualIceDelegation,
   isIitCounsellingStrategySessionActive,
   isIitCounsellingStrategyQuestion,
+  isIitCounsellingStrategyShortFollowUp,
 } = require('./iitCounsellingStrategy/iitCounsellingStrategyIntentService');
 
 const MENU_COMMAND_WORDS = ['menu', 'help', 'start'];
@@ -411,7 +413,49 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     return { intent: 'greeting', confidence: 'high', intentReason };
   }
 
-  if (isIitCounsellingStrategyEnabled() && isIitCounsellingStrategySessionActive(botState)) {
+  if (isIitCounsellingExpertEnabled() && isFactualIceDelegation(t, original)) {
+    const inStrategySession =
+      isIitCounsellingStrategyEnabled() && isIitCounsellingStrategySessionActive(botState);
+    const inIceSession = isIitCounsellingExpertSessionActive(botState);
+    if (inStrategySession || !inIceSession) {
+      return {
+        intent: 'iit_counselling_expert',
+        confidence: 'medium',
+        intentReason: 'iit_counselling_factual_delegation',
+      };
+    }
+  }
+
+  if (isGuideXpertIdentityQuestion(t, original)) {
+    return {
+      intent: 'counsellor_program_assistant',
+      confidence: 'medium',
+      intentReason: 'guidexpert_identity_question',
+    };
+  }
+
+  if (isMarksBasedRankPredictorQuery(t, original)) {
+    return { intent: 'rank_predictor', confidence: 'high', intentReason: 'marks_based_rank_query' };
+  }
+
+  if (isRankBranchCollegePredictorQuery(t, original)) {
+    return { intent: 'college_predictor', confidence: 'high', intentReason: 'rank_branch_college_query' };
+  }
+
+  if (isRomanizedTeluguBranchGuidanceQuery(original) || isRomanizedTeluguBranchGuidanceQuery(t)) {
+    return {
+      intent: 'knowledge_assistant',
+      confidence: 'medium',
+      intentReason: 'romanized_telugu_branch_guidance',
+    };
+  }
+
+  if (
+    isIitCounsellingStrategyEnabled() &&
+    isIitCounsellingStrategySessionActive(botState) &&
+    (isIitCounsellingStrategyQuestion(t, original) ||
+      isIitCounsellingStrategyShortFollowUp(t, original))
+  ) {
     return {
       intent: 'iit_counselling_strategy',
       confidence: 'medium',
@@ -424,30 +468,6 @@ function classifyIntent(text, botState, productLine, originalText = null) {
       intent: 'iit_counselling_strategy',
       confidence: 'medium',
       intentReason: 'iit_counselling_strategy_question',
-    };
-  }
-
-  if (isRomanizedTeluguBranchGuidanceQuery(original) || isRomanizedTeluguBranchGuidanceQuery(t)) {
-    return {
-      intent: 'knowledge_assistant',
-      confidence: 'medium',
-      intentReason: 'romanized_telugu_branch_guidance',
-    };
-  }
-
-  if (isMarksBasedRankPredictorQuery(t, original)) {
-    return { intent: 'rank_predictor', confidence: 'high', intentReason: 'marks_based_rank_query' };
-  }
-
-  if (isRankBranchCollegePredictorQuery(t, original)) {
-    return { intent: 'college_predictor', confidence: 'high', intentReason: 'rank_branch_college_query' };
-  }
-
-  if (isGuideXpertIdentityQuestion(t, original)) {
-    return {
-      intent: 'counsellor_program_assistant',
-      confidence: 'medium',
-      intentReason: 'guidexpert_identity_question',
     };
   }
 

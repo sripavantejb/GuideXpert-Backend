@@ -48,6 +48,7 @@ const {
   prepareMultilingualInbound,
   applyMultilingualOutbound,
 } = require('../../middleware/multilingualMiddleware');
+const { detectRomanizedLanguage } = require('../language/romanizedLanguageDetectionService');
 const {
   seedPreferredLanguageFromLead,
   resolveSessionAwareLanguage,
@@ -480,11 +481,24 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     }
   }
 
-  if (multilingualInbound && botState?.context?.iitCounsellingStrategyActive) {
+  if (
+    multilingualInbound &&
+    (botState?.context?.iitCounsellingStrategyActive ||
+      isIitCounsellingStrategyQuestion(inbound.text, inbound.text))
+  ) {
+    const romanized = detectRomanizedLanguage(inbound.text);
+    if (romanized?.language && isSupportedLanguage(romanized.language)) {
+      multilingualInbound.detectedLanguage = romanized.language;
+      multilingualInbound.confidence = Math.max(
+        Number(multilingualInbound.confidence || 0),
+        Number(romanized.confidence || 0)
+      );
+    }
+
     const detectedLang = normalizeLanguageCode(multilingualInbound.detectedLanguage);
     const minConfidence = Number(process.env.LANGUAGE_DETECT_MIN_CONFIDENCE) || 0.75;
     const inStrategyConversation =
-      botState.context.iitCounsellingStrategyActive ||
+      botState?.context?.iitCounsellingStrategyActive ||
       isIitCounsellingStrategyQuestion(inbound.text, inbound.text);
     const strategyLanguageSwitch =
       detectedLang &&

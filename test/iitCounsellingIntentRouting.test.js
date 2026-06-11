@@ -33,10 +33,22 @@ describe('IIT counselling expert intent routing', () => {
     savedFlag = process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED;
     process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED = '1';
 
+    const factualDelegation = new Set([
+      'What is JoSAA?',
+      'What is CSAB?',
+      'What is home state quota?',
+      'What is CRL rank?',
+      'What is OBC-NCL rank?',
+      'How many rounds are there in JoSAA?',
+    ]);
+
     for (const message of IIT_QUESTIONS) {
       const result = classifyIntent(message, null, 'unknown', message);
       assert.equal(result.intent, 'iit_counselling_expert', message);
-      assert.equal(result.intentReason, 'iit_counselling_question', message);
+      const expectedReason = factualDelegation.has(message)
+        ? 'iit_counselling_factual_delegation'
+        : 'iit_counselling_question';
+      assert.equal(result.intentReason, expectedReason, message);
     }
   });
 

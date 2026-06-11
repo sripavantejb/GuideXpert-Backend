@@ -68,4 +68,12 @@ describe('iitCounsellingStrategyKnowledgeService', () => {
     const expanded = expandStrategyQuery('float');
     assert.match(expanded, /float/i);
   });
+
+  test('resolveTopicFallbackChunks returns slide strategy chunk', () => {
+    const { resolveTopicFallbackChunks } = require(knowledgePath);
+    const chunks = resolveTopicFallbackChunks('Should I use slide?');
+    assert.ok(chunks.length >= 1);
+    assert.match(chunks[0].question, /slide/i);
+    assert.ok(String(chunks[0].answer || '').trim().length > 20);
+  });
 });

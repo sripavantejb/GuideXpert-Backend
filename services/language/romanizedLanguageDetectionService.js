@@ -31,6 +31,14 @@ const HINDI_MIXED_PHRASES = [
   'rank ki cse',
   'meri rank',
   'cse chahiye',
+  'cse ya ece',
+  'coding pasand ho to',
+  'coding pasand',
+];
+
+const TELUGU_STRATEGY_PHRASES = [
+  'cse leda ece',
+  'coding nachite',
 ];
 
 const HINDI_CAPABILITY_PHRASES = [
@@ -53,7 +61,7 @@ const TELUGU_MIXED_PHRASES = [
   'cse kavali',
 ];
 
-const HINDI_COUNSELLING_TOKENS = ['mujhe', 'chahiye', 'meri', 'hai', 'milega', 'milta', 'kya', 'mere'];
+const HINDI_COUNSELLING_TOKENS = ['mujhe', 'chahiye', 'meri', 'hai', 'milega', 'milta', 'kya', 'mere', 'pasand', 'ya'];
 
 const TELUGU_STRONG_TOKENS = [
   'chesthunnav',
@@ -71,7 +79,7 @@ const TELUGU_STRONG_TOKENS = [
   'enti',
 ];
 
-const TELUGU_COUNSELLING_TOKENS = ['naaku', 'naku', 'kavali', 'vastunda', 'vastundi', 'tho', 'cheyandi'];
+const TELUGU_COUNSELLING_TOKENS = ['naaku', 'naku', 'kavali', 'vastunda', 'vastundi', 'tho', 'cheyandi', 'leda', 'nachite'];
 
 const HINDI_WHOLE_MESSAGE_TOKENS = new Set(['mujhe', 'chahiye']);
 
@@ -146,6 +154,12 @@ function detectRomanizedLanguage(message) {
   }
 
   for (const phrase of TELUGU_MIXED_PHRASES) {
+    if (matchesExactPhrase(normalized, phrase) || matchesMultiWordPhrase(normalized, phrase)) {
+      return { language: 'te', confidence: ROMANIZED_CONFIDENCE, matched: phrase };
+    }
+  }
+
+  for (const phrase of TELUGU_STRATEGY_PHRASES) {
     if (matchesExactPhrase(normalized, phrase) || matchesMultiWordPhrase(normalized, phrase)) {
       return { language: 'te', confidence: ROMANIZED_CONFIDENCE, matched: phrase };
     }

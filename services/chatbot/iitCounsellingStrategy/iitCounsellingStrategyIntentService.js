@@ -14,7 +14,8 @@ const FACTUAL_ICE_DELEGATION_PATTERNS = [
   /\bwhat is float\b/i,
   /\bwhat is slide\b/i,
   /\bwhat is freeze\b/i,
-  /\bwhat is (crl|obc|csab|jos+a+a?)\b/i,
+  /\bwhat is (crl|obc|obc-?ncl|csab|jos+a+a?)\b/i,
+  /\bwhat is obc-?ncl rank\b/i,
   /\bwhat is the difference between\b/i,
   /\bhow many rounds\b/i,
   /\bwhat is home state quota\b/i,
@@ -117,4 +118,5 @@ module.exports = {
   isIitCounsellingStrategyQuestion,
   isIitCounsellingStrategyShortFollowUp,
   isFactualIceDelegation,
+  normalizeText,
 };

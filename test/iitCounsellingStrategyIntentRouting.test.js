@@ -77,6 +77,59 @@ describe('IIT counselling strategy intent routing', () => {
     }
   });
 
+  test('active strategy session still delegates factual ICE questions', () => {
+    savedIceFlag = process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED;
+    savedStrategyFlag = process.env.CHATBOT_IIT_COUNSELLING_STRATEGY_ENABLED;
+    process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED = '1';
+    process.env.CHATBOT_IIT_COUNSELLING_STRATEGY_ENABLED = '1';
+
+    const botState = {
+      state: 'idle',
+      context: { iitCounsellingStrategyActive: true },
+    };
+
+    const cases = [
+      ['What is OBC-NCL rank?', 'iit_counselling_expert'],
+      ['What is JoSAA?', 'iit_counselling_expert'],
+      ['What is float?', 'iit_counselling_expert'],
+    ];
+
+    for (const [message, expectedIntent] of cases) {
+      const result = classifyIntent(message, botState, 'unknown', message);
+      assert.equal(result.intent, expectedIntent, message);
+    }
+  });
+
+  test('active strategy session routes GuideXpert identity to CPA', () => {
+    savedIceFlag = process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED;
+    savedStrategyFlag = process.env.CHATBOT_IIT_COUNSELLING_STRATEGY_ENABLED;
+    process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED = '1';
+    process.env.CHATBOT_IIT_COUNSELLING_STRATEGY_ENABLED = '1';
+
+    const botState = {
+      state: 'idle',
+      context: { iitCounsellingStrategyActive: true },
+    };
+    const result = classifyIntent('What is GuideXpert?', botState, 'unknown', 'What is GuideXpert?');
+    assert.equal(result.intent, 'counsellor_program_assistant');
+    assert.equal(result.intentReason, 'guidexpert_identity_question');
+  });
+
+  test('active strategy session keeps strategy branch questions on strategy', () => {
+    savedIceFlag = process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED;
+    savedStrategyFlag = process.env.CHATBOT_IIT_COUNSELLING_STRATEGY_ENABLED;
+    process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED = '1';
+    process.env.CHATBOT_IIT_COUNSELLING_STRATEGY_ENABLED = '1';
+
+    const botState = {
+      state: 'idle',
+      context: { iitCounsellingStrategyActive: true },
+    };
+    const result = classifyIntent('CSE vs ECE?', botState, 'unknown', 'CSE vs ECE?');
+    assert.equal(result.intent, 'iit_counselling_strategy');
+    assert.equal(result.intentReason, 'iit_counselling_strategy_session_active');
+  });
+
   test('active strategy session keeps follow-ups on iit_counselling_strategy', () => {
     savedIceFlag = process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED;
     savedStrategyFlag = process.env.CHATBOT_IIT_COUNSELLING_STRATEGY_ENABLED;

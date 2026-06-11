@@ -33,6 +33,8 @@ const TOPIC_FALLBACK_PATTERNS = [
   { pattern: /\bwhen to freeze\b/i, questionPrefix: 'When to freeze in JoSAA' },
   { pattern: /\bshould i use slide\b/i, questionPrefix: 'Should I use slide' },
   { pattern: /\bwhen should i (use |choose )?slide\b/i, questionPrefix: 'When should I use slide instead of float' },
+  { pattern: /\bbranch slid(e|ing)\b/i, questionPrefix: 'Should I use slide' },
+  { pattern: /\bslide\b/i, questionPrefix: 'Should I use slide' },
   { pattern: /\bpasand\b/i, questionPrefix: 'Coding pasand ho to' },
   { pattern: /\bnachite\b/i, questionPrefix: 'Coding nachite' },
   { pattern: /\bcoding\b/i, questionPrefix: 'What if I like coding' },

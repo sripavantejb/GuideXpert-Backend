@@ -104,6 +104,22 @@ function resolveDirectKbAnswer(kbResults = [], userMessage = '') {
   return null;
 }
 
+function resolveGroundedKbFallback(kbResults = [], userMessage = '') {
+  const direct = resolveDirectKbAnswer(kbResults, userMessage);
+  if (direct) return direct;
+
+  const topicFallback = resolveTopicFallbackChunks(userMessage);
+  if (topicFallback[0]?.answer) {
+    return String(topicFallback[0].answer).trim() || null;
+  }
+
+  if (kbResults[0]?.answer) {
+    return String(kbResults[0].answer).trim() || null;
+  }
+
+  return null;
+}
+
 async function searchIitCounsellingStrategyKnowledge(query, { retrievalQuery, limit = 5 } = {}) {
   const text = String(query || '').trim();
   const expandedQuery = expandStrategyQuery(text);
@@ -155,7 +171,25 @@ async function searchIitCounsellingStrategyKnowledge(query, { retrievalQuery, li
       scores: kbResults.map((entry) => entry.score ?? null),
     });
     metrics.retrievalFallback = 'topic';
-  } else if (!filterStrategyKbResults(results).length) {
+  }
+
+  if (!kbResults.length && expandedQuery !== text) {
+    const topicFallbackExpanded = resolveTopicFallbackChunks(expandedQuery);
+    kbResults = topicFallbackExpanded.slice(0, limit);
+    stages.push({
+      stage: 'topic_fallback_expanded',
+      count: kbResults.length,
+      resultIds: kbResults.map((entry) => entry.id),
+      scores: kbResults.map((entry) => entry.score ?? null),
+    });
+    if (kbResults.length) {
+      metrics.retrievalFallback = 'topic_expanded';
+    }
+  }
+
+  if (!kbResults.length) {
+    // no-op: stages already recorded
+  } else if (!filterStrategyKbResults(results).length && !metrics.retrievalFallback) {
     metrics.retrievalFallback = metrics.vectorCount === 0 ? 'keyword' : 'keyword_merge';
   }
 
@@ -192,6 +226,7 @@ module.exports = {
   searchKeywordStrategy,
   resolveTopicFallbackChunks,
   resolveDirectKbAnswer,
+  resolveGroundedKbFallback,
   searchIitCounsellingStrategyKnowledge,
   buildIitCounsellingStrategyContext,
 };

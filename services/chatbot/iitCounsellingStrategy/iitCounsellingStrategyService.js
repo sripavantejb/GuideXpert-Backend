@@ -16,6 +16,7 @@ const {
   searchIitCounsellingStrategyKnowledge,
   buildIitCounsellingStrategyContext,
   resolveDirectKbAnswer,
+  resolveGroundedKbFallback,
 } = require('./iitCounsellingStrategyKnowledgeService');
 const {
   validateIitCounsellingStrategyResponse,
@@ -118,7 +119,7 @@ async function answer({
     let answerSource = llmOutcome ? 'llm' : null;
 
     if (!String(responseText || '').trim()) {
-      const groundedAnswer = resolveDirectKbAnswer(retrieval.kbResults, text);
+      const groundedAnswer = resolveGroundedKbFallback(retrieval.kbResults, text);
       if (groundedAnswer) {
         responseText = groundedAnswer;
         answerSource = 'grounded_kb';
@@ -128,12 +129,30 @@ async function answer({
 
     const knowledgeResults = retrieval.kbResults;
 
-    const guarded = validateIitCounsellingStrategyResponse({
+    let guarded = validateIitCounsellingStrategyResponse({
       response: responseText,
       knowledgeResults,
       userMessage: languageMetadata?.originalMessage || text,
       englishUserMessage: languageMetadata?.translatedQuery || text,
     });
+
+    if (
+      guarded.modified &&
+      (guarded.text === UNKNOWN_FALLBACK ||
+        guarded.reason === 'no_grounding' ||
+        guarded.reason === 'empty_response')
+    ) {
+      const groundedAnswer = resolveGroundedKbFallback(knowledgeResults, text);
+      if (groundedAnswer) {
+        guarded = {
+          text: groundedAnswer,
+          modified: true,
+          reason: 'grounded_kb_fallback',
+        };
+        answerSource = answerSource || 'grounded_kb';
+        console.warn('[chatbot] iit_counselling_strategy grounded_kb_fallback', { query: text });
+      }
+    }
 
     return {
       text: guarded.text || UNKNOWN_FALLBACK,
