@@ -225,6 +225,9 @@ function validateSection2Body(b) {
   if (!slotMeta) {
     return { error: 'Please select a valid session slot for the next 2 days.' };
   }
+  if (b.parentAttendanceConfirmed !== true) {
+    return { error: 'Please confirm that you will attend the session with your parent.' };
+  }
 
   return {
     data: {
@@ -234,6 +237,7 @@ function validateSection2Body(b) {
       preferredLanguage,
       preferredTimeSlot: slotMeta.label,
       preferredTimeSlotDate: slotMeta.slotDate,
+      parentAttendanceConfirmed: true,
       currentStep: 2,
       formCompleted: true,
     },

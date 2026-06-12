@@ -30,6 +30,7 @@ exports.checkMobile = async (req, res) => {
         success: true,
         found: false,
         needsProfile: true,
+        needsOtp: true,
         data: { slots },
       });
     }
@@ -39,17 +40,20 @@ exports.checkMobile = async (req, res) => {
         success: true,
         found: true,
         alreadyBooked: true,
+        needsOtp: false,
         message: 'A slot is already booked with this mobile number.',
         data: { student: mapLeadBasicDTO(lead) },
       });
     }
 
     const slots = await getAvailableActiveSlots();
+    const formCompleted = !!lead.formCompleted;
 
     return res.status(200).json({
       success: true,
       found: true,
       alreadyBooked: false,
+      needsOtp: !formCompleted,
       data: {
         student: mapLeadBasicDTO(lead),
         slots,

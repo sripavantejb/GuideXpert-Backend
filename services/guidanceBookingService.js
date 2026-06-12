@@ -72,6 +72,7 @@ function mapLeadBasicDTO(doc) {
     preferredColleges: Array.isArray(doc.preferredColleges) ? doc.preferredColleges : [],
     bookingConfirmed: !!doc.bookingConfirmed,
     bookingStatus: doc.bookingStatus || 'Not Booked',
+    formCompleted: !!doc.formCompleted,
   };
 }
 
