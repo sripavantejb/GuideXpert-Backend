@@ -112,19 +112,12 @@ function applyUtmFilters(match, query) {
 function validateSubmitBody(b) {
   const studentName = (b.studentName && String(b.studentName).trim()) || '';
   const mobileNumber = to10Digits(b.mobileNumber);
-  const parentName = (b.parentName && String(b.parentName).trim()) || '';
-  const parentMobileNumber = to10Digits(b.parentMobileNumber);
   const sessionAttendee = (b.sessionAttendee && String(b.sessionAttendee).trim()) || '';
   const currentClass = (b.currentClass && String(b.currentClass).trim()) || '';
-  const city = (b.city && String(b.city).trim()) || '';
-  const entranceExamRank = (b.entranceExamRank && String(b.entranceExamRank).trim()) || '';
   const interestedBranch = (b.interestedBranch && String(b.interestedBranch).trim()) || '';
   const collegeBudget = (b.collegeBudget && String(b.collegeBudget).trim()) || '';
-  const biggestConcern = (b.biggestConcern && String(b.biggestConcern).trim()) || '';
   const preferredLanguage = (b.preferredLanguage && String(b.preferredLanguage).trim()) || '';
   const preferredTimeSlotKey = (b.preferredTimeSlot && String(b.preferredTimeSlot).trim()) || '';
-  const additionalQuestions =
-    (b.additionalQuestions && String(b.additionalQuestions).trim().slice(0, 2000)) || '';
 
   if (studentName.length < 2 || studentName.length > 100) {
     return { error: 'Student name must be 2–100 characters.' };
@@ -132,32 +125,17 @@ function validateSubmitBody(b) {
   if (!INDIAN_MOBILE_REGEX.test(mobileNumber)) {
     return { error: 'Enter a valid 10-digit Indian mobile number for the student.' };
   }
-  if (parentName.length < 2 || parentName.length > 100) {
-    return { error: 'Parent name must be 2–100 characters.' };
-  }
-  if (!INDIAN_MOBILE_REGEX.test(parentMobileNumber)) {
-    return { error: 'Enter a valid 10-digit Indian mobile number for the parent.' };
-  }
   if (!SESSION_ATTENDEE_OPTIONS.includes(sessionAttendee)) {
     return { error: 'Please select who will attend the session.' };
   }
   if (!CURRENT_CLASS_OPTIONS.includes(currentClass)) {
     return { error: 'Please select a valid current class.' };
   }
-  if (city.length < 2 || city.length > 80) {
-    return { error: 'City / town must be 2–80 characters.' };
-  }
-  if (!entranceExamRank || entranceExamRank.length > 120) {
-    return { error: 'Entrance exam rank is required (max 120 characters).' };
-  }
   if (!INTERESTED_BRANCH_OPTIONS.includes(interestedBranch)) {
     return { error: 'Please select a valid branch.' };
   }
   if (!COLLEGE_BUDGET_OPTIONS.includes(collegeBudget)) {
     return { error: 'Please select a valid college budget.' };
-  }
-  if (!BIGGEST_CONCERN_OPTIONS.includes(biggestConcern)) {
-    return { error: 'Please select a valid concern.' };
   }
   if (!PREFERRED_LANGUAGE_OPTIONS.includes(preferredLanguage)) {
     return { error: 'Please select a valid language.' };
@@ -174,21 +152,15 @@ function validateSubmitBody(b) {
     data: {
       studentName,
       mobileNumber,
-      parentName,
-      parentMobileNumber,
       sessionAttendee,
       currentClass,
-      city,
-      entranceExamRank,
       interestedBranch,
       collegeBudget,
-      biggestConcern,
       preferredLanguage,
       preferredTimeSlot: slotMeta.label,
       preferredTimeSlotDate: slotMeta.slotDate,
-      additionalQuestions,
       formCompleted: true,
-      currentStep: 3,
+      currentStep: 2,
       utm_source: (b.utm_source && String(b.utm_source).trim().slice(0, 120)) || undefined,
       utm_medium: (b.utm_medium && String(b.utm_medium).trim().slice(0, 120)) || undefined,
       utm_campaign: (b.utm_campaign && String(b.utm_campaign).trim().slice(0, 120)) || undefined,
@@ -201,8 +173,6 @@ function validateSection1Body(b) {
   const studentName = (b.studentName && String(b.studentName).trim()) || '';
   const mobileNumber = to10Digits(b.mobileNumber);
   const currentClass = (b.currentClass && String(b.currentClass).trim()) || '';
-  const city = (b.city && String(b.city).trim()) || '';
-  const entranceExamRank = (b.entranceExamRank && String(b.entranceExamRank).trim()) || '';
 
   if (studentName.length < 2 || studentName.length > 100) {
     return { error: 'Student name must be 2–100 characters.' };
@@ -213,20 +183,12 @@ function validateSection1Body(b) {
   if (!CURRENT_CLASS_OPTIONS.includes(currentClass)) {
     return { error: 'Please select a valid current class.' };
   }
-  if (city.length < 2 || city.length > 80) {
-    return { error: 'City / town must be 2–80 characters.' };
-  }
-  if (!entranceExamRank || entranceExamRank.length > 120) {
-    return { error: 'Entrance exam rank is required (max 120 characters).' };
-  }
 
   return {
     data: {
       studentName,
       mobileNumber,
       currentClass,
-      city,
-      entranceExamRank,
       currentStep: 1,
       formCompleted: false,
       utm_source: (b.utm_source && String(b.utm_source).trim().slice(0, 120)) || undefined,
@@ -238,19 +200,12 @@ function validateSection1Body(b) {
 }
 
 function validateSection2Body(b) {
-  const parentName = (b.parentName && String(b.parentName).trim()) || '';
-  const parentMobileNumber = to10Digits(b.parentMobileNumber);
   const sessionAttendee = (b.sessionAttendee && String(b.sessionAttendee).trim()) || '';
   const interestedBranch = (b.interestedBranch && String(b.interestedBranch).trim()) || '';
   const collegeBudget = (b.collegeBudget && String(b.collegeBudget).trim()) || '';
-  const biggestConcern = (b.biggestConcern && String(b.biggestConcern).trim()) || '';
+  const preferredLanguage = (b.preferredLanguage && String(b.preferredLanguage).trim()) || '';
+  const preferredTimeSlotKey = (b.preferredTimeSlot && String(b.preferredTimeSlot).trim()) || '';
 
-  if (parentName.length < 2 || parentName.length > 100) {
-    return { error: 'Parent name must be 2–100 characters.' };
-  }
-  if (!INDIAN_MOBILE_REGEX.test(parentMobileNumber)) {
-    return { error: 'Enter a valid 10-digit Indian mobile number for the parent.' };
-  }
   if (!SESSION_ATTENDEE_OPTIONS.includes(sessionAttendee)) {
     return { error: 'Please select who will attend the session.' };
   }
@@ -260,20 +215,27 @@ function validateSection2Body(b) {
   if (!COLLEGE_BUDGET_OPTIONS.includes(collegeBudget)) {
     return { error: 'Please select a valid college budget.' };
   }
-  if (!BIGGEST_CONCERN_OPTIONS.includes(biggestConcern)) {
-    return { error: 'Please select a valid concern.' };
+  if (!PREFERRED_LANGUAGE_OPTIONS.includes(preferredLanguage)) {
+    return { error: 'Please select a valid language.' };
+  }
+  if (!isValidPreferredTimeSlot(preferredTimeSlotKey)) {
+    return { error: 'Please select a valid session slot for the next 2 days.' };
+  }
+  const slotMeta = resolveSlotMeta(preferredTimeSlotKey);
+  if (!slotMeta) {
+    return { error: 'Please select a valid session slot for the next 2 days.' };
   }
 
   return {
     data: {
-      parentName,
-      parentMobileNumber,
       sessionAttendee,
       interestedBranch,
       collegeBudget,
-      biggestConcern,
+      preferredLanguage,
+      preferredTimeSlot: slotMeta.label,
+      preferredTimeSlotDate: slotMeta.slotDate,
       currentStep: 2,
-      formCompleted: false,
+      formCompleted: true,
     },
   };
 }
@@ -458,7 +420,7 @@ exports.saveOneOnOneSection1 = async (req, res) => {
 };
 
 /**
- * POST /api/one-on-one-counseling/section2 — save step 2 (parent & preferences)
+ * POST /api/one-on-one-counseling/section2 — save step 2 and complete booking
  */
 exports.saveOneOnOneSection2 = async (req, res) => {
   try {
@@ -470,6 +432,25 @@ exports.saveOneOnOneSection2 = async (req, res) => {
     const validated = validateSection2Body(req.body || {});
     if (validated.error) {
       return res.status(400).json({ success: false, message: validated.error });
+    }
+
+    const existing = await OneOnOneCounselingLead.findOne({
+      _id: idParsed.leadId,
+      formCompleted: { $ne: true },
+    }).lean();
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found or already completed. Please start from step 1.',
+      });
+    }
+
+    if (!existing.studentName || !existing.mobileNumber || !existing.currentClass) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please complete step 1 before submitting.',
+      });
     }
 
     const doc = await OneOnOneCounselingLead.findOneAndUpdate(
@@ -485,10 +466,13 @@ exports.saveOneOnOneSection2 = async (req, res) => {
       });
     }
 
+    const whatsappSubmit = await dispatchOneOnOneSubmitWhatsApp(doc);
+
     return res.status(200).json({
       success: true,
-      message: 'Step 2 saved successfully.',
-      data: { leadId: doc._id.toString(), currentStep: 2, formCompleted: false },
+      message: 'Submitted successfully',
+      data: mapLeadToDTO(doc.toObject()),
+      whatsappSubmit,
     });
   } catch (err) {
     if (err.name === 'ValidationError') {
@@ -529,27 +513,14 @@ exports.saveOneOnOneSection3 = async (req, res) => {
       });
     }
 
-    if (
-      !existing.studentName ||
-      !existing.mobileNumber ||
-      !existing.currentClass ||
-      !existing.city ||
-      !existing.entranceExamRank
-    ) {
+    if (!existing.studentName || !existing.mobileNumber || !existing.currentClass) {
       return res.status(400).json({
         success: false,
         message: 'Please complete step 1 before submitting.',
       });
     }
 
-    if (
-      !existing.parentName ||
-      !existing.parentMobileNumber ||
-      !existing.sessionAttendee ||
-      !existing.interestedBranch ||
-      !existing.collegeBudget ||
-      !existing.biggestConcern
-    ) {
+    if (!existing.sessionAttendee || !existing.interestedBranch || !existing.collegeBudget) {
       return res.status(400).json({
         success: false,
         message: 'Please complete step 2 before submitting.',
