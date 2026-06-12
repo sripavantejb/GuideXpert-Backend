@@ -38,6 +38,8 @@ const {
   ICS_EMPTY_FALLBACK: IIT_COUNSELLING_STRATEGY_FALLBACK,
 } = require('./iitCounsellingStrategy/iitCounsellingStrategyGuardrailService');
 const { isIitCounsellingStrategyQuestion } = require('./iitCounsellingStrategy/iitCounsellingStrategyIntentService');
+const { isLeadEventExtractionEnabled } = require('./leadEventExtraction/leadEventExtractionFlags');
+const { extractAndPersist } = require('./leadEventExtraction/leadEventExtractionService');
 const { buildWelcomeMenuText } = require('./welcomeMessageService');
 const { getDemoMeetingLink } = require('../../utils/slotNotificationFormatters');
 const { emptySubflows } = require('./botSubflowContext');
@@ -1203,6 +1205,23 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
         }
       : null,
   });
+
+  if (isLeadEventExtractionEnabled()) {
+    extractAndPersist({
+      conversation: activeConversation,
+      inbound,
+      outboundMessageId: result?.outboundId || null,
+      intent: intentResult.intent,
+      intentReason: intentResult.intentReason || null,
+      userMessage: multilingualInbound?.originalMessage || inbound.text,
+      assistantReply: replyText,
+      leadContext,
+      contextPatch,
+      assistantResult,
+    }).catch((err) => {
+      console.warn('[chatbot] lead_event_extraction_failed', err.message);
+    });
+  }
 
   return result;
 }

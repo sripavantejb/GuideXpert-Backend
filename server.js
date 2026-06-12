@@ -17,6 +17,7 @@ const assessment4Routes = require('./routes/assessment4Routes');
 const assessment5Routes = require('./routes/assessment5Routes');
 const adminRoutes = require('./routes/adminRoutes');
 const whatsappOpsAdminRoutes = require('./routes/whatsappOpsAdminRoutes');
+const leadInsightsRoutes = require('./routes/leadInsightsRoutes');
 const influencerRoutes = require('./routes/influencerRoutes');
 const meetingRoutes = require('./routes/meetingRoutes');
 const iitMeetRoutes = require('./routes/iitMeetRoutes');
@@ -77,6 +78,18 @@ const {
   getIitCounsellingStrategyConfigStatus,
   logIitCounsellingStrategyConfigStatus,
 } = require('./utils/iitCounsellingStrategyConfigStatus');
+const {
+  getLeadEventExtractionConfigStatus,
+  logLeadEventExtractionConfigStatus,
+} = require('./utils/leadEventExtractionConfigStatus');
+const {
+  getLeadProfileConfigStatus,
+  logLeadProfileConfigStatus,
+} = require('./utils/leadProfileConfigStatus');
+const {
+  getLeadScoringConfigStatus,
+  logLeadScoringConfigStatus,
+} = require('./utils/leadScoringConfigStatus');
 
 const app = express();
 
@@ -113,6 +126,9 @@ logKnowledgeAssistantConfigStatus();
 logCounsellorProgramAssistantConfigStatus();
 logIitCounsellingExpertConfigStatus();
 logIitCounsellingStrategyConfigStatus();
+logLeadEventExtractionConfigStatus();
+logLeadProfileConfigStatus();
+logLeadScoringConfigStatus();
 
 const allowedOrigins = [
   process.env.FRONTEND_URL,
@@ -223,6 +239,9 @@ app.get('/api/health', (req, res) => {
   const counsellorProgramAssistant = getCounsellorProgramAssistantConfigStatus();
   const iitCounsellingExpert = getIitCounsellingExpertConfigStatus();
   const iitCounsellingStrategy = getIitCounsellingStrategyConfigStatus();
+  const leadEventExtraction = getLeadEventExtractionConfigStatus();
+  const leadProfile = getLeadProfileConfigStatus();
+  const leadScoring = getLeadScoringConfigStatus();
   res.json({
     status: 'ok',
     message: 'GuideXpert API is running',
@@ -244,6 +263,18 @@ app.get('/api/health', (req, res) => {
     iitCounsellingStrategy: {
       enabled: iitCounsellingStrategy.enabled,
       ready: iitCounsellingStrategy.ready,
+    },
+    leadEventExtraction: {
+      enabled: leadEventExtraction.enabled,
+      ready: leadEventExtraction.ready,
+    },
+    leadProfile: {
+      enabled: leadProfile.enabled,
+      ready: leadProfile.ready,
+    },
+    leadScoring: {
+      enabled: leadScoring.enabled,
+      ready: leadScoring.ready,
     },
   });
 });
@@ -287,6 +318,7 @@ app.use('/api/posters', posterTemplatePublicRoutes);
 app.use('/api/admin/whatsapp-ops', requireAdmin, whatsappOpsAdminRoutes);
 app.use('/api/admin/whatsapp-chat', requireAdmin, whatsappChatAdminRoutes);
 app.use('/api/admin/ai-calls', requireAdmin, aiCallsAdminRoutes);
+app.use('/api/admin/lead-insights', requireAdmin, leadInsightsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/bda', require('./routes/bdaRoutes'));
 app.use('/api/bda/whatsapp-chat', whatsappChatBdaRoutes);
