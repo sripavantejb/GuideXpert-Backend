@@ -8,6 +8,8 @@ const servicePath = require.resolve('../services/chatbot/leadInsights/leadInsigh
 const profileModelPath = require.resolve('../models/WhatsAppLeadProfile');
 const scoreModelPath = require.resolve('../models/WhatsAppLeadScore');
 const eventModelPath = require.resolve('../models/WhatsAppLeadEvent');
+const formModelPath = require.resolve('../models/FormSubmission');
+const iitModelPath = require.resolve('../models/IitCounsellingSubmission');
 
 const PHONE = '9876543210';
 const CONVERSATION_ID = new mongoose.Types.ObjectId();
@@ -77,6 +79,24 @@ describe('leadInsightsService', () => {
       value: { name: 'whatsappleadprofiles' },
       configurable: true,
     });
+
+    const FormSubmission = require(formModelPath);
+    mock.method(FormSubmission, 'find', () => ({
+      select() {
+        return { lean: async () => [] };
+      },
+    }));
+
+    const IitCounsellingSubmission = require(iitModelPath);
+    mock.method(IitCounsellingSubmission, 'find', () => ({
+      select() {
+        return {
+          sort() {
+            return { lean: async () => [] };
+          },
+        };
+      },
+    }));
   }
 
   test('getLeadDetails returns profile score and recent events for valid phone', async () => {
@@ -195,5 +215,36 @@ describe('leadInsightsService', () => {
     assert.equal(parseStage('invalid').error, 'Invalid stage. Expected cold, warm, or hot.');
     assert.equal(parseMinScore('50').minScore, 50);
     assert.equal(parseMinScore('150').error, 'Invalid minScore. Expected a number between 0 and 100.');
+  });
+
+  test('loadDisplayNamesByPhone prefers IIT counselling name over form submission', async () => {
+    mock.restoreAll();
+    delete require.cache[servicePath];
+
+    const FormSubmission = require(formModelPath);
+    mock.method(FormSubmission, 'find', () => ({
+      select() {
+        return {
+          lean: async () => [{ phone: PHONE, fullName: 'GX Lead' }],
+        };
+      },
+    }));
+
+    const IitCounsellingSubmission = require(iitModelPath);
+    mock.method(IitCounsellingSubmission, 'find', () => ({
+      select() {
+        return {
+          sort() {
+            return {
+              lean: async () => [{ phone: PHONE, fullName: 'IIT Lead', updatedAt: new Date() }],
+            };
+          },
+        };
+      },
+    }));
+
+    const { loadDisplayNamesByPhone } = require(servicePath);
+    const names = await loadDisplayNamesByPhone([PHONE]);
+    assert.equal(names.get(PHONE), 'IIT Lead');
   });
 });

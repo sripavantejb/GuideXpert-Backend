@@ -1,5 +1,7 @@
 'use strict';
 
+const FormSubmission = require('../../../models/FormSubmission');
+const IitCounsellingSubmission = require('../../../models/IitCounsellingSubmission');
 const WhatsAppLeadProfile = require('../../../models/WhatsAppLeadProfile');
 const WhatsAppLeadScore = require('../../../models/WhatsAppLeadScore');
 const WhatsAppLeadEvent = require('../../../models/WhatsAppLeadEvent');
@@ -12,7 +14,7 @@ const RECENT_EVENTS_LIMIT = 20;
 const HOT_LEADS_LIMIT = 50;
 
 const PROFILE_LIST_PROJECTION =
-  'phone branchInterest collegeInterest eventCount lastInteractionAt conversationId';
+  'phone branchInterest collegeInterest exam languagePreference priceSensitive demoInterested handoffRequested assistantTypesUsed eventCount lastInteractionAt conversationId';
 const SCORE_LIST_PROJECTION =
   'phone leadScore leadStage scoreReasons confidence lastScoredAt conversationId';
 const EVENT_DETAIL_PROJECTION =
@@ -56,16 +58,63 @@ function parseStage(value) {
   return { stage };
 }
 
-function mapListItem(scoreDoc = {}, profileDoc = {}) {
+function mapListItem(scoreDoc = {}, profileDoc = {}, name = null) {
   return {
     phone: scoreDoc.phone || profileDoc.phone || null,
+    name: name || null,
     leadScore: scoreDoc.leadScore ?? null,
     leadStage: scoreDoc.leadStage ?? null,
     branchInterest: profileDoc.branchInterest ?? null,
     collegeInterest: profileDoc.collegeInterest ?? null,
+    exam: profileDoc.exam ?? null,
+    languagePreference: profileDoc.languagePreference ?? null,
+    priceSensitive: Boolean(profileDoc.priceSensitive),
+    demoInterested: Boolean(profileDoc.demoInterested),
+    handoffRequested: Boolean(profileDoc.handoffRequested),
     eventCount: profileDoc.eventCount ?? 0,
     lastInteractionAt: profileDoc.lastInteractionAt ?? null,
   };
+}
+
+async function loadDisplayNamesByPhone(phones = []) {
+  const phoneList = [...new Set(phones.map((phone) => String(phone || '').trim()).filter(Boolean))];
+  const nameByPhone = new Map();
+  if (!phoneList.length) {
+    return nameByPhone;
+  }
+
+  const [gxRows, iitRows] = await Promise.all([
+    FormSubmission.find({ phone: { $in: phoneList } })
+      .select('phone fullName')
+      .lean(),
+    IitCounsellingSubmission.find({ phone: { $in: phoneList } })
+      .select('phone fullName updatedAt')
+      .sort({ updatedAt: -1 })
+      .lean(),
+  ]);
+
+  for (const row of iitRows) {
+    const fullName = String(row?.fullName || '').trim();
+    if (fullName && row?.phone && !nameByPhone.has(row.phone)) {
+      nameByPhone.set(row.phone, fullName);
+    }
+  }
+  for (const row of gxRows) {
+    const fullName = String(row?.fullName || '').trim();
+    if (fullName && row?.phone && !nameByPhone.has(row.phone)) {
+      nameByPhone.set(row.phone, fullName);
+    }
+  }
+
+  return nameByPhone;
+}
+
+async function enrichLeadListItems(items = []) {
+  const nameByPhone = await loadDisplayNamesByPhone(items.map((item) => item.phone));
+  return items.map((item) => ({
+    ...item,
+    name: nameByPhone.get(item.phone) || item.name || null,
+  }));
 }
 
 async function getLeadDetails(phone) {
@@ -74,7 +123,7 @@ async function getLeadDetails(phone) {
     return { error: 'Invalid phone. Expected 10 digits.' };
   }
 
-  const [profile, score, recentEvents] = await Promise.all([
+  const [profile, score, recentEvents, nameByPhone] = await Promise.all([
     WhatsAppLeadProfile.findOne({ phone: phone10 }).select(PROFILE_LIST_PROJECTION).lean(),
     WhatsAppLeadScore.findOne({ phone: phone10 }).select(SCORE_LIST_PROJECTION).lean(),
     WhatsAppLeadEvent.find({ phone: phone10 })
@@ -82,10 +131,14 @@ async function getLeadDetails(phone) {
       .sort({ createdAt: -1 })
       .limit(RECENT_EVENTS_LIMIT)
       .lean(),
+    loadDisplayNamesByPhone([phone10]),
   ]);
 
+  const name = nameByPhone.get(phone10) || null;
+
   return {
-    profile: profile || null,
+    name,
+    profile: profile ? { ...profile, name } : null,
     score: score || null,
     recentEvents: recentEvents || [],
   };
@@ -137,6 +190,11 @@ async function listLeads({ stage = null, minScore = null, page = DEFAULT_PAGE, l
               leadStage: 1,
               branchInterest: '$profile.branchInterest',
               collegeInterest: '$profile.collegeInterest',
+              exam: '$profile.exam',
+              languagePreference: '$profile.languagePreference',
+              priceSensitive: { $ifNull: ['$profile.priceSensitive', false] },
+              demoInterested: { $ifNull: ['$profile.demoInterested', false] },
+              handoffRequested: { $ifNull: ['$profile.handoffRequested', false] },
               eventCount: { $ifNull: ['$profile.eventCount', 0] },
               lastInteractionAt: '$profile.lastInteractionAt',
             },
@@ -151,7 +209,7 @@ async function listLeads({ stage = null, minScore = null, page = DEFAULT_PAGE, l
     total: result?.total?.[0]?.count || 0,
     page: safePage,
     limit: safeLimit,
-    items: result?.items || [],
+    items: await enrichLeadListItems(result?.items || []),
   };
 }
 
@@ -230,13 +288,18 @@ async function getHotLeads() {
         lastScoredAt: 1,
         branchInterest: '$profile.branchInterest',
         collegeInterest: '$profile.collegeInterest',
+        exam: '$profile.exam',
+        languagePreference: '$profile.languagePreference',
+        priceSensitive: { $ifNull: ['$profile.priceSensitive', false] },
+        demoInterested: { $ifNull: ['$profile.demoInterested', false] },
+        handoffRequested: { $ifNull: ['$profile.handoffRequested', false] },
         eventCount: { $ifNull: ['$profile.eventCount', 0] },
         lastInteractionAt: '$profile.lastInteractionAt',
       },
     },
   ]);
 
-  return rows;
+  return enrichLeadListItems(rows);
 }
 
 module.exports = {
@@ -251,6 +314,8 @@ module.exports = {
   parseMinScore,
   parseStage,
   mapListItem,
+  loadDisplayNamesByPhone,
+  enrichLeadListItems,
   getLeadDetails,
   listLeads,
   getLeadStats,
