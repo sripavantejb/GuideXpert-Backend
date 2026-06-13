@@ -8,6 +8,7 @@ const {
   PREFERRED_LANGUAGE_OPTIONS,
   INDIAN_MOBILE_REGEX,
 } = require('../constants/oneOnOneCounseling');
+const { getGuidanceSlotBookingStatus } = require('../utils/guidanceSlotTimeWindow');
 
 function normalizePreferredColleges(raw) {
   const arr = Array.isArray(raw) ? raw : [];
@@ -120,7 +121,17 @@ async function getAvailableActiveSlots() {
 
   return slots
     .filter((s) => counselorById[String(s.oneOnOneCounselorId)])
-    .map((s) => mapSlotToPublicDTO(s, counselorById[String(s.oneOnOneCounselorId)]));
+    .map((s) => {
+      const bookingStatus = getGuidanceSlotBookingStatus(s);
+      if (bookingStatus.status === 'ended') {
+        return null;
+      }
+      return {
+        ...mapSlotToPublicDTO(s, counselorById[String(s.oneOnOneCounselorId)]),
+        bookingClosed: bookingStatus.status === 'frozen',
+      };
+    })
+    .filter(Boolean);
 }
 
 async function findLeadByMobile(mobileNumber) {
@@ -276,6 +287,17 @@ async function bookSlotForLead({
   const counselor = await OneOnOneCounselor.findById(slot.oneOnOneCounselorId).lean();
   if (!counselor || !counselor.isActive) {
     return { error: 'Selected slot is not available.', status: 400 };
+  }
+
+  const slotBookingStatus = getGuidanceSlotBookingStatus(slot);
+  if (slotBookingStatus.status === 'ended') {
+    return { error: 'This session slot has already ended. Please choose another slot.', status: 400 };
+  }
+  if (slotBookingStatus.status === 'frozen') {
+    return {
+      error: 'Booking for this slot closed 15 minutes before the session start time.',
+      status: 403,
+    };
   }
 
   const slotUpdate = await GuidanceSlot.findOneAndUpdate(

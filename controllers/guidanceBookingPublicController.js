@@ -15,6 +15,7 @@ const {
   mapLeadBookingDTO,
   validateMobile,
 } = require('../services/guidanceBookingService');
+const { joinGuidanceMeetForMobile } = require('../services/guidanceMeetJoinService');
 
 exports.checkMobile = async (req, res) => {
   try {
@@ -194,6 +195,29 @@ exports.bookSlot = async (req, res) => {
     });
   } catch (err) {
     console.error('[bookSlot]', err);
+    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  }
+};
+
+exports.meetJoin = async (req, res) => {
+  try {
+    const mobileNumber = to10Digits(req.body?.mobileNumber);
+    if (!validateMobile(mobileNumber)) {
+      return res.status(400).json({ success: false, message: 'Enter a valid 10-digit Indian mobile number.' });
+    }
+
+    const result = await joinGuidanceMeetForMobile(mobileNumber);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        ...(result.data ? { data: result.data } : {}),
+      });
+    }
+
+    return res.status(200).json({ success: true, data: result.data });
+  } catch (err) {
+    console.error('[meetJoin]', err);
     return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
   }
 };
