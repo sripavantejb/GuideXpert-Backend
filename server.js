@@ -90,6 +90,10 @@ const {
   getLeadScoringConfigStatus,
   logLeadScoringConfigStatus,
 } = require('./utils/leadScoringConfigStatus');
+const {
+  getScopeFirewallConfigStatus,
+  logScopeFirewallConfigStatus,
+} = require('./utils/scopeFirewallConfigStatus');
 
 const app = express();
 
@@ -129,6 +133,7 @@ logIitCounsellingStrategyConfigStatus();
 logLeadEventExtractionConfigStatus();
 logLeadProfileConfigStatus();
 logLeadScoringConfigStatus();
+logScopeFirewallConfigStatus();
 
 const allowedOrigins = [
   process.env.FRONTEND_URL,
@@ -242,6 +247,7 @@ app.get('/api/health', (req, res) => {
   const leadEventExtraction = getLeadEventExtractionConfigStatus();
   const leadProfile = getLeadProfileConfigStatus();
   const leadScoring = getLeadScoringConfigStatus();
+  const scopeFirewall = getScopeFirewallConfigStatus();
   res.json({
     status: 'ok',
     message: 'GuideXpert API is running',
@@ -275,6 +281,11 @@ app.get('/api/health', (req, res) => {
     leadScoring: {
       enabled: leadScoring.enabled,
       ready: leadScoring.ready,
+    },
+    scopeFirewall: {
+      enabled: scopeFirewall.enabled,
+      shadowMode: scopeFirewall.shadowMode,
+      ready: scopeFirewall.ready,
     },
   });
 });

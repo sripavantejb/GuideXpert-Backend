@@ -71,6 +71,12 @@ const {
   resolveCollegePredictorRankQueryUnavailableReply,
 } = require('../../constants/collegePredictorUnavailableReplies');
 const { isRankBranchCollegePredictorQuery, normalizeText } = require('./intentClassifierService');
+const {
+  isScopeFirewallEnabled,
+  isScopeFirewallShadowMode,
+} = require('./scopeFirewall/scopeFirewallFlags');
+const { evaluateScope } = require('./scopeFirewall/scopeFirewallService');
+const { resolveScopeFirewallReply } = require('../../constants/scopeFirewallReplies');
 
 function resolvedLanguageFrom(multilingualInbound, fallback = 'en') {
   return multilingualInbound?.resolvedLanguage || multilingualInbound?.language || fallback;
@@ -662,6 +668,70 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       durationMs: Date.now() - startedAt,
     });
     return result;
+  }
+
+  // Scope Firewall: runs after control-intent early returns and before assistant
+  // routing. Every message (including sticky KA sessions) is re-checked so
+  // out-of-domain topics never reach any LLM path.
+  if (isScopeFirewallEnabled()) {
+    const scope = evaluateScope({
+      originalText: inbound.text,
+      englishMessage: multilingualInbound?.englishMessage || inbound.text,
+      intent: intentResult.intent,
+      botState,
+    });
+    if (!scope.allowed) {
+      if (isScopeFirewallShadowMode()) {
+        logChatbotEvent('scope_blocked_shadow', {
+          conversationId: activeConversation._id,
+          phone10: activeConversation.phone,
+          intent: intentResult.intent,
+          botState: botState?.state || null,
+          scopeCategory: scope.category,
+          scopeReason: scope.reason,
+        });
+      } else {
+        logChatbotEvent('scope_blocked', {
+          conversationId: activeConversation._id,
+          phone10: activeConversation.phone,
+          intent: intentResult.intent,
+          botState: botState?.state || null,
+          scopeCategory: scope.category,
+          scopeReason: scope.reason,
+        });
+        const refusalText = await deliverOutboundReply({
+          replyText: resolveScopeFirewallReply(resolvedLanguageFrom(multilingualInbound)),
+          multilingualInbound,
+          intent: intentResult.intent,
+          localizationTier: 'static',
+          preLocalized: true,
+        });
+        const result = await h.outbound.sendBotTextReply({
+          conversationId: activeConversation._id,
+          phone10: activeConversation.phone,
+          text: refusalText,
+          inReplyToInboundId: inbound._id,
+        });
+        logInboundResult({
+          event: 'inbound_processed',
+          conversation: activeConversation,
+          botState,
+          intent: intentResult.intent,
+          contextPatch: emptySubflows(),
+          durationMs: Date.now() - startedAt,
+        });
+        return result;
+      }
+    } else {
+      logChatbotEvent('scope_allowed', {
+        conversationId: activeConversation._id,
+        phone10: activeConversation.phone,
+        intent: intentResult.intent,
+        botState: botState?.state || null,
+        scopeCategory: scope.category,
+        scopeReason: scope.reason,
+      });
+    }
   }
 
   let replyText = null;

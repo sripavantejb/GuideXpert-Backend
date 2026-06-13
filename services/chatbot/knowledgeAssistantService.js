@@ -9,6 +9,13 @@ const { validateAiResponse } = require('./aiGuardrailService');
 const { aiDebugLog } = require('./aiDebugLog');
 const { buildRetrievalQuery } = require('../../utils/knowledgeQueryBuilder');
 const { recordKnowledgeAssistantLanguageTurn } = require('./knowledgeAssistantLanguageLogService');
+const {
+  isScopeFirewallEnabled,
+  isScopeFirewallShadowMode,
+} = require('./scopeFirewall/scopeFirewallFlags');
+const { isOutOfDomain } = require('./scopeFirewall/scopeFirewallService');
+const { resolveScopeFirewallReply } = require('../../constants/scopeFirewallReplies');
+const { logChatbotEvent } = require('./chatbotStructuredLog');
 
 const provider = new OpenAiCompatibleProvider();
 const DEFAULT_TIMEOUT_MS = Number(process.env.KNOWLEDGE_ASSISTANT_TIMEOUT_MS) || 8000;
@@ -126,6 +133,37 @@ async function answer({
   if (!text) {
     aiDebugLog('LLM-DEBUG', 'answer return null: empty inbound text');
     return null;
+  }
+
+  // Defense in depth: if an out-of-domain message somehow reaches the Knowledge
+  // Assistant, refuse before any retrieval or provider call. Shadow mode logs
+  // only (consistent with the primary firewall rollout).
+  if (isScopeFirewallEnabled()) {
+    const englishCandidate = languageMetadata?.translatedQuery || text;
+    if (isOutOfDomain(text) || isOutOfDomain(englishCandidate)) {
+      if (isScopeFirewallShadowMode()) {
+        logChatbotEvent('scope_blocked_shadow', {
+          conversationId,
+          intent: 'knowledge_assistant',
+          scopeReason: 'ka_defense_in_depth',
+        });
+      } else {
+        logChatbotEvent('scope_blocked', {
+          conversationId,
+          intent: 'knowledge_assistant',
+          scopeReason: 'ka_defense_in_depth',
+        });
+        const resolvedLanguage = languageMetadata?.resolvedLanguage || 'en';
+        aiDebugLog('LLM-DEBUG', 'answer scope-blocked: out of domain (defense in depth)');
+        return {
+          text: resolveScopeFirewallReply(resolvedLanguage),
+          model: null,
+          guardrailModified: false,
+          guardrailReason: 'scope_firewall',
+          languageLog: null,
+        };
+      }
+    }
   }
 
   try {
