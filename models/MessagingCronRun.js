@@ -7,6 +7,7 @@ const CRON_JOB_KEYS = Object.freeze({
   SEND_30MIN_REMINDERS: 'send_30min_reminders',
   RETRY_WHATSAPP: 'retry_whatsapp',
   SEND_IIT_REMINDERS: 'send_iit_reminders',
+  SEND_GUIDANCE_REMINDERS: 'send_guidance_reminders',
   SEND_IIT_TELUGU_SMS: 'send_iit_telugu_sms',
 });
 

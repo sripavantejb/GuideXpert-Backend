@@ -14,6 +14,11 @@ const REQUIRED_CAMPAIGN_CRONS = [
     label: 'IIT counselling reminders',
   },
   {
+    jobKey: CRON_JOB_KEYS.SEND_GUIDANCE_REMINDERS,
+    path: '/api/cron/send-guidance-reminders',
+    label: 'Guidance session 30-min reminders',
+  },
+  {
     jobKey: CRON_JOB_KEYS.SEND_IIT_TELUGU_SMS,
     path: '/api/cron/send-iit-telugu-sms',
     label: 'IIT Telugu SMS (MSG91)',

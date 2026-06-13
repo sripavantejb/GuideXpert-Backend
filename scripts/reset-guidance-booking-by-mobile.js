@@ -17,6 +17,7 @@ const mongoose = require('mongoose');
 const connectDB = require('../config/db');
 const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
 const GuidanceSlot = require('../models/GuidanceSlot');
+const { cancelGuidancePre30RemindersForLead } = require('../services/guidanceReminderScheduler');
 
 function parseMobile(argv) {
   const flag = argv.find((a) => a.startsWith('--mobile='));
@@ -98,6 +99,11 @@ async function main() {
       currentBookings: slot.currentBookings,
       maxBookings: slot.maxBookings,
     });
+  }
+
+  const cancelResult = await cancelGuidancePre30RemindersForLead(lead._id);
+  if (cancelResult.cancelled > 0) {
+    console.log(`Cancelled ${cancelResult.cancelled} guidance pre30 reminder job(s).`);
   }
 
   if (resetOnly) {

@@ -14,7 +14,8 @@ const {
   isScopeFirewallShadowMode,
 } = require('./scopeFirewall/scopeFirewallFlags');
 const { isOutOfDomain } = require('./scopeFirewall/scopeFirewallService');
-const { resolveScopeFirewallReply } = require('../../constants/scopeFirewallReplies');
+const { evaluateScopeWithClassifier } = require('./scopeFirewallHybrid/scopeClassifierService');
+const { resolveScopeFirewallReply, resolvePolicyRefusal } = require('../../constants/scopeFirewallReplies');
 const { logChatbotEvent } = require('./chatbotStructuredLog');
 
 const provider = new OpenAiCompatibleProvider();
@@ -140,17 +141,109 @@ async function answer({
   // only (consistent with the primary firewall rollout).
   if (isScopeFirewallEnabled()) {
     const englishCandidate = languageMetadata?.translatedQuery || text;
-    if (isOutOfDomain(text) || isOutOfDomain(englishCandidate)) {
+    const scope = await evaluateScopeWithClassifier({
+      originalText: text,
+      englishMessage: englishCandidate,
+    });
+
+    if (scope.classifierUsed) {
+      logChatbotEvent('scope_classifier_used', {
+        conversationId,
+        intent: 'knowledge_assistant',
+        scopeCategory: scope.category,
+        scopeReason: scope.reason,
+        scopeClassifierConfidence: scope.classifierResult?.confidence ?? null,
+      });
+      if (scope.reason === 'classifier_low_confidence' || scope.reason === 'classifier_error') {
+        logChatbotEvent('scope_classifier_low_confidence', {
+          conversationId,
+          intent: 'knowledge_assistant',
+          scopeCategory: scope.category,
+          scopeReason: scope.reason,
+        });
+      } else if (!scope.allowed && !scope.partialAllowed) {
+        logChatbotEvent('scope_classifier_blocked', {
+          conversationId,
+          intent: 'knowledge_assistant',
+          scopeCategory: scope.category,
+          scopeReason: scope.reason,
+        });
+      } else {
+        logChatbotEvent('scope_classifier_allowed', {
+          conversationId,
+          intent: 'knowledge_assistant',
+          scopeCategory: scope.category,
+          scopeReason: scope.reason,
+        });
+      }
+    }
+
+    if (scope.classifierBlock && !scope.allowed && !scope.partialAllowed) {
+      logChatbotEvent('scope_blocked', {
+        conversationId,
+        intent: 'knowledge_assistant',
+        scopeCategory: scope.category,
+        scopeReason: scope.reason,
+      });
+      const resolvedLanguage = languageMetadata?.resolvedLanguage || 'en';
+      aiDebugLog('LLM-DEBUG', 'answer scope-blocked: hybrid classifier (defense in depth)');
+      return {
+        text: scope.policyBlock
+          ? resolvePolicyRefusal(scope.category, resolvedLanguage)
+          : resolveScopeFirewallReply(resolvedLanguage),
+        model: null,
+        guardrailModified: false,
+        guardrailReason: 'scope_classifier',
+        languageLog: null,
+      };
+    }
+
+    if (scope.policyBlock) {
+      logChatbotEvent(isScopeFirewallShadowMode() ? 'scope_blocked_shadow' : 'scope_blocked', {
+        conversationId,
+        intent: 'knowledge_assistant',
+        scopeCategory: scope.category,
+        scopeReason: 'ka_defense_policy',
+      });
+      const resolvedLanguage = languageMetadata?.resolvedLanguage || 'en';
+      return {
+        text: resolvePolicyRefusal(scope.category, resolvedLanguage),
+        model: null,
+        guardrailModified: false,
+        guardrailReason: 'scope_firewall_policy',
+        languageLog: null,
+      };
+    }
+
+    if (scope.partialAllowed) {
+      // Orchestrator should route counselling-only text; if full mixed text arrives, block LLM.
+      logChatbotEvent('scope_blocked_shadow', {
+        conversationId,
+        intent: 'knowledge_assistant',
+        scopeReason: 'ka_defense_mixed_unsplit',
+      });
+      if (!isScopeFirewallShadowMode()) {
+        return {
+          text: resolveScopeFirewallReply(languageMetadata?.resolvedLanguage || 'en'),
+          model: null,
+          guardrailModified: false,
+          guardrailReason: 'scope_firewall',
+          languageLog: null,
+        };
+      }
+    } else if (!scope.allowed) {
       if (isScopeFirewallShadowMode()) {
         logChatbotEvent('scope_blocked_shadow', {
           conversationId,
           intent: 'knowledge_assistant',
+          scopeCategory: scope.category,
           scopeReason: 'ka_defense_in_depth',
         });
       } else {
         logChatbotEvent('scope_blocked', {
           conversationId,
           intent: 'knowledge_assistant',
+          scopeCategory: scope.category,
           scopeReason: 'ka_defense_in_depth',
         });
         const resolvedLanguage = languageMetadata?.resolvedLanguage || 'en';

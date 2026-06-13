@@ -9,6 +9,7 @@ const {
   INDIAN_MOBILE_REGEX,
 } = require('../constants/oneOnOneCounseling');
 const { getGuidanceSlotBookingStatus } = require('../utils/guidanceSlotTimeWindow');
+const { ensureGuidancePre30ReminderForLead } = require('./guidanceReminderScheduler');
 
 function normalizePreferredColleges(raw) {
   const arr = Array.isArray(raw) ? raw : [];
@@ -333,10 +334,18 @@ async function bookSlotForLead({
     throw err;
   }
 
+  let reminderSchedule = null;
+  try {
+    reminderSchedule = await ensureGuidancePre30ReminderForLead(lead, slotUpdate.toObject());
+  } catch (scheduleErr) {
+    console.error('[bookSlotForLead] guidance pre30 reminder schedule failed:', scheduleErr?.message || scheduleErr);
+  }
+
   return {
     lead: lead.toObject(),
     slot: slotUpdate.toObject(),
     counselor,
+    reminderSchedule,
   };
 }
 

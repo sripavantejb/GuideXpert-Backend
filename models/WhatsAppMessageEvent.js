@@ -11,6 +11,7 @@ const WHATSAPP_MESSAGE_KINDS = Object.freeze([
   'iit_pre15min',
   'one_on_one_submit',
   'guidance_booking_submit',
+  'guidance_pre30min',
 ]);
 
 const whatsAppMessageEventSchema = new mongoose.Schema({

@@ -4,6 +4,8 @@
 const mongoose = require('mongoose');
 const FormSubmission = require('../models/FormSubmission');
 const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
+const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
+const GuidanceSlot = require('../models/GuidanceSlot');
 const WhatsAppReminderJob = require('../models/WhatsAppReminderJob');
 const { CRON_JOB_KEYS } = require('../models/MessagingCronRun');
 const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');
@@ -17,13 +19,23 @@ const {
   sendPre4HrReminderWhatsApp,
   sendMeetLinkWhatsApp,
   sendReminder30MinWhatsApp,
-  sendIitReminderWhatsApp
+  sendIitReminderWhatsApp,
+  sendGuidancePre30MinReminderWhatsApp,
 } = require('../services/gupshupService');
 const { isIitReminderMessageKind, resolveIitReminderTemplateEnvKey } = require('../utils/iitCounsellingWhatsApp');
 const { buildIitReminderWhatsAppVars } = require('../utils/iitReminderWhatsAppSend');
 const { isInfrastructureSendFailure } = require('../utils/whatsappRetryRules');
 const { isGupshupConfigured } = require('../services/gupshupService');
 const { getIitReminderEligibility } = require('../utils/iitReminderEligibility');
+const {
+  getGuidancePre30ReminderEligibility,
+  resolveGuidancePre30MinTemplateEnvKey,
+} = require('../utils/guidanceReminderEligibility');
+const {
+  buildGuidancePre30MinReminderVars,
+  isGuidanceReminderMessageKind,
+  GUPSHUP_TEMPLATE_GUIDANCE_PRE30MIN_REMINDER,
+} = require('../utils/guidanceBookingWhatsApp');
 const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
 const { markCampaignSentFlag } = require('../utils/waCampaignSentFlags');
 const { getCampaignReminderEligibility } = require('../utils/waReminderEligibility');
@@ -75,6 +87,7 @@ function cronJobKeyForKind(kind) {
   if (kind === 'iit_pre2hr') return CRON_JOB_KEYS.SEND_IIT_REMINDERS;
   if (kind === 'iit_pre45min') return CRON_JOB_KEYS.SEND_IIT_REMINDERS;
   if (kind === 'iit_pre15min') return CRON_JOB_KEYS.SEND_IIT_REMINDERS;
+  if (kind === 'guidance_pre30min') return CRON_JOB_KEYS.SEND_GUIDANCE_REMINDERS;
   return CRON_JOB_KEYS.SEND_REMINDERS;
 }
 
@@ -108,7 +121,7 @@ async function sendSmsForKind(kind, phone, submission) {
 function kindFilter(kinds) {
   return kinds.length
     ? { $in: kinds }
-    : { $in: ['pre4hr', 'meet', '30min', 'iit_pre2hr', 'iit_pre45min', 'iit_pre15min'] };
+    : { $in: ['pre4hr', 'meet', '30min', 'iit_pre2hr', 'iit_pre45min', 'iit_pre15min', 'guidance_pre30min'] };
 }
 
 /** Legacy callers pass a bare ObjectId for formSubmissionId. */
@@ -476,6 +489,213 @@ async function executeIitReminderJob(job, cronRunId, cronJobKey, execOpts = {}) 
   return { outcome: 'failed', error: wa.error };
 }
 
+async function executeGuidanceReminderJob(job, cronRunId, cronJobKey, execOpts = {}) {
+  const now = execOpts.now instanceof Date ? execOpts.now : new Date();
+  const fresh = await WhatsAppReminderJob.findById(job._id).lean();
+  if (!fresh || fresh.claimToken !== job.claimToken) {
+    return { outcome: 'deferred', reason: 'claim_token_mismatch' };
+  }
+
+  const lead = await OneOnOneCounselingLead.findById(job.oneOnOneCounselingLeadId).lean();
+  if (!lead || !lead.bookingConfirmed) {
+    await WhatsAppReminderJob.updateOne(
+      { _id: job._id, claimToken: job.claimToken },
+      {
+        $set: {
+          state: 'skipped',
+          suppressionReason: 'missing_confirmed_lead',
+          completedAt: now,
+          lastError: 'lead_not_confirmed',
+          ...clearLeaseUpdate(),
+        },
+      }
+    );
+    return { outcome: 'skipped', reason: 'missing_confirmed_lead' };
+  }
+
+  const slot = lead.selectedSlotId
+    ? await GuidanceSlot.findById(lead.selectedSlotId).lean()
+    : null;
+  if (!slot) {
+    await WhatsAppReminderJob.updateOne(
+      { _id: job._id, claimToken: job.claimToken },
+      {
+        $set: {
+          state: 'skipped',
+          suppressionReason: 'missing_guidance_slot',
+          completedAt: now,
+          lastError: 'slot_not_found',
+          ...clearLeaseUpdate(),
+        },
+      }
+    );
+    return { outcome: 'skipped', reason: 'missing_guidance_slot' };
+  }
+
+  const elig = getGuidancePre30ReminderEligibility(slot, now);
+  if (elig.reason === 'before_eligibility') {
+    await releaseJobClaim(job._id, job.claimToken);
+    return { outcome: 'deferred', reason: 'before_eligibility' };
+  }
+  if (elig.reason === 'slot_passed' || (elig.slotAt && now.getTime() >= elig.slotAt.getTime())) {
+    await WhatsAppReminderJob.updateOne(
+      { _id: job._id, claimToken: job.claimToken },
+      {
+        $set: {
+          state: 'skipped',
+          suppressionReason: 'slot_passed',
+          completedAt: now,
+          ...clearLeaseUpdate(),
+        },
+      }
+    );
+    return { outcome: 'skipped', reason: 'slot_passed' };
+  }
+
+  const templateEnvKey =
+    job.templateIdEnvKey || resolveGuidancePre30MinTemplateEnvKey() || GUPSHUP_TEMPLATE_GUIDANCE_PRE30MIN_REMINDER;
+  if (!process.env[templateEnvKey]) {
+    await WhatsAppReminderJob.updateOne(
+      { _id: job._id, claimToken: job.claimToken },
+      {
+        $set: {
+          state: 'skipped',
+          suppressionReason: 'template_env_missing',
+          completedAt: now,
+          lastError: 'template_env_missing',
+          ...clearLeaseUpdate(),
+        },
+      }
+    );
+    return { outcome: 'skipped', reason: 'template_env_missing' };
+  }
+
+  const dispatchingOk = await transitionToDispatching(job._id, job.claimToken, now);
+  if (!dispatchingOk) {
+    return { outcome: 'deferred', reason: 'dispatching_transition_failed' };
+  }
+
+  maybeCrash('before_send');
+
+  const waVars = buildGuidancePre30MinReminderVars(lead, slot);
+  const outboundAttempt = await nextOutboundAttemptNumber(job.retryGroupId);
+  const slotInstant = elig.slotAt || job.slotDate;
+
+  const wa = await safeSendWhatsApp({
+    phone10: job.phone,
+    formSubmissionId: null,
+    oneOnOneCounselingLeadId: lead._id,
+    vars: waVars,
+    retryKind: job.messageKind,
+    source: 'cron',
+    cronRunId: cronRunId || null,
+    cronJobKey: cronJobKey || cronJobKeyForKind(job.messageKind),
+    sendFn: (phone10, vars, sendOpts) => sendGuidancePre30MinReminderWhatsApp(phone10, vars, sendOpts),
+    retryGroupId: job.retryGroupId,
+    attemptNumber: outboundAttempt,
+    attemptBatchId: cronRunId || null,
+    opsProduct: 'guidance_booking',
+    cohortSlotInstantUtc: slotInstant,
+    explicitTemplateEnvKey: templateEnvKey,
+    now,
+  });
+
+  const attempts = (job.attempts || 0) + 1;
+
+  if (wa.duplicateInFlight) {
+    await releaseJobClaim(job._id, job.claimToken);
+    return { outcome: 'deferred', reason: 'duplicate_in_flight' };
+  }
+
+  if (wa.skippedOutsideWindow || wa.blockedPreSend) {
+    if (elig.reason === 'before_eligibility' || (elig.earliestAt && now < elig.earliestAt)) {
+      await releaseJobClaim(job._id, job.claimToken);
+      return { outcome: 'deferred', reason: wa.error || 'outside_window' };
+    }
+    await WhatsAppReminderJob.updateOne(
+      { _id: job._id, claimToken: job.claimToken },
+      {
+        $set: {
+          state: 'skipped',
+          suppressionReason: wa.error || 'outside_window',
+          attempts,
+          lastError: wa.error || null,
+          completedAt: now,
+          ...clearLeaseUpdate(),
+        },
+      }
+    );
+    return { outcome: 'skipped', reason: wa.error };
+  }
+
+  let initialMessageEventId = null;
+  let providerMessageId = null;
+  if (job.retryGroupId) {
+    const ev = await WhatsAppMessageEvent.findOne({
+      retryGroupId: job.retryGroupId,
+      attemptNumber: outboundAttempt,
+    })
+      .select('_id gupshupMessageId messageId')
+      .lean();
+    if (ev) {
+      initialMessageEventId = ev._id;
+      providerMessageId = ev.gupshupMessageId || ev.messageId || null;
+    }
+  }
+
+  const dispatchFields = {
+    state: wa.success ? 'dispatched' : 'failed',
+    attempts,
+    dispatchedAt: now,
+    initialMessageEventId,
+    latestMessageEventId: initialMessageEventId,
+    rootMessageEventId: initialMessageEventId,
+    providerMessageId,
+    cronRunId: cronRunId || null,
+    templateIdEnvKey: templateEnvKey,
+    executionMetadata: {
+      lastDispatch: { at: now, source: cronJobKey || cronJobKeyForKind(job.messageKind) },
+    },
+    ...clearLeaseUpdate({ lastError: wa.success ? null : wa.error || 'send_failed' }),
+  };
+
+  if (wa.success) {
+    await WhatsAppReminderJob.updateOne(
+      { _id: job._id, claimToken: job.claimToken },
+      { $set: dispatchFields }
+    );
+    if (job.retryGroupId) {
+      await syncReminderJobFromRetryGroup(job.retryGroupId).catch(() => {});
+    }
+    return { outcome: 'dispatched' };
+  }
+
+  if (isInfrastructureSendFailure({ errorText: wa.error })) {
+    await WhatsAppReminderJob.updateOne(
+      { _id: job._id, claimToken: job.claimToken },
+      {
+        $set: {
+          state: 'pending',
+          attempts,
+          lastError: wa.error || 'infrastructure_not_ready',
+          updatedAt: now,
+          ...clearLeaseUpdate(),
+        },
+      }
+    );
+    return { outcome: 'deferred', reason: 'infrastructure_not_ready' };
+  }
+
+  await WhatsAppReminderJob.updateOne(
+    { _id: job._id, claimToken: job.claimToken },
+    { $set: dispatchFields }
+  );
+  if (job.retryGroupId) {
+    await syncReminderJobFromRetryGroup(job.retryGroupId).catch(() => {});
+  }
+  return { outcome: 'failed', error: wa.error };
+}
+
 /**
  * @param {object} job lean doc (must include claimToken from claim)
  * @param {{ now?: Date }} [execOpts]
@@ -483,6 +703,9 @@ async function executeIitReminderJob(job, cronRunId, cronJobKey, execOpts = {}) 
 async function executeReminderJob(job, cronRunId, cronJobKey, execOpts = {}) {
   if (isIitReminderMessageKind(job.messageKind)) {
     return executeIitReminderJob(job, cronRunId, cronJobKey, execOpts);
+  }
+  if (isGuidanceReminderMessageKind(job.messageKind)) {
+    return executeGuidanceReminderJob(job, cronRunId, cronJobKey, execOpts);
   }
 
   const now = execOpts.now instanceof Date ? execOpts.now : new Date();
@@ -703,12 +926,14 @@ async function claimDueReminderJobs(opts) {
  * @param {{ messageKinds: string[], now?: Date, cronRunId?: object, cronJobKey?: string, limit?: number, submissionIdFilter?: object, skipRecovery?: boolean }} opts
  */
 async function requeueBlockedReminderJobs(now, kinds) {
-  const iitKinds = (kinds || []).filter((k) => String(k).startsWith('iit_'));
-  if (!iitKinds.length) return { requeued: 0 };
+  const scheduledKinds = (kinds || []).filter(
+    (k) => String(k).startsWith('iit_') || String(k).startsWith('guidance_')
+  );
+  if (!scheduledKinds.length) return { requeued: 0 };
 
   const res = await WhatsAppReminderJob.updateMany(
     {
-      messageKind: { $in: iitKinds },
+      messageKind: { $in: scheduledKinds },
       state: { $in: ['exhausted', 'failed', 'dispatched'] },
       slotDate: { $gt: now },
       $or: [

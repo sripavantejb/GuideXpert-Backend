@@ -2,7 +2,12 @@ const mongoose = require('mongoose');
 
 const CAMPAIGN_MESSAGE_KINDS = ['pre4hr', 'meet', '30min'];
 const IIT_REMINDER_MESSAGE_KINDS = ['iit_pre2hr', 'iit_pre45min', 'iit_pre15min'];
-const ALL_REMINDER_JOB_MESSAGE_KINDS = [...CAMPAIGN_MESSAGE_KINDS, ...IIT_REMINDER_MESSAGE_KINDS];
+const GUIDANCE_REMINDER_MESSAGE_KINDS = ['guidance_pre30min'];
+const ALL_REMINDER_JOB_MESSAGE_KINDS = [
+  ...CAMPAIGN_MESSAGE_KINDS,
+  ...IIT_REMINDER_MESSAGE_KINDS,
+  ...GUIDANCE_REMINDER_MESSAGE_KINDS,
+];
 
 const JOB_STATES = [
   'pending',
@@ -31,6 +36,12 @@ const whatsAppReminderJobSchema = new mongoose.Schema({
     default: null,
     index: true
   },
+  oneOnOneCounselingLeadId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'OneOnOneCounselingLead',
+    default: null,
+    index: true
+  },
   phone: {
     type: String,
     required: true,
@@ -45,7 +56,7 @@ const whatsAppReminderJobSchema = new mongoose.Schema({
   },
   opsProduct: {
     type: String,
-    enum: ['guidexpert', 'iit_counselling'],
+    enum: ['guidexpert', 'iit_counselling', 'guidance_booking'],
     default: 'guidexpert',
     index: true
   },
@@ -118,10 +129,16 @@ const whatsAppReminderJobSchema = new mongoose.Schema({
 });
 
 whatsAppReminderJobSchema.pre('validate', function validateSubmissionLink() {
-  const hasGx = Boolean(this.formSubmissionId);
-  const hasIit = Boolean(this.iitCounsellingSubmissionId);
-  if (hasGx === hasIit) {
-    this.invalidate('formSubmissionId', 'exactly one of formSubmissionId or iitCounsellingSubmissionId is required');
+  const links = [
+    Boolean(this.formSubmissionId),
+    Boolean(this.iitCounsellingSubmissionId),
+    Boolean(this.oneOnOneCounselingLeadId),
+  ].filter(Boolean).length;
+  if (links !== 1) {
+    this.invalidate(
+      'formSubmissionId',
+      'exactly one of formSubmissionId, iitCounsellingSubmissionId, or oneOnOneCounselingLeadId is required'
+    );
   }
 });
 
@@ -137,6 +154,10 @@ whatsAppReminderJobSchema.index(
   { iitCounsellingSubmissionId: 1, messageKind: 1 },
   { unique: true, partialFilterExpression: { iitCounsellingSubmissionId: { $type: 'objectId' } } }
 );
+whatsAppReminderJobSchema.index(
+  { oneOnOneCounselingLeadId: 1, messageKind: 1 },
+  { unique: true, partialFilterExpression: { oneOnOneCounselingLeadId: { $type: 'objectId' } } }
+);
 whatsAppReminderJobSchema.index({ state: 1, scheduledSendAt: 1 });
 whatsAppReminderJobSchema.index({ slotDayIst: 1, messageKind: 1, state: 1 });
 whatsAppReminderJobSchema.index({ opsProduct: 1, messageKind: 1, state: 1 });
@@ -144,5 +165,6 @@ whatsAppReminderJobSchema.index({ opsProduct: 1, messageKind: 1, state: 1 });
 module.exports = mongoose.model('WhatsAppReminderJob', whatsAppReminderJobSchema);
 module.exports.CAMPAIGN_MESSAGE_KINDS = CAMPAIGN_MESSAGE_KINDS;
 module.exports.IIT_REMINDER_MESSAGE_KINDS = IIT_REMINDER_MESSAGE_KINDS;
+module.exports.GUIDANCE_REMINDER_MESSAGE_KINDS = GUIDANCE_REMINDER_MESSAGE_KINDS;
 module.exports.ALL_REMINDER_JOB_MESSAGE_KINDS = ALL_REMINDER_JOB_MESSAGE_KINDS;
 module.exports.JOB_STATES = JOB_STATES;

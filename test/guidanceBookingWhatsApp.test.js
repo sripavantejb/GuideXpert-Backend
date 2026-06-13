@@ -4,46 +4,31 @@ const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
-  formatGuidanceBookingDate,
-  buildGuidanceBookingSubmitVars,
-  parseGuidanceSlotInstantUtc,
+  buildGuidancePre30MinReminderVars,
+  GUIDANCE_PRE30MIN_REMINDER_PARAM_KEYS,
 } = require('../utils/guidanceBookingWhatsApp');
 
-describe('guidanceBookingWhatsApp', () => {
-  test('formatGuidanceBookingDate renders human-readable IST label', () => {
-    assert.equal(formatGuidanceBookingDate('2026-06-04'), '4 Jun 2026');
+describe('guidanceBookingWhatsApp pre30 reminder vars', () => {
+  test('param keys are name and slottime', () => {
+    assert.deepEqual(GUIDANCE_PRE30MIN_REMINDER_PARAM_KEYS, ['name', 'slottime']);
   });
 
-  test('formatGuidanceBookingDate returns em dash for invalid input', () => {
-    assert.equal(formatGuidanceBookingDate(''), '—');
-    assert.equal(formatGuidanceBookingDate('not-a-date'), 'not-a-date');
-  });
-
-  test('buildGuidanceBookingSubmitVars maps date and time', () => {
-    assert.deepEqual(
-      buildGuidanceBookingSubmitVars({ slotDate: '2026-06-04', slotTime: '6:00 PM' }),
-      { date: '4 Jun 2026', time: '6:00 PM' }
+  test('buildGuidancePre30MinReminderVars maps lead name and slot time string', () => {
+    const vars = buildGuidancePre30MinReminderVars(
+      { studentName: 'Teja' },
+      { slotTime: '3:30 PM TO 4:30 PM' }
     );
-  });
-
-  test('buildGuidanceBookingSubmitVars falls back time to em dash', () => {
-    assert.deepEqual(buildGuidanceBookingSubmitVars({ slotDate: '2026-06-04' }), {
-      date: '4 Jun 2026',
-      time: '—',
+    assert.deepEqual(vars, {
+      name: 'Teja',
+      slottime: '3:30 PM TO 4:30 PM',
     });
   });
 
-  test('parseGuidanceSlotInstantUtc uses slot hour when parseable', () => {
-    const d = parseGuidanceSlotInstantUtc({ slotDate: '2026-06-04', slotTime: '6:00 PM' });
-    assert.ok(d instanceof Date);
-    assert.equal(d.getUTCHours(), 12);
-    assert.equal(d.getUTCMinutes(), 30);
-  });
-
-  test('parseGuidanceSlotInstantUtc anchors noon IST when time missing', () => {
-    const d = parseGuidanceSlotInstantUtc({ slotDate: '2026-06-04', slotTime: '' });
-    assert.ok(d instanceof Date);
-    assert.equal(d.getUTCHours(), 6);
-    assert.equal(d.getUTCMinutes(), 30);
+  test('buildGuidancePre30MinReminderVars falls back for missing fields', () => {
+    const vars = buildGuidancePre30MinReminderVars({}, {});
+    assert.deepEqual(vars, {
+      name: 'Student',
+      slottime: '—',
+    });
   });
 });

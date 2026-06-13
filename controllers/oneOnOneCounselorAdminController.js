@@ -4,6 +4,7 @@ const GuidanceSlot = require('../models/GuidanceSlot');
 const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 const { mapLeadBookingDTO } = require('../services/guidanceBookingService');
+const { getGuidanceReminderStatusBySlotDate } = require('../services/guidanceReminderStatusService');
 
 function mapCounselorRow(doc) {
   return {
@@ -375,6 +376,24 @@ exports.deleteSlot = async (req, res) => {
     return res.status(200).json({ success: true, message: 'Slot deleted.' });
   } catch (err) {
     console.error('[deleteSlot]', err);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.getGuidanceReminderStatus = async (req, res) => {
+  try {
+    const slotDate = typeof req.query.slotDate === 'string' ? req.query.slotDate.trim() : '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(slotDate)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid slotDate query (YYYY-MM-DD) is required.',
+      });
+    }
+
+    const data = await getGuidanceReminderStatusBySlotDate(slotDate);
+    return res.status(200).json({ success: true, data });
+  } catch (err) {
+    console.error('[getGuidanceReminderStatus]', err);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };

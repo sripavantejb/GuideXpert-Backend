@@ -49,13 +49,13 @@ describe('scopeFirewallService.evaluateScope', () => {
     });
   }
 
-  test('allow signal overrides a deny pattern (mixed message)', () => {
+  test('counselling segment allowed when python mention split by but', () => {
     const result = evaluateScope({
       originalText: 'I like Python but I want CSE in IIT',
     });
-    assert.equal(result.allowed, true);
-    assert.equal(result.reason, 'allow_signal_override');
-    assert.equal(result.category, 'branch_guidance');
+    assert.equal(result.partialAllowed, true);
+    assert.ok(result.counsellingSegments.some((s) => /cse in iit/i.test(s)));
+    assert.ok(result.blockedSegments.some((s) => s.category === 'programming'));
   });
 
   test('uses englishMessage candidate when original is non-English', () => {

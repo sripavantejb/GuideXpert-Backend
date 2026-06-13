@@ -41,6 +41,10 @@
       "schedule": "*/1 * * * *"
     },
     {
+      "path": "/api/cron/send-guidance-reminders",
+      "schedule": "*/1 * * * *"
+    },
+    {
       "path": "/api/cron/send-iit-telugu-sms",
       "schedule": "*/1 * * * *"
     },

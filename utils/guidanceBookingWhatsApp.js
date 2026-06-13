@@ -3,8 +3,11 @@
  */
 
 const GUPSHUP_TEMPLATE_GUIDANCE_BOOKING_CONFIRM = 'GUPSHUP_TEMPLATE_GUIDANCE_BOOKING_CONFIRM';
+const GUPSHUP_TEMPLATE_GUIDANCE_PRE30MIN_REMINDER = 'GUPSHUP_TEMPLATE_GUIDANCE_PRE30MIN_REMINDER';
 
 const GUIDANCE_BOOKING_CONFIRM_PARAM_KEYS = ['date', 'time'];
+const GUIDANCE_PRE30MIN_REMINDER_PARAM_KEYS = ['name', 'slottime'];
+const GUIDANCE_REMINDER_MESSAGE_KIND = 'guidance_pre30min';
 
 const IST_MONTHS = [
   'Jan',
@@ -68,10 +71,29 @@ function parseGuidanceSlotInstantUtc(slot) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/**
+ * @param {{ studentName?: string }} lead
+ * @param {{ slotTime?: string }} slot
+ */
+function buildGuidancePre30MinReminderVars(lead, slot) {
+  const name = String(lead?.studentName || '').trim() || 'Student';
+  const slottime = String(slot?.slotTime || '').trim() || '—';
+  return { name, slottime };
+}
+
+function isGuidanceReminderMessageKind(kind) {
+  return kind === GUIDANCE_REMINDER_MESSAGE_KIND;
+}
+
 module.exports = {
   GUPSHUP_TEMPLATE_GUIDANCE_BOOKING_CONFIRM,
+  GUPSHUP_TEMPLATE_GUIDANCE_PRE30MIN_REMINDER,
   GUIDANCE_BOOKING_CONFIRM_PARAM_KEYS,
+  GUIDANCE_PRE30MIN_REMINDER_PARAM_KEYS,
+  GUIDANCE_REMINDER_MESSAGE_KIND,
   formatGuidanceBookingDate,
   buildGuidanceBookingSubmitVars,
+  buildGuidancePre30MinReminderVars,
   parseGuidanceSlotInstantUtc,
+  isGuidanceReminderMessageKind,
 };

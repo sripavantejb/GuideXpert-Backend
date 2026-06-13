@@ -7,7 +7,7 @@ const { parseOpsProductQuery, matchWhatsAppEventsByOpsProduct } = require('./wha
 const GX_ONLY_KINDS = ['pre4hr', 'meet', '30min'];
 const IIT_ONLY_KINDS = ['iit_pre2hr', 'iit_pre45min', 'iit_pre15min'];
 const ONE_ON_ONE_ONLY_KINDS = ['one_on_one_submit'];
-const GUIDANCE_BOOKING_ONLY_KINDS = ['guidance_booking_submit'];
+const GUIDANCE_BOOKING_ONLY_KINDS = ['guidance_booking_submit', 'guidance_pre30min'];
 
 function validateMessageKindForOpsProduct(messageKind, opsProduct) {
   if (!messageKind) return null;

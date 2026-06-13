@@ -4,8 +4,13 @@
 const DEFAULT_30MIN_GRACE_MS = 15 * 60 * 1000;
 
 function expireGraceMsForKind(kind) {
-  if (kind === '30min' || kind === 'iit_pre15min') {
-    const envKey = kind === 'iit_pre15min' ? 'WA_IIT_PRE15MIN_EXPIRE_GRACE_MS' : 'WA_30MIN_EXPIRE_GRACE_MS';
+  if (kind === '30min' || kind === 'iit_pre15min' || kind === 'guidance_pre30min') {
+    const envKey =
+      kind === 'iit_pre15min'
+        ? 'WA_IIT_PRE15MIN_EXPIRE_GRACE_MS'
+        : kind === 'guidance_pre30min'
+          ? 'WA_GUIDANCE_PRE30MIN_EXPIRE_GRACE_MS'
+          : 'WA_30MIN_EXPIRE_GRACE_MS';
     const v = parseInt(process.env[envKey] || String(DEFAULT_30MIN_GRACE_MS), 10);
     return Number.isFinite(v) && v >= 0 ? v : DEFAULT_30MIN_GRACE_MS;
   }
@@ -20,6 +25,10 @@ function expireGraceMsForKind(kind) {
 function computeExpiresAt(kind, slotDate) {
   const slotMs = new Date(slotDate).getTime();
   if (Number.isNaN(slotMs)) return null;
+  // Guidance pre30min: stop sending once the session starts (no post-start grace).
+  if (kind === 'guidance_pre30min') {
+    return new Date(slotMs);
+  }
   return new Date(slotMs + expireGraceMsForKind(kind));
 }
 

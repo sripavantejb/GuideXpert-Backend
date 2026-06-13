@@ -75,8 +75,13 @@ const {
   isScopeFirewallEnabled,
   isScopeFirewallShadowMode,
 } = require('./scopeFirewall/scopeFirewallFlags');
-const { evaluateScope } = require('./scopeFirewall/scopeFirewallService');
-const { resolveScopeFirewallReply } = require('../../constants/scopeFirewallReplies');
+const { getLlmInboundText } = require('./scopeFirewall/scopeFirewallService');
+const { evaluateScopeWithClassifier } = require('./scopeFirewallHybrid/scopeClassifierService');
+const {
+  resolveScopeFirewallReply,
+  resolvePolicyRefusal,
+  buildPartialScopeReply,
+} = require('../../constants/scopeFirewallReplies');
 
 function resolvedLanguageFrom(multilingualInbound, fallback = 'en') {
   return multilingualInbound?.resolvedLanguage || multilingualInbound?.language || fallback;
@@ -673,32 +678,124 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
   // Scope Firewall: runs after control-intent early returns and before assistant
   // routing. Every message (including sticky KA sessions) is re-checked so
   // out-of-domain topics never reach any LLM path.
+  let scopePartialContext = null;
+  let routingInboundText =
+    multilingualInbound?.englishMessage || String(inbound.text || '').trim();
+
   if (isScopeFirewallEnabled()) {
-    const scope = evaluateScope({
+    const scope = await evaluateScopeWithClassifier({
       originalText: inbound.text,
       englishMessage: multilingualInbound?.englishMessage || inbound.text,
       intent: intentResult.intent,
       botState,
     });
-    if (!scope.allowed) {
-      if (isScopeFirewallShadowMode()) {
-        logChatbotEvent('scope_blocked_shadow', {
-          conversationId: activeConversation._id,
-          phone10: activeConversation.phone,
-          intent: intentResult.intent,
-          botState: botState?.state || null,
-          scopeCategory: scope.category,
-          scopeReason: scope.reason,
-        });
+
+    const scopeLogFields = {
+      conversationId: activeConversation._id,
+      phone10: activeConversation.phone,
+      intent: intentResult.intent,
+      botState: botState?.state || null,
+      scopeCategory: scope.category,
+      scopeReason: scope.reason,
+      scopePartial: Boolean(scope.partialAllowed),
+      scopeBlockedSegmentCount: scope.blockedSegments?.length || 0,
+      scopeClassifierUsed: Boolean(scope.classifierUsed),
+      scopeClassifierConfidence: scope.classifierResult?.confidence ?? null,
+    };
+
+    if (scope.classifierUsed) {
+      logChatbotEvent('scope_classifier_used', scopeLogFields);
+      if (scope.reason === 'classifier_low_confidence' || scope.reason === 'classifier_error') {
+        logChatbotEvent('scope_classifier_low_confidence', scopeLogFields);
+      } else if (!scope.allowed && !scope.partialAllowed) {
+        logChatbotEvent('scope_classifier_blocked', scopeLogFields);
       } else {
-        logChatbotEvent('scope_blocked', {
-          conversationId: activeConversation._id,
-          phone10: activeConversation.phone,
-          intent: intentResult.intent,
-          botState: botState?.state || null,
-          scopeCategory: scope.category,
-          scopeReason: scope.reason,
-        });
+        logChatbotEvent('scope_classifier_allowed', scopeLogFields);
+      }
+    }
+
+    if (scope.classifierBlock && !scope.allowed && !scope.partialAllowed) {
+      const refusalText = scope.policyBlock
+        ? resolvePolicyRefusal(scope.category, resolvedLanguageFrom(multilingualInbound))
+        : resolveScopeFirewallReply(resolvedLanguageFrom(multilingualInbound));
+      logChatbotEvent('scope_blocked', {
+        ...scopeLogFields,
+        scopeReason: scope.reason,
+      });
+      const policyText = await deliverOutboundReply({
+        replyText: refusalText,
+        multilingualInbound,
+        intent: intentResult.intent,
+        localizationTier: 'static',
+        preLocalized: true,
+      });
+      const result = await h.outbound.sendBotTextReply({
+        conversationId: activeConversation._id,
+        phone10: activeConversation.phone,
+        text: policyText,
+        inReplyToInboundId: inbound._id,
+      });
+      logInboundResult({
+        event: 'inbound_processed',
+        conversation: activeConversation,
+        botState,
+        intent: intentResult.intent,
+        contextPatch: emptySubflows(),
+        durationMs: Date.now() - startedAt,
+      });
+      return result;
+    }
+
+    if (scope.policyBlock && !scope.partialAllowed) {
+      const policyEvent = isScopeFirewallShadowMode() ? 'scope_blocked_shadow' : 'scope_blocked';
+      logChatbotEvent(policyEvent, { ...scopeLogFields, scopeReason: 'policy_deny' });
+      const policyText = await deliverOutboundReply({
+        replyText: resolvePolicyRefusal(scope.category, resolvedLanguageFrom(multilingualInbound)),
+        multilingualInbound,
+        intent: intentResult.intent,
+        localizationTier: 'static',
+        preLocalized: true,
+      });
+      const result = await h.outbound.sendBotTextReply({
+        conversationId: activeConversation._id,
+        phone10: activeConversation.phone,
+        text: policyText,
+        inReplyToInboundId: inbound._id,
+      });
+      logInboundResult({
+        event: 'inbound_processed',
+        conversation: activeConversation,
+        botState,
+        intent: intentResult.intent,
+        contextPatch: emptySubflows(),
+        durationMs: Date.now() - startedAt,
+      });
+      return result;
+    }
+
+    if (scope.partialAllowed) {
+      scopePartialContext = scope;
+      routingInboundText = getLlmInboundText(scope, routingInboundText);
+      if (multilingualInbound) {
+        multilingualInbound.englishMessage = routingInboundText;
+      }
+      intentResult = classifyIntent(
+        routingInboundText,
+        botState,
+        activeConversation.productLine,
+        routingInboundText
+      );
+      await h.updateConversationIntent(activeConversation._id, intentResult.intent);
+      logChatbotEvent('scope_mixed_partial', scopeLogFields);
+      logChatbotEvent('scope_blocked_shadow', {
+        ...scopeLogFields,
+        scopeReason: 'mixed_query_blocked_segments',
+      });
+    } else if (!scope.allowed) {
+      if (isScopeFirewallShadowMode()) {
+        logChatbotEvent('scope_blocked_shadow', scopeLogFields);
+      } else {
+        logChatbotEvent('scope_blocked', scopeLogFields);
         const refusalText = await deliverOutboundReply({
           replyText: resolveScopeFirewallReply(resolvedLanguageFrom(multilingualInbound)),
           multilingualInbound,
@@ -723,14 +820,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
         return result;
       }
     } else {
-      logChatbotEvent('scope_allowed', {
-        conversationId: activeConversation._id,
-        phone10: activeConversation.phone,
-        intent: intentResult.intent,
-        botState: botState?.state || null,
-        scopeCategory: scope.category,
-        scopeReason: scope.reason,
-      });
+      logChatbotEvent('scope_allowed', scopeLogFields);
     }
   }
 
@@ -780,7 +870,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     case 'rank_predictor':
     case 'rank_predictor_continue': {
       await h.transitionState(activeConversation._id, activeConversation.phone, 'rank_predictor', contextPatch);
-      const rankInboundText = multilingualInbound?.englishMessage || inbound.text;
+      const rankInboundText = routingInboundText;
       const r = handleRankPredictorMessage(rankInboundText, contextPatch.rank || {});
       replyText = r.reply;
       contextPatch = {
@@ -863,7 +953,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       break;
     }
     case 'iit_counselling_expert': {
-      const assistantInboundText = multilingualInbound?.englishMessage || inbound.text;
+      const assistantInboundText = routingInboundText;
       const languageMetadata = multilingualInbound
         ? {
             originalMessage: multilingualInbound.originalMessage,
@@ -899,7 +989,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       break;
     }
     case 'iit_counselling_strategy': {
-      const assistantInboundText = multilingualInbound?.englishMessage || inbound.text;
+      const assistantInboundText = routingInboundText;
       const languageMetadata = multilingualInbound
         ? {
             originalMessage: multilingualInbound.originalMessage,
@@ -945,7 +1035,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       break;
     }
     case 'counsellor_program_assistant': {
-      const assistantInboundText = multilingualInbound?.englishMessage || inbound.text;
+      const assistantInboundText = routingInboundText;
       const languageMetadata = multilingualInbound
         ? {
             originalMessage: multilingualInbound.originalMessage,
@@ -981,7 +1071,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       break;
     }
     case 'knowledge_assistant': {
-      const assistantInboundText = multilingualInbound?.englishMessage || inbound.text;
+      const assistantInboundText = routingInboundText;
       knowledgeAssistantResult = await answerWithTimeout({
         inboundText: assistantInboundText,
         conversationId: activeConversation._id,
@@ -1006,7 +1096,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       break;
     }
     default: {
-      const assistantInboundText = multilingualInbound?.englishMessage || inbound.text;
+      const assistantInboundText = routingInboundText;
       const languageMetadata = multilingualInbound
         ? {
             originalMessage: multilingualInbound.originalMessage,
@@ -1194,6 +1284,14 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       intentResult.intent === 'counselling_support' ||
       intentResult.intent === 'faq' ||
       (intentResult.intent === 'college_predictor' && !isCollegePredictorEnabled()));
+
+  if (replyText && scopePartialContext?.partialAllowed) {
+    replyText = buildPartialScopeReply({
+      counsellingAnswer: replyText,
+      blockedSegments: scopePartialContext.blockedSegments,
+      resolvedLanguage: resolvedLanguageFrom(multilingualInbound),
+    });
+  }
 
   if (replyText) {
     replyText = await deliverOutboundReply({

@@ -145,6 +145,61 @@ router.get('/send-30min-reminders', verifyCronSecret, (req, res) =>
   runReminderJobCron(req, res, '30min')
 );
 
+router.get('/send-guidance-reminders', verifyCronSecret, async (req, res) => {
+  let cronRun = null;
+  const jobKey = CRON_JOB_KEYS.SEND_GUIDANCE_REMINDERS;
+  const { GUIDANCE_REMINDER_MESSAGE_KINDS } = require('../models/WhatsAppReminderJob');
+  try {
+    cronRun = await startCronRun(jobKey);
+    const now = new Date();
+    const stats = await dispatchDueReminderJobs({
+      messageKinds: [...GUIDANCE_REMINDER_MESSAGE_KINDS],
+      now,
+      cronRunId: cronRun._id,
+      cronJobKey: jobKey,
+    });
+
+    const payload = {
+      scheduler: 'guidance_reminder_job_v1',
+      messageKinds: GUIDANCE_REMINDER_MESSAGE_KINDS,
+      nowIso: now.toISOString(),
+      ...stats,
+    };
+
+    await finishCronRun(
+      cronRun,
+      {
+        found: stats.jobsClaimed,
+        waAttempted: stats.jobsDispatched + stats.jobsFailed,
+        waSucceeded: stats.jobsDispatched,
+        waFailed: stats.jobsFailed,
+        ...stats,
+      },
+      { success: true }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Guidance reminder jobs processed',
+      stats: payload,
+    });
+  } catch (error) {
+    console.error('[Cron] Error in send-guidance-reminders:', error);
+    if (cronRun) {
+      await finishCronRun(
+        cronRun,
+        { found: 0, waAttempted: 0, waSucceeded: 0, waFailed: 0 },
+        { success: false, errorSummary: error.message }
+      ).catch(() => {});
+    }
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message,
+    });
+  }
+});
+
 router.get('/send-iit-reminders', verifyCronSecret, async (req, res) => {
   let cronRun = null;
   const jobKey = CRON_JOB_KEYS.SEND_IIT_REMINDERS;
