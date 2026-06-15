@@ -16,6 +16,7 @@ const whatsAppRetryGroupSchema = new mongoose.Schema({
       'one_on_one_submit',
       'guidance_booking_submit',
       'guidance_pre30min',
+      'guidance_counsellor_booking_notify',
     ],
     index: true
   },
@@ -30,6 +31,7 @@ const whatsAppRetryGroupSchema = new mongoose.Schema({
       'scheduled_job',
       'one_on_one_submit',
       'guidance_booking_submit',
+      'guidance_counsellor_booking_notify',
     ],
     default: 'cron',
     index: true

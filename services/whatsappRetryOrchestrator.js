@@ -4,7 +4,7 @@ const WhatsAppRetryGroup = require('../models/WhatsAppRetryGroup');
 const FormSubmission = require('../models/FormSubmission');
 const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
 const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
-const GuidanceSlot = require('../models/GuidanceSlot');
+const OneOnOneCounselor = require('../models/OneOnOneCounselor');
 const { buildSlotNotificationVariables } = require('../utils/slotNotificationFormatters');
 const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
 const {
@@ -14,7 +14,8 @@ const {
   sendReminder30MinWhatsApp,
   sendIitReminderWhatsApp,
   sendOneOnOneSubmitWhatsApp,
-  sendGuidanceBookingSubmitWhatsApp
+  sendGuidanceBookingSubmitWhatsApp,
+  sendGuidanceCounsellorBookingNotifyWhatsApp
 } = require('./gupshupService');
 const {
   buildOneOnOneSubmitVars,
@@ -23,8 +24,10 @@ const {
 } = require('../utils/oneOnOneCounselingWhatsApp');
 const {
   buildGuidanceBookingSubmitVars,
+  buildGuidanceCounsellorBookingNotifyVars,
   parseGuidanceSlotInstantUtc,
-  GUPSHUP_TEMPLATE_GUIDANCE_BOOKING_CONFIRM
+  GUPSHUP_TEMPLATE_GUIDANCE_BOOKING_CONFIRM,
+  GUPSHUP_TEMPLATE_GUIDANCE_COUNSELLOR_BOOKING_NOTIFY,
 } = require('../utils/guidanceBookingWhatsApp');
 const {
   isIitReminderMessageKind,
@@ -80,12 +83,19 @@ function sendFnForKind(kind) {
       return sendOneOnOneSubmitWhatsApp;
     case 'guidance_booking_submit':
       return sendGuidanceBookingSubmitWhatsApp;
+    case 'guidance_counsellor_booking_notify':
+      return sendGuidanceCounsellorBookingNotifyWhatsApp;
     default:
       return null;
   }
 }
 
-const IMMEDIATE_ONLY_RETRY_KINDS = ['slot_booked', 'one_on_one_submit', 'guidance_booking_submit'];
+const IMMEDIATE_ONLY_RETRY_KINDS = [
+  'slot_booked',
+  'one_on_one_submit',
+  'guidance_booking_submit',
+  'guidance_counsellor_booking_notify',
+];
 
 /**
  * After retryable attempt-1 failure, arm nextPromotionDueAt so scanGroupsNeedingRetries can promote.
@@ -898,13 +908,15 @@ async function processSlotBookedImmediateRetries(cronRunId) {
   const slotPolicy = getRetryPolicy('slot_booked');
   const oneOnOnePolicy = getRetryPolicy('one_on_one_submit');
   const guidancePolicy = getRetryPolicy('guidance_booking_submit');
+  const guidanceCounsellorPolicy = getRetryPolicy('guidance_counsellor_booking_notify');
   const delayMs = Math.min(
     60,
     Math.max(
       10,
       Number(slotPolicy.immediateRetryDelaySeconds) || 15,
       Number(oneOnOnePolicy.immediateRetryDelaySeconds) || 15,
-      Number(guidancePolicy.immediateRetryDelaySeconds) || 15
+      Number(guidancePolicy.immediateRetryDelaySeconds) || 15,
+      Number(guidanceCounsellorPolicy.immediateRetryDelaySeconds) || 15
     )
   ) * 1000;
   const lockMs = Math.max(
@@ -1003,12 +1015,15 @@ async function processSlotBookedImmediateRetries(cronRunId) {
     }
 
     const isOneOnOneRetry = row.messageKind === 'one_on_one_submit';
-    const isGuidanceRetry = row.messageKind === 'guidance_booking_submit';
+    const isGuidanceBookingSubmitRetry = row.messageKind === 'guidance_booking_submit';
+    const isGuidanceCounsellorNotifyRetry = row.messageKind === 'guidance_counsellor_booking_notify';
+    const isGuidanceRetry = isGuidanceBookingSubmitRetry || isGuidanceCounsellorNotifyRetry;
     const isIitRetry = !isOneOnOneRetry && !isGuidanceRetry && row.opsProduct === 'iit_counselling';
     let sub = null;
     let iitSub = null;
     let oneOnOneLead = null;
     let guidanceSlot = null;
+    let guidanceCounselor = null;
     if (isGuidanceRetry) {
       if (row.oneOnOneCounselingLeadId) {
         oneOnOneLead = await OneOnOneCounselingLead.findById(row.oneOnOneCounselingLeadId).lean();
@@ -1033,6 +1048,20 @@ async function processSlotBookedImmediateRetries(cronRunId) {
         guidanceSlot = await GuidanceSlot.findById(oneOnOneLead.selectedSlotId).lean();
       }
       if (!guidanceSlot) {
+        failed += 1;
+        await WhatsAppMessageEvent.updateOne(
+          { _id: row._id, immediateRetryLockToken: lockToken },
+          {
+            $set: { retryEligible: false },
+            $unset: { immediateRetryLockToken: '', immediateRetryLockedAt: '', immediateRetryLockUntil: '' }
+          }
+        );
+        continue;
+      }
+      if (isGuidanceCounsellorNotifyRetry && guidanceSlot.oneOnOneCounselorId) {
+        guidanceCounselor = await OneOnOneCounselor.findById(guidanceSlot.oneOnOneCounselorId).lean();
+      }
+      if (isGuidanceCounsellorNotifyRetry && !guidanceCounselor) {
         failed += 1;
         await WhatsAppMessageEvent.updateOne(
           { _id: row._id, immediateRetryLockToken: lockToken },
@@ -1103,8 +1132,10 @@ async function processSlotBookedImmediateRetries(cronRunId) {
     };
     const slotBookingLabel = iitSub?.iitCounselling?.section1Data?.slotBooking;
     const slotIdForTpl = slotBookingLabel ? IIT_LABEL_TO_SLOT_ID[slotBookingLabel] : null;
-    const vars = isGuidanceRetry
+    const vars = isGuidanceBookingSubmitRetry
       ? buildGuidanceBookingSubmitVars(guidanceSlot)
+      : isGuidanceCounsellorNotifyRetry
+        ? buildGuidanceCounsellorBookingNotifyVars(oneOnOneLead, guidanceSlot, guidanceCounselor)
       : isOneOnOneRetry
         ? buildOneOnOneSubmitVars(oneOnOneLead)
         : isIitRetry
@@ -1169,12 +1200,16 @@ async function processSlotBookedImmediateRetries(cronRunId) {
       retryKind: row.messageKind,
       source: 'retry_cron',
       cronRunId,
-      cronJobKey: isGuidanceRetry
+      cronJobKey: isGuidanceCounsellorNotifyRetry
+        ? 'guidance_counsellor_booking_notify_immediate_retry'
+        : isGuidanceBookingSubmitRetry
         ? 'guidance_booking_submit_immediate_retry'
         : isOneOnOneRetry
           ? 'one_on_one_submit_immediate_retry'
           : 'slot_booked_immediate_retry',
-      sendFn: isGuidanceRetry
+      sendFn: isGuidanceCounsellorNotifyRetry
+        ? sendGuidanceCounsellorBookingNotifyWhatsApp
+        : isGuidanceBookingSubmitRetry
         ? sendGuidanceBookingSubmitWhatsApp
         : isOneOnOneRetry
           ? sendOneOnOneSubmitWhatsApp
@@ -1200,7 +1235,9 @@ async function processSlotBookedImmediateRetries(cronRunId) {
       oneOnOneCounselingLeadId: oneOnOneLead ? oneOnOneLead._id : row.oneOnOneCounselingLeadId || null,
       ...(row.templateIdEnvKey
         ? { explicitTemplateEnvKey: row.templateIdEnvKey }
-        : isGuidanceRetry
+        : isGuidanceCounsellorNotifyRetry
+          ? { explicitTemplateEnvKey: GUPSHUP_TEMPLATE_GUIDANCE_COUNSELLOR_BOOKING_NOTIFY }
+          : isGuidanceBookingSubmitRetry
           ? { explicitTemplateEnvKey: GUPSHUP_TEMPLATE_GUIDANCE_BOOKING_CONFIRM }
           : isOneOnOneRetry
             ? { explicitTemplateEnvKey: GUPSHUP_TEMPLATE_ONE_ON_ONE_CONFIRM }

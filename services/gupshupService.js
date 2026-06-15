@@ -36,6 +36,8 @@ const {
   GUIDANCE_BOOKING_CONFIRM_PARAM_KEYS,
   GUPSHUP_TEMPLATE_GUIDANCE_PRE30MIN_REMINDER,
   GUIDANCE_PRE30MIN_REMINDER_PARAM_KEYS,
+  GUPSHUP_TEMPLATE_GUIDANCE_COUNSELLOR_BOOKING_NOTIFY,
+  GUIDANCE_COUNSELLOR_BOOKING_NOTIFY_PARAM_KEYS,
 } = require('../utils/guidanceBookingWhatsApp');
 
 const GUPSHUP_TEMPLATE_URL = 'https://api.gupshup.io/wa/api/v1/template/msg';
@@ -478,6 +480,20 @@ async function sendGuidancePre30MinReminderWhatsApp(phone10, vars, sendOpts = {}
   });
 }
 
+/** Guidance counsellor booking notify: student name + date + time + counsellor name. */
+async function sendGuidanceCounsellorBookingNotifyWhatsApp(phone10, vars, sendOpts = {}) {
+  const envKey =
+    typeof sendOpts.templateEnvKey === 'string' && sendOpts.templateEnvKey.trim()
+      ? sendOpts.templateEnvKey.trim()
+      : GUPSHUP_TEMPLATE_GUIDANCE_COUNSELLOR_BOOKING_NOTIFY;
+  const tid = process.env[envKey];
+  const params = buildParamsFromKeys(vars, GUIDANCE_COUNSELLOR_BOOKING_NOTIFY_PARAM_KEYS);
+  return sendTemplateMessage(formatPhoneE16491(phone10), tid, params, {
+    ...sendOpts,
+    templateEnvKey: envKey,
+  });
+}
+
 module.exports = {
   isWhatsAppEnabled,
   isGupshupConfigured,
@@ -492,6 +508,7 @@ module.exports = {
   sendOneOnOneSubmitWhatsApp,
   sendGuidanceBookingSubmitWhatsApp,
   sendGuidancePre30MinReminderWhatsApp,
+  sendGuidanceCounsellorBookingNotifyWhatsApp,
   isIitReminderTemplateEnvKey,
   resetIntegrationStubCallCount,
   getIntegrationStubCallCount,

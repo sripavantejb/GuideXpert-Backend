@@ -12,6 +12,7 @@ const WHATSAPP_MESSAGE_KINDS = Object.freeze([
   'one_on_one_submit',
   'guidance_booking_submit',
   'guidance_pre30min',
+  'guidance_counsellor_booking_notify',
 ]);
 
 const whatsAppMessageEventSchema = new mongoose.Schema({
@@ -109,6 +110,7 @@ const whatsAppMessageEventSchema = new mongoose.Schema({
       'retry_api',
       'one_on_one_submit',
       'guidance_booking_submit',
+      'guidance_counsellor_booking_notify',
     ]
   },
   templateIdEnvKey: { type: String, trim: true, maxlength: 64, default: null },

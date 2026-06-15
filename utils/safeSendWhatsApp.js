@@ -79,6 +79,8 @@ function mapSourceToGroupTrigger(source) {
       return 'one_on_one_submit';
     case 'guidance_booking_submit':
       return 'guidance_booking_submit';
+    case 'guidance_counsellor_booking_notify':
+      return 'guidance_counsellor_booking_notify';
     default:
       return 'manual';
   }

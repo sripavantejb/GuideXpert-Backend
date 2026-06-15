@@ -9,6 +9,7 @@ const MESSAGE_KIND_TO_ENV_KEY = {
   one_on_one_submit: 'GUPSHUP_TEMPLATE_ONE_ON_ONE_CONFIRM',
   guidance_booking_submit: 'GUPSHUP_TEMPLATE_GUIDANCE_BOOKING_CONFIRM',
   guidance_pre30min: 'GUPSHUP_TEMPLATE_GUIDANCE_PRE30MIN_REMINDER',
+  guidance_counsellor_booking_notify: 'GUPSHUP_TEMPLATE_GUIDANCE_COUNSELLOR_BOOKING_NOTIFY',
 };
 
 function getTemplateMetaForKind(messageKind) {

@@ -1,11 +1,14 @@
 const { to10Digits } = require('../utils/mobileNormalize');
 const WhatsAppRetryGroup = require('../models/WhatsAppRetryGroup');
-const { isGupshupConfigured, sendGuidanceBookingSubmitWhatsApp } = require('../services/gupshupService');
+const { isGupshupConfigured, sendGuidanceBookingSubmitWhatsApp, sendGuidanceCounsellorBookingNotifyWhatsApp } = require('../services/gupshupService');
 const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
+const { resolveGuidanceCounselorPhone10 } = require('../constants/guidanceCounselorPhones');
 const {
   buildGuidanceBookingSubmitVars,
+  buildGuidanceCounsellorBookingNotifyVars,
   parseGuidanceSlotInstantUtc,
   GUPSHUP_TEMPLATE_GUIDANCE_BOOKING_CONFIRM,
+  GUPSHUP_TEMPLATE_GUIDANCE_COUNSELLOR_BOOKING_NOTIFY,
 } = require('../utils/guidanceBookingWhatsApp');
 const {
   findLeadByMobile,
@@ -207,12 +210,84 @@ exports.bookSlot = async (req, res) => {
       }
     }
 
+    let whatsappCounsellor = null;
+    const counsellorPhone10 = resolveGuidanceCounselorPhone10(result.counselor);
+    const counsellorTemplateId = process.env[GUPSHUP_TEMPLATE_GUIDANCE_COUNSELLOR_BOOKING_NOTIFY];
+
+    if (!isGupshupConfigured()) {
+      whatsappCounsellor = { attempted: false, skippedReason: 'gupshup_not_configured' };
+    } else if (!counsellorTemplateId) {
+      whatsappCounsellor = { attempted: false, skippedReason: 'template_env_missing' };
+    } else if (!counsellorPhone10) {
+      whatsappCounsellor = { attempted: false, skippedReason: 'counsellor_phone_unresolved' };
+    } else {
+      try {
+        const cohortSlotUtc = parseGuidanceSlotInstantUtc(result.slot);
+        const counsellorGroup = await WhatsAppRetryGroup.create({
+          messageKind: 'guidance_counsellor_booking_notify',
+          cronRunId: null,
+          trigger: 'guidance_counsellor_booking_notify',
+          status: 'open',
+        });
+        const counsellorWaResult = await safeSendWhatsApp({
+          phone10: counsellorPhone10,
+          formSubmissionId: null,
+          vars: buildGuidanceCounsellorBookingNotifyVars(result.lead, result.slot, result.counselor),
+          retryKind: 'guidance_counsellor_booking_notify',
+          source: 'guidance_counsellor_booking_notify',
+          cronRunId: null,
+          cronJobKey: null,
+          sendFn: sendGuidanceCounsellorBookingNotifyWhatsApp,
+          retryGroupId: counsellorGroup._id,
+          attemptNumber: 1,
+          opsProduct: 'guidance_booking',
+          cohortSlotInstantUtc: cohortSlotUtc,
+          oneOnOneCounselingLeadId: result.lead._id,
+          explicitTemplateEnvKey: GUPSHUP_TEMPLATE_GUIDANCE_COUNSELLOR_BOOKING_NOTIFY,
+        });
+
+        if (counsellorWaResult && counsellorWaResult.success) {
+          whatsappCounsellor = {
+            attempted: true,
+            success: true,
+            ...(counsellorWaResult.idempotent ? { idempotent: true } : {}),
+          };
+        } else {
+          const errText =
+            counsellorWaResult && counsellorWaResult.error
+              ? String(counsellorWaResult.error).slice(0, 240)
+              : 'send_failed';
+          const skippedReason = counsellorWaResult?.duplicateInFlight
+            ? 'duplicate_in_flight'
+            : counsellorWaResult?.skippedOutsideWindow
+              ? 'outside_reminder_window'
+              : undefined;
+          whatsappCounsellor = {
+            attempted: true,
+            success: false,
+            error: errText,
+            ...(skippedReason ? { skippedReason } : {}),
+          };
+          console.warn('[bookSlot] WhatsApp guidance_counsellor_booking_notify unsuccessful:', errText);
+        }
+      } catch (waErr) {
+        const msg = String(waErr?.message || waErr || 'exception').slice(0, 240);
+        whatsappCounsellor = { attempted: true, success: false, error: msg };
+        if (waErr?.name === 'ValidationError') {
+          console.error('[bookSlot] counsellor_retry_group_validation_failed', msg);
+        } else {
+          console.error('[bookSlot] Counsellor WhatsApp dispatch error:', msg);
+        }
+      }
+    }
+
     return res.status(200).json({
       success: true,
       message:
         'Your guidance session slot has been booked successfully. Our team will send details on WhatsApp.',
       data: mapLeadBookingDTO(result.lead, result.slot, result.counselor),
       whatsappBooking,
+      whatsappCounsellor,
       reminderSchedule: summarizeReminderSchedule(result.reminderSchedule),
     });
   } catch (err) {
