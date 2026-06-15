@@ -18,6 +18,7 @@ describe('guidanceReminderStatusService', () => {
     assert.equal(mapJobToReminderState({ state: 'failed' }, now), 'failed');
     assert.equal(mapJobToReminderState({ state: 'skipped' }, now), 'skipped');
     assert.equal(mapJobToReminderState({ state: 'dispatched' }, now), 'sent');
+    assert.equal(mapJobToReminderState({ state: 'reconcile_pending' }, now), 'sent');
     assert.equal(mapJobToReminderState(null, now), 'none');
   });
 

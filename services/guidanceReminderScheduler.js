@@ -41,6 +41,9 @@ async function upsertGuidanceReminderJob(leadId, messageKind, setDoc, setOnInser
     oneOnOneCounselingLeadId: leadId,
     messageKind,
   };
+  for (const key of Object.keys(setDoc)) {
+    delete insertFields[key];
+  }
   try {
     const job = await WhatsAppReminderJob.findOneAndUpdate(
       { oneOnOneCounselingLeadId: leadId, messageKind },
@@ -130,18 +133,7 @@ async function ensureGuidancePre30ReminderForLead(lead, slot, opts = {}) {
     leadId,
     messageKind,
     setDoc,
-    {
-      phone,
-      opsProduct: 'guidance_booking',
-      slotDate: slotAt,
-      slotDayIst,
-      scheduledSendAt,
-      expiresAt,
-      firstEligibleAt,
-      retryGroupId: groupResult.retryGroupId,
-      state: decision.state,
-      templateIdEnvKey: decision.templateIdEnvKey,
-    },
+    { createdAt: now },
     existing
   );
 

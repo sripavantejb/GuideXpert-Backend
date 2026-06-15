@@ -15,6 +15,7 @@ const whatsAppRetryGroupSchema = new mongoose.Schema({
       'iit_pre15min',
       'one_on_one_submit',
       'guidance_booking_submit',
+      'guidance_pre30min',
     ],
     index: true
   },

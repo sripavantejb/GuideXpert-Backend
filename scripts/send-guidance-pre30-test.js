@@ -11,10 +11,22 @@
  * Pass --allow-stub to exercise the code path without hitting Gupshup (no WhatsApp delivered).
  */
 const path = require('path');
+const fs = require('fs');
+
+// Preserve explicit shell exports so they win over .env.gupshup.local stub placeholders.
+const shellEnv = {
+  WA_INTEGRATION_STUB: process.env.WA_INTEGRATION_STUB,
+  GUPSHUP_API_KEY: process.env.GUPSHUP_API_KEY,
+  GUPSHUP_SOURCE: process.env.GUPSHUP_SOURCE,
+};
+
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 const gupshupLocal = path.join(__dirname, '../.env.gupshup.local');
-if (require('fs').existsSync(gupshupLocal)) {
+if (fs.existsSync(gupshupLocal)) {
   require('dotenv').config({ path: gupshupLocal, override: true });
+}
+for (const [key, value] of Object.entries(shellEnv)) {
+  if (value !== undefined) process.env[key] = value;
 }
 
 const { sendGuidancePre30MinReminderWhatsApp, isGupshupConfigured } = require('../services/gupshupService');
@@ -45,7 +57,11 @@ async function main() {
 
   if (String(process.env.WA_INTEGRATION_STUB || '').trim() === '1') {
     console.error(
-      '[error] WA_INTEGRATION_STUB=1 — no real WhatsApp is sent. Copy production GUPSHUP_API_KEY + GUPSHUP_SOURCE into .env.gupshup.local, set WA_INTEGRATION_STUB=0, then re-run. Use --allow-stub to dry-run only.'
+      '[error] WA_INTEGRATION_STUB=1 — no real WhatsApp is sent.\n' +
+        '  Option A: edit GuideXpert-Backend/.env.gupshup.local — set real GUPSHUP_API_KEY, GUPSHUP_SOURCE, WA_INTEGRATION_STUB=0\n' +
+        '  Option B: one-shot from terminal (values from Vercel Production):\n' +
+        '    WA_INTEGRATION_STUB=0 GUPSHUP_API_KEY=... GUPSHUP_SOURCE=... node scripts/send-guidance-pre30-test.js 9347763131\n' +
+        '  Use --allow-stub to dry-run only (no WhatsApp delivered).'
     );
     if (!allowStub) process.exit(1);
   }

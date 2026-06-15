@@ -95,6 +95,19 @@ function getGuidancePre30ScheduleDecision(slot, now = new Date()) {
     return { state: 'skipped', suppressionReason: 'invalid_schedule', slotAt, scheduledSendAt };
   }
   if (nowMs >= scheduledSendAt.getTime()) {
+    // Booked inside the T-30 window but session not started — send immediately (catch-up).
+    if (nowMs < slotAt.getTime()) {
+      const catchUpAt = new Date(nowMs);
+      return {
+        state: 'pending',
+        suppressionReason: null,
+        slotAt,
+        scheduledSendAt: catchUpAt,
+        templateIdEnvKey,
+        firstEligibleAt: catchUpAt,
+        catchUp: true,
+      };
+    }
     return { state: 'skipped', suppressionReason: 'booking_too_late', slotAt, scheduledSendAt };
   }
 

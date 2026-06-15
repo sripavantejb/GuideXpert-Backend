@@ -1,7 +1,15 @@
 const { formatGuidanceBookingDate } = require('./guidanceBookingWhatsApp');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-const GUIDANCE_SLOT_BOOKING_CUTOFF_MINUTES = 15;
+/** Align with guidance pre-30min reminder window (bookings after this cannot be reminded). */
+const GUIDANCE_SLOT_BOOKING_CUTOFF_MINUTES = 30;
+
+function bookingCutoffMinutesFromEnv() {
+  const raw = process.env.WA_GUIDANCE_BOOKING_CUTOFF_MINUTES;
+  if (raw == null || raw === '') return GUIDANCE_SLOT_BOOKING_CUTOFF_MINUTES;
+  const n = parseInt(String(raw), 10);
+  return Number.isFinite(n) && n > 0 ? n : GUIDANCE_SLOT_BOOKING_CUTOFF_MINUTES;
+}
 
 /**
  * Parse a single time token like "1:00 PM", "11AM", "6 PM".
@@ -150,7 +158,7 @@ function isWithinGuidanceSlotWindow(slot, now = new Date(), options = {}) {
  * @returns {{ status: 'bookable'|'frozen'|'ended', window: ReturnType<typeof parseGuidanceSlotTimeWindow>|null }}
  */
 function getGuidanceSlotBookingStatus(slot, now = new Date(), options = {}) {
-  const bookingCutoffMinutes = options.bookingCutoffMinutes ?? GUIDANCE_SLOT_BOOKING_CUTOFF_MINUTES;
+  const bookingCutoffMinutes = options.bookingCutoffMinutes ?? bookingCutoffMinutesFromEnv();
   const window = parseGuidanceSlotTimeWindow(slot);
   if (!window) {
     return { status: 'bookable', window: null };
@@ -182,4 +190,5 @@ module.exports = {
   isGuidanceSlotBookable,
   IST_OFFSET_MS,
   GUIDANCE_SLOT_BOOKING_CUTOFF_MINUTES,
+  bookingCutoffMinutesFromEnv,
 };

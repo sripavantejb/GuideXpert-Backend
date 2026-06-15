@@ -17,6 +17,27 @@ const {
 } = require('../services/guidanceBookingService');
 const { joinGuidanceMeetForMobile } = require('../services/guidanceMeetJoinService');
 
+function summarizeReminderSchedule(reminderSchedule) {
+  if (!reminderSchedule) return null;
+  if (reminderSchedule.error) {
+    return {
+      ok: false,
+      error: reminderSchedule.error,
+      detail: reminderSchedule.detail || null,
+    };
+  }
+  const job = reminderSchedule.jobs?.[0];
+  if (!job) {
+    return { ok: false, error: 'no_job_created' };
+  }
+  return {
+    ok: job.state === 'pending',
+    state: job.state,
+    suppressionReason: job.suppressionReason || null,
+    scheduledSendAt: job.scheduledSendAt || null,
+  };
+}
+
 exports.checkMobile = async (req, res) => {
   try {
     const mobileNumber = to10Digits(req.body?.mobileNumber);
@@ -192,6 +213,7 @@ exports.bookSlot = async (req, res) => {
         'Your guidance session slot has been booked successfully. Our team will send details on WhatsApp.',
       data: mapLeadBookingDTO(result.lead, result.slot, result.counselor),
       whatsappBooking,
+      reminderSchedule: summarizeReminderSchedule(result.reminderSchedule),
     });
   } catch (err) {
     console.error('[bookSlot]', err);

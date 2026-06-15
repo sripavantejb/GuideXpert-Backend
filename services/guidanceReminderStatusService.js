@@ -7,6 +7,8 @@ const OneOnOneCounselor = require('../models/OneOnOneCounselor');
 const WhatsAppReminderJob = require('../models/WhatsAppReminderJob');
 const { GUIDANCE_REMINDER_MESSAGE_KINDS } = require('../models/WhatsAppReminderJob');
 const { overdueSlaMs } = require('../utils/waReminderJobObservability');
+const { getCronScheduleHealth } = require('../utils/waCronScheduleHealth');
+const { CRON_JOB_KEYS } = require('../models/MessagingCronRun');
 
 const MESSAGE_KIND = GUIDANCE_REMINDER_MESSAGE_KINDS[0];
 
@@ -35,7 +37,7 @@ function mapJobToReminderState(job, now) {
   if (state === 'read') return 'read';
   if (state === 'failed' || state === 'exhausted') return 'failed';
   if (state === 'skipped' || state === 'cancelled') return 'skipped';
-  if (state === 'dispatched') return 'sent';
+  if (state === 'dispatched' || state === 'reconcile_pending') return 'sent';
 
   const overdueBefore = new Date(now.getTime() - overdueSlaMs());
   const due =
@@ -66,7 +68,9 @@ function incrementReminderCounts(counts, job, now) {
   else if (reminderState === 'read') counts.read += 1;
   else if (reminderState === 'failed') counts.failed += 1;
   else if (reminderState === 'skipped') counts.skipped += 1;
-  else if (reminderState === 'sent') counts.pending += 1;
+  else if (reminderState === 'sent') {
+    /* dispatched / reconcile_pending — counted via slot rollup, not pending */
+  }
 }
 
 /**
@@ -104,7 +108,9 @@ async function getGuidanceReminderStatusBySlotDate(slotDate, opts = {}) {
           messageKind: MESSAGE_KIND,
           oneOnOneCounselingLeadId: { $in: leadIds },
         })
-          .select('oneOnOneCounselingLeadId state scheduledSendAt suppressionReason')
+          .select(
+            'oneOnOneCounselingLeadId state scheduledSendAt suppressionReason lastError completedAt'
+          )
           .lean()
       : [],
   ]);
@@ -130,11 +136,15 @@ async function getGuidanceReminderStatusBySlotDate(slotDate, opts = {}) {
     const students = slotLeads.map((lead) => {
       const job = jobByLeadId[String(lead._id)] || null;
       incrementReminderCounts(reminders, job, now);
+      const reminderState = mapJobToReminderState(job, now);
       return {
         name: lead.studentName || '—',
         mobile: lead.mobileNumber || '',
-        reminderState: mapJobToReminderState(job, now),
-        suppressionReason: job?.suppressionReason || null,
+        reminderState,
+        jobState: job?.state || null,
+        suppressionReason: job?.suppressionReason || (job ? null : 'no_reminder_job'),
+        scheduledSendAt: job?.scheduledSendAt || null,
+        lastError: job?.lastError || null,
       };
     });
 
@@ -153,7 +163,23 @@ async function getGuidanceReminderStatusBySlotDate(slotDate, opts = {}) {
     };
   });
 
-  return { slotDate, slots: resultSlots };
+  const cronHealthAll = await getCronScheduleHealth();
+  const guidanceCron =
+    cronHealthAll.jobs.find((j) => j.jobKey === CRON_JOB_KEYS.SEND_GUIDANCE_REMINDERS) || null;
+
+  return {
+    slotDate,
+    slots: resultSlots,
+    cronHealth: guidanceCron
+      ? {
+          jobKey: guidanceCron.jobKey,
+          label: guidanceCron.label,
+          lastSuccessAt: guidanceCron.lastSuccessAt,
+          stale: guidanceCron.stale,
+          ageMs: guidanceCron.ageMs,
+        }
+      : null,
+  };
 }
 
 module.exports = {

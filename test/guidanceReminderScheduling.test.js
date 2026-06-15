@@ -41,11 +41,13 @@ describe('guidanceReminderScheduling', () => {
     assert.ok(decision.scheduledSendAt);
   });
 
-  test('skips when booking happens within 30 minutes of start', () => {
+  test('catch-up pending when booking within 30 minutes of start (before session)', () => {
     const now = new Date('2026-06-13T09:45:00.000Z');
     const decision = getGuidancePre30ScheduleDecision(SLOT, now);
-    assert.equal(decision.state, 'skipped');
-    assert.equal(decision.suppressionReason, 'booking_too_late');
+    assert.equal(decision.state, 'pending');
+    assert.equal(decision.suppressionReason, null);
+    assert.equal(decision.catchUp, true);
+    assert.ok(decision.scheduledSendAt);
   });
 
   test('skips when slot already started', () => {

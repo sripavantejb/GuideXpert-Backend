@@ -296,7 +296,7 @@ async function bookSlotForLead({
   }
   if (slotBookingStatus.status === 'frozen') {
     return {
-      error: 'Booking for this slot closed 15 minutes before the session start time.',
+      error: 'Booking for this slot closed 30 minutes before the session start time.',
       status: 403,
     };
   }
@@ -337,8 +337,44 @@ async function bookSlotForLead({
   let reminderSchedule = null;
   try {
     reminderSchedule = await ensureGuidancePre30ReminderForLead(lead, slotUpdate.toObject());
+    const job = reminderSchedule?.jobs?.[0];
+    if (reminderSchedule?.error) {
+      console.error(
+        JSON.stringify({
+          event: 'guidance_pre30_schedule_error',
+          leadId: String(lead._id),
+          error: reminderSchedule.error,
+          detail: reminderSchedule.detail || null,
+        })
+      );
+    } else if (job?.state === 'skipped') {
+      console.warn(
+        JSON.stringify({
+          event: 'guidance_pre30_schedule_skipped',
+          leadId: String(lead._id),
+          suppressionReason: job.suppressionReason,
+          scheduledSendAt: job.scheduledSendAt || null,
+        })
+      );
+    } else if (job?.state === 'pending') {
+      console.log(
+        JSON.stringify({
+          event: 'guidance_pre30_schedule_pending',
+          leadId: String(lead._id),
+          scheduledSendAt: job.scheduledSendAt,
+        })
+      );
+    }
   } catch (scheduleErr) {
-    console.error('[bookSlotForLead] guidance pre30 reminder schedule failed:', scheduleErr?.message || scheduleErr);
+    const detail = scheduleErr?.message ? String(scheduleErr.message).slice(0, 500) : 'unknown';
+    console.error(
+      JSON.stringify({
+        event: 'guidance_pre30_schedule_failed',
+        leadId: String(lead._id),
+        error: detail,
+      })
+    );
+    reminderSchedule = { error: 'schedule_failed', detail, jobs: [] };
   }
 
   return {

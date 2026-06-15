@@ -29,7 +29,13 @@ function verifyCronSecret(req, res, next) {
   const providedKey = queryKey || headerKey || bearerKey;
 
   if (!isValidCronSecret(providedKey)) {
-    console.warn('[Cron] Invalid cron key attempt');
+    console.warn(
+      JSON.stringify({
+        event: 'cron_auth_failed',
+        path: req.path,
+        mode: bearerKey ? 'bearer' : headerKey ? 'x-cron-key' : queryKey ? 'query' : 'none',
+      })
+    );
     return res.status(401).json({ success: false, message: 'Unauthorized' });
   }
 
@@ -149,9 +155,11 @@ router.get('/send-guidance-reminders', verifyCronSecret, async (req, res) => {
   let cronRun = null;
   const jobKey = CRON_JOB_KEYS.SEND_GUIDANCE_REMINDERS;
   const { GUIDANCE_REMINDER_MESSAGE_KINDS } = require('../models/WhatsAppReminderJob');
+  const { repairMissingGuidanceReminderJobs } = require('../services/guidanceReminderRepairService');
   try {
     cronRun = await startCronRun(jobKey);
     const now = new Date();
+    const repairStats = await repairMissingGuidanceReminderJobs({ now, limit: 200 });
     const stats = await dispatchDueReminderJobs({
       messageKinds: [...GUIDANCE_REMINDER_MESSAGE_KINDS],
       now,
@@ -163,6 +171,7 @@ router.get('/send-guidance-reminders', verifyCronSecret, async (req, res) => {
       scheduler: 'guidance_reminder_job_v1',
       messageKinds: GUIDANCE_REMINDER_MESSAGE_KINDS,
       nowIso: now.toISOString(),
+      repair: repairStats,
       ...stats,
     };
 

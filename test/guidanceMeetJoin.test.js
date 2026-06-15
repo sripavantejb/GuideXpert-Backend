@@ -80,12 +80,12 @@ describe('guidanceSlotTimeWindow', () => {
     assert.equal(isWithinGuidanceSlotWindow(slot, after).allowed, false);
   });
 
-  test('getGuidanceSlotBookingStatus freezes 15 minutes before start and hides ended slots', () => {
+  test('getGuidanceSlotBookingStatus freezes 30 minutes before start and hides ended slots', () => {
     const { getGuidanceSlotBookingStatus } = require('../utils/guidanceSlotTimeWindow');
     const slot = { slotDate: '2026-06-13', slotTime: '1:00 PM TO 2:00 PM' };
 
-    assert.equal(getGuidanceSlotBookingStatus(slot, new Date('2026-06-13T07:14:00.000Z')).status, 'bookable');
-    assert.equal(getGuidanceSlotBookingStatus(slot, new Date('2026-06-13T07:15:00.000Z')).status, 'frozen');
+    assert.equal(getGuidanceSlotBookingStatus(slot, new Date('2026-06-13T06:59:00.000Z')).status, 'bookable');
+    assert.equal(getGuidanceSlotBookingStatus(slot, new Date('2026-06-13T07:00:00.000Z')).status, 'frozen');
     assert.equal(getGuidanceSlotBookingStatus(slot, new Date('2026-06-13T07:45:00.000Z')).status, 'frozen');
     assert.equal(getGuidanceSlotBookingStatus(slot, new Date('2026-06-13T08:31:00.000Z')).status, 'ended');
   });
