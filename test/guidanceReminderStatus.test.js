@@ -5,8 +5,10 @@ const assert = require('node:assert/strict');
 
 const {
   mapJobToReminderState,
+  mapEventToReminderState,
   emptyReminderCounts,
   incrementReminderCounts,
+  incrementEventCounts,
 } = require('../services/guidanceReminderStatusService');
 
 describe('guidanceReminderStatusService', () => {
@@ -52,6 +54,33 @@ describe('guidanceReminderStatusService', () => {
       failed: 0,
       skipped: 1,
       overdue: 1,
+    });
+  });
+
+  test('mapEventToReminderState maps WhatsApp message event statuses', () => {
+    assert.equal(mapEventToReminderState({ status: 'delivered' }), 'delivered');
+    assert.equal(mapEventToReminderState({ status: 'read' }), 'read');
+    assert.equal(mapEventToReminderState({ status: 'failed' }), 'failed');
+    assert.equal(mapEventToReminderState({ status: 'retry_exhausted' }), 'failed');
+    assert.equal(mapEventToReminderState({ status: 'retry_pending' }), 'pending');
+    assert.equal(mapEventToReminderState({ status: 'submitted' }), 'sent');
+    assert.equal(mapEventToReminderState(null), 'none');
+  });
+
+  test('incrementEventCounts aggregates counsellor notify events', () => {
+    const counts = emptyReminderCounts();
+    incrementEventCounts(counts, { status: 'submitted' });
+    incrementEventCounts(counts, { status: 'delivered' });
+    incrementEventCounts(counts, { status: 'failed' });
+
+    assert.deepEqual(counts, {
+      scheduled: 3,
+      pending: 0,
+      delivered: 1,
+      read: 0,
+      failed: 1,
+      skipped: 0,
+      overdue: 0,
     });
   });
 });

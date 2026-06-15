@@ -4,7 +4,7 @@ const GuidanceSlot = require('../models/GuidanceSlot');
 const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 const { mapLeadBookingDTO } = require('../services/guidanceBookingService');
-const { getGuidanceReminderStatusBySlotDate } = require('../services/guidanceReminderStatusService');
+const { getGuidanceReminderStatusBySlotDate, SUPPORTED_STATUS_MESSAGE_KINDS } = require('../services/guidanceReminderStatusService');
 
 function mapCounselorRow(doc) {
   return {
@@ -390,7 +390,18 @@ exports.getGuidanceReminderStatus = async (req, res) => {
       });
     }
 
-    const data = await getGuidanceReminderStatusBySlotDate(slotDate);
+    const messageKind =
+      typeof req.query.messageKind === 'string' ? req.query.messageKind.trim() : '';
+    if (messageKind && !SUPPORTED_STATUS_MESSAGE_KINDS.has(messageKind)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Unsupported messageKind for guidance slot status.',
+      });
+    }
+
+    const data = await getGuidanceReminderStatusBySlotDate(slotDate, {
+      messageKind: messageKind || undefined,
+    });
     return res.status(200).json({ success: true, data });
   } catch (err) {
     console.error('[getGuidanceReminderStatus]', err);
