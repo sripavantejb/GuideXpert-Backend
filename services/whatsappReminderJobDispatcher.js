@@ -29,6 +29,7 @@ const { isGupshupConfigured } = require('../services/gupshupService');
 const { getIitReminderEligibility } = require('../utils/iitReminderEligibility');
 const {
   getGuidancePre30ReminderEligibility,
+  isGuidancePre30ReminderDueForDispatch,
   resolveGuidancePre30MinTemplateEnvKey,
 } = require('../utils/guidanceReminderEligibility');
 const {
@@ -532,8 +533,9 @@ async function executeGuidanceReminderJob(job, cronRunId, cronJobKey, execOpts =
     return { outcome: 'skipped', reason: 'missing_guidance_slot' };
   }
 
-  const elig = getGuidancePre30ReminderEligibility(slot, now);
-  if (elig.reason === 'before_eligibility') {
+  const dueCheck = isGuidancePre30ReminderDueForDispatch(job, slot, now);
+  const elig = dueCheck.elig;
+  if (!dueCheck.due && elig.reason === 'before_eligibility') {
     await releaseJobClaim(job._id, job.claimToken);
     return { outcome: 'deferred', reason: 'before_eligibility' };
   }

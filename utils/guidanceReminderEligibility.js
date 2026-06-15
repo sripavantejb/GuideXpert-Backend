@@ -121,6 +121,36 @@ function getGuidancePre30ScheduleDecision(slot, now = new Date()) {
   };
 }
 
+/**
+ * Dispatch-time due check — honors per-job scheduledSendAt for catch-up / test sends.
+ * @param {{ scheduledSendAt?: Date|string }} job
+ * @param {{ slotDate?: string, slotTime?: string }} slot
+ * @param {Date} [now]
+ */
+function isGuidancePre30ReminderDueForDispatch(job, slot, now = new Date()) {
+  const elig = getGuidancePre30ReminderEligibility(slot, now);
+  if (elig.ok) return { due: true, elig };
+
+  const nowMs = now.getTime();
+  const jobSendMs = job?.scheduledSendAt ? new Date(job.scheduledSendAt).getTime() : NaN;
+  const inst = getGuidanceSlotStartInstant(slot);
+
+  if (
+    elig.reason === 'before_eligibility' &&
+    inst &&
+    !Number.isNaN(jobSendMs) &&
+    nowMs >= jobSendMs &&
+    nowMs < inst.startUtc.getTime()
+  ) {
+    return {
+      due: true,
+      elig: { ok: true, slotAt: inst.startUtc, earliestAt: new Date(jobSendMs) },
+    };
+  }
+
+  return { due: false, elig };
+}
+
 module.exports = {
   GUIDANCE_PRE30MIN_OFFSET_MS,
   offsetMsForGuidancePre30Min,
@@ -129,4 +159,5 @@ module.exports = {
   computeGuidancePre30ScheduledSendAt,
   getGuidancePre30ReminderEligibility,
   getGuidancePre30ScheduleDecision,
+  isGuidancePre30ReminderDueForDispatch,
 };
