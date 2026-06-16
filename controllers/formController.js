@@ -1359,8 +1359,9 @@ exports.trackIitCounsellingVisit = async (req, res) => {
     const visitorFingerprint = buildVisitorFingerprint({ ip, userAgent, dayKey });
 
     const pageKeyRaw = typeof body.pageKey === 'string' ? body.pageKey.trim() : '';
-    const pageKey =
-      pageKeyRaw === 'oneOnOneSession' ? 'oneOnOneSession' : 'iitCounselling';
+    let pageKey = 'iitCounselling';
+    if (pageKeyRaw === 'oneOnOneSession') pageKey = 'oneOnOneSession';
+    else if (pageKeyRaw === 'guidanceBookingConfirmation') pageKey = 'guidanceBookingConfirmation';
 
     const doc = await IitCounsellingVisit.create({
       pageKey,

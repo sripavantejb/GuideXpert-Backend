@@ -4,6 +4,8 @@ const { getMongoQuotaExceededMessage } = require('../utils/mongoErrorMessage');
 
 const DEFAULT_IIT_PAGE = 'https://guidexpert.co.in/iit-counselling';
 const DEFAULT_ONE_ON_ONE_SESSION_PAGE_URL = 'https://www.guidexpert.co.in/one-on-one-session';
+const DEFAULT_GUIDANCE_BOOKING_CONFIRMATION_PAGE_URL =
+  'https://www.guidexpert.co.in/guidance-booking-confirmation';
 const PLATFORM_TO_SOURCE = {
   Instagram: 'instagram',
   YouTube: 'youtube',
@@ -28,6 +30,13 @@ function getOneOnOneSessionBaseUrl() {
   return normalizeBaseUrl(process.env.ONE_ON_ONE_SESSION_PAGE_URL, DEFAULT_ONE_ON_ONE_SESSION_PAGE_URL);
 }
 
+function getGuidanceBookingConfirmationBaseUrl() {
+  return normalizeBaseUrl(
+    process.env.GUIDANCE_BOOKING_CONFIRMATION_PAGE_URL,
+    DEFAULT_GUIDANCE_BOOKING_CONFIRMATION_PAGE_URL,
+  );
+}
+
 function buildUtmUrlOnBase(baseUrl, influencerName, platform, campaign) {
   const params = new URLSearchParams({
     utm_source: PLATFORM_TO_SOURCE[platform] || String(platform).toLowerCase(),
@@ -46,16 +55,32 @@ function buildOneOnOneSessionUtmUrl(influencerName, platform, campaign) {
   return buildUtmUrlOnBase(getOneOnOneSessionBaseUrl(), influencerName, platform, campaign);
 }
 
+function buildGuidanceBookingConfirmationUtmUrl(influencerName, platform, campaign) {
+  return buildUtmUrlOnBase(
+    getGuidanceBookingConfirmationBaseUrl(),
+    influencerName,
+    platform,
+    campaign,
+  );
+}
+
 function normalizeLinkTarget(value) {
   if (value == null || value === '') return 'iitCounselling';
   const s = String(value).trim().toLowerCase().replace(/-/g, '_');
   if (s === 'oneononesession' || s === 'one_on_one_session') return 'oneOnOneSession';
+  if (s === 'guidancebookingconfirmation' || s === 'guidance_booking_confirmation') {
+    return 'guidanceBookingConfirmation';
+  }
   return 'iitCounselling';
 }
 
 function resolveDocLinkTarget(doc) {
+  if (doc.linkTarget === 'guidanceBookingConfirmation') return 'guidanceBookingConfirmation';
   if (doc.linkTarget === 'oneOnOneSession') return 'oneOnOneSession';
   const url = doc.utmLink || '';
+  if (/^https?:\/\/[^/]+\/guidance-booking-confirmation(\/|\?|#|$)/i.test(url)) {
+    return 'guidanceBookingConfirmation';
+  }
   if (/^https?:\/\/[^/]+\/one-on-one-session(\/|\?|#|$)/i.test(url)) return 'oneOnOneSession';
   return 'iitCounselling';
 }
@@ -82,6 +107,14 @@ function mapDoc(doc) {
 }
 
 function buildListFilter(linkTargetParam) {
+  if (linkTargetParam === 'guidanceBookingConfirmation') {
+    return {
+      $or: [
+        { linkTarget: 'guidanceBookingConfirmation' },
+        { utmLink: { $regex: /^https?:\/\/[^/]+\/guidance-booking-confirmation(\/|\?|#|$)/i } },
+      ],
+    };
+  }
   if (linkTargetParam === 'oneOnOneSession') {
     return {
       $or: [
@@ -101,7 +134,7 @@ function buildListFilter(linkTargetParam) {
 
 /**
  * GET /api/admin/iit-counselling/saved-utm-links
- * Query: linkTarget=iitCounselling|oneOnOneSession (optional, default iitCounselling)
+ * Query: linkTarget=iitCounselling|oneOnOneSession|guidanceBookingConfirmation (optional, default iitCounselling)
  */
 exports.listIitCounsellingSavedUtmLinks = async (req, res) => {
   try {
@@ -117,7 +150,7 @@ exports.listIitCounsellingSavedUtmLinks = async (req, res) => {
 
 /**
  * POST /api/admin/iit-counselling/saved-utm-links
- * Body: { influencerName, platform, campaign?, cost?, linkTarget?: 'iitCounselling' | 'oneOnOneSession' }
+ * Body: { influencerName, platform, campaign?, cost?, linkTarget?: 'iitCounselling' | 'oneOnOneSession' | 'guidanceBookingConfirmation' }
  */
 exports.createIitCounsellingSavedUtmLink = async (req, res) => {
   try {
@@ -139,7 +172,9 @@ exports.createIitCounsellingSavedUtmLink = async (req, res) => {
 
     const utmLink = linkTarget === 'oneOnOneSession'
       ? buildOneOnOneSessionUtmUrl(influencerName.trim(), platformVal, campaignVal)
-      : buildIitCounsellingUtmUrl(influencerName.trim(), platformVal, campaignVal);
+      : linkTarget === 'guidanceBookingConfirmation'
+        ? buildGuidanceBookingConfirmationUtmUrl(influencerName.trim(), platformVal, campaignVal)
+        : buildIitCounsellingUtmUrl(influencerName.trim(), platformVal, campaignVal);
     const payload = {
       influencerName: influencerName.trim(),
       platform: platformVal,

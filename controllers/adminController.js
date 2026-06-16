@@ -21,7 +21,7 @@ const Counsellor = require('../models/Counsellor');
 const IitCounsellingVisit = require('../models/IitCounsellingVisit');
 const IitCounsellingUtmSavedLink = require('../models/IitCounsellingUtmSavedLink');
 const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
-const { resolveUtmAnalyticsPageKey } = require('../utils/utmAnalyticsPageKey');
+const { resolveUtmAnalyticsPageKey, isSavedLinksOnlyUtmPageKey } = require('../utils/utmAnalyticsPageKey');
 const { getISTCalendarDateUTC, getISTDayRangeFromString } = require('../utils/dateHelpers');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 const { ALL_SLOT_IDS } = require('../constants/slotIds');
@@ -477,15 +477,27 @@ function parseUtmParamsFromSavedHref(href) {
   }
 }
 
-async function loadOneOnOneSavedComboKeys() {
-  const docs = await IitCounsellingUtmSavedLink.find({
-    $or: [
-      { linkTarget: 'oneOnOneSession' },
-      { utmLink: { $regex: /^https?:\/\/[^/]+\/one-on-one-session(\/|\?|#|$)/i } },
-    ],
-  })
-    .select('utmLink')
-    .lean();
+async function loadSavedComboKeysForTarget(linkTarget) {
+  let filter;
+  if (linkTarget === 'guidanceBookingConfirmation') {
+    filter = {
+      $or: [
+        { linkTarget: 'guidanceBookingConfirmation' },
+        { utmLink: { $regex: /^https?:\/\/[^/]+\/guidance-booking-confirmation(\/|\?|#|$)/i } },
+      ],
+    };
+  } else if (linkTarget === 'oneOnOneSession') {
+    filter = {
+      $or: [
+        { linkTarget: 'oneOnOneSession' },
+        { utmLink: { $regex: /^https?:\/\/[^/]+\/one-on-one-session(\/|\?|#|$)/i } },
+      ],
+    };
+  } else {
+    return new Set();
+  }
+
+  const docs = await IitCounsellingUtmSavedLink.find(filter).select('utmLink').lean();
   const keys = new Set();
   for (const doc of docs) {
     const parsed = parseUtmParamsFromSavedHref(doc.utmLink);
@@ -517,13 +529,16 @@ function filterByComboToSavedKeys(rows, savedKeys) {
 }
 
 /**
- * For 1-on-1 analytics: merge form lead counts by UTM into visit-based byCombo
+ * For saved-links-only landing pages: merge form lead counts by UTM into visit-based byCombo
  * (covers leads saved without visitorFingerprint / before visit tracking went live).
  */
-async function mergeOneOnOneLeadsIntoByCombo(byCombo, dateTime) {
+async function mergeLeadsIntoByCombo(byCombo, dateTime, { bookingConfirmedOnly = false } = {}) {
   const leadMatch = {};
   if (dateTime.hasRange && dateTime.createdAt) {
     leadMatch.createdAt = dateTime.createdAt;
+  }
+  if (bookingConfirmedOnly) {
+    leadMatch.bookingConfirmed = true;
   }
 
   const leadRows = await OneOnOneCounselingLead.aggregate([
@@ -763,9 +778,14 @@ exports.getIitCounsellingVisitAnalytics = async (req, res) => {
         { $sort: { visits: -1 } },
         { $limit: 500 },
       ]),
-      pageKey === 'oneOnOneSession'
+      isSavedLinksOnlyUtmPageKey(pageKey)
         ? OneOnOneCounselingLead.aggregate([
-            { $match: dateTime.hasRange ? { createdAt: dateTime.createdAt } : {} },
+            {
+              $match: {
+                ...(pageKey === 'guidanceBookingConfirmation' ? { bookingConfirmed: true } : {}),
+                ...(dateTime.hasRange ? { createdAt: dateTime.createdAt } : {}),
+              },
+            },
             { $count: 'total' },
           ])
         : IitCounsellingSubmission.aggregate([
@@ -823,8 +843,7 @@ exports.getIitCounsellingUtmAnalytics = async (req, res) => {
     const dateTime = parseIitDateTimeFilter(req.query);
     const pageKey = resolveUtmAnalyticsPageKey(req.query);
     const match = { pageKey };
-    const linkedIdField =
-      pageKey === 'oneOnOneSession' ? 'oneOnOneCounselingLeadId' : 'submissionId';
+    const linkedIdField = isSavedLinksOnlyUtmPageKey(pageKey) ? 'oneOnOneCounselingLeadId' : 'submissionId';
     if (dateTime.hasRange) {
       match.visitedAt = dateTime.visitedAt;
     }
@@ -941,15 +960,16 @@ exports.getIitCounsellingUtmAnalytics = async (req, res) => {
     };
 
     let comboRows = byCombo;
-    if (pageKey === 'oneOnOneSession') {
-      const savedKeys = await loadOneOnOneSavedComboKeys();
+    if (isSavedLinksOnlyUtmPageKey(pageKey)) {
+      const savedKeys = await loadSavedComboKeysForTarget(pageKey);
       comboRows = filterByComboToSavedKeys(byCombo, savedKeys);
     }
 
-    const comboForResponse =
-      pageKey === 'oneOnOneSession'
-        ? await mergeOneOnOneLeadsIntoByCombo(comboRows, dateTime)
-        : byCombo;
+    const comboForResponse = isSavedLinksOnlyUtmPageKey(pageKey)
+      ? await mergeLeadsIntoByCombo(comboRows, dateTime, {
+          bookingConfirmedOnly: pageKey === 'guidanceBookingConfirmation',
+        })
+      : byCombo;
 
     return res.status(200).json({
       success: true,

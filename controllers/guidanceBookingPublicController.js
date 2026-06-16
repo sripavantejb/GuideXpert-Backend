@@ -19,6 +19,46 @@ const {
   validateMobile,
 } = require('../services/guidanceBookingService');
 const { joinGuidanceMeetForMobile } = require('../services/guidanceMeetJoinService');
+const IitCounsellingVisit = require('../models/IitCounsellingVisit');
+
+async function linkGuidanceBookingLeadToVisit(lead, body) {
+  try {
+    const visitorFingerprint =
+      typeof body?.visitorFingerprint === 'string' ? body.visitorFingerprint.trim() : '';
+    if (visitorFingerprint) {
+      await IitCounsellingVisit.findOneAndUpdate(
+        {
+          visitorFingerprint,
+          pageKey: 'guidanceBookingConfirmation',
+          oneOnOneCounselingLeadId: null,
+        },
+        { $set: { oneOnOneCounselingLeadId: lead._id } },
+        { sort: { visitedAt: -1 } },
+      );
+      return;
+    }
+    if (lead.utm_content) {
+      const visitMatch = {
+        pageKey: 'guidanceBookingConfirmation',
+        oneOnOneCounselingLeadId: null,
+        utm_content: lead.utm_content,
+      };
+      if (lead.utm_campaign) visitMatch.utm_campaign = lead.utm_campaign;
+      if (lead.utm_source) visitMatch.utm_source = lead.utm_source;
+      if (lead.utm_medium) visitMatch.utm_medium = lead.utm_medium;
+      await IitCounsellingVisit.findOneAndUpdate(
+        visitMatch,
+        { $set: { oneOnOneCounselingLeadId: lead._id } },
+        { sort: { visitedAt: -1 } },
+      );
+    }
+  } catch (linkErr) {
+    console.warn(
+      '[guidanceBooking] visit attribution link failed (lead saved):',
+      linkErr?.message || linkErr,
+    );
+  }
+}
 
 function summarizeReminderSchedule(reminderSchedule) {
   if (!reminderSchedule) return null;
@@ -146,6 +186,8 @@ exports.bookSlot = async (req, res) => {
     if (result.error) {
       return res.status(result.status || 400).json({ success: false, message: result.error });
     }
+
+    await linkGuidanceBookingLeadToVisit(result.lead, req.body);
 
     let whatsappBooking = null;
 
