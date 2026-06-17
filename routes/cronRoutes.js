@@ -155,11 +155,11 @@ router.get('/send-guidance-reminders', verifyCronSecret, async (req, res) => {
   let cronRun = null;
   const jobKey = CRON_JOB_KEYS.SEND_GUIDANCE_REMINDERS;
   const { GUIDANCE_REMINDER_MESSAGE_KINDS } = require('../models/WhatsAppReminderJob');
-  const { repairMissingGuidanceReminderJobs } = require('../services/guidanceReminderRepairService');
+  const { runGuidanceReminderRepairs } = require('../services/guidanceReminderRepairService');
   try {
     cronRun = await startCronRun(jobKey);
     const now = new Date();
-    const repairStats = await repairMissingGuidanceReminderJobs({ now, limit: 200 });
+    const repairStats = await runGuidanceReminderRepairs({ now, limit: 200 });
     const stats = await dispatchDueReminderJobs({
       messageKinds: [...GUIDANCE_REMINDER_MESSAGE_KINDS],
       now,

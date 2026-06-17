@@ -185,7 +185,7 @@ async function getGuidanceReminderStatusBySlotDate(slotDate, opts = {}) {
             promotionSupersededAt: null,
           })
             .select(
-              'oneOnOneCounselingLeadId status attemptNumber createdAt errorMessage sendErrorCode webhookErrorReason'
+              'oneOnOneCounselingLeadId status attemptNumber createdAt errorMessage sendErrorCode webhookErrorCode webhookErrorReason'
             )
             .lean()
         : WhatsAppReminderJob.find({
@@ -193,11 +193,28 @@ async function getGuidanceReminderStatusBySlotDate(slotDate, opts = {}) {
             oneOnOneCounselingLeadId: { $in: leadIds },
           })
             .select(
-              'oneOnOneCounselingLeadId state scheduledSendAt suppressionReason lastError completedAt'
+              'oneOnOneCounselingLeadId state scheduledSendAt suppressionReason lastError completedAt retryGroupId'
             )
             .lean()
       : [],
   ]);
+
+  let pre30EventsByLeadId = {};
+  if (!isCounsellorNotify && deliveryRows.length) {
+    const retryGroupIds = deliveryRows.map((j) => j.retryGroupId).filter(Boolean);
+    if (retryGroupIds.length) {
+      const pre30Events = await WhatsAppMessageEvent.find({
+        messageKind: MESSAGE_KIND,
+        retryGroupId: { $in: retryGroupIds },
+        promotionSupersededAt: null,
+      })
+        .select(
+          'oneOnOneCounselingLeadId status attemptNumber createdAt errorMessage webhookErrorCode webhookErrorReason sendErrorCode retryGroupId'
+        )
+        .lean();
+      pre30EventsByLeadId = indexLatestEventByLeadId(pre30Events);
+    }
+  }
 
   const counselorById = Object.fromEntries(counselors.map((c) => [String(c._id), c]));
   const deliveryByLeadId = isCounsellorNotify
@@ -234,11 +251,18 @@ async function getGuidanceReminderStatusBySlotDate(slotDate, opts = {}) {
           suppressionReason: delivery ? null : 'no_notify_event',
           scheduledSendAt: delivery?.createdAt || null,
           lastError,
+          webhookErrorCode: delivery?.webhookErrorCode || null,
         };
       }
 
       incrementReminderCounts(reminders, delivery, now);
       const reminderState = mapJobToReminderState(delivery, now);
+      const latestEvent = pre30EventsByLeadId[String(lead._id)] || null;
+      const lastError =
+        latestEvent?.errorMessage ||
+        latestEvent?.webhookErrorReason ||
+        delivery?.lastError ||
+        (latestEvent?.sendErrorCode ? `send_error_${latestEvent.sendErrorCode}` : null);
       return {
         name: lead.studentName || '—',
         mobile: lead.mobileNumber || '',
@@ -246,7 +270,8 @@ async function getGuidanceReminderStatusBySlotDate(slotDate, opts = {}) {
         jobState: delivery?.state || null,
         suppressionReason: delivery?.suppressionReason || (delivery ? null : 'no_reminder_job'),
         scheduledSendAt: delivery?.scheduledSendAt || null,
-        lastError: delivery?.lastError || null,
+        lastError,
+        webhookErrorCode: latestEvent?.webhookErrorCode || null,
       };
     });
 

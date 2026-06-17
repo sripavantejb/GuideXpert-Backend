@@ -178,24 +178,79 @@ function mapEventStatusToDeliveryStatus(status) {
 
 const { WHATSAPP_MESSAGE_KINDS: ALLOWED_MESSAGE_KINDS } = WhatsAppMessageEvent;
 
-exports.getOpsMeta = (_req, res) => {
-  res.json({
-    success: true,
-    data: {
-      envHints: [
-        'ENABLE_WHATSAPP',
-        'GUPSHUP_API_KEY',
-        'GUPSHUP_SOURCE',
-        'GUPSHUP_TEMPLATE_REMINDER',
-        'GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED_WEDNESDAY',
-        'GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED_SATURDAY',
-        'GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED_SUNDAY',
-        'GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED',
-        'GUPSHUP_TEMPLATE_ONE_ON_ONE_CONFIRM',
-        'GUPSHUP_ONE_ON_ONE_HEADER_IMAGE_URL',
-        'GUPSHUP_TEMPLATE_GUIDANCE_BOOKING_CONFIRM',
-        'GUPSHUP_TEMPLATE_GUIDANCE_PRE30MIN_REMINDER',
-        'WA_GUIDANCE_BOOKING_SUBMIT_RETRY_DELAY_SECONDS',
+const GUIDANCE_HEALTH_KINDS = [
+  'guidance_booking_submit',
+  'guidance_pre30min',
+  'guidance_counsellor_booking_notify',
+];
+
+async function computeGuidanceWhatsAppHealth(windowHours = 24) {
+  const since = new Date(Date.now() - windowHours * 60 * 60 * 1000);
+  const byKind = {};
+
+  for (const kind of GUIDANCE_HEALTH_KINDS) {
+    const [statusRows, codeRows] = await Promise.all([
+      WhatsAppMessageEvent.aggregate([
+        { $match: { messageKind: kind, createdAt: { $gte: since } } },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+      WhatsAppMessageEvent.aggregate([
+        {
+          $match: {
+            messageKind: kind,
+            createdAt: { $gte: since },
+            webhookErrorCode: { $nin: [null, ''] },
+          },
+        },
+        { $group: { _id: '$webhookErrorCode', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 5 },
+      ]),
+    ]);
+
+    const byStatus = Object.fromEntries(statusRows.map((r) => [r._id, r.count]));
+    const total = statusRows.reduce((sum, r) => sum + r.count, 0);
+    const delivered = (byStatus.delivered || 0) + (byStatus.read || 0);
+
+    byKind[kind] = {
+      total,
+      delivered,
+      successRatePct: total > 0 ? Math.round((delivered / total) * 100) : null,
+      byStatus,
+      topWebhookErrorCodes: codeRows.map((r) => ({ code: r._id, count: r.count })),
+    };
+  }
+
+  return {
+    windowHours,
+    sinceIso: since.toISOString(),
+    byKind,
+    metaEngagementLimitNote:
+      'Meta error 131049 (ecosystem engagement) is permanent — ensure guidance templates are UTILITY category in Gupshup.',
+  };
+}
+
+exports.getOpsMeta = async (_req, res) => {
+  try {
+    const guidanceWhatsAppHealth = await computeGuidanceWhatsAppHealth(24);
+    res.json({
+      success: true,
+      data: {
+        envHints: [
+          'ENABLE_WHATSAPP',
+          'GUPSHUP_API_KEY',
+          'GUPSHUP_SOURCE',
+          'GUPSHUP_TEMPLATE_REMINDER',
+          'GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED_WEDNESDAY',
+          'GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED_SATURDAY',
+          'GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED_SUNDAY',
+          'GUPSHUP_TEMPLATE_IIT_SLOT_BOOKED',
+          'GUPSHUP_TEMPLATE_ONE_ON_ONE_CONFIRM',
+          'GUPSHUP_ONE_ON_ONE_HEADER_IMAGE_URL',
+          'GUPSHUP_TEMPLATE_GUIDANCE_BOOKING_CONFIRM',
+          'GUPSHUP_TEMPLATE_GUIDANCE_PRE30MIN_REMINDER',
+          'GUPSHUP_TEMPLATE_GUIDANCE_COUNSELLOR_BOOKING_NOTIFY',
+          'WA_GUIDANCE_BOOKING_SUBMIT_RETRY_DELAY_SECONDS',
         'GUPSHUP_TEMPLATE_IIT_PRE2HR_TELUGU',
         'GUPSHUP_TEMPLATE_IIT_PRE2HR_HINDI',
         'GUPSHUP_TEMPLATE_IIT_PRE45MIN_TELUGU',
@@ -226,9 +281,14 @@ exports.getOpsMeta = (_req, res) => {
         { id: 'iit_pre2hr', label: 'IIT 2hr before', description: 'Language-specific template 2 hours before IIT demo (Wed/Sat vs Sun).', retryPolicy: getRetryPolicy('iit_pre2hr'), opsProducts: ['iit_counselling'] },
         { id: 'iit_pre45min', label: 'IIT 45 min before', description: 'Language-specific template 45 minutes before IIT demo.', retryPolicy: getRetryPolicy('iit_pre45min'), opsProducts: ['iit_counselling'] },
         { id: 'iit_pre15min', label: 'IIT 15 min before', description: 'Language-specific template 15 minutes before IIT demo.', retryPolicy: getRetryPolicy('iit_pre15min'), opsProducts: ['iit_counselling'] },
-      ]
-    }
+      ],
+      guidanceWhatsAppHealth,
+    },
   });
+  } catch (e) {
+    console.error('[whatsapp-ops meta]', e);
+    res.status(500).json({ success: false, message: e.message });
+  }
 };
 
 exports.getSummary = async (req, res) => {

@@ -151,6 +151,13 @@ function isInfrastructureSendFailure(failCtx = {}) {
   return hay.length > 0 && INFRASTRUCTURE_SEND_FAILURE_PATTERNS.some((rx) => rx.test(hay));
 }
 
+/** Meta / WhatsApp Cloud API codes that must never be retried (engagement, spam, re-engagement). */
+const META_PERMANENT_ERROR_CODES = new Set([
+  '131047', // re-engagement message required
+  '131048', // spam rate limit
+  '131049', // ecosystem engagement limit
+]);
+
 const PERMANENT_FAILURE_PATTERNS = [
   /invalid/i,
   /not whatsapp/i,
@@ -166,8 +173,27 @@ const PERMANENT_FAILURE_PATTERNS = [
   /rejected/i,
   /policy/i,
   /undeliverable/i,
-  /unregistered/i
+  /unregistered/i,
+  /ecosystem engagement/i,
+  /healthy ecosystem/i,
+  /re-engagement/i,
+  /spam rate limit/i,
 ];
+
+/**
+ * @param {{ errorCode?: string, errorReason?: string, errorText?: string, errorMessage?: string }} failCtx
+ * @returns {boolean}
+ */
+function isMetaPermanentProviderError(failCtx = {}) {
+  const code = String(failCtx.errorCode || '').trim();
+  if (code && META_PERMANENT_ERROR_CODES.has(code)) return true;
+  const hay = [failCtx.errorCode, failCtx.errorReason, failCtx.errorText, failCtx.errorMessage]
+    .filter(Boolean)
+    .join(' | ');
+  if (!hay) return false;
+  if (/131047|131048|131049/.test(hay)) return true;
+  return /ecosystem engagement/i.test(hay) || /healthy ecosystem/i.test(hay);
+}
 
 const RETRY_EXCLUSION_REASON = {
   alreadyDeliveredOrRead: 'already_delivered_or_read',
@@ -188,6 +214,15 @@ const RETRY_EXCLUSION_REASON = {
   /** submitted/sent aged out without DLR resolution */
   webhookStaleUnresolved: 'webhook_stale_unresolved'
 };
+
+function permanentFailureClassification(_failCtx = {}, afterProviderAccept = false) {
+  return {
+    retryable: false,
+    terminalFailureKind: 'permanent',
+    exclusionReason: RETRY_EXCLUSION_REASON.permanentFailure,
+    metaNote: afterProviderAccept ? 'webhook_failed_after_provider_accept' : 'meta_permanent_error',
+  };
+}
 
 function getRetryPolicy(kind) {
   const policies = buildRetryPolicies();
@@ -257,6 +292,10 @@ function classifyCampaignFailure(kind, failCtx = {}, opts = {}) {
     };
   }
 
+  if (isMetaPermanentProviderError(failCtx)) {
+    return permanentFailureClassification(failCtx, afterProviderAccept);
+  }
+
   if (hay && PERMANENT_FAILURE_PATTERNS.some((rx) => rx.test(hay))) {
     return {
       retryable: false,
@@ -322,6 +361,9 @@ function classifyCampaignFailure(kind, failCtx = {}, opts = {}) {
 function isRetryableFailure(kind, { errorCode, errorReason, errorText } = {}) {
   if (isInfrastructureSendFailure({ errorCode, errorReason, errorText })) {
     return true;
+  }
+  if (isMetaPermanentProviderError({ errorCode, errorReason, errorText })) {
+    return false;
   }
   const policy = getRetryPolicy(kind);
   const hay = [errorCode, errorReason, errorText].filter(Boolean).join(' | ');
@@ -525,6 +567,10 @@ function classifyReconcileFinalizeFailure(messageKind, row = {}, opts = {}) {
   const hasAttemptsLeft = att < maxA;
   const wasAccepted = !!row.providerAcceptedAt;
 
+  if (isMetaPermanentProviderError(failCtx)) {
+    return permanentFailureClassification(failCtx, wasAccepted);
+  }
+
   if (hay && PERMANENT_FAILURE_PATTERNS.some((rx) => rx.test(hay))) {
     return {
       retryable: false,
@@ -615,6 +661,8 @@ module.exports = {
   isRiskyReconcileRecovery,
   classifyReconcileFinalizeFailure,
   classifyCampaignFailure,
+  isMetaPermanentProviderError,
+  META_PERMANENT_ERROR_CODES,
   isInfrastructureSendFailure,
   filterRetryPromotionRows,
   filterRetryPromotionRowsV2,

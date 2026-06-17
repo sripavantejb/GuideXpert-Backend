@@ -263,11 +263,36 @@ exports.createSlot = async (req, res) => {
 exports.listSlots = async (req, res) => {
   try {
     const counselorId = typeof req.query.counselorId === 'string' ? req.query.counselorId.trim() : '';
+    const slotDate = typeof req.query.slotDate === 'string' ? req.query.slotDate.trim() : '';
+    const isActiveRaw = typeof req.query.isActive === 'string' ? req.query.isActive.trim() : '';
+    const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const availability =
+      typeof req.query.availability === 'string' ? req.query.availability.trim() : '';
+
     const match = {};
     if (mongoose.Types.ObjectId.isValid(counselorId)) {
       match.oneOnOneCounselorId = counselorId;
     }
-    const slots = await GuidanceSlot.find(match).sort({ slotDate: -1, slotTime: 1 }).lean();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(slotDate)) {
+      match.slotDate = slotDate;
+    }
+    if (isActiveRaw === 'true') {
+      match.isActive = true;
+    } else if (isActiveRaw === 'false') {
+      match.isActive = false;
+    }
+    if (search.length >= 2) {
+      match.sessionTitle = { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+    }
+
+    let slots = await GuidanceSlot.find(match).sort({ slotDate: -1, slotTime: 1 }).lean();
+
+    if (availability === 'open') {
+      slots = slots.filter((s) => (s.currentBookings || 0) < (s.maxBookings || 0));
+    } else if (availability === 'full') {
+      slots = slots.filter((s) => (s.currentBookings || 0) >= (s.maxBookings || 0));
+    }
+
     const counselorIds = [...new Set(slots.map((s) => String(s.oneOnOneCounselorId)))];
     const counselors = await OneOnOneCounselor.find({ _id: { $in: counselorIds } })
       .select('name')
