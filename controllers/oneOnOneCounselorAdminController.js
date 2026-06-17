@@ -3,7 +3,7 @@ const OneOnOneCounselor = require('../models/OneOnOneCounselor');
 const GuidanceSlot = require('../models/GuidanceSlot');
 const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
-const { mapLeadBookingDTO } = require('../services/guidanceBookingService');
+const { mapLeadBookingDTO, cancelGuidanceBookingForLead } = require('../services/guidanceBookingService');
 const { getGuidanceReminderStatusBySlotDate, SUPPORTED_STATUS_MESSAGE_KINDS } = require('../services/guidanceReminderStatusService');
 
 function mapCounselorRow(doc) {
@@ -21,6 +21,10 @@ function mapCounselorRow(doc) {
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
+}
+
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function mapSlotRow(doc, counselor) {
@@ -434,6 +438,28 @@ exports.getGuidanceReminderStatus = async (req, res) => {
   }
 };
 
+exports.cancelGuidanceBooking = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await cancelGuidanceBookingForLead(id);
+    if (result.error) {
+      return res.status(result.status || 400).json({ success: false, message: result.error });
+    }
+    return res.status(200).json({
+      success: true,
+      message: 'Guidance slot booking cancelled.',
+      data: {
+        slotId: result.slotId,
+        spotsLeft: result.spotsLeft,
+        leadDeleted: result.leadDeleted,
+      },
+    });
+  } catch (err) {
+    console.error('[cancelGuidanceBooking]', err);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
 exports.listGuidanceBookings = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -471,6 +497,18 @@ exports.listGuidanceBookings = async (req, res) => {
     if (/^\d{4}-\d{2}-\d{2}$/.test(slotDate)) {
       const slotIds = await GuidanceSlot.find({ slotDate }).distinct('_id');
       match.selectedSlotId = { $in: slotIds };
+    }
+
+    const studentName =
+      typeof req.query.studentName === 'string' ? req.query.studentName.trim() : '';
+    if (studentName) {
+      match.studentName = { $regex: escapeRegex(studentName), $options: 'i' };
+    }
+
+    const mobileRaw = typeof req.query.mobile === 'string' ? req.query.mobile.trim() : '';
+    const mobileDigits = mobileRaw.replace(/\D/g, '');
+    if (mobileDigits) {
+      match.mobileNumber = { $regex: escapeRegex(mobileDigits) };
     }
 
     const [rows, total] = await Promise.all([

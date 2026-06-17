@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 const GuidanceSlot = require('../models/GuidanceSlot');
 const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
 const OneOnOneCounselor = require('../models/OneOnOneCounselor');
+const WhatsAppReminderJob = require('../models/WhatsAppReminderJob');
+const { GUIDANCE_REMINDER_MESSAGE_KINDS } = require('../models/WhatsAppReminderJob');
 const {
   COLLEGE_BUDGET_OPTIONS,
   CURRENT_CLASS_OPTIONS,
@@ -393,6 +395,83 @@ function validateMobile(mobile) {
   return INDIAN_MOBILE_REGEX.test(mobile);
 }
 
+const TERMINAL_REMINDER_STATES = ['dispatched', 'delivered', 'read', 'exhausted', 'cancelled'];
+
+async function cancelGuidanceBookingForLead(leadId) {
+  if (!mongoose.Types.ObjectId.isValid(leadId)) {
+    return { error: 'Invalid booking id.', status: 400 };
+  }
+
+  const lead = await OneOnOneCounselingLead.findById(leadId);
+  if (!lead) {
+    return { error: 'Booking not found.', status: 404 };
+  }
+  if (!lead.bookingConfirmed) {
+    return { error: 'This booking is not confirmed.', status: 409 };
+  }
+  if (!lead.selectedSlotId) {
+    return { error: 'Booking has no associated slot.', status: 409 };
+  }
+
+  const slotId = lead.selectedSlotId;
+
+  const slotUpdate = await GuidanceSlot.findOneAndUpdate(
+    { _id: slotId, currentBookings: { $gt: 0 } },
+    { $inc: { currentBookings: -1 } },
+    { new: true }
+  );
+  if (!slotUpdate) {
+    const slotExists = await GuidanceSlot.findById(slotId).lean();
+    if (!slotExists) {
+      console.warn('[cancelGuidanceBookingForLead] slot missing:', String(slotId));
+    } else {
+      console.warn('[cancelGuidanceBookingForLead] slot currentBookings already 0:', String(slotId));
+    }
+  }
+
+  await WhatsAppReminderJob.updateMany(
+    {
+      oneOnOneCounselingLeadId: lead._id,
+      messageKind: { $in: GUIDANCE_REMINDER_MESSAGE_KINDS },
+      state: { $nin: TERMINAL_REMINDER_STATES },
+    },
+    {
+      $set: {
+        state: 'cancelled',
+        suppressionReason: 'booking_cancelled_admin',
+        updatedAt: new Date(),
+      },
+    }
+  );
+
+  const leadDeleted = !lead.formCompleted;
+
+  if (leadDeleted) {
+    await OneOnOneCounselingLead.findByIdAndDelete(lead._id);
+  } else {
+    lead.bookingConfirmed = false;
+    lead.bookingStatus = 'Not Booked';
+    lead.selectedSlotId = null;
+    lead.oneOnOneCounselorId = null;
+    lead.parentAttendanceConfirmed = false;
+    lead.whatsappConsent = false;
+    lead.bookingConfirmedAt = null;
+    lead.attendanceStatus = '';
+    await lead.save();
+  }
+
+  const spotsLeft =
+    slotUpdate != null
+      ? Math.max(0, slotUpdate.maxBookings - slotUpdate.currentBookings)
+      : null;
+
+  return {
+    slotId: String(slotId),
+    spotsLeft,
+    leadDeleted,
+  };
+}
+
 module.exports = {
   mapSlotToPublicDTO,
   mapLeadBasicDTO,
@@ -400,6 +479,7 @@ module.exports = {
   getAvailableActiveSlots,
   findLeadByMobile,
   bookSlotForLead,
+  cancelGuidanceBookingForLead,
   validateMobile,
   validateBookingPreferences,
   validateGuidanceStudentProfile,
