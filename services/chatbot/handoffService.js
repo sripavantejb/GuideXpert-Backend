@@ -18,16 +18,31 @@ function unclaimedAlertMs() {
 }
 
 /**
- * Route: IIT lead with assigned BDA → bda; else admin_pool.
+ * Route: IIT lead with assigned BDA → bda (legacy); else admin_pool.
+ * When Human Copilot is enabled, all handoffs use admin_pool so they appear in the copilot inbox.
  */
 async function determineRoute(leadContext) {
+  let assignedBdaId = null;
   if (leadContext.hasIit && leadContext.iit) {
     const iitSub = await IitCounsellingSubmission.findOne({ phone: leadContext.phone })
       .select('assignedBdaId assignedBdaName')
       .lean();
-    if (iitSub && iitSub.assignedBdaId) {
-      return { route: 'bda', assignedBdaId: iitSub.assignedBdaId };
+    if (iitSub?.assignedBdaId) {
+      assignedBdaId = iitSub.assignedBdaId;
     }
+  }
+
+  try {
+    const { isHumanCopilotEnabled } = require('./humanCopilot/humanCopilotFlags');
+    if (isHumanCopilotEnabled()) {
+      return { route: 'admin_pool', assignedBdaId };
+    }
+  } catch {
+    // flags module unavailable — fall through to legacy routing
+  }
+
+  if (assignedBdaId) {
+    return { route: 'bda', assignedBdaId };
   }
   return { route: 'admin_pool', assignedBdaId: null };
 }
@@ -102,10 +117,9 @@ async function createHandoff({
   await setConversationHandoff(conversation._id, handoff._id, now);
   await transitionState(conversation._id, conversation.phone, 'human_handoff', emptySubflows(), { now });
 
-  const routeLabel =
-    routing.route === 'bda'
-      ? 'Your assigned counsellor team will respond shortly.'
-      : 'Our support team will respond shortly.';
+  const routeLabel = routing.assignedBdaId
+    ? 'Your assigned counsellor team will respond shortly.'
+    : 'Our support team will respond shortly.';
 
   await whatsappOutbound.sendBotTextReply({
     conversationId: conversation._id,

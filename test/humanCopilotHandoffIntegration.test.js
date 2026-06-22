@@ -23,6 +23,28 @@ describe('humanCopilot handoff flow', () => {
     delete require.cache[require.resolve('../services/chatbot/humanCopilot/humanCopilotAgentService')];
   });
 
+  test('determineRoute uses admin_pool when Human Copilot is enabled even with assigned BDA', async () => {
+    process.env.CHATBOT_HUMAN_COPILOT_ENABLED = '1';
+    const iitModelPath = require.resolve('../models/IitCounsellingSubmission');
+    const IitCounsellingSubmission = require(iitModelPath);
+    const bdaId = new mongoose.Types.ObjectId();
+    mock.method(IitCounsellingSubmission, 'findOne', () => ({
+      select() {
+        return { lean: async () => ({ assignedBdaId: bdaId }) };
+      },
+    }));
+
+    delete require.cache[handoffPath];
+    const { determineRoute } = require(handoffPath);
+    const route = await determineRoute({
+      phone: '9347763131',
+      hasIit: true,
+      iit: { fullName: 'Test' },
+    });
+    assert.equal(route.route, 'admin_pool');
+    assert.equal(String(route.assignedBdaId), String(bdaId));
+  });
+
   test('maybeAutoAssign uses legacy sr round robin when no agents configured', async () => {
     process.env.CHATBOT_COPILOT_AUTO_ASSIGN = '1';
     const WhatsAppAgentHandoff = require(handoffModelPath);
