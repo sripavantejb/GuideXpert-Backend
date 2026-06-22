@@ -5,7 +5,7 @@ const WhatsAppLeadScore = require('../../../models/WhatsAppLeadScore');
 const IitCounsellingSubmission = require('../../../models/IitCounsellingSubmission');
 const { buildLeadContext } = require('../leadContextService');
 const { getLeadDetails } = require('../leadInsights/leadInsightsService');
-const { getConversationTranscript } = require('../chatbotAdminService');
+const { getConversationTranscript, getConversationTranscriptPage } = require('../chatbotAdminService');
 const { resolveHandoff } = require('../handoffService');
 const { getCopilotHotLeadThreshold } = require('./humanCopilotFlags');
 const {
@@ -218,7 +218,10 @@ async function getHandoffDetail(handoffId) {
 
   return {
     handoff: mapped,
-    transcript,
+    transcript: {
+      conversation: transcript.conversation,
+      messageCount: (transcript.messages || []).length,
+    },
     userProfile: buildUserProfile(leadContext),
     leadProfile: leadDetails.profile,
     leadScore: leadDetails.score,
@@ -596,6 +599,28 @@ async function resolveHandoffForCopilot(handoffId, adminId) {
   return { success: true, handoff: mapHandoffRow(updated, scoreDoc) };
 }
 
+async function getHandoffMessages(handoffId, query = {}) {
+  const handoff = await getHandoffById(handoffId);
+  if (!handoff) return { error: 'not_found' };
+  if (handoff.route !== 'admin_pool') return { error: 'not_copilot_handoff' };
+
+  const page = await getConversationTranscriptPage(handoff.conversationId, {
+    limit: query.limit,
+    before: query.before || null,
+    beforeId: query.beforeId || null,
+    after: query.after || null,
+    afterId: query.afterId || null,
+  });
+
+  return {
+    messages: page.messages,
+    hasMoreOlder: page.hasMoreOlder,
+    hasMoreNewer: page.hasMoreNewer,
+    oldestCursor: page.oldestCursor,
+    newestCursor: page.newestCursor,
+  };
+}
+
 async function maybeAutoAssign(handoffId) {
   const { isCopilotAutoAssignEnabled } = require('./humanCopilotFlags');
   if (!isCopilotAutoAssignEnabled()) return null;
@@ -612,6 +637,7 @@ module.exports = {
   getNotifications,
   getHandoffById,
   getHandoffDetail,
+  getHandoffMessages,
   assignHandoff,
   assignHandoffByAgent,
   addInternalNote,

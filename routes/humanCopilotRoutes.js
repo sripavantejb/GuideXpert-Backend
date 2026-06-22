@@ -29,6 +29,7 @@ router.get('/agents', ctrl.listAgents);
 router.post('/agents/status', ctrl.updateAgentStatus);
 router.post('/agents/settings', ctrl.updateAgentSettings);
 router.get('/routing', ctrl.getRouting);
+router.get('/handoffs/:id/messages', ctrl.getHandoffMessages);
 router.get('/handoffs/:id', ctrl.getHandoffDetail);
 router.post('/handoffs/:id/auto-assign', ctrl.autoAssignHandoff);
 router.post('/handoffs/:id/assign', ctrl.assignHandoff);

@@ -182,6 +182,28 @@ exports.skipFollowup = async (req, res) => {
   }
 };
 
+exports.getHandoffMessages = async (req, res) => {
+  try {
+    const data = await copilot.getHandoffMessages(req.params.id, {
+      limit: req.query.limit,
+      before: req.query.before || null,
+      beforeId: req.query.beforeId || null,
+      after: req.query.after || null,
+      afterId: req.query.afterId || null,
+    });
+    if (data.error === 'not_found') {
+      return res.status(404).json({ success: false, message: 'Handoff not found' });
+    }
+    if (data.error === 'not_copilot_handoff') {
+      return res.status(400).json({ success: false, message: 'Not an admin pool handoff' });
+    }
+    return res.json({ success: true, data });
+  } catch (e) {
+    console.error('[humanCopilot] getHandoffMessages', e);
+    return res.status(500).json({ success: false, message: 'Failed to load messages' });
+  }
+};
+
 exports.getHandoffDetail = async (req, res) => {
   try {
     const data = await copilot.getHandoffDetail(req.params.id);

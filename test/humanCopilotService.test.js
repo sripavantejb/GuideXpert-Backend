@@ -178,4 +178,26 @@ describe('humanCopilotService', () => {
     assert.equal(items.length, 1);
     assert.ok(items[0].alertReasons.includes('human_requested'));
   });
+
+  test('getHandoffMessages delegates to paginated transcript service', async () => {
+    const handoff = sampleHandoff();
+    const WhatsAppAgentHandoff = require(handoffModelPath);
+    mock.method(WhatsAppAgentHandoff, 'findById', () => ({ lean: async () => handoff }));
+
+    const adminPath = require.resolve('../services/chatbot/chatbotAdminService');
+    const adminSvc = require(adminPath);
+    mock.method(adminSvc, 'getConversationTranscriptPage', async () => ({
+      messages: [{ id: '1', direction: 'in', text: 'Hi', at: new Date() }],
+      hasMoreOlder: true,
+      hasMoreNewer: false,
+      oldestCursor: { at: new Date(), id: '1' },
+      newestCursor: { at: new Date(), id: '1' },
+    }));
+
+    delete require.cache[servicePath];
+    const { getHandoffMessages } = require(servicePath);
+    const result = await getHandoffMessages(HANDOFF_ID, { limit: 50 });
+    assert.equal(result.messages.length, 1);
+    assert.equal(result.hasMoreOlder, true);
+  });
 });
