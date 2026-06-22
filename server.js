@@ -52,6 +52,7 @@ const osviRoutes = require('./routes/osviRoutes');
 const counsellorSupportRoutes = require('./routes/counsellorSupportRoutes');
 const gupshupWebhookRoutes = require('./routes/gupshupWebhookRoutes');
 const whatsappChatAdminRoutes = require('./routes/whatsappChatAdminRoutes');
+const humanCopilotRoutes = require('./routes/humanCopilotRoutes');
 const aiCallsAdminRoutes = require('./routes/aiCallsAdminRoutes');
 const whatsappChatBdaRoutes = require('./routes/whatsappChatBdaRoutes');
 const { configStatus: counsellorConfigStatus } = require('./controllers/counsellorAuthController');
@@ -94,6 +95,11 @@ const {
   getScopeFirewallConfigStatus,
   logScopeFirewallConfigStatus,
 } = require('./utils/scopeFirewallConfigStatus');
+const {
+  getHumanCopilotConfigStatus,
+  getHumanCopilotHealthStatus,
+  logHumanCopilotConfigStatus,
+} = require('./utils/humanCopilotConfigStatus');
 
 const app = express();
 
@@ -133,6 +139,7 @@ logIitCounsellingStrategyConfigStatus();
 logLeadEventExtractionConfigStatus();
 logLeadProfileConfigStatus();
 logLeadScoringConfigStatus();
+logHumanCopilotConfigStatus();
 logScopeFirewallConfigStatus();
 
 const allowedOrigins = [
@@ -238,7 +245,7 @@ app.use(async (req, res, next) => {
 });
 
 // Register specific /api routes before any broad `app.use('/api', router)` mounts.
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
   const whatsapp = getWhatsAppConfigStatus();
   const knowledgeAssistant = getKnowledgeAssistantConfigStatus();
   const counsellorProgramAssistant = getCounsellorProgramAssistantConfigStatus();
@@ -248,6 +255,7 @@ app.get('/api/health', (req, res) => {
   const leadProfile = getLeadProfileConfigStatus();
   const leadScoring = getLeadScoringConfigStatus();
   const scopeFirewall = getScopeFirewallConfigStatus();
+  const humanCopilot = await getHumanCopilotHealthStatus();
   res.json({
     status: 'ok',
     message: 'GuideXpert API is running',
@@ -291,6 +299,15 @@ app.get('/api/health', (req, res) => {
       enabled: scopeFirewall.scopeClassifier.enabled,
       ready: scopeFirewall.scopeClassifier.ready,
     },
+    humanCopilot: {
+      enabled: humanCopilot.enabled,
+      suggestedReplies: humanCopilot.suggestedReplies,
+      ready: humanCopilot.ready,
+      suggestedRepliesReady: humanCopilot.suggestedRepliesReady,
+      hotLeadThreshold: humanCopilot.hotLeadThreshold,
+      queueHealthy: humanCopilot.queueHealthy,
+      notificationsHealthy: humanCopilot.notificationsHealthy,
+    },
   });
 });
 app.get('/api/admin/poster-downloads/stats', requireAdmin, getPosterDownloadStats);
@@ -332,6 +349,7 @@ app.use('/api/posters', posterTemplatePublicRoutes);
 // WhatsApp Messaging Ops console — explicit mount before generic /api/admin (same middleware stack elsewhere).
 app.use('/api/admin/whatsapp-ops', requireAdmin, whatsappOpsAdminRoutes);
 app.use('/api/admin/whatsapp-chat', requireAdmin, whatsappChatAdminRoutes);
+app.use('/api/admin/human-copilot', requireAdmin, humanCopilotRoutes);
 app.use('/api/admin/ai-calls', requireAdmin, aiCallsAdminRoutes);
 app.use('/api/admin/lead-insights', requireAdmin, leadInsightsRoutes);
 app.use('/api/admin', adminRoutes);

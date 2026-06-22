@@ -69,6 +69,7 @@ const HANDOFF_REASONS = Object.freeze([
   'low_confidence',
   'keyword',
   'admin_initiated',
+  'reopened',
 ]);
 
 const WEBHOOK_EVENT_KINDS = Object.freeze(['inbound', 'dlr', 'unknown']);

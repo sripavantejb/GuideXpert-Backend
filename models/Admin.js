@@ -28,6 +28,23 @@ const adminSchema = new mongoose.Schema({
     type: [String],
     default: []
   },
+  copilotAgentProfile: {
+    enabled: { type: Boolean, default: false },
+    role: {
+      type: String,
+      enum: ['sr_counsellor', 'iit_expert', 'scholarship_expert', 'general_counsellor', 'admin'],
+      default: 'sr_counsellor',
+    },
+    availability: {
+      type: String,
+      enum: ['active', 'away', 'offline'],
+      default: 'active',
+    },
+    maxConcurrentConversations: { type: Number, min: 1, max: 50, default: 5 },
+    specialties: [{ type: String, maxlength: 32 }],
+    legacySlot: { type: String, enum: ['sr1', 'sr2', null], default: null },
+    roundRobinIndex: { type: Number, default: 0 },
+  },
   createdAt: {
     type: Date,
     default: Date.now

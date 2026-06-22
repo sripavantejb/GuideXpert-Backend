@@ -18,6 +18,7 @@ const ADMIN_SECTION_KEYS = [
   'training-form-responses',
   'one-on-one-counseling',
   'lead-intelligence',
+  'human-copilot',
   'guidance-slot-bookings',
   'one-on-one-counselors-admin',
   'training-feedback',

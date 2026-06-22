@@ -1086,6 +1086,28 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
             }
           : null,
       });
+      const escalationText = String(inbound.text || multilingualInbound?.originalMessage || '').toLowerCase();
+      const wantsHuman =
+        /\b(counsellor|counselor|human|agent|call me|talk to someone|speak to someone)\b/i.test(
+          escalationText
+        );
+      if (knowledgeAssistantResult?.guardrailModified && wantsHuman) {
+        await h.createHandoff({
+          conversation: activeConversation,
+          leadContext,
+          reason: 'low_confidence',
+          userLastMessage: inbound.text,
+        });
+        logInboundResult({
+          event: 'inbound_processed',
+          conversation: activeConversation,
+          botState,
+          intent: intentResult.intent,
+          contextPatch: emptySubflows(),
+          durationMs: Date.now() - startedAt,
+        });
+        return { handoff: true };
+      }
       if (knowledgeAssistantResult?.text) {
         replyText = knowledgeAssistantResult.text;
       } else {

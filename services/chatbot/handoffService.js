@@ -43,6 +43,29 @@ async function createHandoff({
   const routing = await determineRoute(leadContext);
   const summary = await buildHandoffSummary(leadContext);
 
+  let handoffReason = reason;
+  let isReopened = false;
+  let copilotState = 'pending';
+  let reopenedAt = null;
+  let priorResolved = null;
+
+  if (routing.route === 'admin_pool') {
+    priorResolved = await WhatsAppAgentHandoff.findOne({
+      conversationId: conversation._id,
+      route: 'admin_pool',
+      status: 'resolved',
+    })
+      .sort({ resolvedAt: -1 })
+      .select('_id resolvedAt')
+      .lean();
+    if (priorResolved) {
+      isReopened = true;
+      handoffReason = 'reopened';
+      copilotState = 'reopened';
+      reopenedAt = now;
+    }
+  }
+
   const handoff = await WhatsAppAgentHandoff.create({
     conversationId: conversation._id,
     phone: conversation.phone,
@@ -52,13 +75,28 @@ async function createHandoff({
     assignedBdaId: routing.assignedBdaId,
     assignedAdminId: null,
     expiresAt: new Date(now.getTime() + handoffExpiryMs()),
-    reason,
+    reason: handoffReason,
     userLastMessage: userLastMessage ? String(userLastMessage).slice(0, 2000) : null,
     summaryForAgent: summary,
     formSubmissionId: conversation.formSubmissionId || null,
     iitCounsellingSubmissionId: conversation.iitCounsellingSubmissionId || null,
     botPaused: true,
     createdBy,
+    copilotState: routing.route === 'admin_pool' ? copilotState : 'pending',
+    isReopened,
+    reopenedAt,
+    auditTrail:
+      isReopened && routing.route === 'admin_pool'
+        ? [
+            {
+              action: 'reopened',
+              adminId: null,
+              srCounsellor: null,
+              meta: { priorHandoffId: String(priorResolved._id) },
+              at: now,
+            },
+          ]
+        : [],
   });
 
   await setConversationHandoff(conversation._id, handoff._id, now);
@@ -75,6 +113,13 @@ async function createHandoff({
     text: `Thanks — I've connected you with a human agent. ${routeLabel}\n\nPlease wait; we will reply here on WhatsApp.`,
     handoffId: handoff._id,
   });
+
+  try {
+    const { maybeAutoAssign } = require('./humanCopilot/humanCopilotService');
+    await maybeAutoAssign(handoff._id);
+  } catch (autoAssignErr) {
+    console.warn('[handoff] auto-assign skipped', autoAssignErr?.message || autoAssignErr);
+  }
 
   return handoff;
 }
@@ -130,7 +175,7 @@ function assertBdaCanResolveHandoff(handoff, bdaId) {
   return { ok: true };
 }
 
-async function resolveHandoff(handoffId, { resolvedBy = 'admin', bdaId = null } = {}) {
+async function resolveHandoff(handoffId, { resolvedBy = 'admin', bdaId = null, adminId = null } = {}) {
   const existing = await WhatsAppAgentHandoff.findById(handoffId).lean();
   const auth = assertBdaCanResolveHandoff(existing, bdaId);
   if (!auth.ok) {
@@ -138,16 +183,19 @@ async function resolveHandoff(handoffId, { resolvedBy = 'admin', bdaId = null } 
   }
 
   const now = new Date();
+  const resolveSet = {
+    status: 'resolved',
+    resolvedAt: now,
+    botPaused: false,
+    copilotState: 'resolved',
+    activeAdminId: null,
+    updatedAt: now,
+  };
+  if (adminId) resolveSet.resolvedByAdminId = adminId;
+
   const handoff = await WhatsAppAgentHandoff.findByIdAndUpdate(
     handoffId,
-    {
-      $set: {
-        status: 'resolved',
-        resolvedAt: now,
-        botPaused: false,
-        updatedAt: now,
-      },
-    },
+    { $set: resolveSet },
     { new: true }
   );
   if (!handoff) return { success: false, error: 'not_found' };
