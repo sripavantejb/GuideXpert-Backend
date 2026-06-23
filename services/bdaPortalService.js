@@ -156,14 +156,17 @@ async function listBdaLeads(bdaId, query = {}, bdaLanguage = '') {
     }
   }
 
+  const sortField = query.sort === 'updated' ? 'lastUpdatedAt' : 'assignedAt';
+  const sortStage = { $sort: { [sortField]: -1, updatedAt: -1, createdAt: -1, _id: -1 } };
+
   const dedupePipeline = [
     { $match: filter },
     IIT_SUB_DEDUP_PHONE_ADD_FIELDS,
-    { $sort: { lastUpdatedAt: -1, updatedAt: -1, createdAt: -1, _id: -1 } },
+    sortStage,
     { $group: { _id: '$phoneKey', doc: { $first: '$$ROOT' } } },
     { $replaceRoot: { newRoot: '$doc' } },
     { $project: { phoneKey: 0, _demoSortKey: 0 } },
-    { $sort: { lastUpdatedAt: -1, updatedAt: -1, createdAt: -1, _id: -1 } },
+    sortStage,
     {
       $facet: {
         data: [{ $skip: skip }, { $limit: limitNum }],

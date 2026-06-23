@@ -45,6 +45,7 @@ const iitCounsellingLeadAssignmentHistorySchema = new mongoose.Schema({
 });
 
 iitCounsellingLeadAssignmentHistorySchema.index({ leadId: 1, assignedAt: -1 });
+iitCounsellingLeadAssignmentHistorySchema.index({ newBdaId: 1, assignedAt: -1 });
 
 module.exports = mongoose.model(
   'IitCounsellingLeadAssignmentHistory',

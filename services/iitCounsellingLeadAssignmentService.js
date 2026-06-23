@@ -7,6 +7,7 @@ const {
 } = require('./bdaLeadFilterService');
 const IitCounsellingLeadAssignmentHistory = require('../models/IitCounsellingLeadAssignmentHistory');
 const IitCounsellingLeadActivity = require('../models/IitCounsellingLeadActivity');
+const { notifyLeadAssignment } = require('./bdaNotificationService');
 
 function getAdminActorName(admin) {
   return admin?.username || admin?.name || 'admin';
@@ -109,6 +110,15 @@ async function assignLeadToBda({ leadId, bdaId, admin, reason, isReassign = fals
     fromValue: previousBdaId ? String(previousBdaId) : '',
     toValue: String(bda._id),
     remark: reason || '',
+  });
+
+  await notifyLeadAssignment({
+    lead,
+    previousBdaId,
+    prevBdaName: prevBda?.name || '',
+    newBda: bda,
+    admin,
+    reason,
   });
 
   return { lead };
@@ -266,9 +276,93 @@ async function bulkMapFilteredToRespectiveBda({ filterQuery, admin, reason }) {
   return { results: merged };
 }
 
+async function bulkReassignLeads({ leadIds, bdaId, admin, reason }) {
+  if (!Array.isArray(leadIds) || leadIds.length === 0) {
+    return { error: 'leadIds array is required', status: 400 };
+  }
+  if (leadIds.length > 200) {
+    return { error: 'Maximum 200 leads per request', status: 400 };
+  }
+  if (!bdaId) {
+    return { error: 'bdaId is required', status: 400 };
+  }
+
+  const results = { updated: 0, failed: [] };
+
+  for (const id of leadIds) {
+    const out = await assignLeadToBda({
+      leadId: id,
+      bdaId,
+      admin,
+      reason,
+      isReassign: true,
+    });
+    if (out.error) {
+      results.failed.push({ leadId: id, message: out.error });
+    } else {
+      results.updated += 1;
+    }
+  }
+
+  return { results };
+}
+
+async function transferAllLeadsFromBda({ sourceBdaId, targetBdaId, admin, reason }) {
+  if (!sourceBdaId || !mongoose.Types.ObjectId.isValid(sourceBdaId)) {
+    return { error: 'Invalid source BDA id', status: 400 };
+  }
+  if (!targetBdaId || !mongoose.Types.ObjectId.isValid(targetBdaId)) {
+    return { error: 'Invalid target BDA id', status: 400 };
+  }
+  if (String(sourceBdaId) === String(targetBdaId)) {
+    return { error: 'Source and target BDA must be different', status: 400 };
+  }
+
+  const sourceBda = await Bda.findById(sourceBdaId).select('status name').lean();
+  if (!sourceBda) {
+    return { error: 'Source BDA not found', status: 404 };
+  }
+
+  const { bda: targetBda, error: targetError } = await loadActiveBda(targetBdaId);
+  if (targetError) {
+    return { error: targetError, status: 404 };
+  }
+
+  const leadIds = await IitCounsellingSubmission.find({
+    submissionType: 'iitCounselling',
+    assignedBdaId: sourceBdaId,
+  })
+    .select('_id')
+    .lean()
+    .then((rows) => rows.map((r) => String(r._id)));
+
+  const merged = { total: leadIds.length, updated: 0, failed: [] };
+
+  for (let i = 0; i < leadIds.length; i += 200) {
+    const chunk = leadIds.slice(i, i + 200);
+    const out = await bulkReassignLeads({
+      leadIds: chunk,
+      bdaId: targetBda._id,
+      admin,
+      reason,
+    });
+    if (out.error) return out;
+    merged.updated += out.results.updated;
+    merged.failed.push(...(out.results.failed || []));
+  }
+
+  return {
+    results: merged,
+    sourceBdaName: sourceBda.name,
+    targetBdaName: targetBda.name,
+  };
+}
+
 module.exports = {
   assignLeadToBda,
   bulkAssignLeads,
+  bulkReassignLeads,
+  transferAllLeadsFromBda,
   bulkMapToRespectiveBda,
   bulkMapFilteredToRespectiveBda,
   logActivity,

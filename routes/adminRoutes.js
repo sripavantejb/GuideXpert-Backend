@@ -87,6 +87,7 @@ const {
   getBdaAssignedLeads,
   getBdaCallingData,
   getTeamDashboard,
+  transferBdaLeads,
 } = require('../controllers/bdaController');
 const {
   listIitCounsellingLeads,
@@ -95,6 +96,7 @@ const {
   assignBda,
   reassignBda,
   bulkAssignBda,
+  bulkReassignBda,
   bulkMapFilteredRespectiveBda,
   getAssignmentHistory,
   getAutoAssignPreview,
@@ -195,10 +197,12 @@ router.patch('/bdas/:id', requireAdmin, updateBda);
 router.delete('/bdas/:id', requireAdmin, deleteBda);
 router.patch('/bdas/:id/status', requireAdmin, patchBdaStatus);
 router.patch('/bdas/:id/reset-password', requireAdmin, resetBdaPassword);
+router.patch('/bdas/:id/transfer-leads', requireAdmin, transferBdaLeads);
 router.get('/iit-counselling-leads', requireAdmin, listIitCounsellingLeads);
 router.get('/iit-counselling-leads/auto-assign-preview', requireAdmin, getAutoAssignPreview);
 router.post('/iit-counselling-leads/auto-assign-by-language', requireAdmin, autoAssignLeadsByLanguage);
 router.patch('/iit-counselling-leads/bulk-assign', requireAdmin, bulkAssignBda);
+router.patch('/iit-counselling-leads/bulk-reassign', requireAdmin, bulkReassignBda);
 router.patch(
   '/iit-counselling-leads/bulk-map-filtered-respective',
   requireAdmin,

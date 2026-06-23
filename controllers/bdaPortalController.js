@@ -5,6 +5,10 @@ const {
   getBdaLeadById,
   getLeadCallHistory,
 } = require('../services/bdaPortalService');
+const {
+  listBdaNotifications,
+  markBdaNotificationsRead,
+} = require('../services/bdaNotificationService');
 const { updateLeadByBda } = require('../services/bdaLeadUpdateService');
 
 exports.getDashboardStats = async (req, res) => {
@@ -69,6 +73,38 @@ exports.getLeadHistory = async (req, res) => {
     return res.status(200).json({ success: true, data: history });
   } catch (error) {
     console.error('[bdaLeadHistory]', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.getNotifications = async (req, res) => {
+  try {
+    const out = await listBdaNotifications(req.bda.id, req.query);
+    if (out.error) {
+      return res.status(out.status || 400).json({ success: false, message: out.error });
+    }
+    return res.status(200).json({
+      success: true,
+      data: out.data,
+      unreadCount: out.unreadCount,
+      pagination: out.pagination,
+    });
+  } catch (error) {
+    console.error('[bdaGetNotifications]', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.markNotificationsRead = async (req, res) => {
+  try {
+    const { ids, all } = req.body || {};
+    const out = await markBdaNotificationsRead(req.bda.id, { ids, all: all === true });
+    if (out.error) {
+      return res.status(out.status || 400).json({ success: false, message: out.error });
+    }
+    return res.status(200).json({ success: true, data: out });
+  } catch (error) {
+    console.error('[bdaMarkNotificationsRead]', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };

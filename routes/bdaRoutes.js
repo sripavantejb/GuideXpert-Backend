@@ -7,6 +7,8 @@ const {
   getLead,
   updateLead,
   getLeadHistory,
+  getNotifications,
+  markNotificationsRead,
 } = require('../controllers/bdaPortalController');
 
 const router = express.Router();
@@ -16,6 +18,8 @@ router.get('/me', requireBda, me);
 router.post('/logout', requireBda, logout);
 
 router.get('/dashboard/stats', requireBda, getDashboardStats);
+router.get('/notifications', requireBda, getNotifications);
+router.post('/notifications/mark-read', requireBda, markNotificationsRead);
 router.get('/leads', requireBda, listLeads);
 router.get('/leads/:id', requireBda, getLead);
 router.patch('/leads/:id/update', requireBda, updateLead);

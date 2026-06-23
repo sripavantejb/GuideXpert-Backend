@@ -18,6 +18,7 @@ const {
 const {
   assignLeadToBda,
   bulkAssignLeads,
+  bulkReassignLeads,
   bulkMapToRespectiveBda,
   bulkMapFilteredToRespectiveBda,
   logActivity,
@@ -355,6 +356,28 @@ exports.bulkMapFilteredRespectiveBda = async (req, res) => {
     return res.status(200).json({ success: true, data: out.results });
   } catch (error) {
     console.error('[bulkMapFilteredRespectiveBda]', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.bulkReassignBda = async (req, res) => {
+  try {
+    const { leadIds, bdaId, reason } = req.body || {};
+    if (!bdaId) {
+      return res.status(400).json({ success: false, message: 'bdaId is required' });
+    }
+    const out = await bulkReassignLeads({
+      leadIds,
+      bdaId,
+      admin: req.admin,
+      reason,
+    });
+    if (out.error) {
+      return res.status(out.status || 400).json({ success: false, message: out.error });
+    }
+    return res.status(200).json({ success: true, data: out.results });
+  } catch (error) {
+    console.error('[bulkReassignBda]', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };

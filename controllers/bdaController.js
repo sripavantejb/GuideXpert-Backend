@@ -12,6 +12,7 @@ const {
   computeBdaMetrics,
 } = require('../services/bdaStatsService');
 const { fetchAssignedLeadsForBda } = require('../services/bdaAssignedLeadsService');
+const { transferAllLeadsFromBda } = require('../services/iitCounsellingLeadAssignmentService');
 const { resolveStatsDateRange } = require('../utils/statsDateRange');
 const { BDA_LANGUAGES } = require('../constants/bdaLanguage');
 
@@ -398,6 +399,36 @@ exports.getBdaCallingData = async (req, res) => {
     });
   } catch (error) {
     console.error('[getBdaCallingData]', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.transferBdaLeads = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { targetBdaId, reason } = req.body || {};
+    if (!targetBdaId) {
+      return res.status(400).json({ success: false, message: 'targetBdaId is required' });
+    }
+    const out = await transferAllLeadsFromBda({
+      sourceBdaId: id,
+      targetBdaId,
+      admin: req.admin,
+      reason,
+    });
+    if (out.error) {
+      return res.status(out.status || 400).json({ success: false, message: out.error });
+    }
+    return res.status(200).json({
+      success: true,
+      data: {
+        ...out.results,
+        sourceBdaName: out.sourceBdaName,
+        targetBdaName: out.targetBdaName,
+      },
+    });
+  } catch (error) {
+    console.error('[transferBdaLeads]', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
