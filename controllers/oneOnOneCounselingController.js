@@ -747,6 +747,66 @@ exports.listOneOnOneCounselingLeads = async (req, res) => {
 };
 
 /**
+ * GET /api/admin/one-on-one-counseling-leads/funnel-stats
+ */
+exports.getOneOnOneCounselingFunnelStats = async (req, res) => {
+  try {
+    const match = {};
+    const dateRange = buildDateRange(req.query.from, req.query.to);
+    if (dateRange) match.createdAt = dateRange;
+
+    const contactedStatuses = ['Contacted', 'Demo Booked', 'Counseling Done', 'Converted'];
+    const counselingDoneStatuses = ['Counseling Done', 'Converted'];
+
+    const [
+      totalLeads,
+      formStarted,
+      formCompleted,
+      bookingConfirmed,
+      bookingPending,
+      contacted,
+      counselingDone,
+      converted,
+      notInterested,
+      whatsappConsent,
+      parentAttendanceConfirmed,
+    ] = await Promise.all([
+      OneOnOneCounselingLead.countDocuments(match),
+      OneOnOneCounselingLead.countDocuments({ ...match, currentStep: { $gte: 1 } }),
+      OneOnOneCounselingLead.countDocuments({ ...match, formCompleted: true }),
+      OneOnOneCounselingLead.countDocuments({ ...match, bookingConfirmed: true }),
+      OneOnOneCounselingLead.countDocuments({ ...match, bookingStatus: 'Pending' }),
+      OneOnOneCounselingLead.countDocuments({ ...match, leadStatus: { $in: contactedStatuses } }),
+      OneOnOneCounselingLead.countDocuments({ ...match, leadStatus: { $in: counselingDoneStatuses } }),
+      OneOnOneCounselingLead.countDocuments({ ...match, leadStatus: 'Converted' }),
+      OneOnOneCounselingLead.countDocuments({ ...match, leadStatus: 'Not Interested' }),
+      OneOnOneCounselingLead.countDocuments({ ...match, whatsappConsent: true }),
+      OneOnOneCounselingLead.countDocuments({ ...match, parentAttendanceConfirmed: true }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalLeads,
+        formStarted,
+        formCompleted,
+        bookingConfirmed,
+        bookingPending,
+        contacted,
+        counselingDone,
+        converted,
+        notInterested,
+        whatsappConsent,
+        parentAttendanceConfirmed,
+      },
+    });
+  } catch (err) {
+    console.error('[getOneOnOneCounselingFunnelStats]', err);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
  * PATCH /api/admin/one-on-one-counseling-leads/:id
  */
 exports.patchOneOnOneCounselingLead = async (req, res) => {
