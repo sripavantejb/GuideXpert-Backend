@@ -34,6 +34,7 @@ const {
   autoAssignHandoff,
 } = require('../services/chatbot/humanCopilot/humanCopilotRoutingService');
 const { buildAuditEntry } = require('../services/chatbot/humanCopilot/humanCopilotAuditService');
+const { getHumanCopilotConfigStatus } = require('../utils/humanCopilotConfigStatus');
 const WhatsAppAgentHandoff = require('../models/WhatsAppAgentHandoff');
 
 function mapConflictStatus(error) {
@@ -41,6 +42,15 @@ function mapConflictStatus(error) {
   if (error === 'version_conflict') return 409;
   return 400;
 }
+
+exports.getConfig = async (req, res) => {
+  try {
+    return res.json({ success: true, config: getHumanCopilotConfigStatus() });
+  } catch (e) {
+    console.error('[humanCopilot] getConfig', e);
+    return res.status(500).json({ success: false, message: 'Failed to load config' });
+  }
+};
 
 exports.listQueue = async (req, res) => {
   try {
@@ -340,6 +350,8 @@ exports.reply = async (req, res) => {
         success: false,
         message: result.error || 'send_failed',
         deliveryStatus: result.deliveryStatus || 'failed',
+        providerStatus: result.providerStatus || result.deliveryStatus || 'failed',
+        errorMessage: result.errorMessage || result.message || null,
         replyId: result.replyId || null,
         draftText: result.draftText || String(text).trim(),
         lockVersion: result.lockVersion ?? null,
@@ -348,9 +360,13 @@ exports.reply = async (req, res) => {
     return res.json({
       success: true,
       deliveryStatus: result.deliveryStatus,
+      providerStatus: result.providerStatus || result.deliveryStatus,
+      outboundMessageId: result.outboundMessageId || null,
+      errorMessage: result.errorMessage || null,
       replyId: result.replyId,
       lockVersion: result.lockVersion,
       replySource: result.replySource,
+      sessionFallback: Boolean(result.sessionFallback),
     });
   } catch (e) {
     console.error('[humanCopilot] reply', e);

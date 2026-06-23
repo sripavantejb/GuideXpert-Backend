@@ -8,6 +8,7 @@ const router = express.Router();
 
 router.use(requireHumanCopilot);
 
+router.get('/config', ctrl.getConfig);
 router.get('/queue', ctrl.listQueue);
 router.get('/notifications', ctrl.getNotifications);
 router.get('/metrics', ctrl.getMetrics);

@@ -206,6 +206,9 @@ async function sendCopilotReply(
 
   const sentAt = new Date();
   if (sendResult.success) {
+    const providerStatus = sendResult.providerStatus || (sendResult.stub ? 'simulated' : 'submitted');
+    const deliveryStatus = sendResult.deliveryStatus || providerStatus;
+    const replyStatus = providerStatus === 'simulated' ? 'simulated' : 'sent';
     const firstResponseAt = handoff.firstResponseAt || sentAt;
     const learning = enrichReplyLearning({
       suggestedText: normalizedSuggestedText,
@@ -216,31 +219,36 @@ async function sendCopilotReply(
       handoffId,
       replySubId,
       {
-        status: 'sent',
-        sentAt,
+        status: replyStatus,
+        sentAt: providerStatus === 'simulated' ? null : sentAt,
         outboundMessageId: sendResult.outboundId,
-        errorMessage: null,
+        errorMessage: providerStatus === 'simulated' ? 'WA_INTEGRATION_STUB' : null,
         editRatio: learning.editRatio,
         editClassification: learning.editClassification,
         editTopic: learning.editTopic,
         editPatterns: learning.editPatterns,
       },
-      {
-        lastAgentMessageAt: sentAt,
-        repliedByAdminId: adminId,
-        repliedAt: sentAt,
-        firstResponseAt,
-        copilotState: 'active',
-        status: 'claimed',
-      }
+      providerStatus === 'simulated'
+        ? {}
+        : {
+            lastAgentMessageAt: sentAt,
+            repliedByAdminId: adminId,
+            repliedAt: sentAt,
+            firstResponseAt,
+            copilotState: 'active',
+            status: 'claimed',
+          }
     );
     return {
       success: true,
-      deliveryStatus: 'sent',
+      deliveryStatus,
+      providerStatus,
       replyId: String(replySubId),
       outboundMessageId: sendResult.outboundId ? String(sendResult.outboundId) : null,
       lockVersion: nextLockVersion + 0,
       replySource: source,
+      sessionFallback: Boolean(sendResult.sessionFallback),
+      errorMessage: providerStatus === 'simulated' ? 'WA_INTEGRATION_STUB' : null,
     };
   }
 
@@ -273,8 +281,10 @@ async function sendCopilotReply(
     success: false,
     error: 'send_failed',
     deliveryStatus: 'failed',
+    providerStatus: 'failed',
     replyId: String(replySubId),
     message: failMessage,
+    errorMessage: failMessage,
     draftText,
     lockVersion: nextLockVersion,
   };
