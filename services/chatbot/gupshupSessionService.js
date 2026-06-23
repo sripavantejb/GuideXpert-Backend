@@ -35,6 +35,7 @@ async function sendSessionMessageRaw(phone10, messageFieldJson, opts = {}) {
     const messageId = `test-chat-${crypto.randomUUID()}`;
     return {
       success: true,
+      stub: true,
       data: { messageId, status: 'submitted', id: messageId },
     };
   }

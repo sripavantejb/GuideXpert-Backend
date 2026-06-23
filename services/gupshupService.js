@@ -83,13 +83,8 @@ function isWhatsAppEnabled() {
 }
 
 function isGupshupConfigured() {
-  return (
-    isWhatsAppEnabled() &&
-    typeof process.env.GUPSHUP_API_KEY === 'string' &&
-    process.env.GUPSHUP_API_KEY.trim().length > 0 &&
-    typeof process.env.GUPSHUP_SOURCE === 'string' &&
-    process.env.GUPSHUP_SOURCE.trim().length > 0
-  );
+  const { isGupshupOutboundConfigured } = require('../utils/gupshupCredentialValidation');
+  return isWhatsAppEnabled() && isGupshupOutboundConfigured();
 }
 
 function maskPhoneTail(digits) {

@@ -6,6 +6,26 @@ const {
   getCopilotHotLeadThreshold,
 } = require('../services/chatbot/humanCopilot/humanCopilotFlags');
 const { getKnowledgeAssistantConfigStatus } = require('./knowledgeAssistantConfigStatus');
+const { isWhatsAppEnabled } = require('../services/gupshupService');
+const {
+  isIntegrationStubEnabled,
+  getGupshupCredentialIssues,
+  isGupshupOutboundConfigured,
+} = require('./gupshupCredentialValidation');
+
+function getWhatsAppOutboundStatus() {
+  const integrationStub = isIntegrationStubEnabled();
+  const whatsappEnabled = isWhatsAppEnabled();
+  const gupshupConfigured = isGupshupOutboundConfigured();
+  const credentialIssues = getGupshupCredentialIssues();
+  return {
+    whatsappEnabled,
+    gupshupConfigured,
+    integrationStub,
+    outboundReady: whatsappEnabled && gupshupConfigured && !integrationStub,
+    credentialIssues,
+  };
+}
 
 function getHumanCopilotConfigStatus() {
   const enabled = isHumanCopilotEnabled();
@@ -14,6 +34,7 @@ function getHumanCopilotConfigStatus() {
   const hotLeadThreshold = getCopilotHotLeadThreshold();
   const ready = enabled;
   const suggestedRepliesReady = !suggestedReplies || knowledgeAssistant.llmKeyPresent;
+  const whatsapp = getWhatsAppOutboundStatus();
 
   return {
     enabled,
@@ -21,6 +42,7 @@ function getHumanCopilotConfigStatus() {
     ready,
     suggestedRepliesReady,
     hotLeadThreshold,
+    ...whatsapp,
   };
 }
 
@@ -63,10 +85,20 @@ function logHumanCopilotConfigStatus() {
     humanCopilotEnabled: process.env.CHATBOT_HUMAN_COPILOT_ENABLED,
     copilotSuggestedReplies: process.env.CHATBOT_COPILOT_SUGGESTED_REPLIES_ENABLED,
     humanCopilotReady: status.ready,
+    whatsappOutboundReady: status.outboundReady,
+    integrationStub: status.integrationStub,
+    gupshupConfigured: status.gupshupConfigured,
   });
+  if (status.credentialIssues?.length) {
+    console.warn(
+      '[env] Human Copilot WhatsApp outbound:',
+      status.credentialIssues.join('; ')
+    );
+  }
 }
 
 module.exports = {
+  getWhatsAppOutboundStatus,
   getHumanCopilotConfigStatus,
   getHumanCopilotHealthStatus,
   logHumanCopilotConfigStatus,

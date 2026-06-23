@@ -61,13 +61,15 @@ describe('humanCopilot reply delivery', () => {
     mock.method(outbound, 'sendAgentTextReply', async () => ({
       success: true,
       outboundId: new mongoose.Types.ObjectId(),
+      providerStatus: 'submitted',
+      deliveryStatus: 'submitted',
     }));
 
     delete require.cache[replyPath];
     const { sendCopilotReply } = require(replyPath);
     const result = await sendCopilotReply(HANDOFF_ID, ADMIN_ID, 'Hello there', { lockVersion: 1 });
     assert.equal(result.success, true);
-    assert.equal(result.deliveryStatus, 'sent');
+    assert.equal(result.deliveryStatus, 'submitted');
     assert.ok(result.replyId);
     assert.equal(learningPatch?.['copilotReplies.$.editClassification'], 'manual');
   });
@@ -99,6 +101,8 @@ describe('humanCopilot reply delivery', () => {
     mock.method(outbound, 'sendAgentTextReply', async () => ({
       success: true,
       outboundId: new mongoose.Types.ObjectId(),
+      providerStatus: 'submitted',
+      deliveryStatus: 'submitted',
     }));
 
     delete require.cache[replyPath];
@@ -196,6 +200,8 @@ describe('humanCopilot reply delivery', () => {
     mock.method(outbound, 'sendAgentTextReply', async () => ({
       success: true,
       outboundId: new mongoose.Types.ObjectId(),
+      providerStatus: 'submitted',
+      deliveryStatus: 'submitted',
     }));
 
     delete require.cache[replyPath];
@@ -207,5 +213,40 @@ describe('humanCopilot reply delivery', () => {
     });
     assert.equal(result.success, true);
     assert.equal(storedSuggested, 'Hello there');
+  });
+
+  test('sendCopilotReply returns simulated when outbound stub is enabled', async () => {
+    const WhatsAppAgentHandoff = require(handoffModelPath);
+    const createdHandoff = sampleHandoff({
+      lockVersion: 2,
+      copilotReplies: [{ _id: REPLY_ID, draftText: 'Hello', status: 'sending' }],
+    });
+
+    mock.method(WhatsAppAgentHandoff, 'findById', () => ({
+      lean: async () => sampleHandoff(),
+    }));
+    mock.method(WhatsAppAgentHandoff, 'findOneAndUpdate', () => ({
+      lean: async () => createdHandoff,
+    }));
+    mock.method(WhatsAppAgentHandoff, 'updateOne', async () => ({}));
+
+    const handoffService = require(handoffServicePath);
+    mock.method(handoffService, 'claimHandoff', async () => ({ success: true }));
+
+    const outbound = require(outboundPath);
+    mock.method(outbound, 'sendAgentTextReply', async () => ({
+      success: true,
+      stub: true,
+      outboundId: new mongoose.Types.ObjectId(),
+      providerStatus: 'simulated',
+      deliveryStatus: 'simulated',
+    }));
+
+    delete require.cache[replyPath];
+    const { sendCopilotReply } = require(replyPath);
+    const result = await sendCopilotReply(HANDOFF_ID, ADMIN_ID, 'Hello there', { lockVersion: 1 });
+    assert.equal(result.success, true);
+    assert.equal(result.deliveryStatus, 'simulated');
+    assert.equal(result.providerStatus, 'simulated');
   });
 });

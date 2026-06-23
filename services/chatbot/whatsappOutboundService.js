@@ -271,11 +271,12 @@ async function sendAgentTextReply({
   const nowUp = new Date();
 
   if (result && result.success) {
+    const outboundStatus = result.stub ? 'simulated' : 'submitted';
     await WhatsAppOutboundMessage.updateOne(
       { _id: outbound._id },
       {
         $set: {
-          status: 'submitted',
+          status: outboundStatus,
           gupshupMessageId: ids.canonicalMessageId || null,
           gupshupInternalMessageId: ids.gupshupInternalMessageId || null,
           whatsappWaMessageId: ids.whatsappWaMessageId || null,
@@ -285,7 +286,14 @@ async function sendAgentTextReply({
         },
       }
     );
-    return { success: true, outboundId: outbound._id };
+    return {
+      success: true,
+      outboundId: outbound._id,
+      stub: Boolean(result.stub),
+      providerStatus: outboundStatus,
+      deliveryStatus: outboundStatus,
+      sessionFallback: false,
+    };
   }
 
   await WhatsAppOutboundMessage.updateOne(
@@ -299,7 +307,24 @@ async function sendAgentTextReply({
       },
     }
   );
-  return { success: false, outboundId: outbound._id, error: result && result.error };
+  logOutboundFailure(phone10, 'agent_text', result);
+  const fallback = await attemptSessionFallbackOnFailure(phone10, result);
+  if (fallback && fallback.success) {
+    return {
+      success: true,
+      outboundId: outbound._id,
+      sessionFallback: true,
+      providerStatus: 'submitted',
+      deliveryStatus: 'submitted',
+    };
+  }
+  return {
+    success: false,
+    outboundId: outbound._id,
+    error: result && result.error,
+    providerStatus: 'failed',
+    deliveryStatus: 'failed',
+  };
 }
 
 async function sendBotListReply({

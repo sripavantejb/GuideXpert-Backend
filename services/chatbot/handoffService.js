@@ -6,6 +6,7 @@ const { setConversationHandoff, clearConversationHandoff } = require('./conversa
 const { transitionState } = require('./botStateService');
 const whatsappOutbound = require('./whatsappOutboundService');
 const { emptySubflows } = require('./botSubflowContext');
+const { HANDOFF_RESOLVED_USER_MESSAGE } = require('../../constants/handoffMessages');
 
 function handoffExpiryMs() {
   const h = parseInt(process.env.CHATBOT_HANDOFF_EXPIRY_HOURS || '4', 10);
@@ -220,7 +221,7 @@ async function resolveHandoff(handoffId, { resolvedBy = 'admin', bdaId = null, a
   await whatsappOutbound.sendBotTextReply({
     conversationId: handoff.conversationId,
     phone10: handoff.phone,
-    text: 'This chat is back with the GuideXpert assistant. Reply MENU for options.',
+    text: HANDOFF_RESOLVED_USER_MESSAGE,
   });
 
   return { success: true, handoff };

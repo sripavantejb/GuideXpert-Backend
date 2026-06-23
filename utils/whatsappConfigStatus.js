@@ -1,4 +1,5 @@
 const { isWhatsAppEnabled, isGupshupConfigured } = require('../services/gupshupService');
+const { getGupshupCredentialIssues } = require('./gupshupCredentialValidation');
 const {
   getConfiguredWebhookSecret,
   isWebhookAuthEnforced,
@@ -21,8 +22,8 @@ function getWhatsAppConfigStatus() {
   const production = isProductionEnv();
 
   const issues = [];
-  if (whatsappEnabled && !gupshupConfigured) {
-    issues.push('ENABLE_WHATSAPP is on but GUPSHUP_API_KEY or GUPSHUP_SOURCE is missing');
+  if (whatsappEnabled) {
+    issues.push(...getGupshupCredentialIssues());
   }
   const authRequiredFlag = String(process.env.GUPSHUP_WEBHOOK_AUTH_REQUIRED || '').trim();
   if (authRequiredFlag === '1' && !webhookSecretConfigured) {
