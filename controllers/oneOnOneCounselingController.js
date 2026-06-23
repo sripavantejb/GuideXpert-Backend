@@ -749,55 +749,77 @@ exports.listOneOnOneCounselingLeads = async (req, res) => {
 /**
  * GET /api/admin/one-on-one-counseling-leads/funnel-stats
  */
+async function countOneOnOneFunnelStages(baseMatch) {
+  const contactedStatuses = ['Contacted', 'Demo Booked', 'Counseling Done', 'Converted'];
+  const counselingDoneStatuses = ['Counseling Done', 'Converted'];
+
+  const [
+    totalLeads,
+    formStarted,
+    formCompleted,
+    bookingConfirmed,
+    bookingPending,
+    contacted,
+    counselingDone,
+    converted,
+    notInterested,
+    whatsappConsent,
+    parentAttendanceConfirmed,
+  ] = await Promise.all([
+    OneOnOneCounselingLead.countDocuments(baseMatch),
+    OneOnOneCounselingLead.countDocuments({ ...baseMatch, currentStep: { $gte: 1 } }),
+    OneOnOneCounselingLead.countDocuments({ ...baseMatch, formCompleted: true }),
+    OneOnOneCounselingLead.countDocuments({ ...baseMatch, bookingConfirmed: true }),
+    OneOnOneCounselingLead.countDocuments({ ...baseMatch, bookingStatus: 'Pending' }),
+    OneOnOneCounselingLead.countDocuments({ ...baseMatch, leadStatus: { $in: contactedStatuses } }),
+    OneOnOneCounselingLead.countDocuments({ ...baseMatch, leadStatus: { $in: counselingDoneStatuses } }),
+    OneOnOneCounselingLead.countDocuments({ ...baseMatch, leadStatus: 'Converted' }),
+    OneOnOneCounselingLead.countDocuments({ ...baseMatch, leadStatus: 'Not Interested' }),
+    OneOnOneCounselingLead.countDocuments({ ...baseMatch, whatsappConsent: true }),
+    OneOnOneCounselingLead.countDocuments({ ...baseMatch, parentAttendanceConfirmed: true }),
+  ]);
+
+  return {
+    totalLeads,
+    formStarted,
+    formCompleted,
+    bookingConfirmed,
+    bookingPending,
+    contacted,
+    counselingDone,
+    converted,
+    notInterested,
+    whatsappConsent,
+    parentAttendanceConfirmed,
+  };
+}
+
+function mergeRelevanceMatch(baseMatch, leadRelevance) {
+  const relevanceClause = buildLeadRelevanceMatchClause(leadRelevance);
+  if (!relevanceClause) return baseMatch;
+  return { ...baseMatch, ...relevanceClause };
+}
+
 exports.getOneOnOneCounselingFunnelStats = async (req, res) => {
   try {
     const match = {};
     const dateRange = buildDateRange(req.query.from, req.query.to);
     if (dateRange) match.createdAt = dateRange;
 
-    const contactedStatuses = ['Contacted', 'Demo Booked', 'Counseling Done', 'Converted'];
-    const counselingDoneStatuses = ['Counseling Done', 'Converted'];
-
-    const [
-      totalLeads,
-      formStarted,
-      formCompleted,
-      bookingConfirmed,
-      bookingPending,
-      contacted,
-      counselingDone,
-      converted,
-      notInterested,
-      whatsappConsent,
-      parentAttendanceConfirmed,
-    ] = await Promise.all([
-      OneOnOneCounselingLead.countDocuments(match),
-      OneOnOneCounselingLead.countDocuments({ ...match, currentStep: { $gte: 1 } }),
-      OneOnOneCounselingLead.countDocuments({ ...match, formCompleted: true }),
-      OneOnOneCounselingLead.countDocuments({ ...match, bookingConfirmed: true }),
-      OneOnOneCounselingLead.countDocuments({ ...match, bookingStatus: 'Pending' }),
-      OneOnOneCounselingLead.countDocuments({ ...match, leadStatus: { $in: contactedStatuses } }),
-      OneOnOneCounselingLead.countDocuments({ ...match, leadStatus: { $in: counselingDoneStatuses } }),
-      OneOnOneCounselingLead.countDocuments({ ...match, leadStatus: 'Converted' }),
-      OneOnOneCounselingLead.countDocuments({ ...match, leadStatus: 'Not Interested' }),
-      OneOnOneCounselingLead.countDocuments({ ...match, whatsappConsent: true }),
-      OneOnOneCounselingLead.countDocuments({ ...match, parentAttendanceConfirmed: true }),
+    const [overall, relevant, irrelevant] = await Promise.all([
+      countOneOnOneFunnelStages(match),
+      countOneOnOneFunnelStages(mergeRelevanceMatch(match, 'relevant')),
+      countOneOnOneFunnelStages(mergeRelevanceMatch(match, 'irrelevant')),
     ]);
 
     return res.status(200).json({
       success: true,
       data: {
-        totalLeads,
-        formStarted,
-        formCompleted,
-        bookingConfirmed,
-        bookingPending,
-        contacted,
-        counselingDone,
-        converted,
-        notInterested,
-        whatsappConsent,
-        parentAttendanceConfirmed,
+        ...overall,
+        relevantLeads: relevant.totalLeads,
+        irrelevantLeads: irrelevant.totalLeads,
+        relevant,
+        irrelevant,
       },
     });
   } catch (err) {
