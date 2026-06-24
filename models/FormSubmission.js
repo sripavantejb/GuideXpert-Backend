@@ -246,6 +246,21 @@ const formSubmissionSchema = new mongoose.Schema({
     trim: true
   },
   leadDescription: { type: String, trim: true, maxlength: 2000 },
+  assignedBdaId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Bda',
+    default: null,
+    index: true,
+  },
+  assignedBdaName: { type: String, trim: true, maxlength: 100 },
+  assignedAt: { type: Date, default: null },
+  assignedBy: { type: String, trim: true, maxlength: 100 },
+  assignedByAdminId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Admin',
+    default: null,
+  },
+  assignedByAdminName: { type: String, trim: true, maxlength: 100 },
   createdAt: {
     type: Date,
     default: Date.now
@@ -260,6 +275,7 @@ const formSubmissionSchema = new mongoose.Schema({
 formSubmissionSchema.index({ createdAt: -1 });
 formSubmissionSchema.index({ applicationStatus: 1 });
 formSubmissionSchema.index({ submissionType: 1, createdAt: -1 });
+formSubmissionSchema.index({ assignedBdaId: 1, assignedAt: -1 });
 // Index for reminder cron job queries
 formSubmissionSchema.index({ isRegistered: 1, reminderSent: 1, 'step3Data.slotDate': 1 });
 // Index for meet link cron job queries

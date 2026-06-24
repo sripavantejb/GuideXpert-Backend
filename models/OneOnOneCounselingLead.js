@@ -66,6 +66,21 @@ const schema = new mongoose.Schema(
         message: 'At most 3 preferred colleges',
       },
     },
+    assignedBdaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Bda',
+      default: null,
+      index: true,
+    },
+    assignedBdaName: { type: String, trim: true, maxlength: 100 },
+    assignedAt: { type: Date, default: null },
+    assignedBy: { type: String, trim: true, maxlength: 100 },
+    assignedByAdminId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Admin',
+      default: null,
+    },
+    assignedByAdminName: { type: String, trim: true, maxlength: 100 },
   },
   { timestamps: true }
 );
@@ -80,6 +95,7 @@ schema.index({ preferredTimeSlot: 1 });
 schema.index({ preferredTimeSlotDate: 1 });
 schema.index({ selectedSlotId: 1 });
 schema.index({ oneOnOneCounselorId: 1 });
+schema.index({ assignedBdaId: 1, assignedAt: -1 });
 schema.index({ bookingConfirmedAt: -1 });
 
 module.exports = mongoose.model('OneOnOneCounselingLead', schema);

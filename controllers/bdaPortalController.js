@@ -33,7 +33,8 @@ exports.listLeads = async (req, res) => {
 
 exports.getLead = async (req, res) => {
   try {
-    const lead = await getBdaLeadById(req.bda.id, req.params.id, req.bda.language);
+    const leadType = typeof req.query.leadType === 'string' ? req.query.leadType : 'iit_counselling';
+    const lead = await getBdaLeadById(req.bda.id, req.params.id, req.bda.language, leadType);
     if (!lead) {
       return res.status(404).json({ success: false, message: 'Lead not found' });
     }
@@ -46,10 +47,14 @@ exports.getLead = async (req, res) => {
 
 exports.updateLead = async (req, res) => {
   try {
+    const leadType = typeof req.body?.leadType === 'string'
+      ? req.body.leadType
+      : (typeof req.query.leadType === 'string' ? req.query.leadType : 'iit_counselling');
     const out = await updateLeadByBda({
       leadId: req.params.id,
       bda: req.bda,
       body: req.body || {},
+      leadType,
     });
     if (out.error) {
       return res.status(out.status || 400).json({ success: false, message: out.error });
@@ -66,7 +71,8 @@ exports.getLeadHistory = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(404).json({ success: false, message: 'Lead not found' });
     }
-    const history = await getLeadCallHistory(req.bda.id, req.params.id);
+    const leadType = typeof req.query.leadType === 'string' ? req.query.leadType : 'iit_counselling';
+    const history = await getLeadCallHistory(req.bda.id, req.params.id, leadType);
     if (history === null) {
       return res.status(404).json({ success: false, message: 'Lead not found' });
     }

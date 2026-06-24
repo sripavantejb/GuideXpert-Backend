@@ -71,6 +71,8 @@ const {
   setOsviEnabled,
   getOsviAbandonedDelayMs,
   setOsviAbandonedDelayMs,
+  getAdminSidebarConfig,
+  setAdminSidebarConfig,
 } = require('../utils/appSettings');
 const {
   getCertifiedCounsellors,
@@ -104,6 +106,14 @@ const {
   getAutoAssignPreview,
   autoAssignLeadsByLanguage,
 } = require('../controllers/iitCounsellingLeadsController');
+const {
+  getBdaLeadTypes,
+  listAssignableLeads,
+  assignBdaLead,
+  reassignBdaLead,
+  bulkAssignBdaLeads,
+  bulkReassignBdaLeads,
+} = require('../controllers/bdaAssignableLeadsController');
 router.post('/login', login);
 router.post('/login-with-phone', loginWithPhone);
 router.get('/admins', requireAdmin, requireSuperAdmin, listAdmins);
@@ -202,6 +212,12 @@ router.delete('/bdas/:id', requireAdmin, deleteBda);
 router.patch('/bdas/:id/status', requireAdmin, patchBdaStatus);
 router.patch('/bdas/:id/reset-password', requireAdmin, resetBdaPassword);
 router.patch('/bdas/:id/transfer-leads', requireAdmin, transferBdaLeads);
+router.get('/bda-lead-types', requireAdmin, getBdaLeadTypes);
+router.get('/bda-assignable-leads', requireAdmin, listAssignableLeads);
+router.patch('/bda-assignable-leads/bulk-assign', requireAdmin, bulkAssignBdaLeads);
+router.patch('/bda-assignable-leads/bulk-reassign', requireAdmin, bulkReassignBdaLeads);
+router.patch('/bda-assignable-leads/:leadType/:id/assign-bda', requireAdmin, assignBdaLead);
+router.patch('/bda-assignable-leads/:leadType/:id/reassign-bda', requireAdmin, reassignBdaLead);
 router.get('/iit-counselling-leads', requireAdmin, listIitCounsellingLeads);
 router.get('/iit-counselling-leads/auto-assign-preview', requireAdmin, getAutoAssignPreview);
 router.post('/iit-counselling-leads/auto-assign-by-language', requireAdmin, autoAssignLeadsByLanguage);
@@ -337,6 +353,44 @@ router.patch('/app-settings/osvi', requireAdmin, requireSuperAdmin, async (req, 
     });
   } catch (err) {
     console.error('[AppSettings] PATCH osvi error:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+router.get('/app-settings/sidebar', requireAdmin, async (req, res) => {
+  try {
+    const sidebarConfig = await getAdminSidebarConfig();
+    return res.json({ success: true, sidebarConfig });
+  } catch (err) {
+    console.error('[AppSettings] GET sidebar error:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+router.patch('/app-settings/sidebar', requireAdmin, requireSuperAdmin, async (req, res) => {
+  try {
+    const { sectionsEnabled, overrides } = req.body || {};
+    const hasSections =
+      sectionsEnabled &&
+      (typeof sectionsEnabled.counsellors === 'boolean' || typeof sectionsEnabled.students === 'boolean');
+    const hasOverrides = overrides && typeof overrides === 'object';
+
+    if (!hasSections && !hasOverrides) {
+      return res.status(400).json({
+        success: false,
+        message: 'Provide `sectionsEnabled` and/or `overrides`',
+      });
+    }
+
+    const partial = {};
+    if (hasSections) partial.sectionsEnabled = sectionsEnabled;
+    if (hasOverrides) partial.overrides = overrides;
+
+    const sidebarConfig = await setAdminSidebarConfig(partial);
+    console.log('[AppSettings] Admin sidebar config updated by super admin');
+    return res.json({ success: true, sidebarConfig });
+  } catch (err) {
+    console.error('[AppSettings] PATCH sidebar error:', err);
     return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });

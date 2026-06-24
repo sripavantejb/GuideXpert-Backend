@@ -6,6 +6,8 @@ const {
   IIT_SUB_DEDUP_PHONE_ADD_FIELDS,
 } = require('../utils/iitCounsellingLeadDto');
 const IitCounsellingVisit = require('../models/IitCounsellingVisit');
+const { normalizeBdaLeadType, BDA_LEAD_TYPES } = require('../constants/bdaLeadTypes');
+const { getLeadTypeConfig, findOwnedLeadForBda, REGISTRY } = require('./bdaLeadTypeRegistry');
 
 function bdaLeadFilter(bdaId, bdaLanguage = '') {
   const filter = {
@@ -32,6 +34,17 @@ function paymentInitiatedMatch() {
 
 async function getBdaDashboardStats(bdaId, bdaLanguage = '') {
   const base = bdaLeadFilter(bdaId, bdaLanguage);
+  const bdaObjectId = new mongoose.Types.ObjectId(bdaId);
+  const otherAssignedCounts = await Promise.all(
+    ['counsellor', 'one_on_one'].map(async (leadType) => {
+      const config = getLeadTypeConfig(leadType);
+      const count = await config.model.countDocuments({
+        ...config.ownershipFilter,
+        assignedBdaId: bdaObjectId,
+      });
+      return { leadType, count };
+    })
+  );
   const [
     totalAssigned,
     notCalled,
@@ -85,7 +98,10 @@ async function getBdaDashboardStats(bdaId, bdaLanguage = '') {
   ]);
 
   return {
-    totalAssignedLeads: totalAssigned,
+    totalAssignedLeads: totalAssigned + otherAssignedCounts.reduce((s, x) => s + x.count, 0),
+    iitAssignedLeads: totalAssigned,
+    counsellorAssignedLeads: otherAssignedCounts.find((x) => x.leadType === 'counsellor')?.count || 0,
+    oneOnOneAssignedLeads: otherAssignedCounts.find((x) => x.leadType === 'one_on_one')?.count || 0,
     notCalled,
     callConnected: connected,
     notConnected,
@@ -103,11 +119,116 @@ async function getBdaDashboardStats(bdaId, bdaLanguage = '') {
   };
 }
 
+async function fetchAssignedLeadsForType(leadType, bdaId, { q = '', limit = 200, bdaLanguage = '' } = {}) {
+  const config = getLeadTypeConfig(leadType);
+  if (!config) return [];
+
+  if (leadType === 'iit_counselling') {
+    const filter = bdaLeadFilter(bdaId, bdaLanguage);
+    if (q) {
+      const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.$or = [
+        { fullName: { $regex: escaped, $options: 'i' } },
+        { phone: { $regex: escaped } },
+      ];
+    }
+    const rows = await IitCounsellingSubmission.find(filter)
+      .sort({ assignedAt: -1, updatedAt: -1 })
+      .limit(limit)
+      .lean();
+    const submissionIds = rows.map((r) => r._id);
+    const visitsBySubmissionId = new Map();
+    if (submissionIds.length > 0) {
+      const visits = await IitCounsellingVisit.find({ submissionId: { $in: submissionIds } })
+        .sort({ visitedAt: -1 })
+        .lean();
+      for (const v of visits) {
+        const key = String(v.submissionId);
+        if (!visitsBySubmissionId.has(key)) visitsBySubmissionId.set(key, v);
+      }
+    }
+    return rows.map((sub) =>
+      config.mapToDto(sub, visitsBySubmissionId.get(String(sub._id)))
+    );
+  }
+
+  const filter = {
+    ...config.ownershipFilter,
+    assignedBdaId: new mongoose.Types.ObjectId(bdaId),
+  };
+  if (q) {
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (leadType === 'counsellor') {
+      filter.$or = [
+        { fullName: { $regex: escaped, $options: 'i' } },
+        { phone: { $regex: escaped } },
+      ];
+    } else if (leadType === 'one_on_one') {
+      filter.$or = [
+        { studentName: { $regex: escaped, $options: 'i' } },
+        { mobileNumber: { $regex: escaped } },
+      ];
+    }
+  }
+  const rows = await config.model.find(filter).sort({ assignedAt: -1, updatedAt: -1 }).limit(limit).lean();
+  return rows.map((row) => config.mapToDto(row));
+}
+
 async function listBdaLeads(bdaId, query = {}, bdaLanguage = '') {
   const pageNum = Math.max(1, parseInt(query.page, 10) || 1);
   const limitNum = Math.min(50, Math.max(10, parseInt(query.limit, 10) || 25));
   const skip = (pageNum - 1) * limitNum;
+  const leadTypeFilter = typeof query.leadType === 'string' ? query.leadType.trim() : 'all';
+  const q = typeof query.q === 'string' ? query.q.trim() : '';
 
+  if (leadTypeFilter !== 'all' && isValidLeadTypeFilter(leadTypeFilter)) {
+    const type = normalizeBdaLeadType(leadTypeFilter);
+    if (type === 'iit_counselling') {
+      return listIitBdaLeads(bdaId, query, bdaLanguage, pageNum, limitNum);
+    }
+    const all = await fetchAssignedLeadsForType(type, bdaId, { q, limit: 1000, bdaLanguage });
+    const total = all.length;
+    const data = all.slice(skip, skip + limitNum);
+    return {
+      data,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limitNum)),
+      },
+    };
+  }
+
+  const merged = [];
+  for (const type of BDA_LEAD_TYPES) {
+    const batch = await fetchAssignedLeadsForType(type, bdaId, { q, limit: 500, bdaLanguage });
+    merged.push(...batch);
+  }
+  merged.sort((a, b) => {
+    const ta = new Date(a.assignedAt || a.updatedAt || 0).getTime();
+    const tb = new Date(b.assignedAt || b.updatedAt || 0).getTime();
+    return tb - ta;
+  });
+  const total = merged.length;
+  const data = merged.slice(skip, skip + limitNum);
+  return {
+    data,
+    pagination: {
+      page: pageNum,
+      limit: limitNum,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limitNum)),
+    },
+  };
+}
+
+function isValidLeadTypeFilter(value) {
+  return value === 'all' || BDA_LEAD_TYPES.includes(value);
+}
+
+async function listIitBdaLeads(bdaId, query, bdaLanguage, pageNum, limitNum) {
+  const skip = (pageNum - 1) * limitNum;
   const filter = bdaLeadFilter(bdaId, bdaLanguage);
 
   const q = typeof query.q === 'string' ? query.q.trim() : '';
@@ -197,7 +318,7 @@ async function listBdaLeads(bdaId, query = {}, bdaLanguage = '') {
   );
 
   return {
-    data,
+    data: data.map((row) => ({ ...row, leadType: 'iit_counselling', leadTypeLabel: REGISTRY.iit_counselling.label })),
     pagination: {
       page: pageNum,
       limit: limitNum,
@@ -207,25 +328,37 @@ async function listBdaLeads(bdaId, query = {}, bdaLanguage = '') {
   };
 }
 
-async function getBdaLeadById(bdaId, leadId, bdaLanguage = '') {
+async function getBdaLeadById(bdaId, leadId, bdaLanguage = '', leadTypeRaw = 'iit_counselling') {
   if (!mongoose.Types.ObjectId.isValid(leadId)) return null;
-  const lead = await IitCounsellingSubmission.findOne({
+  const leadType = normalizeBdaLeadType(leadTypeRaw);
+  const config = getLeadTypeConfig(leadType);
+  if (!config) return null;
+
+  if (leadType === 'iit_counselling') {
+    const lead = await IitCounsellingSubmission.findOne({
+      _id: leadId,
+      ...bdaLeadFilter(bdaId, bdaLanguage),
+    }).lean();
+    if (!lead) return null;
+    const visit = await IitCounsellingVisit.findOne({ submissionId: lead._id }).sort({ visitedAt: -1 }).lean();
+    return config.mapToDto(lead, visit);
+  }
+
+  const lead = await config.model.findOne({
     _id: leadId,
-    ...bdaLeadFilter(bdaId, bdaLanguage),
+    ...config.ownershipFilter,
+    assignedBdaId: bdaId,
   }).lean();
   if (!lead) return null;
-  const visit = await IitCounsellingVisit.findOne({ submissionId: lead._id }).sort({ visitedAt: -1 }).lean();
-  return mapIitCounsellingLeadToDTO(lead, visit);
+  return config.mapToDto(lead);
 }
 
-async function getLeadCallHistory(bdaId, leadId) {
-  const lead = await IitCounsellingSubmission.findOne({
-    _id: leadId,
-    ...bdaLeadFilter(bdaId),
-  }).select('_id').lean();
-  if (!lead) return null;
+async function getLeadCallHistory(bdaId, leadId, leadTypeRaw = 'iit_counselling') {
+  const leadType = normalizeBdaLeadType(leadTypeRaw);
+  const owned = await findOwnedLeadForBda(leadType, leadId, bdaId);
+  if (!owned) return null;
 
-  const rows = await LeadCallHistory.find({ leadId: lead._id })
+  const rows = await LeadCallHistory.find({ leadId, leadType })
     .sort({ createdAt: -1 })
     .limit(100)
     .lean();

@@ -1,6 +1,12 @@
 const mongoose = require('mongoose');
 
 const leadCallHistorySchema = new mongoose.Schema({
+  leadType: {
+    type: String,
+    enum: ['iit_counselling', 'counsellor', 'one_on_one'],
+    default: 'iit_counselling',
+    index: true,
+  },
   leadId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'IitCounsellingSubmission',

@@ -93,6 +93,81 @@ async function setAiCallsSchedulingMode(mode) {
   return v;
 }
 
+const ADMIN_SIDEBAR_CONFIG_KEY = 'adminSidebarConfig';
+const SIDEBAR_PLACEMENTS = ['counsellors', 'students', 'both'];
+
+function getDefaultAdminSidebarConfig() {
+  return {
+    sectionsEnabled: { counsellors: true, students: true },
+    overrides: {},
+  };
+}
+
+function normalizeAdminSidebarConfig(raw) {
+  const defaults = getDefaultAdminSidebarConfig();
+  if (!raw || typeof raw !== 'object') return defaults;
+
+  const sectionsEnabled = {
+    counsellors:
+      raw.sectionsEnabled && typeof raw.sectionsEnabled.counsellors === 'boolean'
+        ? raw.sectionsEnabled.counsellors
+        : defaults.sectionsEnabled.counsellors,
+    students:
+      raw.sectionsEnabled && typeof raw.sectionsEnabled.students === 'boolean'
+        ? raw.sectionsEnabled.students
+        : defaults.sectionsEnabled.students,
+  };
+
+  const overrides = {};
+  if (raw.overrides && typeof raw.overrides === 'object') {
+    for (const [route, placement] of Object.entries(raw.overrides)) {
+      if (typeof route === 'string' && SIDEBAR_PLACEMENTS.includes(placement)) {
+        overrides[route] = placement;
+      }
+    }
+  }
+
+  return { sectionsEnabled, overrides };
+}
+
+async function getAdminSidebarConfig() {
+  try {
+    const doc = await AppSettings.findOne({ key: ADMIN_SIDEBAR_CONFIG_KEY }).lean();
+    if (!doc || !doc.value) return getDefaultAdminSidebarConfig();
+    return normalizeAdminSidebarConfig(doc.value);
+  } catch (err) {
+    console.error('[AppSettings] getAdminSidebarConfig error — using defaults:', err.message);
+    return getDefaultAdminSidebarConfig();
+  }
+}
+
+async function setAdminSidebarConfig(partial) {
+  const current = await getAdminSidebarConfig();
+  const next = normalizeAdminSidebarConfig({
+    sectionsEnabled: {
+      counsellors:
+        partial?.sectionsEnabled && typeof partial.sectionsEnabled.counsellors === 'boolean'
+          ? partial.sectionsEnabled.counsellors
+          : current.sectionsEnabled.counsellors,
+      students:
+        partial?.sectionsEnabled && typeof partial.sectionsEnabled.students === 'boolean'
+          ? partial.sectionsEnabled.students
+          : current.sectionsEnabled.students,
+    },
+    overrides:
+      partial?.overrides && typeof partial.overrides === 'object'
+        ? { ...current.overrides, ...partial.overrides }
+        : current.overrides,
+  });
+
+  await AppSettings.findOneAndUpdate(
+    { key: ADMIN_SIDEBAR_CONFIG_KEY },
+    { key: ADMIN_SIDEBAR_CONFIG_KEY, value: next },
+    { upsert: true, new: true }
+  );
+  return next;
+}
+
 module.exports = {
   getOsviEnabled,
   setOsviEnabled,
@@ -102,4 +177,7 @@ module.exports = {
   getAiCallsSchedulingMode,
   setAiCallsSchedulingMode,
   AI_CALLS_SCHEDULING_MODES,
+  getAdminSidebarConfig,
+  setAdminSidebarConfig,
+  getDefaultAdminSidebarConfig,
 };

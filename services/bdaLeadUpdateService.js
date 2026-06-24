@@ -11,6 +11,11 @@ const {
 } = require('../constants/bdaLeadCrm');
 const { mapIitCounsellingLeadToDTO } = require('../utils/iitCounsellingLeadDto');
 const IitCounsellingVisit = require('../models/IitCounsellingVisit');
+const FormSubmission = require('../models/FormSubmission');
+const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
+const { normalizeBdaLeadType } = require('../constants/bdaLeadTypes');
+const { getLeadTypeConfig, findOwnedLeadForBda } = require('./bdaLeadTypeRegistry');
+const { mapCounsellorLeadToBdaDto, mapOneOnOneLeadToBdaDto } = require('../utils/bdaLeadDto');
 
 function buildCallbackDateTime(callbackDate, callbackTime) {
   if (!callbackDate) return null;
@@ -26,6 +31,7 @@ function buildCallbackDateTime(callbackDate, callbackTime) {
 }
 
 async function logCallHistory({
+  leadType = 'iit_counselling',
   leadId,
   bdaId,
   bdaName,
@@ -34,6 +40,7 @@ async function logCallHistory({
   actorName = '',
 }) {
   await LeadCallHistory.create({
+    leadType,
     leadId,
     bdaId: bdaId || null,
     bdaName: bdaName || '',
@@ -72,9 +79,17 @@ async function logLegacyActivity({ leadId, bdaId, bdaName, admin, eventType, rem
  * Update CRM fields on a lead assigned to the given BDA.
  * @returns {{ lead?: object, error?: string, status?: number }}
  */
-async function updateLeadByBda({ leadId, bda, body }) {
+async function updateLeadByBda({ leadId, bda, body, leadType: rawLeadType = 'iit_counselling' }) {
   if (!mongoose.Types.ObjectId.isValid(leadId)) {
     return { error: 'Lead not found', status: 404 };
+  }
+
+  const leadType = normalizeBdaLeadType(rawLeadType);
+  if (leadType === 'counsellor') {
+    return updateCounsellorLeadByBda({ leadId, bda, body });
+  }
+  if (leadType === 'one_on_one') {
+    return updateOneOnOneLeadByBda({ leadId, bda, body });
   }
 
   const lead = await IitCounsellingSubmission.findOne({
@@ -158,6 +173,7 @@ async function updateLeadByBda({ leadId, bda, body }) {
   };
 
   await logCallHistory({
+    leadType: 'iit_counselling',
     leadId: lead._id,
     bdaId: bda._id,
     bdaName: bda.name,
@@ -176,6 +192,74 @@ async function updateLeadByBda({ leadId, bda, body }) {
 
   const visit = await IitCounsellingVisit.findOne({ submissionId: lead._id }).sort({ visitedAt: -1 }).lean();
   return { lead: mapIitCounsellingLeadToDTO(lead.toObject(), visit) };
+}
+
+async function updateCounsellorLeadByBda({ leadId, bda, body }) {
+  const lead = await FormSubmission.findOne({
+    _id: leadId,
+    submissionType: 'general',
+    assignedBdaId: bda._id,
+  });
+  if (!lead) {
+    return { error: 'Lead not found or not assigned to you', status: 403 };
+  }
+
+  const remark = typeof body.remark === 'string' ? body.remark.trim().slice(0, 2000) : '';
+  if (!remark) {
+    return { error: 'Remark is required when updating lead', status: 400 };
+  }
+
+  if (body.leadStatus !== undefined) {
+    lead.leadStatus = typeof body.leadStatus === 'string' ? body.leadStatus.trim() : lead.leadStatus;
+  }
+  lead.leadDescription = remark;
+  lead.updatedAt = new Date();
+  await lead.save();
+
+  await logCallHistory({
+    leadType: 'counsellor',
+    leadId: lead._id,
+    bdaId: bda._id,
+    bdaName: bda.name,
+    snapshot: { leadStatus: lead.leadStatus || '', remark },
+    actorType: 'bda',
+    actorName: bda.name,
+  });
+
+  return { lead: mapCounsellorLeadToBdaDto(lead.toObject()) };
+}
+
+async function updateOneOnOneLeadByBda({ leadId, bda, body }) {
+  const lead = await OneOnOneCounselingLead.findOne({
+    _id: leadId,
+    assignedBdaId: bda._id,
+  });
+  if (!lead) {
+    return { error: 'Lead not found or not assigned to you', status: 403 };
+  }
+
+  const remark = typeof body.remark === 'string' ? body.remark.trim().slice(0, 2000) : '';
+  if (!remark) {
+    return { error: 'Remark is required when updating lead', status: 400 };
+  }
+
+  if (body.leadStatus !== undefined) {
+    lead.leadStatus = typeof body.leadStatus === 'string' ? body.leadStatus.trim() : lead.leadStatus;
+  }
+  lead.counselorRemarks = remark;
+  await lead.save();
+
+  await logCallHistory({
+    leadType: 'one_on_one',
+    leadId: lead._id,
+    bdaId: bda._id,
+    bdaName: bda.name,
+    snapshot: { leadStatus: lead.leadStatus || '', remark },
+    actorType: 'bda',
+    actorName: bda.name,
+  });
+
+  return { lead: mapOneOnOneLeadToBdaDto(lead.toObject()) };
 }
 
 module.exports = {

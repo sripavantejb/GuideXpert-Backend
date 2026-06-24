@@ -25,33 +25,25 @@ const {
   parsePreferredSlotInstantUtc,
   GUPSHUP_TEMPLATE_ONE_ON_ONE_CONFIRM,
 } = require('../utils/oneOnOneCounselingWhatsApp');
+const { getISTDayRangeFromString } = require('../utils/dateHelpers');
 
 function to10Digits(val) {
   if (val == null) return '';
   return String(val).replace(/\D/g, '').trim().slice(-10).slice(0, 10);
 }
 
-function parseISODate(str) {
-  if (str == null || typeof str !== 'string') return null;
-  const trimmed = str.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
-  const d = new Date(`${trimmed}T00:00:00.000Z`);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
+/** IST calendar-day bounds for createdAt filters (from/to query params as YYYY-MM-DD). */
 function buildDateRange(from, to) {
+  const fromStr = typeof from === 'string' ? from.trim() : '';
+  const toStr = typeof to === 'string' ? to.trim() : '';
+  const fromRange = fromStr ? getISTDayRangeFromString(fromStr) : null;
+  const toRange = toStr ? getISTDayRangeFromString(toStr) : null;
+  if (!fromRange && !toRange) return null;
+
   const range = {};
-  const start = parseISODate(from);
-  if (start) {
-    start.setUTCHours(0, 0, 0, 0);
-    range.$gte = start;
-  }
-  const end = parseISODate(to);
-  if (end) {
-    end.setUTCHours(23, 59, 59, 999);
-    range.$lte = end;
-  }
-  return Object.keys(range).length ? range : null;
+  if (fromRange) range.$gte = fromRange.start;
+  if (toRange) range.$lt = toRange.end;
+  return range;
 }
 
 function mapLeadToDTO(doc) {

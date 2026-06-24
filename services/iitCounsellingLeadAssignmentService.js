@@ -8,6 +8,11 @@ const {
 const IitCounsellingLeadAssignmentHistory = require('../models/IitCounsellingLeadAssignmentHistory');
 const IitCounsellingLeadActivity = require('../models/IitCounsellingLeadActivity');
 const { notifyLeadAssignment } = require('./bdaNotificationService');
+const { normalizeBdaLeadType } = require('../constants/bdaLeadTypes');
+const {
+  getLeadTypeConfig,
+  REGISTRY,
+} = require('./bdaLeadTypeRegistry');
 
 function getAdminActorName(admin) {
   return admin?.username || admin?.name || 'admin';
@@ -47,7 +52,20 @@ async function logActivity({
   });
 }
 
-async function assignLeadToBda({ leadId, bdaId, admin, reason, isReassign = false }) {
+async function assignLeadToBda({
+  leadType: rawLeadType = 'iit_counselling',
+  leadId,
+  bdaId,
+  admin,
+  reason,
+  isReassign = false,
+}) {
+  const leadType = normalizeBdaLeadType(rawLeadType);
+  const typeConfig = getLeadTypeConfig(leadType);
+  if (!typeConfig) {
+    return { error: 'Invalid lead type', status: 400 };
+  }
+
   if (!leadId || !mongoose.Types.ObjectId.isValid(leadId)) {
     return { error: 'Invalid lead id', status: 400 };
   }
@@ -55,9 +73,9 @@ async function assignLeadToBda({ leadId, bdaId, admin, reason, isReassign = fals
   const { bda, error: bdaError } = await loadActiveBda(bdaId);
   if (bdaError) return { error: bdaError, status: 404 };
 
-  const lead = await IitCounsellingSubmission.findOne({
+  const lead = await typeConfig.model.findOne({
     _id: leadId,
-    submissionType: 'iitCounselling',
+    ...typeConfig.ownershipFilter,
   });
   if (!lead) return { error: 'Lead not found', status: 404 };
 
@@ -79,8 +97,10 @@ async function assignLeadToBda({ leadId, bdaId, admin, reason, isReassign = fals
   lead.assignedBy = assignedBy;
   lead.assignedByAdminId = admin?._id || null;
   lead.assignedByAdminName = assignedByAdminName;
-  if (!lead.callStatus) lead.callStatus = 'not_called';
-  lead.lastActivityAt = now;
+  if (leadType === 'iit_counselling') {
+    if (!lead.callStatus) lead.callStatus = 'not_called';
+    lead.lastActivityAt = now;
+  }
 
   await lead.save();
 
@@ -89,6 +109,7 @@ async function assignLeadToBda({ leadId, bdaId, admin, reason, isReassign = fals
     : null;
 
   await IitCounsellingLeadAssignmentHistory.create({
+    leadType,
     leadId: lead._id,
     previousBdaId,
     previousBdaName: prevBda?.name || '',
@@ -101,18 +122,21 @@ async function assignLeadToBda({ leadId, bdaId, admin, reason, isReassign = fals
     reason: typeof reason === 'string' ? reason.trim().slice(0, 500) : '',
   });
 
-  await logActivity({
-    leadId: lead._id,
-    bdaId: bda._id,
-    bdaName: bda.name,
-    admin,
-    eventType: 'assignment',
-    fromValue: previousBdaId ? String(previousBdaId) : '',
-    toValue: String(bda._id),
-    remark: reason || '',
-  });
+  if (leadType === 'iit_counselling') {
+    await logActivity({
+      leadId: lead._id,
+      bdaId: bda._id,
+      bdaName: bda.name,
+      admin,
+      eventType: 'assignment',
+      fromValue: previousBdaId ? String(previousBdaId) : '',
+      toValue: String(bda._id),
+      remark: reason || '',
+    });
+  }
 
   await notifyLeadAssignment({
+    leadType,
     lead,
     previousBdaId,
     prevBdaName: prevBda?.name || '',
@@ -121,10 +145,22 @@ async function assignLeadToBda({ leadId, bdaId, admin, reason, isReassign = fals
     reason,
   });
 
-  return { lead };
+  return { lead, leadType };
 }
 
-async function bulkAssignLeads({ leadIds, bdaId, admin, reason, respectExistingBda = false }) {
+async function bulkAssignLeads({
+  leadType: rawLeadType = 'iit_counselling',
+  leadIds,
+  bdaId,
+  admin,
+  reason,
+  respectExistingBda = false,
+}) {
+  const leadType = normalizeBdaLeadType(rawLeadType);
+  const typeConfig = getLeadTypeConfig(leadType);
+  if (!typeConfig) {
+    return { error: 'Invalid lead type', status: 400 };
+  }
   if (!Array.isArray(leadIds) || leadIds.length === 0) {
     return { error: 'leadIds array is required', status: 400 };
   }
@@ -139,9 +175,9 @@ async function bulkAssignLeads({ leadIds, bdaId, admin, reason, respectExistingB
     let isReassign = false;
 
     if (respectExistingBda) {
-      const lead = await IitCounsellingSubmission.findOne({
+      const lead = await typeConfig.model.findOne({
         _id: id,
-        submissionType: 'iitCounselling',
+        ...typeConfig.ownershipFilter,
       })
         .select('assignedBdaId')
         .lean();
@@ -156,6 +192,7 @@ async function bulkAssignLeads({ leadIds, bdaId, admin, reason, respectExistingB
     }
 
     const out = await assignLeadToBda({
+      leadType,
       leadId: id,
       bdaId: targetBdaId,
       admin,
@@ -276,7 +313,17 @@ async function bulkMapFilteredToRespectiveBda({ filterQuery, admin, reason }) {
   return { results: merged };
 }
 
-async function bulkReassignLeads({ leadIds, bdaId, admin, reason }) {
+async function bulkReassignLeads({
+  leadType: rawLeadType = 'iit_counselling',
+  leadIds,
+  bdaId,
+  admin,
+  reason,
+}) {
+  const leadType = normalizeBdaLeadType(rawLeadType);
+  if (!getLeadTypeConfig(leadType)) {
+    return { error: 'Invalid lead type', status: 400 };
+  }
   if (!Array.isArray(leadIds) || leadIds.length === 0) {
     return { error: 'leadIds array is required', status: 400 };
   }
@@ -291,6 +338,7 @@ async function bulkReassignLeads({ leadIds, bdaId, admin, reason }) {
 
   for (const id of leadIds) {
     const out = await assignLeadToBda({
+      leadType,
       leadId: id,
       bdaId,
       admin,
@@ -307,7 +355,13 @@ async function bulkReassignLeads({ leadIds, bdaId, admin, reason }) {
   return { results };
 }
 
-async function transferAllLeadsFromBda({ sourceBdaId, targetBdaId, admin, reason }) {
+async function transferAllLeadsFromBda({
+  sourceBdaId,
+  targetBdaId,
+  admin,
+  reason,
+  leadType: rawLeadType,
+}) {
   if (!sourceBdaId || !mongoose.Types.ObjectId.isValid(sourceBdaId)) {
     return { error: 'Invalid source BDA id', status: 400 };
   }
@@ -328,27 +382,42 @@ async function transferAllLeadsFromBda({ sourceBdaId, targetBdaId, admin, reason
     return { error: targetError, status: 404 };
   }
 
-  const leadIds = await IitCounsellingSubmission.find({
-    submissionType: 'iitCounselling',
-    assignedBdaId: sourceBdaId,
-  })
-    .select('_id')
-    .lean()
-    .then((rows) => rows.map((r) => String(r._id)));
+  const typesToTransfer = rawLeadType
+    ? [normalizeBdaLeadType(rawLeadType)]
+    : Object.keys(REGISTRY);
 
-  const merged = { total: leadIds.length, updated: 0, failed: [] };
+  const merged = { total: 0, updated: 0, failed: [], byType: {} };
 
-  for (let i = 0; i < leadIds.length; i += 200) {
-    const chunk = leadIds.slice(i, i + 200);
-    const out = await bulkReassignLeads({
-      leadIds: chunk,
-      bdaId: targetBda._id,
-      admin,
-      reason,
-    });
-    if (out.error) return out;
-    merged.updated += out.results.updated;
-    merged.failed.push(...(out.results.failed || []));
+  for (const leadType of typesToTransfer) {
+    const typeConfig = getLeadTypeConfig(leadType);
+    if (!typeConfig) continue;
+
+    const leadIds = await typeConfig.model.find({
+      ...typeConfig.ownershipFilter,
+      assignedBdaId: sourceBdaId,
+    })
+      .select('_id')
+      .lean()
+      .then((rows) => rows.map((r) => String(r._id)));
+
+    merged.total += leadIds.length;
+    merged.byType[leadType] = { total: leadIds.length, updated: 0, failed: [] };
+
+    for (let i = 0; i < leadIds.length; i += 200) {
+      const chunk = leadIds.slice(i, i + 200);
+      const out = await bulkReassignLeads({
+        leadType,
+        leadIds: chunk,
+        bdaId: targetBda._id,
+        admin,
+        reason,
+      });
+      if (out.error) return out;
+      merged.updated += out.results.updated;
+      merged.byType[leadType].updated += out.results.updated;
+      merged.byType[leadType].failed.push(...(out.results.failed || []));
+      merged.failed.push(...(out.results.failed || []));
+    }
   }
 
   return {

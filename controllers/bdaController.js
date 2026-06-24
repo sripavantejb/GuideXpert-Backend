@@ -13,6 +13,7 @@ const {
 } = require('../services/bdaStatsService');
 const { fetchAssignedLeadsForBda } = require('../services/bdaAssignedLeadsService');
 const { transferAllLeadsFromBda } = require('../services/iitCounsellingLeadAssignmentService');
+const { REGISTRY, clearAssignmentFields } = require('../services/bdaLeadTypeRegistry');
 const { resolveStatsDateRange } = require('../utils/statsDateRange');
 const { BDA_LANGUAGES } = require('../constants/bdaLanguage');
 
@@ -215,9 +216,11 @@ exports.updateBda = async (req, res) => {
     }
 
     if ($set.name) {
-      await IitCounsellingSubmission.updateMany(
-        { assignedBdaId: updated._id },
-        { $set: { assignedBdaName: updated.name } }
+      const nameUpdate = { assignedBdaName: updated.name };
+      await Promise.all(
+        Object.values(REGISTRY).map((config) =>
+          config.model.updateMany({ assignedBdaId: updated._id }, { $set: nameUpdate })
+        )
       );
     }
 
@@ -244,18 +247,8 @@ exports.deleteBda = async (req, res) => {
     }
 
     await Promise.all([
-      IitCounsellingSubmission.updateMany(
-        { assignedBdaId: bda._id },
-        {
-          $set: {
-            assignedBdaId: null,
-            assignedBdaName: '',
-            assignedAt: null,
-            assignedBy: '',
-            assignedByAdminId: null,
-            assignedByAdminName: '',
-          },
-        }
+      ...Object.values(REGISTRY).map((config) =>
+        config.model.updateMany({ assignedBdaId: bda._id }, { $set: clearAssignmentFields() })
       ),
       LeadCallHistory.deleteMany({ bdaId: bda._id }),
       IitCounsellingLeadActivity.deleteMany({ bdaId: bda._id }),
@@ -330,10 +323,12 @@ exports.getBdaAssignedLeads = async (req, res) => {
     }
 
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const leadType = typeof req.query.leadType === 'string' ? req.query.leadType.trim() : 'iit_counselling';
     const { data, pagination } = await fetchAssignedLeadsForBda(id, {
       q,
       page: req.query.page,
       limit: req.query.limit,
+      leadType,
     });
 
     return res.status(200).json({ success: true, data, pagination });

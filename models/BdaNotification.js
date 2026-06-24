@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { BDA_LEAD_TYPES } = require('../constants/bdaLeadTypes');
 
 const BDA_NOTIFICATION_TYPES = ['lead_assigned', 'lead_reassigned_in', 'lead_reassigned_out'];
 
@@ -7,6 +8,12 @@ const bdaNotificationSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Bda',
     required: true,
+    index: true,
+  },
+  leadType: {
+    type: String,
+    enum: BDA_LEAD_TYPES,
+    default: 'iit_counselling',
     index: true,
   },
   type: {
