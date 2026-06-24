@@ -21,14 +21,21 @@ const collegeDostFormSubmissionSchema = new mongoose.Schema(
       required: true,
       enum: ['yes', 'no'],
     },
-    newAgeCollegePreference: {
-      type: String,
+    newAgeCollegePreferences: {
+      type: [String],
       enum: [
         'zenith-school-of-ai',
         'niat',
         'scaler',
         'newton-school-of-technology',
+        'others',
       ],
+      default: undefined,
+    },
+    newAgeCollegePreferenceOther: {
+      type: String,
+      trim: true,
+      maxlength: 200,
       default: null,
     },
     otpVerified: {

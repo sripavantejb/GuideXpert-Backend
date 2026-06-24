@@ -49,12 +49,19 @@ function buildSearchQuery(q) {
 }
 
 function mapCollegeDostRow(r) {
+  const preferences = Array.isArray(r.newAgeCollegePreferences)
+    ? r.newAgeCollegePreferences
+    : r.newAgeCollegePreference
+      ? [r.newAgeCollegePreference]
+      : [];
+
   return {
     id: r._id,
     name: r.name,
     mobileNumber: r.mobileNumber,
     interestedInNewColleges: r.interestedInNewColleges,
-    newAgeCollegePreference: r.newAgeCollegePreference,
+    newAgeCollegePreferences: preferences,
+    newAgeCollegePreferenceOther: r.newAgeCollegePreferenceOther || null,
     timestamp: r.submittedAt,
   };
 }
@@ -64,16 +71,29 @@ const NEW_AGE_COLLEGE_PREFERENCES = [
   'niat',
   'scaler',
   'newton-school-of-technology',
+  'others',
 ];
+
+function normalizePreferences(value) {
+  if (Array.isArray(value)) {
+    return [...new Set(value.map((item) => String(item).trim().toLowerCase()).filter(Boolean))];
+  }
+  if (typeof value === 'string' && value.trim()) {
+    return [value.trim().toLowerCase()];
+  }
+  return [];
+}
 
 exports.submitCollegeDostForm = async (req, res) => {
   try {
-    const { name, mobileNumber, interestedInNewColleges, newAgeCollegePreference } = req.body || {};
+    const { name, mobileNumber, interestedInNewColleges, newAgeCollegePreferences, newAgeCollegePreferenceOther } =
+      req.body || {};
     const rawName = typeof name === 'string' ? name.trim() : '';
     const mobile = normalizeMobile(mobileNumber || '');
     const interest = typeof interestedInNewColleges === 'string' ? interestedInNewColleges.trim().toLowerCase() : '';
-    const preference =
-      typeof newAgeCollegePreference === 'string' ? newAgeCollegePreference.trim().toLowerCase() : null;
+    const preferences = normalizePreferences(newAgeCollegePreferences);
+    const otherText =
+      typeof newAgeCollegePreferenceOther === 'string' ? newAgeCollegePreferenceOther.trim() : '';
 
     if (!rawName || rawName.length < 2) {
       return res.status(400).json({ success: false, message: 'Name is required (at least 2 characters)' });
@@ -87,10 +107,22 @@ exports.submitCollegeDostForm = async (req, res) => {
     if (!['yes', 'no'].includes(interest)) {
       return res.status(400).json({ success: false, message: 'Please select Yes or No' });
     }
-    if (interest === 'yes' && !NEW_AGE_COLLEGE_PREFERENCES.includes(preference)) {
-      return res.status(400).json({ success: false, message: 'Please select your top college preference' });
+    if (interest === 'yes') {
+      if (!preferences.length) {
+        return res.status(400).json({ success: false, message: 'Please select at least one college preference' });
+      }
+      const invalid = preferences.filter((item) => !NEW_AGE_COLLEGE_PREFERENCES.includes(item));
+      if (invalid.length) {
+        return res.status(400).json({ success: false, message: 'Please select valid college preferences' });
+      }
+      if (preferences.includes('others') && otherText.length < 2) {
+        return res.status(400).json({ success: false, message: 'Please specify your other college preference' });
+      }
+      if (!preferences.includes('others') && otherText) {
+        return res.status(400).json({ success: false, message: 'Other preference text is only allowed when Others is selected' });
+      }
     }
-    if (interest === 'no' && preference) {
+    if (interest === 'no' && (preferences.length || otherText)) {
       return res.status(400).json({ success: false, message: 'College preference is only required when interested in new age colleges' });
     }
 
@@ -112,9 +144,19 @@ exports.submitCollegeDostForm = async (req, res) => {
       },
     };
     if (interest === 'yes') {
-      update.$set.newAgeCollegePreference = preference;
+      update.$set.newAgeCollegePreferences = preferences;
+      if (preferences.includes('others')) {
+        update.$set.newAgeCollegePreferenceOther = otherText;
+      } else {
+        update.$unset = { ...(update.$unset || {}), newAgeCollegePreferenceOther: '' };
+      }
+      update.$unset = { ...(update.$unset || {}), newAgeCollegePreference: '' };
     } else {
-      update.$unset = { newAgeCollegePreference: '' };
+      update.$unset = {
+        newAgeCollegePreferences: '',
+        newAgeCollegePreferenceOther: '',
+        newAgeCollegePreference: '',
+      };
     }
 
     const record = await CollegeDostFormSubmission.findOneAndUpdate(
@@ -131,7 +173,8 @@ exports.submitCollegeDostForm = async (req, res) => {
         name: record.name,
         mobileNumber: record.mobileNumber,
         interestedInNewColleges: record.interestedInNewColleges,
-        newAgeCollegePreference: record.newAgeCollegePreference,
+        newAgeCollegePreferences: record.newAgeCollegePreferences,
+        newAgeCollegePreferenceOther: record.newAgeCollegePreferenceOther,
         submittedAt: record.submittedAt,
       },
     });
