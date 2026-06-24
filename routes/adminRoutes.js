@@ -16,6 +16,7 @@ const { getDemoMeetSchedule, putDemoMeetSchedule } = require('../controllers/dem
 const { getIitMeetAttendance, getIitMeetHindiAttendance } = require('../controllers/iitMeetController');
 const { getIitFirstFormSubmissions } = require('../controllers/iitFirstFormController');
 const { getCollegeDostFormSubmissions } = require('../controllers/collegeDostFormController');
+const { getCollegeDostMeetAttendance } = require('../controllers/collegeDostMeetController');
 const { getIitSecondFormSubmissions } = require('../controllers/iitSecondFormController');
 const { getTrainingAttendance } = require('../controllers/trainingController');
 const { getTrainingFeedback } = require('../controllers/feedbackController');
@@ -136,6 +137,7 @@ router.get('/iit-meet-attendance', requireAdmin, getIitMeetAttendance);
 router.get('/iit-meet-hindi-attendance', requireAdmin, getIitMeetHindiAttendance);
 router.get('/iit-first-form-submissions', requireAdmin, getIitFirstFormSubmissions);
 router.get('/college-dost-form-submissions', requireAdmin, getCollegeDostFormSubmissions);
+router.get('/college-dost-meet-attendance', requireAdmin, getCollegeDostMeetAttendance);
 router.get('/iit-second-form-submissions', requireAdmin, getIitSecondFormSubmissions);
 router.get('/training-attendance', requireAdmin, getTrainingAttendance);
 router.get('/training-feedback', requireAdmin, getTrainingFeedback);
