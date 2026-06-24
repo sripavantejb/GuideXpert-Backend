@@ -1,4 +1,5 @@
 const CollegeDostFormSubmission = require('../models/CollegeDostFormSubmission');
+const CollegeDostMeetAttendance = require('../models/CollegeDostMeetAttendance');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 const otpRepository = require('../utils/otpRepository');
 const otpStore = require('../utils/otpStore');
@@ -65,35 +66,6 @@ const NEW_AGE_COLLEGE_PREFERENCES = [
   'newton-school-of-technology',
 ];
 
-exports.checkCollegeDostFormStatus = async (req, res) => {
-  try {
-    const mobile = normalizeMobile(req.query.mobileNumber || '');
-    if (!mobile || mobile.length !== 10) {
-      return res.status(400).json({ success: false, message: 'Valid 10-digit mobile number is required' });
-    }
-
-    const existing = await CollegeDostFormSubmission.findOne({ mobileNumber: mobile }).lean();
-    if (!existing) {
-      return res.status(200).json({ success: true, exists: false });
-    }
-
-    return res.status(200).json({
-      success: true,
-      exists: true,
-      data: {
-        name: existing.name,
-        mobileNumber: existing.mobileNumber,
-        interestedInNewColleges: existing.interestedInNewColleges,
-        newAgeCollegePreference: existing.newAgeCollegePreference,
-        submittedAt: existing.submittedAt,
-      },
-    });
-  } catch (error) {
-    console.error('[checkCollegeDostFormStatus] Error:', error);
-    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
-  }
-};
-
 exports.submitCollegeDostForm = async (req, res) => {
   try {
     const { name, mobileNumber, interestedInNewColleges, newAgeCollegePreference } = req.body || {};
@@ -122,8 +94,8 @@ exports.submitCollegeDostForm = async (req, res) => {
       return res.status(400).json({ success: false, message: 'College preference is only required when interested in new age colleges' });
     }
 
-    const existing = await CollegeDostFormSubmission.findOne({ mobileNumber: mobile }).lean();
-    if (!existing) {
+    const meetRecord = await CollegeDostMeetAttendance.findOne({ mobileNumber: mobile }).lean();
+    if (!meetRecord) {
       const verified = await isPhoneVerified(mobile);
       if (!verified) {
         return res.status(400).json({ success: false, message: 'Phone number must be verified first.' });

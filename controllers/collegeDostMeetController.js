@@ -1,5 +1,4 @@
 const CollegeDostMeetAttendance = require('../models/CollegeDostMeetAttendance');
-const CollegeDostFormSubmission = require('../models/CollegeDostFormSubmission');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 const otpRepository = require('../utils/otpRepository');
 const otpStore = require('../utils/otpStore');
@@ -55,13 +54,10 @@ exports.checkCollegeDostMeetStatus = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Valid 10-digit mobile number is required' });
     }
 
-    const [meetRecord, formRecord] = await Promise.all([
-      CollegeDostMeetAttendance.findOne({ mobileNumber: mobile }).sort({ timestamp: -1 }).lean(),
-      CollegeDostFormSubmission.findOne({ mobileNumber: mobile }).lean(),
-    ]);
-
-    const existing = meetRecord || formRecord;
-    if (!existing) {
+    const meetRecord = await CollegeDostMeetAttendance.findOne({ mobileNumber: mobile })
+      .sort({ timestamp: -1 })
+      .lean();
+    if (!meetRecord) {
       return res.status(200).json({ success: true, exists: false });
     }
 
@@ -69,9 +65,8 @@ exports.checkCollegeDostMeetStatus = async (req, res) => {
       success: true,
       exists: true,
       data: {
-        name: existing.name,
-        mobileNumber: existing.mobileNumber,
-        source: meetRecord ? 'meet' : 'form',
+        name: meetRecord.name,
+        mobileNumber: meetRecord.mobileNumber,
       },
     });
   } catch (error) {
@@ -97,16 +92,9 @@ exports.registerForCollegeDostMeet = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Valid 10-digit mobile number is required' });
     }
 
-    const [meetRecord, formRecord] = await Promise.all([
-      CollegeDostMeetAttendance.findOne({ mobileNumber: mobile }).lean(),
-      CollegeDostFormSubmission.findOne({ mobileNumber: mobile }).lean(),
-    ]);
-    const returningUser = Boolean(meetRecord || formRecord);
-    if (!returningUser) {
-      const verified = await isPhoneVerified(mobile);
-      if (!verified) {
-        return res.status(400).json({ success: false, message: 'Phone number must be verified first.' });
-      }
+    const verified = await isPhoneVerified(mobile);
+    if (!verified) {
+      return res.status(400).json({ success: false, message: 'Phone number must be verified first.' });
     }
 
     const record = await CollegeDostMeetAttendance.create({
