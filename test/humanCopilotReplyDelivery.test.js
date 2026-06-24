@@ -47,7 +47,7 @@ describe('humanCopilot reply delivery', () => {
     }));
     mock.method(WhatsAppAgentHandoff, 'findOneAndUpdate', (filter, update) => {
       const set = update?.$set || {};
-      if (set['copilotReplies.$.status'] === 'sent') {
+      if (set['copilotReplies.$.status'] === 'submitted') {
         learningPatch = set;
       }
       return { lean: async () => createdHandoff };
@@ -87,7 +87,7 @@ describe('humanCopilot reply delivery', () => {
     }));
     mock.method(WhatsAppAgentHandoff, 'findOneAndUpdate', (filter, update) => {
       const set = update?.$set || {};
-      if (set['copilotReplies.$.status'] === 'sent') {
+      if (set['copilotReplies.$.status'] === 'submitted') {
         learningPatch = set;
       }
       return { lean: async () => createdHandoff };
@@ -186,7 +186,7 @@ describe('humanCopilot reply delivery', () => {
       const push = update?.$push?.copilotReplies;
       if (push?.suggestedText) storedSuggested = push.suggestedText;
       const set = update?.$set || {};
-      if (set['copilotReplies.$.status'] === 'sent') {
+      if (set['copilotReplies.$.status'] === 'submitted') {
         storedSuggested = storedSuggested || set['copilotReplies.$.suggestedText'];
       }
       return { lean: async () => createdHandoff };

@@ -6,7 +6,7 @@ const { isMongoDuplicateKeyError } = require('../../utils/mongoDuplicateKey');
 const gupshupSession = require('./gupshupSessionService');
 const { sendSessionInactiveTemplateFallback } = require('./sessionFallbackService');
 
-const SUCCESSFUL_OUTBOUND_STATUSES = ['queued', 'submitted', 'sent', 'delivered', 'read'];
+const SUCCESSFUL_OUTBOUND_STATUSES = ['queued', 'submitted', 'sent', 'delivered', 'read', 'simulated'];
 
 function isReengagementSendError(error) {
   const msg = String(error || '').toLowerCase();
@@ -252,7 +252,25 @@ async function sendAgentTextReply({
   senderAdminId = null,
   senderBdaId = null,
   handoffId = null,
+  copilotReplyId = null,
 }) {
+  if (copilotReplyId) {
+    const existingSuccess = await WhatsAppOutboundMessage.findOne({
+      copilotReplyId,
+      status: { $in: SUCCESSFUL_OUTBOUND_STATUSES },
+    }).lean();
+    if (existingSuccess) {
+      return {
+        success: true,
+        outboundId: existingSuccess._id,
+        duplicatePrevented: true,
+        providerStatus: existingSuccess.status,
+        deliveryStatus: existingSuccess.status,
+        stub: existingSuccess.status === 'simulated',
+      };
+    }
+  }
+
   const outbound = await WhatsAppOutboundMessage.create({
     conversationId,
     phone: phone10,
@@ -264,6 +282,7 @@ async function sendAgentTextReply({
     textPreview: String(text || '').slice(0, 500),
     status: 'queued',
     handoffId: handoffId || null,
+    copilotReplyId: copilotReplyId || null,
   });
 
   const result = await gupshupSession.sendTextMessage(phone10, text);

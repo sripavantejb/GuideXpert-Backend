@@ -34,6 +34,8 @@ router.get('/handoffs/:id/messages', ctrl.getHandoffMessages);
 router.get('/handoffs/:id', ctrl.getHandoffDetail);
 router.post('/handoffs/:id/auto-assign', ctrl.autoAssignHandoff);
 router.post('/handoffs/:id/assign', ctrl.assignHandoff);
+router.post('/handoffs/:id/reassign', ctrl.reassignHandoff);
+router.post('/handoffs/:id/release', ctrl.releaseHandoff);
 router.post('/handoffs/:id/notes', ctrl.addNote);
 router.post('/handoffs/:id/suggest-reply', ctrl.suggestReply);
 router.post('/handoffs/:id/reply', ctrl.reply);

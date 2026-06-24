@@ -32,9 +32,14 @@ function getHumanCopilotConfigStatus() {
   const suggestedReplies = isCopilotSuggestedRepliesEnabled();
   const knowledgeAssistant = getKnowledgeAssistantConfigStatus();
   const hotLeadThreshold = getCopilotHotLeadThreshold();
-  const ready = enabled;
-  const suggestedRepliesReady = !suggestedReplies || knowledgeAssistant.llmKeyPresent;
   const whatsapp = getWhatsAppOutboundStatus();
+  const credentialsValid = !(whatsapp.credentialIssues || []).length;
+  const ready =
+    enabled &&
+    whatsapp.outboundReady &&
+    credentialsValid &&
+    !whatsapp.integrationStub;
+  const suggestedRepliesReady = !suggestedReplies || knowledgeAssistant.llmKeyPresent;
 
   return {
     enabled,
@@ -42,6 +47,7 @@ function getHumanCopilotConfigStatus() {
     ready,
     suggestedRepliesReady,
     hotLeadThreshold,
+    credentialsValid,
     ...whatsapp,
   };
 }

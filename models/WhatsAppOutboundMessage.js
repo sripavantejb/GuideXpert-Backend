@@ -71,6 +71,10 @@ const whatsAppOutboundMessageSchema = new mongoose.Schema(
       ref: 'WhatsAppAgentHandoff',
       default: null,
     },
+    copilotReplyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+    },
   },
   { timestamps: true }
 );
@@ -85,6 +89,15 @@ whatsAppOutboundMessageSchema.index(
     partialFilterExpression: {
       senderType: 'bot',
       inReplyToInboundId: { $type: 'objectId' },
+    },
+  }
+);
+whatsAppOutboundMessageSchema.index(
+  { copilotReplyId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      copilotReplyId: { $type: 'objectId' },
     },
   }
 );

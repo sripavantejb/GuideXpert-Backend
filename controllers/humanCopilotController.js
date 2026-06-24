@@ -230,6 +230,48 @@ exports.getHandoffDetail = async (req, res) => {
   }
 };
 
+exports.releaseHandoff = async (req, res) => {
+  try {
+    const result = await copilot.releaseHandoff(req.params.id, req.admin._id, {
+      lockVersion: req.body?.lockVersion ?? null,
+    });
+    if (!result.success) {
+      const code = result.error === 'not_found' ? 404 : mapConflictStatus(result.error);
+      return res.status(code).json({ success: false, message: result.error, ...result });
+    }
+    return res.json({
+      success: true,
+      handoff: result.handoff,
+      lockVersion: result.lockVersion,
+    });
+  } catch (e) {
+    console.error('[humanCopilot] releaseHandoff', e);
+    return res.status(500).json({ success: false, message: 'Failed to release handoff' });
+  }
+};
+
+exports.reassignHandoff = async (req, res) => {
+  try {
+    const srCounsellor = req.body?.srCounsellor;
+    const agentId = req.body?.agentId;
+    const lockVersion = req.body?.lockVersion ?? null;
+    const target = agentId ? { agentId } : srCounsellor;
+    const result = await copilot.reassignHandoff(req.params.id, target, req.admin._id, { lockVersion });
+    if (!result.success) {
+      const code = result.error === 'not_found' ? 404 : mapConflictStatus(result.error);
+      return res.status(code).json({ success: false, message: result.error, ...result });
+    }
+    return res.json({
+      success: true,
+      handoff: result.handoff,
+      lockVersion: result.lockVersion,
+    });
+  } catch (e) {
+    console.error('[humanCopilot] reassignHandoff', e);
+    return res.status(500).json({ success: false, message: 'Failed to reassign handoff' });
+  }
+};
+
 exports.assignHandoff = async (req, res) => {
   try {
     const srCounsellor = req.body?.srCounsellor;
@@ -354,6 +396,7 @@ exports.reply = async (req, res) => {
         errorMessage: result.errorMessage || result.message || null,
         replyId: result.replyId || null,
         draftText: result.draftText || String(text).trim(),
+        failedReply: result.failedReply || null,
         lockVersion: result.lockVersion ?? null,
       });
     }
@@ -409,11 +452,25 @@ exports.retryReply = async (req, res) => {
 
 exports.resolve = async (req, res) => {
   try {
-    const result = await copilot.resolveHandoffForCopilot(req.params.id, req.admin._id);
+    const result = await copilot.resolveHandoffForCopilot(req.params.id, req.admin._id, {
+      lockVersion: req.body?.lockVersion ?? null,
+    });
     if (!result.success) {
-      return res.status(404).json({ success: false, message: result.error || 'not_found' });
+      const code =
+        result.error === 'not_found'
+          ? 404
+          : mapConflictStatus(result.error);
+      return res.status(code).json({
+        success: false,
+        message: result.error || 'resolve_failed',
+        lockVersion: result.lockVersion ?? null,
+      });
     }
-    return res.json({ success: true, handoff: result.handoff });
+    return res.json({
+      success: true,
+      handoff: result.handoff,
+      lockVersion: result.lockVersion,
+    });
   } catch (e) {
     console.error('[humanCopilot] resolve', e);
     return res.status(500).json({ success: false, message: 'Failed to resolve handoff' });

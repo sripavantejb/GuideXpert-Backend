@@ -106,14 +106,25 @@ async function generateSuggestedReplies({ handoff, inboundText = null }) {
       timeoutMs: Number(process.env.KNOWLEDGE_ASSISTANT_TIMEOUT_MS) || 12000,
     });
 
-    const text = String(completion.text || '').trim().slice(0, 3500);
+    const text = String(completion.text || '').trim().slice(0, 7000);
     if (!text) {
       return { success: false, error: 'empty_suggestion' };
     }
 
+    const parts = text
+      .split(/\n---\n|\n\n---\n\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const rawSuggestions = (parts.length ? parts : [text]).slice(0, 3);
+    const suggestions = rawSuggestions.map((suggestionText, idx) => ({
+      text: suggestionText.slice(0, 3500),
+      model: completion.model || process.env.LLM_MODEL,
+      confidence: Math.round((0.9 - idx * 0.08) * 100) / 100,
+    }));
+
     return {
       success: true,
-      suggestions: [{ text, model: completion.model || process.env.LLM_MODEL }],
+      suggestions,
       contextUsed: {
         hasProfile: Boolean(leadDetails?.profile),
         hasScore: Boolean(leadDetails?.score),

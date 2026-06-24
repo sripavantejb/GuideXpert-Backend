@@ -100,7 +100,10 @@ describe('humanCopilot handoff flow', () => {
 
     const WhatsAppAgentHandoff = require(handoffModelPath);
     mock.method(WhatsAppAgentHandoff, 'findById', () => ({
-      lean: async () => ({ ...handoff, copilotReplies: [], auditTrail: [] }),
+      lean: async () => ({ ...handoff, lockVersion: 1, copilotReplies: [], auditTrail: [] }),
+    }));
+    mock.method(WhatsAppAgentHandoff, 'findOneAndUpdate', () => ({
+      lean: async () => ({ ...handoff, status: 'resolved', lockVersion: 2 }),
     }));
     mock.method(WhatsAppAgentHandoff, 'updateOne', async () => ({}));
 
@@ -120,7 +123,7 @@ describe('humanCopilot handoff flow', () => {
 
     delete require.cache[copilotPath];
     const { resolveHandoffForCopilot } = require(copilotPath);
-    const result = await resolveHandoffForCopilot(HANDOFF_ID, ADMIN_ID);
+    const result = await resolveHandoffForCopilot(HANDOFF_ID, ADMIN_ID, { lockVersion: 1 });
     assert.equal(result.success, true);
     assert.equal(handoffModule.resolveHandoff.mock.calls.length, 1);
   });

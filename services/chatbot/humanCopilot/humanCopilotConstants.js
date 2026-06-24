@@ -8,15 +8,28 @@ const COPILOT_STATES = Object.freeze([
   'reopened',
 ]);
 
-const COPILOT_REPLY_STATUSES = Object.freeze(['draft', 'sending', 'sent', 'failed']);
+const COPILOT_REPLY_STATUSES = Object.freeze([
+  'draft',
+  'sending',
+  'submitted',
+  'sent',
+  'delivered',
+  'read',
+  'failed',
+  'simulated',
+]);
 
 const COPILOT_REPLY_SOURCES = Object.freeze(['manual', 'ai_used', 'ai_edited']);
 
 const COPILOT_AUDIT_ACTIONS = Object.freeze([
   'assigned',
+  'reassigned',
+  'released',
   'replied',
   'reply_failed',
   'reply_retried',
+  'reply_delivered',
+  'reply_read',
   'resolved',
   'reopened',
   'note_added',

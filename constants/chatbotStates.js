@@ -57,6 +57,7 @@ const OUTBOUND_STATUSES = Object.freeze([
   'delivered',
   'read',
   'failed',
+  'simulated',
 ]);
 
 const HANDOFF_STATUSES = Object.freeze(['open', 'claimed', 'resolved', 'expired', 'cancelled']);

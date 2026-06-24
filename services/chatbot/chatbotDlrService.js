@@ -70,6 +70,17 @@ async function applyDlrToOutboundMessage({
     );
   }
 
+  try {
+    const { syncCopilotReplyFromOutbound } = require('./humanCopilot/humanCopilotDeliverySyncService');
+    await syncCopilotReplyFromOutbound({
+      outboundId: String(doc._id),
+      status: mapped,
+      transitionAt: ts,
+    });
+  } catch (err) {
+    console.warn('[chatbotDlr] copilot_delivery_sync_failed', err?.message || err);
+  }
+
   return { updated: true, outboundId: String(doc._id) };
 }
 

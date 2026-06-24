@@ -6,6 +6,7 @@ const { claimHandoff } = require('../handoffService');
 const { buildAuditEntry } = require('./humanCopilotAuditService');
 const { canTransitionCopilotState } = require('./humanCopilotConstants');
 const { enrichReplyLearning } = require('./humanCopilotLearningService');
+const { mapOutboundStatusToCopilotStatus } = require('./humanCopilotDeliverySyncService');
 
 function normalizeSuggestedText(value) {
   if (value == null) return null;
@@ -202,13 +203,17 @@ async function sendCopilotReply(
     text: draftText,
     senderAdminId: adminId,
     handoffId: handoff._id,
+    copilotReplyId: replySubId,
   });
 
   const sentAt = new Date();
   if (sendResult.success) {
     const providerStatus = sendResult.providerStatus || (sendResult.stub ? 'simulated' : 'submitted');
     const deliveryStatus = sendResult.deliveryStatus || providerStatus;
-    const replyStatus = providerStatus === 'simulated' ? 'simulated' : 'sent';
+    const replyStatus =
+      providerStatus === 'simulated'
+        ? 'simulated'
+        : mapOutboundStatusToCopilotStatus(providerStatus) || 'submitted';
     const firstResponseAt = handoff.firstResponseAt || sentAt;
     const learning = enrichReplyLearning({
       suggestedText: normalizedSuggestedText,
@@ -248,6 +253,7 @@ async function sendCopilotReply(
       lockVersion: nextLockVersion + 0,
       replySource: source,
       sessionFallback: Boolean(sendResult.sessionFallback),
+      duplicatePrevented: Boolean(sendResult.duplicatePrevented),
       errorMessage: providerStatus === 'simulated' ? 'WA_INTEGRATION_STUB' : null,
     };
   }
@@ -287,6 +293,11 @@ async function sendCopilotReply(
     errorMessage: failMessage,
     draftText,
     lockVersion: nextLockVersion,
+    failedReply: {
+      id: String(replySubId),
+      draftText,
+      errorMessage: failMessage,
+    },
   };
 }
 

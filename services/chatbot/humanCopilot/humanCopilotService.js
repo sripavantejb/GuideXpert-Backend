@@ -240,7 +240,7 @@ async function assignHandoffByAgent(
   handoffId,
   agentId,
   adminId,
-  { lockVersion = null, force = false, routingDecision = null, isAutoAssign = false } = {}
+  { lockVersion = null, force = false, routingDecision = null, isAutoAssign = false, auditAction = null, auditMetaExtra = null } = {}
 ) {
   const agentAdmin = await Admin.findById(agentId).select('username name copilotAgentProfile').lean();
   if (!agentAdmin || !agentAdmin.copilotAgentProfile?.enabled) {
@@ -331,12 +331,14 @@ async function assignHandoffByAgent(
     };
   }
 
-  const auditAction = isAutoAssign ? 'auto_assigned' : 'assigned';
+  const auditActionName =
+    auditAction || (isAutoAssign ? 'auto_assigned' : 'assigned');
   const auditMeta = {
     lockVersion: (existing.lockVersion ?? 0) + 1,
     agentId: String(agentId),
     routingMode: routingDecision?.routingMode || null,
     reason: routingDecision?.reason || null,
+    ...(auditMetaExtra || {}),
   };
 
   const handoff = await WhatsAppAgentHandoff.findOneAndUpdate(
@@ -346,7 +348,7 @@ async function assignHandoffByAgent(
       $inc: { lockVersion: 1 },
       $push: {
         auditTrail: buildAuditEntry({
-          action: auditAction,
+          action: auditActionName,
           adminId: actingAdminId,
           srCounsellor,
           meta: auditMeta,
@@ -390,7 +392,7 @@ async function assignHandoffByAgent(
   };
 }
 
-async function assignHandoff(handoffId, target, adminId, { lockVersion = null, force = false } = {}) {
+async function assignHandoff(handoffId, target, adminId, { lockVersion = null, force = false, auditAction = null, auditMetaExtra = null } = {}) {
   let srCounsellor = null;
   let agentId = null;
 
@@ -402,7 +404,7 @@ async function assignHandoff(handoffId, target, adminId, { lockVersion = null, f
   }
 
   if (agentId) {
-    return assignHandoffByAgent(handoffId, agentId, adminId, { lockVersion, force });
+    return assignHandoffByAgent(handoffId, agentId, adminId, { lockVersion, force, auditAction, auditMetaExtra });
   }
 
   if (!srCounsellor || !SR_COUNSELLORS.has(srCounsellor)) {
@@ -411,7 +413,7 @@ async function assignHandoff(handoffId, target, adminId, { lockVersion = null, f
 
   const legacyAgent = await resolveLegacySlot(srCounsellor);
   if (legacyAgent) {
-    return assignHandoffByAgent(handoffId, legacyAgent._id, adminId, { lockVersion, force });
+    return assignHandoffByAgent(handoffId, legacyAgent._id, adminId, { lockVersion, force, auditAction, auditMetaExtra });
   }
 
   const existing = await getHandoffById(handoffId);
@@ -473,10 +475,13 @@ async function assignHandoff(handoffId, target, adminId, { lockVersion = null, f
       $inc: { lockVersion: 1 },
       $push: {
         auditTrail: buildAuditEntry({
-          action: 'assigned',
+          action: auditAction || 'assigned',
           adminId,
           srCounsellor,
-          meta: { lockVersion: (existing.lockVersion ?? 0) + 1 },
+          meta: {
+            lockVersion: (existing.lockVersion ?? 0) + 1,
+            ...(auditMetaExtra || {}),
+          },
         }),
       },
     },
@@ -564,21 +569,28 @@ async function retryReply(handoffId, adminId, replyId, { lockVersion = null } = 
   });
 }
 
-async function resolveHandoffForCopilot(handoffId, adminId) {
+async function resolveHandoffForCopilot(handoffId, adminId, { lockVersion = null } = {}) {
   const handoff = await getHandoffById(handoffId);
   if (!handoff || handoff.route !== 'admin_pool') {
     return { success: false, error: 'not_found' };
   }
+  if (!DEFAULT_STATUSES.includes(handoff.status)) {
+    return { success: false, error: 'handoff_closed' };
+  }
+
+  const filter = { _id: handoffId, route: 'admin_pool', status: { $in: DEFAULT_STATUSES } };
+  if (lockVersion != null) filter.lockVersion = lockVersion;
 
   const now = new Date();
-  await WhatsAppAgentHandoff.updateOne(
-    { _id: handoffId },
+  const updated = await WhatsAppAgentHandoff.findOneAndUpdate(
+    filter,
     {
       $set: {
         resolvedByAdminId: adminId,
         copilotState: 'resolved',
         activeAdminId: null,
       },
+      $inc: { lockVersion: 1 },
       $push: {
         auditTrail: buildAuditEntry({
           action: 'resolved',
@@ -586,17 +598,104 @@ async function resolveHandoffForCopilot(handoffId, adminId) {
           srCounsellor: handoff.assignedSrCounsellor,
         }),
       },
+    },
+    { new: true }
+  ).lean();
+
+  if (!updated) {
+    const current = await getHandoffById(handoffId);
+    if (lockVersion != null && current?.lockVersion !== lockVersion) {
+      return { success: false, error: 'version_conflict', lockVersion: current?.lockVersion };
     }
-  );
+    return { success: false, error: 'resolve_failed' };
+  }
 
   const result = await resolveHandoff(handoffId, { resolvedBy: 'admin', adminId });
   if (!result.success) return result;
 
-  const updated = await getHandoffById(handoffId);
+  const refreshed = await getHandoffById(handoffId);
   const scoreDoc = await WhatsAppLeadScore.findOne({ phone: handoff.phone })
     .select('phone leadScore leadStage')
     .lean();
-  return { success: true, handoff: mapHandoffRow(updated, scoreDoc) };
+  return { success: true, handoff: mapHandoffRow(refreshed, scoreDoc), lockVersion: refreshed?.lockVersion };
+}
+
+async function releaseHandoff(handoffId, adminId, { lockVersion = null } = {}) {
+  const existing = await getHandoffById(handoffId);
+  if (!existing || existing.route !== 'admin_pool') {
+    return { success: false, error: 'not_found' };
+  }
+  if (!DEFAULT_STATUSES.includes(existing.status)) {
+    return { success: false, error: 'handoff_closed' };
+  }
+  if (!existing.activeAdminId) {
+    return { success: false, error: 'not_claimed' };
+  }
+
+  const filter = { _id: handoffId, route: 'admin_pool', status: { $in: DEFAULT_STATUSES } };
+  if (lockVersion != null) filter.lockVersion = lockVersion;
+
+  const nextState =
+    existing.assignedAgentId || existing.assignedSrCounsellor ? 'assigned' : 'pending';
+
+  const handoff = await WhatsAppAgentHandoff.findOneAndUpdate(
+    filter,
+    {
+      $set: {
+        activeAdminId: null,
+        copilotState: nextState,
+      },
+      $inc: { lockVersion: 1 },
+      $push: {
+        auditTrail: buildAuditEntry({
+          action: 'released',
+          adminId,
+          srCounsellor: existing.assignedSrCounsellor,
+          meta: {
+            previousActiveAdminId: String(existing.activeAdminId),
+            assignedAgentId: existing.assignedAgentId ? String(existing.assignedAgentId) : null,
+          },
+        }),
+      },
+    },
+    { new: true }
+  ).lean();
+
+  if (!handoff) {
+    const current = await getHandoffById(handoffId);
+    if (lockVersion != null && current?.lockVersion !== lockVersion) {
+      return { success: false, error: 'version_conflict', lockVersion: current?.lockVersion };
+    }
+    return { success: false, error: 'release_failed' };
+  }
+
+  const scoreDoc = await WhatsAppLeadScore.findOne({ phone: handoff.phone })
+    .select('phone leadScore leadStage')
+    .lean();
+  return { success: true, handoff: mapHandoffRow(handoff, scoreDoc), lockVersion: handoff.lockVersion };
+}
+
+async function reassignHandoff(handoffId, target, adminId, { lockVersion = null } = {}) {
+  const existing = await getHandoffById(handoffId);
+  if (!existing || existing.route !== 'admin_pool') {
+    return { success: false, error: 'not_found' };
+  }
+  if (!DEFAULT_STATUSES.includes(existing.status)) {
+    return { success: false, error: 'handoff_closed' };
+  }
+
+  const auditMetaExtra = {
+    previousAgentId: existing.assignedAgentId ? String(existing.assignedAgentId) : null,
+    previousActiveAdminId: existing.activeAdminId ? String(existing.activeAdminId) : null,
+    previousSrCounsellor: existing.assignedSrCounsellor || null,
+  };
+
+  return assignHandoff(handoffId, target, adminId, {
+    lockVersion,
+    force: true,
+    auditAction: 'reassigned',
+    auditMetaExtra,
+  });
 }
 
 async function getHandoffMessages(handoffId, query = {}) {
@@ -643,6 +742,8 @@ module.exports = {
   addInternalNote,
   sendReply,
   retryReply,
+  releaseHandoff,
+  reassignHandoff,
   resolveHandoffForCopilot,
   maybeAutoAssign,
   SR_COUNSELLORS,

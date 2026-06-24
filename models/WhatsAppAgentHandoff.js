@@ -110,7 +110,16 @@ const whatsAppAgentHandoffSchema = new mongoose.Schema(
         draftText: { type: String, maxlength: 3500, required: true },
         status: {
           type: String,
-          enum: ['draft', 'sending', 'sent', 'failed'],
+          enum: [
+            'draft',
+            'sending',
+            'submitted',
+            'sent',
+            'delivered',
+            'read',
+            'failed',
+            'simulated',
+          ],
           default: 'draft',
         },
         adminId: {
@@ -140,6 +149,8 @@ const whatsAppAgentHandoffSchema = new mongoose.Schema(
         errorMessage: { type: String, maxlength: 500, default: null },
         createdAt: { type: Date, default: Date.now },
         sentAt: { type: Date, default: null },
+        deliveredAt: { type: Date, default: null },
+        readAt: { type: Date, default: null },
         failedAt: { type: Date, default: null },
       },
     ],
