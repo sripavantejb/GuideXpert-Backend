@@ -14,6 +14,22 @@ function pct(numerator, denominator) {
   return Math.round((numerator / denominator) * 1000) / 10;
 }
 
+const CALL_CONNECTED_VALUES = ['call_connected', 'connected'];
+const DEMO_SCHEDULED_VALUES = ['demo_scheduled', 'scheduled', 'rescheduled'];
+const AMOUNT_PAID_VALUES = ['amount_paid', 'paid', 'partially_paid'];
+
+function matchesCallConnected(status) {
+  return CALL_CONNECTED_VALUES.includes(status);
+}
+
+function matchesDemoScheduled(status) {
+  return DEMO_SCHEDULED_VALUES.includes(status);
+}
+
+function matchesAmountPaid(status) {
+  return AMOUNT_PAID_VALUES.includes(status);
+}
+
 function buildLeadSnapshotCounts(leads) {
   const counts = {
     totalAssigned: leads.length,
@@ -36,19 +52,19 @@ function buildLeadSnapshotCounts(leads) {
 
   for (const lead of leads) {
     if (lead.callStatus === 'not_called') counts.notCalled += 1;
-    if (lead.callStatus === 'connected') counts.callsConnected += 1;
+    if (matchesCallConnected(lead.callStatus)) counts.callsConnected += 1;
     if (lead.callStatus === 'not_connected') counts.callsNotConnected += 1;
     if (lead.leadStatus === 'interested') counts.interested += 1;
     if (lead.leadStatus === 'not_interested') counts.notInterested += 1;
     if (lead.leadStatus === 'callback_pending') counts.callbackPending += 1;
     if (lead.leadStatus === 'converted') counts.converted += 1;
     if (lead.leadStatus === 'lost') counts.lost += 1;
-    if (lead.demoStatus === 'scheduled') counts.demoScheduled += 1;
+    if (matchesDemoScheduled(lead.demoStatus)) counts.demoScheduled += 1;
     if (lead.demoStatus === 'attended') counts.demoAttended += 1;
     if (lead.demoStatus === 'not_attended') counts.demoNotAttended += 1;
     if (lead.niatStatus === 'registered') counts.niatRegistered += 1;
     if (lead.paymentStatus === 'initiated') counts.paymentInitiated += 1;
-    if (lead.paymentStatus === 'paid') counts.amountPaid += 1;
+    if (matchesAmountPaid(lead.paymentStatus)) counts.amountPaid += 1;
     if (lead.lastActivityAt) {
       const t = new Date(lead.lastActivityAt).getTime();
       if (!counts.lastActivityAt || t > new Date(counts.lastActivityAt).getTime()) {
@@ -66,7 +82,12 @@ function buildLeadSnapshotCounts(leads) {
 }
 
 async function countDistinctLeadsFromActivities(bdaId, eventType, toValue, dateRange) {
-  const match = { bdaId: new mongoose.Types.ObjectId(bdaId), eventType, toValue };
+  const values = Array.isArray(toValue) ? toValue : [toValue];
+  const match = {
+    bdaId: new mongoose.Types.ObjectId(bdaId),
+    eventType,
+    toValue: values.length === 1 ? values[0] : { $in: values },
+  };
   if (dateRange) {
     match.createdAt = { $gte: dateRange.start, $lt: dateRange.end };
   }
@@ -109,19 +130,19 @@ async function computeBdaMetrics(bda, dateRange) {
       paymentInitiated,
       amountPaid,
     ] = await Promise.all([
-      countDistinctLeadsFromActivities(bdaId, 'call_status', 'connected', dateRange),
+      countDistinctLeadsFromActivities(bdaId, 'call_status', CALL_CONNECTED_VALUES, dateRange),
       countDistinctLeadsFromActivities(bdaId, 'call_status', 'not_connected', dateRange),
       countDistinctLeadsFromActivities(bdaId, 'lead_status', 'interested', dateRange),
       countDistinctLeadsFromActivities(bdaId, 'lead_status', 'not_interested', dateRange),
       countDistinctLeadsFromActivities(bdaId, 'lead_status', 'callback_pending', dateRange),
       countDistinctLeadsFromActivities(bdaId, 'lead_status', 'converted', dateRange),
       countDistinctLeadsFromActivities(bdaId, 'lead_status', 'lost', dateRange),
-      countDistinctLeadsFromActivities(bdaId, 'demo_status', 'scheduled', dateRange),
+      countDistinctLeadsFromActivities(bdaId, 'demo_status', DEMO_SCHEDULED_VALUES, dateRange),
       countDistinctLeadsFromActivities(bdaId, 'demo_status', 'attended', dateRange),
       countDistinctLeadsFromActivities(bdaId, 'demo_status', 'not_attended', dateRange),
       countDistinctLeadsFromActivities(bdaId, 'niat_status', 'registered', dateRange),
       countDistinctLeadsFromActivities(bdaId, 'payment_status', 'initiated', dateRange),
-      countDistinctLeadsFromActivities(bdaId, 'payment_status', 'paid', dateRange),
+      countDistinctLeadsFromActivities(bdaId, 'payment_status', AMOUNT_PAID_VALUES, dateRange),
     ]);
 
     counts = {

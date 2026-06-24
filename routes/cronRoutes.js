@@ -442,6 +442,38 @@ router.get('/process-chatbot-inbound', verifyCronSecret, async (req, res) => {
   }
 });
 
+router.get('/analytics/evaluate-alerts', verifyCronSecret, async (req, res) => {
+  try {
+    const { evaluateAllAlerts } = require('../services/analytics/smartAlertsService');
+    const stats = await evaluateAllAlerts();
+    return res.status(200).json({ success: true, data: stats });
+  } catch (error) {
+    console.error('[Cron] analytics/evaluate-alerts:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Internal server error',
+    });
+  }
+});
+
+router.get('/analytics/daily-report', verifyCronSecret, async (req, res) => {
+  try {
+    const { generateDailyReport } = require('../services/analytics/executiveReportService');
+    const data = await generateDailyReport({
+      reportDate: req.query?.reportDate,
+      force: req.query?.force === 'true',
+      deliveryStatus: 'generated',
+    });
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error('[Cron] analytics/daily-report:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Internal server error',
+    });
+  }
+});
+
 router.get('/health', (req, res) => {
   res.status(200).json({
     success: true,
