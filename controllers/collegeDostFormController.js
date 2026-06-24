@@ -53,16 +53,55 @@ function mapCollegeDostRow(r) {
     name: r.name,
     mobileNumber: r.mobileNumber,
     interestedInNewColleges: r.interestedInNewColleges,
+    newAgeCollegePreference: r.newAgeCollegePreference,
     timestamp: r.submittedAt,
   };
 }
 
+const NEW_AGE_COLLEGE_PREFERENCES = [
+  'zenith-school-of-ai',
+  'niat',
+  'scaler',
+  'newton-school-of-technology',
+];
+
+exports.checkCollegeDostFormStatus = async (req, res) => {
+  try {
+    const mobile = normalizeMobile(req.query.mobileNumber || '');
+    if (!mobile || mobile.length !== 10) {
+      return res.status(400).json({ success: false, message: 'Valid 10-digit mobile number is required' });
+    }
+
+    const existing = await CollegeDostFormSubmission.findOne({ mobileNumber: mobile }).lean();
+    if (!existing) {
+      return res.status(200).json({ success: true, exists: false });
+    }
+
+    return res.status(200).json({
+      success: true,
+      exists: true,
+      data: {
+        name: existing.name,
+        mobileNumber: existing.mobileNumber,
+        interestedInNewColleges: existing.interestedInNewColleges,
+        newAgeCollegePreference: existing.newAgeCollegePreference,
+        submittedAt: existing.submittedAt,
+      },
+    });
+  } catch (error) {
+    console.error('[checkCollegeDostFormStatus] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  }
+};
+
 exports.submitCollegeDostForm = async (req, res) => {
   try {
-    const { name, mobileNumber, interestedInNewColleges } = req.body || {};
+    const { name, mobileNumber, interestedInNewColleges, newAgeCollegePreference } = req.body || {};
     const rawName = typeof name === 'string' ? name.trim() : '';
     const mobile = normalizeMobile(mobileNumber || '');
     const interest = typeof interestedInNewColleges === 'string' ? interestedInNewColleges.trim().toLowerCase() : '';
+    const preference =
+      typeof newAgeCollegePreference === 'string' ? newAgeCollegePreference.trim().toLowerCase() : null;
 
     if (!rawName || rawName.length < 2) {
       return res.status(400).json({ success: false, message: 'Name is required (at least 2 characters)' });
@@ -76,23 +115,39 @@ exports.submitCollegeDostForm = async (req, res) => {
     if (!['yes', 'no'].includes(interest)) {
       return res.status(400).json({ success: false, message: 'Please select Yes or No' });
     }
+    if (interest === 'yes' && !NEW_AGE_COLLEGE_PREFERENCES.includes(preference)) {
+      return res.status(400).json({ success: false, message: 'Please select your top college preference' });
+    }
+    if (interest === 'no' && preference) {
+      return res.status(400).json({ success: false, message: 'College preference is only required when interested in new age colleges' });
+    }
 
-    const verified = await isPhoneVerified(mobile);
-    if (!verified) {
-      return res.status(400).json({ success: false, message: 'Phone number must be verified first.' });
+    const existing = await CollegeDostFormSubmission.findOne({ mobileNumber: mobile }).lean();
+    if (!existing) {
+      const verified = await isPhoneVerified(mobile);
+      if (!verified) {
+        return res.status(400).json({ success: false, message: 'Phone number must be verified first.' });
+      }
+    }
+
+    const update = {
+      $set: {
+        name: rawName,
+        mobileNumber: mobile,
+        interestedInNewColleges: interest,
+        otpVerified: true,
+        submittedAt: new Date(),
+      },
+    };
+    if (interest === 'yes') {
+      update.$set.newAgeCollegePreference = preference;
+    } else {
+      update.$unset = { newAgeCollegePreference: '' };
     }
 
     const record = await CollegeDostFormSubmission.findOneAndUpdate(
       { mobileNumber: mobile },
-      {
-        $set: {
-          name: rawName,
-          mobileNumber: mobile,
-          interestedInNewColleges: interest,
-          otpVerified: true,
-          submittedAt: new Date(),
-        },
-      },
+      update,
       { upsert: true, new: true, runValidators: true }
     );
 
@@ -104,6 +159,7 @@ exports.submitCollegeDostForm = async (req, res) => {
         name: record.name,
         mobileNumber: record.mobileNumber,
         interestedInNewColleges: record.interestedInNewColleges,
+        newAgeCollegePreference: record.newAgeCollegePreference,
         submittedAt: record.submittedAt,
       },
     });

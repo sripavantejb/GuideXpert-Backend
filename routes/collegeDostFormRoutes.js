@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { submitCollegeDostForm } = require('../controllers/collegeDostFormController');
+const { checkCollegeDostFormStatus, submitCollegeDostForm } = require('../controllers/collegeDostFormController');
 
+router.get('/status', checkCollegeDostFormStatus);
 router.post('/submit', submitCollegeDostForm);
 
 module.exports = router;
