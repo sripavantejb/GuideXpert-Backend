@@ -3,6 +3,14 @@ const { canonicalExamKey, isSupportedExamInput } = require('../services/collegeD
 const { fetchCollegeDostColleges } = require('../services/collegePredictorCore');
 const { rankToCutoff } = require('../utils/rankToCutoff');
 
+function logPredictorSearchAsync(req, body, offset, data) {
+  if (Number(offset) !== 0) return;
+  const { recordPredictorSearch } = require('../services/analytics/collegePredictorSearchLogger');
+  recordPredictorSearch(req, body, data, offset).catch((err) => {
+    console.error('[college-predictor] demand search log failed:', err.message);
+  });
+}
+
 /**
  * Coerce branch_codes / districts to string arrays so upstream always receives arrays (never null / wrong type).
  * Mutates `body` in place.
@@ -124,6 +132,7 @@ async function handleCollegeDost(req, res, offset, limit, body) {
 
   try {
     const data = normalizePredictorResponse(await fetchCollegeDostColleges(exam, offset, limit, body));
+    logPredictorSearchAsync(req, body, offset, data);
     return res.status(200).json(data);
   } catch (err) {
     const status = err.http_status_code || 502;
@@ -197,6 +206,7 @@ async function handleNwPredictor(req, res, offset, limit, body) {
 
   try {
     const data = normalizePredictorResponse(await getNwPredictedColleges(offset, limit, normalizedBody));
+    logPredictorSearchAsync(req, normalizedBody, offset, data);
     return res.status(200).json(data);
   } catch (err) {
     const status = err.http_status_code || 502;
