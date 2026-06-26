@@ -13,6 +13,7 @@ const ADMIN_SECTION_KEYS = [
   'analytics',
   'meeting-attendance',
   'iit-meet-attendance',
+  'nat-campaign',
   'export',
   'slots',
   'training-form-responses',
