@@ -8,10 +8,11 @@ const orchestratorPath = require.resolve('../services/chatbot/chatbotOrchestrato
 const knowledgeAssistantPath = require.resolve('../services/chatbot/knowledgeAssistantService');
 const llmReplyPath = require.resolve('../services/chatbot/llmReplyService');
 const classifierPath = require.resolve('../services/chatbot/scopeFirewallHybrid/scopeClassifierService');
+const scopeIntentGatePath = require.resolve('../services/chatbot/scopeFirewall/scopeIntentGate');
 
 const CONVERSATION_ID = new mongoose.Types.ObjectId();
 const INBOUND_ID = new mongoose.Types.ObjectId();
-const REFUSAL_MARKER = "GuideXpert's counselling assistant";
+const REFUSAL_MARKER = "can't assist with unrelated topics";
 
 let answerCalls;
 let outboundCalls;
@@ -19,11 +20,17 @@ let structuredEvents;
 let originalConsoleInfo;
 let savedEnv;
 
-function loadOrchestrator() {
+function loadOrchestrator(classifierMock = null) {
   delete require.cache[orchestratorPath];
   delete require.cache[knowledgeAssistantPath];
   delete require.cache[llmReplyPath];
   delete require.cache[classifierPath];
+  delete require.cache[scopeIntentGatePath];
+
+  if (classifierMock) {
+    const classifierService = require(classifierPath);
+    classifierService.setScopeClassifierProviderForTests(classifierMock);
+  }
 
   const knowledgeAssistantService = require(knowledgeAssistantPath);
   mock.method(knowledgeAssistantService, 'answerWithTimeout', async () => {
@@ -70,7 +77,7 @@ function lastOutboundText() {
   return outboundCalls.length ? outboundCalls[outboundCalls.length - 1].text : null;
 }
 
-describe('scope classifier orchestrator integration', () => {
+describe('scope classifier orchestrator integration', { concurrency: 1 }, () => {
   beforeEach(() => {
     answerCalls = 0;
     outboundCalls = [];
@@ -129,6 +136,8 @@ describe('scope classifier orchestrator integration', () => {
     delete require.cache[orchestratorPath];
     delete require.cache[knowledgeAssistantPath];
     delete require.cache[llmReplyPath];
+    const classifierService = require(classifierPath);
+    classifierService.setScopeClassifierProviderForTests(null);
     delete require.cache[classifierPath];
   });
 
@@ -137,9 +146,7 @@ describe('scope classifier orchestrator integration', () => {
   }
 
   test('classifier block prevents LLM even in shadow mode', async () => {
-    const orchestrator = loadOrchestrator();
-    const classifierService = require(classifierPath);
-    classifierService.setScopeClassifierProviderForTests({
+    const orchestrator = loadOrchestrator({
       chatCompletion: async () => ({
         text: JSON.stringify({
           allowed: false,
@@ -162,9 +169,7 @@ describe('scope classifier orchestrator integration', () => {
   });
 
   test('classifier allow reaches assistant LLM', async () => {
-    const orchestrator = loadOrchestrator();
-    const classifierService = require(classifierPath);
-    classifierService.setScopeClassifierProviderForTests({
+    const orchestrator = loadOrchestrator({
       chatCompletion: async () => ({
         text: JSON.stringify({
           allowed: true,
@@ -177,21 +182,18 @@ describe('scope classifier orchestrator integration', () => {
     });
     applyHooks(orchestrator);
 
-    await run(orchestrator, 'DSA exam tips');
+    await run(orchestrator, 'p y t h o n');
 
     assert.equal(answerCalls, 1, 'classifier allow must reach assistant LLM');
     assert.ok(hasEvent('scope_classifier_allowed'));
   });
 
   test('confident counselling question skips classifier and reaches LLM', async () => {
-    const classifierService = require(classifierPath);
-    classifierService.setScopeClassifierProviderForTests({
+    const orchestrator = loadOrchestrator({
       chatCompletion: async () => {
         throw new Error('classifier should not run');
       },
     });
-
-    const orchestrator = loadOrchestrator();
     applyHooks(orchestrator);
 
     await run(orchestrator, 'Which branch is good for me?');

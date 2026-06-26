@@ -28,7 +28,7 @@ describe('buildGuidanceCounsellorBookingNotifyVars', () => {
     });
     assert.deepEqual(
       buildParamsFromKeys(vars, GUIDANCE_COUNSELLOR_BOOKING_NOTIFY_PARAM_KEYS),
-      ['Rahul', '15 Jun 2026', '3:30 PM TO 4:30 PM', 'V Divya']
+      ['V Divya', '15 Jun 2026', '3:30 PM TO 4:30 PM', 'Rahul']
     );
   });
 

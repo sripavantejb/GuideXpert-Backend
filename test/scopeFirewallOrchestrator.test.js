@@ -7,11 +7,12 @@ const mongoose = require('mongoose');
 const orchestratorPath = require.resolve('../services/chatbot/chatbotOrchestratorService');
 const knowledgeAssistantPath = require.resolve('../services/chatbot/knowledgeAssistantService');
 const llmReplyPath = require.resolve('../services/chatbot/llmReplyService');
+const scopeIntentGatePath = require.resolve('../services/chatbot/scopeFirewall/scopeIntentGate');
 
 const CONVERSATION_ID = new mongoose.Types.ObjectId();
 const INBOUND_ID = new mongoose.Types.ObjectId();
 
-const REFUSAL_MARKER = "GuideXpert's counselling assistant";
+const REFUSAL_MARKER = "can't assist with unrelated topics";
 
 let answerCalls;
 let outboundCalls;
@@ -23,6 +24,7 @@ function loadOrchestrator() {
   delete require.cache[orchestratorPath];
   delete require.cache[knowledgeAssistantPath];
   delete require.cache[llmReplyPath];
+  delete require.cache[scopeIntentGatePath];
 
   const knowledgeAssistantService = require(knowledgeAssistantPath);
   mock.method(knowledgeAssistantService, 'answerWithTimeout', async () => {
@@ -127,6 +129,7 @@ describe('scope firewall orchestration', () => {
     delete require.cache[orchestratorPath];
     delete require.cache[knowledgeAssistantPath];
     delete require.cache[llmReplyPath];
+    delete require.cache[scopeIntentGatePath];
   });
 
   function hasEvent(name) {

@@ -50,13 +50,27 @@ function buildCandidates(originalText, englishMessage) {
   return [...candidates];
 }
 
-function findRegexDenyMatch(text) {
+function findAllRegexDenyMatches(text) {
+  const hits = [];
   for (const { category, pattern } of DENY_PATTERNS) {
     if (pattern.test(text)) {
-      return { category, reason: 'deny_pattern' };
+      hits.push({ category, reason: 'deny_pattern' });
     }
   }
-  return null;
+  return hits;
+}
+
+function findRegexDenyMatch(text) {
+  const hits = findAllRegexDenyMatches(text);
+  if (!hits.length) return null;
+
+  const injection = hits.find((hit) => hit.category === 'prompt_injection');
+  if (injection) return injection;
+
+  const policy = hits.find((hit) => isPolicyCategory(hit.category));
+  if (policy) return policy;
+
+  return hits[0];
 }
 
 function findDenyMatchInText(text) {
@@ -105,6 +119,16 @@ function evaluateSegment(rawSegment) {
   const deny = findDenyMatchInText(text);
   if (!deny) {
     return { allowed: true, text: rawSegment, category: null, reason: 'no_deny_match' };
+  }
+
+  if (deny.category === 'prompt_injection') {
+    return {
+      allowed: false,
+      text: rawSegment,
+      category: deny.category,
+      reason: deny.reason,
+      policyBlock: true,
+    };
   }
 
   if (isPolicyCategory(deny.category)) {

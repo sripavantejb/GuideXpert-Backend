@@ -20,7 +20,7 @@ function mockProvider(responseText) {
   };
 }
 
-describe('scopeClassifierService', () => {
+describe('scopeClassifierService', { concurrency: 1 }, () => {
   beforeEach(() => {
     savedEnv = {
       classifier: process.env.CHATBOT_SCOPE_CLASSIFIER_ENABLED,
@@ -34,6 +34,12 @@ describe('scopeClassifierService', () => {
     process.env.CHATBOT_SCOPE_FIREWALL_ENABLED = savedEnv.firewall;
     if (savedEnv.classifier === undefined) delete process.env.CHATBOT_SCOPE_CLASSIFIER_ENABLED;
     if (savedEnv.firewall === undefined) delete process.env.CHATBOT_SCOPE_FIREWALL_ENABLED;
+    try {
+      const service = require(servicePath);
+      service.setScopeClassifierProviderForTests(null);
+    } catch {
+      // module may be evicted
+    }
     delete require.cache[servicePath];
     delete require.cache[flagsPath];
   });

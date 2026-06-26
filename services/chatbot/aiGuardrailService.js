@@ -12,6 +12,7 @@ const {
   coerceGuideXpertIdentityAnswer,
   isUnsupportedFallbackText,
 } = require('../../utils/guideXpertIdentity');
+const { resolveScopeFirewallReply } = require('../../constants/scopeFirewallReplies');
 
 const GUARANTEE_PATTERNS = [
   /\bguarantee(?:d|s)?\b.{0,40}\b(?:job|jobs|placement|placements|internship|internships|salary|admission|admissions)\b/i,
@@ -246,6 +247,15 @@ function validateAiResponse({
   const text = String(response || '').trim();
   const allowedNumbers = extractUserProvidedNumbers(userMessage, englishUserMessage);
   const identityQuestion = isGuideXpertIdentityQuestion(userMessage, englishUserMessage);
+  const hits = Array.isArray(knowledgeResults) ? knowledgeResults : [];
+
+  if (!hits.length && !identityQuestion) {
+    return {
+      text: resolveScopeFirewallReply('en'),
+      modified: true,
+      reason: 'no_grounding',
+    };
+  }
 
   if (!text) {
     const identitySafe = applyGuideXpertIdentitySafetyNet({

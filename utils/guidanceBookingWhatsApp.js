@@ -9,7 +9,8 @@ const GUPSHUP_TEMPLATE_GUIDANCE_COUNSELLOR_BOOKING_NOTIFY =
 
 const GUIDANCE_BOOKING_CONFIRM_PARAM_KEYS = ['date', 'time'];
 const GUIDANCE_PRE30MIN_REMINDER_PARAM_KEYS = ['name', 'slottime'];
-const GUIDANCE_COUNSELLOR_BOOKING_NOTIFY_PARAM_KEYS = ['name', 'date', 'time', 'counsellor'];
+// Order matches Gupshup template: {{1}} counsellor greeting, {{2}} date, {{3}} time, {{4}} student
+const GUIDANCE_COUNSELLOR_BOOKING_NOTIFY_PARAM_KEYS = ['counsellor', 'date', 'time', 'name'];
 const GUIDANCE_REMINDER_MESSAGE_KIND = 'guidance_pre30min';
 
 const IST_MONTHS = [

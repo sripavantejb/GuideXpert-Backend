@@ -5,6 +5,7 @@ const {
   BLOCK_CATEGORIES,
   CONFIDENCE_THRESHOLD,
 } = require('./scopeClassifierConstants');
+const { SCOPE_INTENTS, mapCategoryToIntent } = require('../../../constants/scopeIntents');
 
 function extractJsonObject(rawText) {
   const text = String(rawText || '').trim();
@@ -41,11 +42,20 @@ function normalizeClassifierResult(raw) {
   if (!category || !reason) return null;
   if (!isValidCategory(category, allowed)) return null;
 
+  let intent = String(parsed.intent || '').trim().toUpperCase();
+  if (!intent) {
+    intent = mapCategoryToIntent(category, { fromClassifier: true });
+  }
+  if (!SCOPE_INTENTS.includes(intent)) {
+    intent = 'OTHER';
+  }
+
   return {
     allowed,
     category,
     confidence,
     reason,
+    intent,
     meetsThreshold: confidence >= CONFIDENCE_THRESHOLD,
   };
 }

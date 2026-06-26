@@ -20,6 +20,7 @@ const {
   validateCounsellorProgramResponse,
   UNKNOWN_FALLBACK,
 } = require('./counsellorProgramGuardrailService');
+const { assertRagAllowed, refusalForRagBlock } = require('../scopeFirewall/ragScopeGuard');
 
 const provider = new OpenAiCompatibleProvider();
 
@@ -66,6 +67,24 @@ async function answer({
       retrievalQuery,
       limit: 5,
     });
+    const knowledgeResults = [...retrieval.kbResults, ...retrieval.faqHits.map((faq) => ({
+      id: faq.slug,
+      question: faq.title,
+      answer: faq.answer,
+      category: 'faq',
+    }))];
+
+    const ragCheck = assertRagAllowed({ knowledgeResults });
+    if (!ragCheck.ok) {
+      return {
+        text: refusalForRagBlock(ragCheck.reason, languageMetadata?.resolvedLanguage || 'en'),
+        model: null,
+        guardrailModified: false,
+        guardrailReason: ragCheck.reason,
+        languageLog: null,
+      };
+    }
+
     const unifiedContext = buildCounsellorProgramContext({
       faqContext: retrieval.faqContext,
       knowledgeContext: retrieval.knowledgeContext,
@@ -85,13 +104,6 @@ async function answer({
       timeoutMs: providerTimeoutMs,
       maxRetries: 0,
     });
-
-    const knowledgeResults = [...retrieval.kbResults, ...retrieval.faqHits.map((faq) => ({
-      id: faq.slug,
-      question: faq.title,
-      answer: faq.answer,
-      category: 'faq',
-    }))];
 
     const guarded = validateCounsellorProgramResponse({
       response: result?.text,

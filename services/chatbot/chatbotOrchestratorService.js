@@ -76,7 +76,10 @@ const {
   isScopeFirewallShadowMode,
 } = require('./scopeFirewall/scopeFirewallFlags');
 const { getLlmInboundText } = require('./scopeFirewall/scopeFirewallService');
-const { evaluateScopeWithClassifier } = require('./scopeFirewallHybrid/scopeClassifierService');
+const {
+  evaluateInboundScope,
+  buildScopeLogFields,
+} = require('./scopeFirewall/scopeIntentGate');
 const {
   resolveScopeFirewallReply,
   resolvePolicyRefusal,
@@ -683,25 +686,21 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     multilingualInbound?.englishMessage || String(inbound.text || '').trim();
 
   if (isScopeFirewallEnabled()) {
-    const scope = await evaluateScopeWithClassifier({
+    const inboundText = String(inbound.text || '');
+    const scope = await evaluateInboundScope({
       originalText: inbound.text,
       englishMessage: multilingualInbound?.englishMessage || inbound.text,
       intent: intentResult.intent,
       botState,
     });
 
-    const scopeLogFields = {
+    const scopeLogFields = buildScopeLogFields(scope, {
       conversationId: activeConversation._id,
-      phone10: activeConversation.phone,
       intent: intentResult.intent,
       botState: botState?.state || null,
-      scopeCategory: scope.category,
-      scopeReason: scope.reason,
-      scopePartial: Boolean(scope.partialAllowed),
+      inboundMessageLength: inboundText.length,
       scopeBlockedSegmentCount: scope.blockedSegments?.length || 0,
-      scopeClassifierUsed: Boolean(scope.classifierUsed),
-      scopeClassifierConfidence: scope.classifierResult?.confidence ?? null,
-    };
+    });
 
     if (scope.classifierUsed) {
       logChatbotEvent('scope_classifier_used', scopeLogFields);

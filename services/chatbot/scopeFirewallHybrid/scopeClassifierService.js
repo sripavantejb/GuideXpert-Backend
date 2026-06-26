@@ -29,6 +29,7 @@ const {
   buildScopeClassifierUserPrompt,
 } = require('./scopeClassifierPrompt');
 const { normalizeClassifierResult } = require('./scopeClassifierSchemaValidator');
+const { mapCategoryToIntent } = require('../../../constants/scopeIntents');
 
 let providerInstance = null;
 
@@ -40,7 +41,7 @@ function getProvider() {
 }
 
 function setScopeClassifierProviderForTests(provider) {
-  providerInstance = provider;
+  providerInstance = provider || null;
 }
 
 function hasConfidentAllowSignal(originalText, englishMessage) {
@@ -137,11 +138,13 @@ function shouldInvokeClassifier(scope, { originalText, englishMessage } = {}) {
 
 function buildClassifierBlockScope(scope, classification, reason) {
   const category = classification?.category || scope.category || 'general_trivia';
+  const intent = classification?.intent || mapCategoryToIntent(category, { fromClassifier: true });
   return {
     ...scope,
     allowed: false,
     partialAllowed: false,
     category,
+    intent,
     reason,
     blockedSegments: [
       {
@@ -171,6 +174,7 @@ function applyClassifierResult(scope, classification) {
       allowed: true,
       partialAllowed: false,
       category: classification.category,
+      intent: classification.intent || mapCategoryToIntent(classification.category, { fromClassifier: true }),
       reason: classification.reason || 'classifier_allow',
       blockedSegments: [],
       policyBlock: false,
@@ -209,7 +213,8 @@ async function classifyScope({ originalText, englishMessage, normalizedText }) {
   if (!normalized) {
     return {
       allowed: false,
-      category: 'prompt_injection',
+      category: 'general_trivia',
+      intent: 'OTHER',
       confidence: 0,
       reason: 'classifier_invalid_response',
       meetsThreshold: false,

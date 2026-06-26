@@ -22,8 +22,12 @@ npm run check:whatsapp:production
 | `GUPSHUP_WEBHOOK_SECRET` | Shared secret for `POST /webhook/gupshup` |
 | `MONGODB_URI` | Conversations / inbound / outbound persistence |
 | `CRON_SECRET` or `GUIDEXPERT_CRON_SECRET` | Vercel cron auth for `process-chatbot-inbound` |
+| `CHATBOT_SCOPE_FIREWALL_ENABLED` | **`1` required in production** — enables inbound scope firewall |
+| `CHATBOT_SCOPE_FIREWALL_SHADOW_MODE` | **`0` or unset (enforce)** — blocks out-of-scope queries before any answer LLM. Set `1` only for log-only shadow rollout |
+| `CHATBOT_SCOPE_CLASSIFIER_ENABLED` | `1` recommended — semantic classifier for ambiguous messages |
+| `LLM_API_KEY` | Required when knowledge assistant / classifier are enabled |
 
-Optional: `GUPSHUP_SRC_NAME` (must not be `Welcome`), `OPENAI_API_KEY` (LLM replies), session fallback template vars (see `.env.example`).
+Optional: `GUPSHUP_SRC_NAME` (must not be `Welcome`), session fallback template vars (see `.env.example`).
 
 Main menu is **plain text only** (no interactive list/button). Do not set `CHATBOT_USE_BUTTON_MENU` unless you have a specific reason.
 
@@ -69,6 +73,34 @@ curl -sS -X POST "https://guide-xpert-backend.vercel.app/webhook/gupshup" \
 ```
 
 Send a real WhatsApp message; check Vercel logs for `[chatbot]` and Mongo `WhatsAppInboundMessage` with `processStatus: processed`.
+
+## Scope firewall (production)
+
+The student WhatsApp chatbot enforces a **scope firewall** before any answer LLM (Knowledge Assistant, ICE, ICS, CPA). Blocked queries (programming, trivia, injection, etc.) receive a standard refusal and **never** reach answer generation. Empty RAG retrieval also short-circuits without calling the answer LLM.
+
+**Required for production:**
+
+```bash
+CHATBOT_SCOPE_FIREWALL_ENABLED=1
+# enforce mode is the default when unset; do not set shadow in production
+CHATBOT_SCOPE_FIREWALL_SHADOW_MODE=0
+```
+
+Verify on deploy:
+
+```bash
+curl -sS https://guide-xpert-backend.vercel.app/api/health | jq '.scopeFirewall'
+# expect: enabled=true, shadowMode=false, enforceMode=true, productionReady=true
+```
+
+Offline regression (500+ prompts):
+
+```bash
+node scripts/generateScopeFirewallCertPrompts.js
+node scripts/scopeFirewallCertification.js --orchestrator-sample=50
+node scripts/scopeFirewallSmoke500.js
+npm test -- test/scopeFirewallMatrix.test.js test/scopeFirewallRagGuard.test.js test/scopeFirewallCertification.test.js
+```
 
 ## Cron replay
 

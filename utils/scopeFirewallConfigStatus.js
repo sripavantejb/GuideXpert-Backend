@@ -11,11 +11,15 @@ const {
 
 function getScopeFirewallConfigStatus() {
   const enabled = isScopeFirewallEnabled();
+  const shadowMode = isScopeFirewallShadowMode();
   const classifierEnabled = isScopeClassifierEnabled();
+  const enforceMode = enabled && !shadowMode;
   return {
     enabled,
-    shadowMode: isScopeFirewallShadowMode(),
+    shadowMode,
+    enforceMode,
     ready: enabled,
+    productionReady: enabled && enforceMode,
     scopeClassifier: {
       enabled: classifierEnabled,
       ready: classifierEnabled ? isScopeClassifierReady() : false,
@@ -28,7 +32,9 @@ function logScopeFirewallConfigStatus() {
   console.log({
     scopeFirewallEnabled: process.env.CHATBOT_SCOPE_FIREWALL_ENABLED,
     scopeFirewallShadowMode: status.shadowMode,
+    scopeFirewallEnforceMode: status.enforceMode,
     scopeFirewallReady: status.ready,
+    scopeFirewallProductionReady: status.productionReady,
     scopeClassifierEnabled: process.env.CHATBOT_SCOPE_CLASSIFIER_ENABLED,
     scopeClassifierReady: status.scopeClassifier.ready,
   });

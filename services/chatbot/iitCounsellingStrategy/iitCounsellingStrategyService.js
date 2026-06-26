@@ -143,6 +143,23 @@ async function answer({
       });
     }
 
+    if (!knowledgeResults.length && !groundedPref) {
+      return {
+        text: UNKNOWN_FALLBACK,
+        model: null,
+        guardrailModified: true,
+        guardrailReason: 'no_grounding',
+        languageLog: {
+          englishResponse: UNKNOWN_FALLBACK,
+          resultIds: [],
+          retrievalMode: retrieval.metrics?.mode || null,
+          retrievalFallback: retrieval.metrics?.retrievalFallback || null,
+          answerSource: 'no_grounding',
+          llmAttempts: 0,
+        },
+      };
+    }
+
     const unifiedContext = buildIitCounsellingStrategyContext({
       knowledgeContext: retrieval.knowledgeContext,
       leadContext,

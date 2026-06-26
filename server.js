@@ -296,7 +296,9 @@ app.get('/api/health', async (req, res) => {
     scopeFirewall: {
       enabled: scopeFirewall.enabled,
       shadowMode: scopeFirewall.shadowMode,
+      enforceMode: scopeFirewall.enforceMode,
       ready: scopeFirewall.ready,
+      productionReady: scopeFirewall.productionReady,
     },
     scopeClassifier: {
       enabled: scopeFirewall.scopeClassifier.enabled,

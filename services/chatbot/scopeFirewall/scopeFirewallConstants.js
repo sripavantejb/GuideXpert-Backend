@@ -73,12 +73,18 @@ const DENY_PATTERNS = Object.freeze([
 
   // prompt injection
   { category: 'prompt_injection', pattern: /\bignore (all )?(previous|prior) instructions\b/i },
+  { category: 'prompt_injection', pattern: /\bignore previous instructions\b/i },
   { category: 'prompt_injection', pattern: /\byou are chatgpt\b/i },
+  { category: 'prompt_injection', pattern: /\bpretend you are chatgpt\b/i },
   { category: 'prompt_injection', pattern: /\bdeveloper mode\b/i },
+  { category: 'prompt_injection', pattern: /\bsystem prompt\b/i },
   { category: 'prompt_injection', pattern: /\bsystem override\b/i },
   { category: 'prompt_injection', pattern: /\bact as (a )?(coding tutor|chatgpt|developer)\b/i },
+  { category: 'prompt_injection', pattern: /\bact as\b/i },
   { category: 'prompt_injection', pattern: /\bpretend to be\b/i },
   { category: 'prompt_injection', pattern: /\bforget guidexpert\b/i },
+  { category: 'prompt_injection', pattern: /\breveal (your )?(system|hidden) prompt\b/i },
+  { category: 'prompt_injection', pattern: /\bdo anything now\b/i },
 
   // image generation
   { category: 'image_generation', pattern: /\b(generate|create|draw|make|render|banao|chey|cheyyi|pannu)\b.{0,24}\b(image|picture|photo|pic|drawing|art(work)?|wallpaper|portrait|avatar|cartoon|puppy|dog)\b/i },
@@ -90,6 +96,7 @@ const DENY_PATTERNS = Object.freeze([
   { category: 'weather', pattern: /\bweather\b/i },
   { category: 'weather', pattern: /\btemperature\b/i },
   { category: 'weather', pattern: /\brain forecast\b/i },
+  { category: 'weather', pattern: /\brain prediction\b/i },
   { category: 'weather', pattern: /\bforecast\b/i },
 
   // movies / entertainment
@@ -108,6 +115,7 @@ const DENY_PATTERNS = Object.freeze([
   { category: 'sports', pattern: /\bcricket\b/i },
   { category: 'sports', pattern: /\bfootball\b/i },
   { category: 'sports', pattern: /\b(match|game) score\b/i },
+  { category: 'sports', pattern: /\bsports score\b/i },
 
   // politics
   { category: 'politics', pattern: /\belections?\b/i },
@@ -123,6 +131,8 @@ const DENY_PATTERNS = Object.freeze([
   { category: 'finance', pattern: /\bbitcoin\b/i },
   { category: 'finance', pattern: /\bmutual funds?\b/i },
   { category: 'finance', pattern: /\b(invest|buy).{0,16}\bbitcoin\b/i },
+  { category: 'finance', pattern: /\bethereum\b/i },
+  { category: 'finance', pattern: /\bbuy ethereum\b/i },
 
   // policy — medical
   { category: 'medical', pattern: /\b(fever|headache|diabetes|symptoms of|medicine for|medical advice)\b/i },
@@ -134,9 +144,11 @@ const DENY_PATTERNS = Object.freeze([
   // policy — adult
   { category: 'adult', pattern: /\b(porn(ography)? websites?|adult movies?)\b/i },
   { category: 'adult', pattern: /\bsex education\b/i },
+  { category: 'adult', pattern: /\badult content\b/i },
 
   // policy — religion
   { category: 'religion', pattern: /\b(who is jesus|explain hinduism|quran meaning|religious scripture)\b/i },
+  { category: 'religion', pattern: /\breligious debate\b/i },
 
   // policy — current affairs
   { category: 'current_affairs', pattern: /\b(russia ukraine war|israel conflict|trump news|ukraine war)\b/i },
@@ -146,6 +158,7 @@ const DENY_PATTERNS = Object.freeze([
   { category: 'math', pattern: /\b(integrate|derivative|matrix multiplication|solve matrix)\b/i },
   { category: 'math', pattern: /\bfind (the )?derivative\b/i },
   { category: 'math', pattern: /\bintegrate\s+x\b/i },
+  { category: 'math', pattern: /\bcalculus homework\b/i },
 ]);
 
 const POLICY_CATEGORIES = Object.freeze([

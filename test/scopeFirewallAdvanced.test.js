@@ -136,13 +136,13 @@ describe('partial answer reply builder', () => {
       blockedSegments: [{ category: 'image_generation', text: 'create a dog image' }],
     });
     assert.match(text, /Hostel fees vary/);
-    assert.match(text, /cannot assist with image generation/i);
+    assert.match(text, /can't assist with unrelated topics/i);
   });
 });
 
 describe('policy refusals', () => {
-  test('medical policy refusal copy', () => {
-    assert.match(resolvePolicyRefusal('medical'), /medical advice/i);
+  test('policy blocks use the standard scope refusal copy', () => {
+    assert.match(resolvePolicyRefusal('medical'), /can't assist with unrelated topics/i);
   });
 });
 

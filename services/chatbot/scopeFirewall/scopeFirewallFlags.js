@@ -5,13 +5,13 @@ function isScopeFirewallEnabled() {
 }
 
 /**
- * Shadow mode: evaluate + log but never block. Defaults to true (safe) when the
- * flag is unset so an accidental enablement cannot start blocking traffic.
+ * Shadow mode: evaluate + log but do not block (LLM may still run). Defaults to
+ * enforce when unset; set CHATBOT_SCOPE_FIREWALL_SHADOW_MODE=1 to log-only.
  */
 function isScopeFirewallShadowMode() {
   const raw = String(process.env.CHATBOT_SCOPE_FIREWALL_SHADOW_MODE ?? '').trim();
-  if (raw === '') return true;
-  return raw !== '0';
+  if (raw === '') return false;
+  return raw === '1';
 }
 
 module.exports = {
