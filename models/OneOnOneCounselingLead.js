@@ -66,6 +66,15 @@ const schema = new mongoose.Schema(
         message: 'At most 3 preferred colleges',
       },
     },
+    natInitiated: { type: Boolean, default: false, index: true },
+    natInterested: {
+      type: String,
+      enum: ['', 'yes', 'no', 'undecided'],
+      default: '',
+      trim: true,
+    },
+    natContactLater: { type: Boolean, default: false, index: true },
+    natNotes: { type: String, trim: true, maxlength: 2000, default: '' },
     assignedBdaId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Bda',

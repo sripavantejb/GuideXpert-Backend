@@ -39,6 +39,8 @@ const {
   toggleSlot,
   deleteSlot,
   listGuidanceBookings,
+  listGuidanceNatFollowUps,
+  patchGuidanceNatFollowUp,
   cancelGuidanceBooking,
   getGuidanceReminderStatus,
 } = require('../controllers/oneOnOneCounselorAdminController');
@@ -168,6 +170,8 @@ router.put('/guidance-slots/:id', requireAdmin, updateSlot);
 router.patch('/guidance-slots/:id/toggle', requireAdmin, toggleSlot);
 router.delete('/guidance-slots/:id', requireAdmin, deleteSlot);
 router.get('/guidance-bookings', requireAdmin, listGuidanceBookings);
+router.get('/guidance-nat-follow-ups', requireAdmin, listGuidanceNatFollowUps);
+router.patch('/guidance-nat-follow-ups/:id', requireAdmin, patchGuidanceNatFollowUp);
 router.post('/guidance-bookings/:id/cancel', requireAdmin, cancelGuidanceBooking);
 router.get('/guidance-reminder-status', requireAdmin, getGuidanceReminderStatus);
 router.get('/counsellor-support-requests', requireAdmin, getCounsellorSupportRequests);

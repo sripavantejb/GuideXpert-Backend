@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const OneOnOneCounselor = require('../models/OneOnOneCounselor');
 const GuidanceSlot = require('../models/GuidanceSlot');
 const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
+const NatCampaignSubmission = require('../models/NatCampaignSubmission');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 const { COUNSELOR_BOOKING_STATUS_OPTIONS } = require('../constants/guidanceBooking');
 const { getOneOnOneCounselorJwtSecret } = require('../middleware/requireOneOnOneCounselor');
@@ -248,10 +249,49 @@ exports.updateMyProfile = async (req, res) => {
   }
 };
 
+function buildNatSummaryForLeads(leads, natMobileSet) {
+  const pickNames = (predicate) =>
+    leads.filter(predicate).map((l) => l.studentName).filter(Boolean);
+
+  const formSubmittedLeads = leads.filter((l) => natMobileSet.has(l.mobileNumber));
+  const initiatedLeads = leads.filter((l) => l.natInitiated);
+  const interestedYesLeads = leads.filter((l) => l.natInterested === 'yes');
+  const interestedNoLeads = leads.filter((l) => l.natInterested === 'no');
+  const undecidedLeads = leads.filter((l) => l.natInterested === 'undecided');
+  const contactLaterLeads = leads.filter((l) => l.natContactLater);
+
+  return {
+    formSubmitted: {
+      count: formSubmittedLeads.length,
+      names: pickNames((l) => natMobileSet.has(l.mobileNumber)),
+    },
+    initiated: {
+      count: initiatedLeads.length,
+      names: pickNames((l) => l.natInitiated),
+    },
+    interestedYes: {
+      count: interestedYesLeads.length,
+      names: pickNames((l) => l.natInterested === 'yes'),
+    },
+    interestedNo: {
+      count: interestedNoLeads.length,
+      names: pickNames((l) => l.natInterested === 'no'),
+    },
+    undecided: {
+      count: undecidedLeads.length,
+      names: pickNames((l) => l.natInterested === 'undecided'),
+    },
+    contactLater: {
+      count: contactLaterLeads.length,
+      names: pickNames((l) => l.natContactLater),
+    },
+  };
+}
+
 exports.getCounselorStats = async (req, res) => {
   try {
     const counselorId = req.oneOnOneCounselor._id;
-    const [slotCount, activeSlots, bookingCount, attended] = await Promise.all([
+    const [slotCount, activeSlots, bookingCount, attended, leads] = await Promise.all([
       GuidanceSlot.countDocuments({ oneOnOneCounselorId: counselorId }),
       GuidanceSlot.countDocuments({ oneOnOneCounselorId: counselorId, isActive: true }),
       OneOnOneCounselingLead.countDocuments({
@@ -262,10 +302,31 @@ exports.getCounselorStats = async (req, res) => {
         oneOnOneCounselorId: counselorId,
         bookingStatus: 'Attended',
       }),
+      OneOnOneCounselingLead.find({
+        oneOnOneCounselorId: counselorId,
+        bookingConfirmed: true,
+      })
+        .select('studentName mobileNumber natInitiated natInterested natContactLater')
+        .lean(),
     ]);
+
+    const mobiles = [...new Set(leads.map((l) => l.mobileNumber).filter(Boolean))];
+    const natSubmissions = mobiles.length
+      ? await NatCampaignSubmission.find({ mobileNumber: { $in: mobiles } })
+          .select('mobileNumber')
+          .lean()
+      : [];
+    const natMobileSet = new Set(natSubmissions.map((s) => s.mobileNumber));
+
     return res.status(200).json({
       success: true,
-      data: { slotCount, activeSlots, bookingCount, attended },
+      data: {
+        slotCount,
+        activeSlots,
+        bookingCount,
+        attended,
+        nat: buildNatSummaryForLeads(leads, natMobileSet),
+      },
     });
   } catch (err) {
     console.error('[getCounselorStats]', err);

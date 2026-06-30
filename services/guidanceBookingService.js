@@ -94,6 +94,10 @@ function mapLeadBookingDTO(doc, slot, counselor) {
     bookingConfirmedAt: doc.bookingConfirmedAt || null,
     attendanceStatus: doc.attendanceStatus || '',
     counselorRemarks: doc.counselorRemarks || '',
+    natInitiated: !!doc.natInitiated,
+    natInterested: doc.natInterested || '',
+    natContactLater: !!doc.natContactLater,
+    natNotes: doc.natNotes || '',
     slot: slot
       ? {
           sessionTitle: slot.sessionTitle,

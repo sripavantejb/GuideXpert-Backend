@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const OneOnOneCounselor = require('../models/OneOnOneCounselor');
 const GuidanceSlot = require('../models/GuidanceSlot');
 const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
+const NatCampaignSubmission = require('../models/NatCampaignSubmission');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 const { mapLeadBookingDTO, cancelGuidanceBookingForLead } = require('../services/guidanceBookingService');
 const { getGuidanceReminderStatusBySlotDate, SUPPORTED_STATUS_MESSAGE_KINDS } = require('../services/guidanceReminderStatusService');
@@ -25,6 +26,93 @@ function mapCounselorRow(doc) {
 
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const NAT_INTERESTED_OPTIONS = ['', 'yes', 'no', 'undecided'];
+
+const COLLEGE_PREF_LABELS = {
+  'zenith-school-of-ai': 'Zenith School of AI',
+  niat: 'NIAT',
+  scaler: 'Scaler',
+  newton: 'Newton',
+  others: 'Others',
+};
+
+function formatNatCollegePreferences(submission) {
+  if (!submission) return '';
+  const preferences = Array.isArray(submission.collegePreferences) ? submission.collegePreferences : [];
+  if (!preferences.length) return '';
+  return preferences
+    .map((value) => {
+      if (value === 'others') {
+        return submission.collegePreferenceOther
+          ? `Others: ${submission.collegePreferenceOther}`
+          : 'Others';
+      }
+      return COLLEGE_PREF_LABELS[value] || value;
+    })
+    .join(', ');
+}
+
+async function buildGuidanceBookingsMatch(query) {
+  const match = {};
+  const bookingFilter = typeof query.bookingFilter === 'string' ? query.bookingFilter.trim() : '';
+  if (bookingFilter === 'confirmed') {
+    match.bookingConfirmed = true;
+  } else if (bookingFilter === 'pending') {
+    match.bookingConfirmed = { $ne: true };
+    match.bookingStatus = 'Pending';
+  } else if (bookingFilter === 'notBooked') {
+    match.bookingConfirmed = { $ne: true };
+    match.$or = [
+      { bookingStatus: { $in: ['Not Booked', null] } },
+      { bookingStatus: { $exists: false } },
+    ];
+  }
+
+  if (query.parentAttendanceConfirmed === 'true') {
+    match.parentAttendanceConfirmed = true;
+  }
+  if (query.whatsappConsent === 'true') {
+    match.whatsappConsent = true;
+  }
+  if (mongoose.Types.ObjectId.isValid(query.selectedSlotId)) {
+    match.selectedSlotId = query.selectedSlotId;
+  }
+  if (mongoose.Types.ObjectId.isValid(query.oneOnOneCounselorId)) {
+    match.oneOnOneCounselorId = query.oneOnOneCounselorId;
+  }
+  const slotDate = typeof query.slotDate === 'string' ? query.slotDate.trim() : '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(slotDate)) {
+    const slotIds = await GuidanceSlot.find({ slotDate }).distinct('_id');
+    match.selectedSlotId = { $in: slotIds };
+  }
+
+  const studentName = typeof query.studentName === 'string' ? query.studentName.trim() : '';
+  if (studentName) {
+    match.studentName = { $regex: escapeRegex(studentName), $options: 'i' };
+  }
+
+  const mobileRaw = typeof query.mobile === 'string' ? query.mobile.trim() : '';
+  const mobileDigits = mobileRaw.replace(/\D/g, '');
+  if (mobileDigits) {
+    match.mobileNumber = { $regex: escapeRegex(mobileDigits) };
+  }
+
+  const natFilter = typeof query.natFilter === 'string' ? query.natFilter.trim() : '';
+  if (natFilter === 'initiated') {
+    match.natInitiated = true;
+  } else if (natFilter === 'notInitiated') {
+    match.natInitiated = { $ne: true };
+  } else if (natFilter === 'contactLater') {
+    match.natContactLater = true;
+  } else if (natFilter === 'interestedYes') {
+    match.natInterested = 'yes';
+  } else if (natFilter === 'interestedNo') {
+    match.natInterested = 'no';
+  }
+
+  return match;
 }
 
 function mapSlotRow(doc, counselor) {
@@ -466,50 +554,7 @@ exports.listGuidanceBookings = async (req, res) => {
     const limit = Math.min(ADMIN_LIST_MAX_LIMIT, Math.max(1, parseInt(req.query.limit, 10) || 25));
     const skip = (page - 1) * limit;
 
-    const match = {};
-    const bookingFilter = typeof req.query.bookingFilter === 'string' ? req.query.bookingFilter.trim() : '';
-    if (bookingFilter === 'confirmed') {
-      match.bookingConfirmed = true;
-    } else if (bookingFilter === 'pending') {
-      match.bookingConfirmed = { $ne: true };
-      match.bookingStatus = 'Pending';
-    } else if (bookingFilter === 'notBooked') {
-      match.bookingConfirmed = { $ne: true };
-      match.$or = [
-        { bookingStatus: { $in: ['Not Booked', null] } },
-        { bookingStatus: { $exists: false } },
-      ];
-    }
-
-    if (req.query.parentAttendanceConfirmed === 'true') {
-      match.parentAttendanceConfirmed = true;
-    }
-    if (req.query.whatsappConsent === 'true') {
-      match.whatsappConsent = true;
-    }
-    if (mongoose.Types.ObjectId.isValid(req.query.selectedSlotId)) {
-      match.selectedSlotId = req.query.selectedSlotId;
-    }
-    if (mongoose.Types.ObjectId.isValid(req.query.oneOnOneCounselorId)) {
-      match.oneOnOneCounselorId = req.query.oneOnOneCounselorId;
-    }
-    const slotDate = typeof req.query.slotDate === 'string' ? req.query.slotDate.trim() : '';
-    if (/^\d{4}-\d{2}-\d{2}$/.test(slotDate)) {
-      const slotIds = await GuidanceSlot.find({ slotDate }).distinct('_id');
-      match.selectedSlotId = { $in: slotIds };
-    }
-
-    const studentName =
-      typeof req.query.studentName === 'string' ? req.query.studentName.trim() : '';
-    if (studentName) {
-      match.studentName = { $regex: escapeRegex(studentName), $options: 'i' };
-    }
-
-    const mobileRaw = typeof req.query.mobile === 'string' ? req.query.mobile.trim() : '';
-    const mobileDigits = mobileRaw.replace(/\D/g, '');
-    if (mobileDigits) {
-      match.mobileNumber = { $regex: escapeRegex(mobileDigits) };
-    }
+    const match = await buildGuidanceBookingsMatch(req.query);
 
     const [rows, total] = await Promise.all([
       OneOnOneCounselingLead.find(match).sort({ bookingConfirmedAt: -1, createdAt: -1 }).skip(skip).limit(limit).lean(),
@@ -534,6 +579,145 @@ exports.listGuidanceBookings = async (req, res) => {
     });
   } catch (err) {
     console.error('[listGuidanceBookings]', err);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+function mapNatFollowUpRow(lead, slot, counselor, natSubmission) {
+  const base = mapLeadBookingDTO(lead, slot, counselor);
+  return {
+    ...base,
+    natFormSubmitted: Boolean(natSubmission),
+    natFormSubmittedAt: natSubmission?.submittedAt || null,
+    natCollegePreferences: formatNatCollegePreferences(natSubmission),
+    natCollegePreferencesRaw: Array.isArray(natSubmission?.collegePreferences)
+      ? natSubmission.collegePreferences
+      : [],
+    natCollegePreferenceOther: natSubmission?.collegePreferenceOther || '',
+  };
+}
+
+exports.listGuidanceNatFollowUps = async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(ADMIN_LIST_MAX_LIMIT, Math.max(1, parseInt(req.query.limit, 10) || 25));
+    const skip = (page - 1) * limit;
+
+    const match = await buildGuidanceBookingsMatch(req.query);
+    if (!req.query.bookingFilter) {
+      match.bookingConfirmed = true;
+    }
+
+    const natFormFilter = typeof req.query.natFormFilter === 'string' ? req.query.natFormFilter.trim() : '';
+    if (natFormFilter === 'submitted' || natFormFilter === 'notSubmitted') {
+      const natMobiles = await NatCampaignSubmission.distinct('mobileNumber');
+      if (natFormFilter === 'submitted') {
+        if (!natMobiles.length) {
+          match._id = { $in: [] };
+        } else if (match.mobileNumber?.$regex) {
+          const regexClause = { mobileNumber: { $regex: match.mobileNumber.$regex, $options: 'i' } };
+          delete match.mobileNumber;
+          match.$and = [...(match.$and || []), regexClause, { mobileNumber: { $in: natMobiles } }];
+        } else {
+          match.mobileNumber = { $in: natMobiles };
+        }
+      } else if (natMobiles.length) {
+        const notInClause = { mobileNumber: { $nin: natMobiles } };
+        if (match.mobileNumber?.$regex) {
+          const regexClause = { mobileNumber: { $regex: match.mobileNumber.$regex, $options: 'i' } };
+          delete match.mobileNumber;
+          match.$and = [...(match.$and || []), regexClause, notInClause];
+        } else {
+          match.mobileNumber = { $nin: natMobiles };
+        }
+      }
+    }
+
+    const [rows, total] = await Promise.all([
+      OneOnOneCounselingLead.find(match).sort({ bookingConfirmedAt: -1, createdAt: -1 }).skip(skip).limit(limit).lean(),
+      OneOnOneCounselingLead.countDocuments(match),
+    ]);
+
+    const slotIds = rows.filter((r) => r.selectedSlotId).map((r) => r.selectedSlotId);
+    const counselorIds = rows.filter((r) => r.oneOnOneCounselorId).map((r) => r.oneOnOneCounselorId);
+    const mobiles = rows.map((r) => r.mobileNumber).filter(Boolean);
+    const [slots, counselors, natSubmissions] = await Promise.all([
+      GuidanceSlot.find({ _id: { $in: slotIds } }).lean(),
+      OneOnOneCounselor.find({ _id: { $in: counselorIds } }).select('name collegeName').lean(),
+      NatCampaignSubmission.find({ mobileNumber: { $in: mobiles } }).lean(),
+    ]);
+    const slotById = Object.fromEntries(slots.map((s) => [String(s._id), s]));
+    const counselorById = Object.fromEntries(counselors.map((c) => [String(c._id), c]));
+    const natByMobile = Object.fromEntries(natSubmissions.map((n) => [n.mobileNumber, n]));
+
+    return res.status(200).json({
+      success: true,
+      data: rows.map((r) =>
+        mapNatFollowUpRow(
+          r,
+          slotById[String(r.selectedSlotId)],
+          counselorById[String(r.oneOnOneCounselorId)],
+          natByMobile[r.mobileNumber]
+        )
+      ),
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
+    });
+  } catch (err) {
+    console.error('[listGuidanceNatFollowUps]', err);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+exports.patchGuidanceNatFollowUp = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const body = req.body || {};
+    const update = {};
+
+    if (body.natInitiated !== undefined) {
+      update.natInitiated = Boolean(body.natInitiated);
+    }
+    if (body.natContactLater !== undefined) {
+      update.natContactLater = Boolean(body.natContactLater);
+    }
+    if (body.natInterested !== undefined) {
+      const interested = typeof body.natInterested === 'string' ? body.natInterested.trim() : '';
+      if (!NAT_INTERESTED_OPTIONS.includes(interested)) {
+        return res.status(400).json({ success: false, message: 'Invalid interested value.' });
+      }
+      update.natInterested = interested;
+    }
+    if (body.natNotes !== undefined) {
+      update.natNotes = typeof body.natNotes === 'string' ? body.natNotes.trim().slice(0, 2000) : '';
+    }
+
+    if (!Object.keys(update).length) {
+      return res.status(400).json({ success: false, message: 'No valid fields to update.' });
+    }
+
+    const lead = await OneOnOneCounselingLead.findByIdAndUpdate(id, update, {
+      new: true,
+      runValidators: true,
+    }).lean();
+
+    if (!lead) {
+      return res.status(404).json({ success: false, message: 'Lead not found.' });
+    }
+
+    const [slot, counselor, natSubmission] = await Promise.all([
+      lead.selectedSlotId ? GuidanceSlot.findById(lead.selectedSlotId).lean() : null,
+      lead.oneOnOneCounselorId
+        ? OneOnOneCounselor.findById(lead.oneOnOneCounselorId).select('name collegeName').lean()
+        : null,
+      NatCampaignSubmission.findOne({ mobileNumber: lead.mobileNumber }).lean(),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: mapNatFollowUpRow(lead, slot, counselor, natSubmission),
+    });
+  } catch (err) {
+    console.error('[patchGuidanceNatFollowUp]', err);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
