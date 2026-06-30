@@ -6,6 +6,14 @@ const NatCampaignSubmission = require('../models/NatCampaignSubmission');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 const { mapLeadBookingDTO, cancelGuidanceBookingForLead } = require('../services/guidanceBookingService');
 const { getGuidanceReminderStatusBySlotDate, SUPPORTED_STATUS_MESSAGE_KINDS } = require('../services/guidanceReminderStatusService');
+const {
+  NAT_CHANNEL_OPTIONS,
+  NAT_CAMPAIGN_OPTIONS,
+  NAT_LANGUAGE_OPTIONS,
+  NAT_COUNSELLOR_BY_OPTIONS,
+  NAT_CBA_NAME_OPTIONS,
+  NAT_SESSION_STAGE_OPTIONS,
+} = require('../constants/natFollowUp');
 
 function mapCounselorRow(doc) {
   return {
@@ -594,7 +602,27 @@ function mapNatFollowUpRow(lead, slot, counselor, natSubmission) {
       ? natSubmission.collegePreferences
       : [],
     natCollegePreferenceOther: natSubmission?.collegePreferenceOther || '',
+    assignedBdaName: lead.assignedBdaName || '',
+    natFollowUpDate: lead.natFollowUpDate || slot?.slotDate || '',
+    natChannel: lead.natChannel || '',
+    natCampaign: lead.natCampaign || lead.utm_campaign || '',
+    natLanguage: lead.natLanguage || lead.preferredLanguage || '',
+    natCounsellorBy: lead.natCounsellorBy || '',
+    natCounsellorName: lead.natCounsellorName || counselor?.name || '',
+    natCbaName: lead.natCbaName || lead.assignedBdaName || '',
+    natBeforeSessionStage: lead.natBeforeSessionStage || '',
+    natPresentStage: lead.natPresentStage || '',
   };
+}
+
+function assignNatStringField(update, body, key, maxLen, allowedValues) {
+  if (body[key] === undefined) return;
+  const value = typeof body[key] === 'string' ? body[key].trim() : '';
+  if (allowedValues && value && !allowedValues.includes(value)) {
+    return { error: `Invalid ${key}.` };
+  }
+  update[key] = value.slice(0, maxLen);
+  return null;
 }
 
 exports.listGuidanceNatFollowUps = async (req, res) => {
@@ -689,6 +717,33 @@ exports.patchGuidanceNatFollowUp = async (req, res) => {
     }
     if (body.natNotes !== undefined) {
       update.natNotes = typeof body.natNotes === 'string' ? body.natNotes.trim().slice(0, 2000) : '';
+    }
+
+    const stringFieldDefs = [
+      { key: 'natFollowUpDate', maxLen: 10, allowed: null },
+      { key: 'natChannel', maxLen: 80, allowed: NAT_CHANNEL_OPTIONS },
+      { key: 'natCampaign', maxLen: 120, allowed: NAT_CAMPAIGN_OPTIONS },
+      { key: 'natLanguage', maxLen: 40, allowed: NAT_LANGUAGE_OPTIONS },
+      { key: 'natCounsellorBy', maxLen: 80, allowed: NAT_COUNSELLOR_BY_OPTIONS },
+      { key: 'natCounsellorName', maxLen: 100, allowed: null },
+      { key: 'natCbaName', maxLen: 100, allowed: NAT_CBA_NAME_OPTIONS },
+      { key: 'natBeforeSessionStage', maxLen: 80, allowed: NAT_SESSION_STAGE_OPTIONS },
+      { key: 'natPresentStage', maxLen: 80, allowed: NAT_SESSION_STAGE_OPTIONS },
+    ];
+    for (const field of stringFieldDefs) {
+      if (body[field.key] === undefined) continue;
+      if (field.key === 'natFollowUpDate') {
+        const dateVal = typeof body.natFollowUpDate === 'string' ? body.natFollowUpDate.trim() : '';
+        if (dateVal && !/^\d{4}-\d{2}-\d{2}$/.test(dateVal)) {
+          return res.status(400).json({ success: false, message: 'Invalid date format.' });
+        }
+        update.natFollowUpDate = dateVal;
+        continue;
+      }
+      const err = assignNatStringField(update, body, field.key, field.maxLen, field.allowed);
+      if (err) {
+        return res.status(400).json({ success: false, message: err.error });
+      }
     }
 
     if (!Object.keys(update).length) {

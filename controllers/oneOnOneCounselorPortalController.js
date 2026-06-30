@@ -3,7 +3,14 @@ const mongoose = require('mongoose');
 const OneOnOneCounselor = require('../models/OneOnOneCounselor');
 const GuidanceSlot = require('../models/GuidanceSlot');
 const OneOnOneCounselingLead = require('../models/OneOnOneCounselingLead');
-const NatCampaignSubmission = require('../models/NatCampaignSubmission');
+const {
+  NAT_CHANNEL_OPTIONS,
+  NAT_CAMPAIGN_OPTIONS,
+  NAT_LANGUAGE_OPTIONS,
+  NAT_COUNSELLOR_BY_OPTIONS,
+  NAT_CBA_NAME_OPTIONS,
+  NAT_SESSION_STAGE_OPTIONS,
+} = require('../constants/natFollowUp');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 const { COUNSELOR_BOOKING_STATUS_OPTIONS } = require('../constants/guidanceBooking');
 const { getOneOnOneCounselorJwtSecret } = require('../middleware/requireOneOnOneCounselor');
@@ -249,48 +256,74 @@ exports.updateMyProfile = async (req, res) => {
   }
 };
 
-function buildNatSummaryForLeads(leads, natMobileSet) {
-  const pickNames = (predicate) =>
-    leads.filter(predicate).map((l) => l.studentName).filter(Boolean);
+function buildNatFieldBreakdown(leads, fieldKey, options) {
+  const labels = [...options.filter(Boolean), 'Not set'];
+  return labels.map((label) => {
+    const matched = leads.filter((lead) => {
+      const value = (lead[fieldKey] || '').trim();
+      if (label === 'Not set') return !value;
+      return value === label;
+    });
+    return {
+      label,
+      count: matched.length,
+      names: matched.map((lead) => lead.studentName).filter(Boolean),
+    };
+  });
+}
 
-  const formSubmittedLeads = leads.filter((l) => natMobileSet.has(l.mobileNumber));
-  const initiatedLeads = leads.filter((l) => l.natInitiated);
-  const interestedYesLeads = leads.filter((l) => l.natInterested === 'yes');
-  const interestedNoLeads = leads.filter((l) => l.natInterested === 'no');
-  const undecidedLeads = leads.filter((l) => l.natInterested === 'undecided');
-  const contactLaterLeads = leads.filter((l) => l.natContactLater);
+function mapNatStudentRow(lead) {
+  return {
+    studentName: lead.studentName || '',
+    natChannel: lead.natChannel || '',
+    natCampaign: lead.natCampaign || '',
+    natLanguage: lead.natLanguage || '',
+    natCounsellorBy: lead.natCounsellorBy || '',
+    natCbaName: lead.natCbaName || '',
+    natBeforeSessionStage: lead.natBeforeSessionStage || '',
+    natPresentStage: lead.natPresentStage || '',
+  };
+}
+
+function buildNatTrackingSummary(leads) {
+  const students = leads
+    .map(mapNatStudentRow)
+    .sort((a, b) => a.studentName.localeCompare(b.studentName));
 
   return {
-    formSubmitted: {
-      count: formSubmittedLeads.length,
-      names: pickNames((l) => natMobileSet.has(l.mobileNumber)),
-    },
-    initiated: {
-      count: initiatedLeads.length,
-      names: pickNames((l) => l.natInitiated),
-    },
-    interestedYes: {
-      count: interestedYesLeads.length,
-      names: pickNames((l) => l.natInterested === 'yes'),
-    },
-    interestedNo: {
-      count: interestedNoLeads.length,
-      names: pickNames((l) => l.natInterested === 'no'),
-    },
-    undecided: {
-      count: undecidedLeads.length,
-      names: pickNames((l) => l.natInterested === 'undecided'),
-    },
-    contactLater: {
-      count: contactLaterLeads.length,
-      names: pickNames((l) => l.natContactLater),
-    },
+    totalConfirmed: leads.length,
+    students,
+    byChannel: buildNatFieldBreakdown(leads, 'natChannel', NAT_CHANNEL_OPTIONS),
+    byCampaign: buildNatFieldBreakdown(leads, 'natCampaign', NAT_CAMPAIGN_OPTIONS),
+    byLanguage: buildNatFieldBreakdown(leads, 'natLanguage', NAT_LANGUAGE_OPTIONS),
+    byCounsellorBy: buildNatFieldBreakdown(leads, 'natCounsellorBy', NAT_COUNSELLOR_BY_OPTIONS),
+    byCbaName: buildNatFieldBreakdown(leads, 'natCbaName', NAT_CBA_NAME_OPTIONS),
+    byBeforeSessionStage: buildNatFieldBreakdown(
+      leads,
+      'natBeforeSessionStage',
+      NAT_SESSION_STAGE_OPTIONS
+    ),
+    byPresentStage: buildNatFieldBreakdown(leads, 'natPresentStage', NAT_SESSION_STAGE_OPTIONS),
+  };
+}
+
+function counselorNatLeadMatch(counselorId, counselorName) {
+  const name = typeof counselorName === 'string' ? counselorName.trim() : '';
+  const clauses = [{ oneOnOneCounselorId: counselorId }];
+  if (name) {
+    clauses.push({ natCounsellorName: name });
+  }
+  return {
+    bookingConfirmed: true,
+    $or: clauses,
   };
 }
 
 exports.getCounselorStats = async (req, res) => {
   try {
     const counselorId = req.oneOnOneCounselor._id;
+    const counselorName = req.oneOnOneCounselor.name || '';
+    const natLeadMatch = counselorNatLeadMatch(counselorId, counselorName);
     const [slotCount, activeSlots, bookingCount, attended, leads] = await Promise.all([
       GuidanceSlot.countDocuments({ oneOnOneCounselorId: counselorId }),
       GuidanceSlot.countDocuments({ oneOnOneCounselorId: counselorId, isActive: true }),
@@ -302,21 +335,13 @@ exports.getCounselorStats = async (req, res) => {
         oneOnOneCounselorId: counselorId,
         bookingStatus: 'Attended',
       }),
-      OneOnOneCounselingLead.find({
-        oneOnOneCounselorId: counselorId,
-        bookingConfirmed: true,
-      })
-        .select('studentName mobileNumber natInitiated natInterested natContactLater')
+      OneOnOneCounselingLead.find(natLeadMatch)
+        .select(
+          'studentName natChannel natCampaign natLanguage natCounsellorBy natCbaName natBeforeSessionStage natPresentStage natCounsellorName'
+        )
+        .sort({ studentName: 1 })
         .lean(),
     ]);
-
-    const mobiles = [...new Set(leads.map((l) => l.mobileNumber).filter(Boolean))];
-    const natSubmissions = mobiles.length
-      ? await NatCampaignSubmission.find({ mobileNumber: { $in: mobiles } })
-          .select('mobileNumber')
-          .lean()
-      : [];
-    const natMobileSet = new Set(natSubmissions.map((s) => s.mobileNumber));
 
     return res.status(200).json({
       success: true,
@@ -325,7 +350,7 @@ exports.getCounselorStats = async (req, res) => {
         activeSlots,
         bookingCount,
         attended,
-        nat: buildNatSummaryForLeads(leads, natMobileSet),
+        nat: buildNatTrackingSummary(leads),
       },
     });
   } catch (err) {

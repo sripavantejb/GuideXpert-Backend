@@ -98,6 +98,15 @@ function mapLeadBookingDTO(doc, slot, counselor) {
     natInterested: doc.natInterested || '',
     natContactLater: !!doc.natContactLater,
     natNotes: doc.natNotes || '',
+    natFollowUpDate: doc.natFollowUpDate || '',
+    natChannel: doc.natChannel || '',
+    natCampaign: doc.natCampaign || '',
+    natLanguage: doc.natLanguage || '',
+    natCounsellorBy: doc.natCounsellorBy || '',
+    natCounsellorName: doc.natCounsellorName || '',
+    natCbaName: doc.natCbaName || '',
+    natBeforeSessionStage: doc.natBeforeSessionStage || '',
+    natPresentStage: doc.natPresentStage || '',
     slot: slot
       ? {
           sessionTitle: slot.sessionTitle,
