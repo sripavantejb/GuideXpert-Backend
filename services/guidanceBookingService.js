@@ -77,6 +77,7 @@ function mapLeadBasicDTO(doc) {
     bookingConfirmed: !!doc.bookingConfirmed,
     bookingStatus: doc.bookingStatus || 'Not Booked',
     formCompleted: !!doc.formCompleted,
+    createdAt: doc.createdAt || null,
     utm_source: doc.utm_source || '',
     utm_medium: doc.utm_medium || '',
     utm_campaign: doc.utm_campaign || '',

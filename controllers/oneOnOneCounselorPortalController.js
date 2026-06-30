@@ -309,13 +309,13 @@ function buildNatTrackingSummary(leads) {
 
 function counselorNatLeadMatch(counselorId, counselorName) {
   const name = typeof counselorName === 'string' ? counselorName.trim() : '';
-  const clauses = [{ oneOnOneCounselorId: counselorId }];
-  if (name) {
-    clauses.push({ natCounsellorName: name });
+  const match = { bookingConfirmed: true };
+  if (!name) {
+    return { ...match, oneOnOneCounselorId: counselorId };
   }
   return {
-    bookingConfirmed: true,
-    $or: clauses,
+    ...match,
+    $or: [{ oneOnOneCounselorId: counselorId }, { natCounsellorName: name }],
   };
 }
 
