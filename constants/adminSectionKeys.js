@@ -17,6 +17,7 @@ const ADMIN_SECTION_KEYS = [
   'export',
   'slots',
   'training-form-responses',
+  'nurturing',
   'one-on-one-counseling',
   'lead-intelligence',
   'human-copilot',
