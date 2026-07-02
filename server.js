@@ -189,7 +189,7 @@ const corsOptions = {
   optionsSuccessStatus: 204,
 };
 app.use(cors(corsOptions));
-// Poster templates: large SVG + JSON overhead; keep above MAX_SVG_CHARS in posterTemplateController (~2MB markup alone)
+// Poster templates: large SVG + JSON overhead; keep above MAX_POSTER_SVG_CHARS in posterTemplateController (3 MB markup)
 function logAdminPosterJsonBody(req, res, buf) {
   try {
     if (req.method !== 'POST') return;

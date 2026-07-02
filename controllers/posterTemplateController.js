@@ -1,8 +1,10 @@
 const PosterTemplate = require('../models/PosterTemplate');
 const TrainingFeedback = require('../models/TrainingFeedback');
 const { isPrivilegedPhone } = require('../utils/privilegedAccess');
-
-const MAX_SVG_CHARS = 2 * 1024 * 1024; // ~2MB text
+const {
+  MAX_POSTER_SVG_CHARS,
+  formatPosterSvgLimitLabel,
+} = require('../utils/posterSvgLimits');
 
 /** Public poster URLs must live under /p/... (React Router + SPA). */
 function isPosterPublicPath(routeNorm) {
@@ -263,10 +265,10 @@ exports.createPoster = async (req, res) => {
         { hasSvgKey, bodyKeys: Object.keys(body) }
       );
     }
-    if (svgTemplate.length > MAX_SVG_CHARS) {
+    if (svgTemplate.length > MAX_POSTER_SVG_CHARS) {
       return bad(
         'POSTER_SVG_TOO_LARGE',
-        `svgTemplate exceeds ${MAX_SVG_CHARS} characters (this file has ${svgTemplate.length}). Simplify the SVG or reduce embedded data.`
+        `svgTemplate exceeds ${formatPosterSvgLimitLabel()} (this file is ${(svgTemplate.length / (1024 * 1024)).toFixed(1)} MB). Simplify the SVG or reduce embedded images.`
       );
     }
     if (!isLikelySvg(svgTemplate)) {
@@ -360,10 +362,10 @@ exports.updatePoster = async (req, res) => {
       if (!svgTemplate.length) {
         return res.status(400).json({ success: false, message: 'Invalid svgTemplate (empty).', code: 'POSTER_SVG_EMPTY' });
       }
-      if (svgTemplate.length > MAX_SVG_CHARS) {
+      if (svgTemplate.length > MAX_POSTER_SVG_CHARS) {
         return res.status(400).json({
           success: false,
-          message: `svgTemplate exceeds ${MAX_SVG_CHARS} characters.`,
+          message: `svgTemplate exceeds ${formatPosterSvgLimitLabel()}.`,
           code: 'POSTER_SVG_TOO_LARGE',
         });
       }
