@@ -23,6 +23,7 @@ const { getTrainingAttendance } = require('../controllers/trainingController');
 const { getTrainingFeedback } = require('../controllers/feedbackController');
 const { getTrainingFormResponses } = require('../controllers/trainingFormController');
 const { getProgressCheckInSubmissions } = require('../controllers/progressCheckInController');
+const { getIitainSessionFeedbackSubmissions } = require('../controllers/iitainSessionFeedbackController');
 const {
   listOneOnOneCounselingLeads,
   patchOneOnOneCounselingLead,
@@ -158,6 +159,7 @@ router.get('/training-attendance', requireAdmin, getTrainingAttendance);
 router.get('/training-feedback', requireAdmin, getTrainingFeedback);
 router.get('/training-form-responses', requireAdmin, getTrainingFormResponses);
 router.get('/nurturing', requireAdmin, getProgressCheckInSubmissions);
+router.get('/iitain-session-feedback', requireAdmin, getIitainSessionFeedbackSubmissions);
 router.get('/one-on-one-counseling-leads/funnel-stats', requireAdmin, getOneOnOneCounselingFunnelStats);
 router.get('/one-on-one-counseling-leads', requireAdmin, listOneOnOneCounselingLeads);
 router.patch('/one-on-one-counseling-leads/:id', requireAdmin, patchOneOnOneCounselingLead);
