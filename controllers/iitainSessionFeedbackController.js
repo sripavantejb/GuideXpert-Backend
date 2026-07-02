@@ -1,5 +1,4 @@
-const Counsellor = require('../models/Counsellor');
-const TrainingFeedback = require('../models/TrainingFeedback');
+const OneOnOneCounselor = require('../models/OneOnOneCounselor');
 const IitainSessionFeedbackSubmission = require('../models/IitainSessionFeedbackSubmission');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 
@@ -25,7 +24,6 @@ function toAdminRow(doc) {
     counselorName: doc.counselorName,
     studentName: doc.studentName,
     registeredForNat: doc.registeredForNat,
-    registeredForNad: doc.registeredForNad,
     sessionSummary: doc.sessionSummary,
     sessionRecordingLink: doc.sessionRecordingLink || '',
     createdAt: doc.createdAt,
@@ -68,29 +66,21 @@ function buildAdminSearchQuery(q) {
 
 /**
  * GET /api/iitain-session-feedback/counselors
+ * Active one-on-one IIT mentors (same list as admin → One-on-One Counselors).
  */
 exports.getIitainSessionFeedbackCounselors = async (req, res) => {
   try {
-    const [counsellorNames, feedbackNames] = await Promise.all([
-      Counsellor.find({ name: { $exists: true, $ne: '' } })
-        .select('name')
-        .lean(),
-      TrainingFeedback.find({ name: { $exists: true, $ne: '' } })
-        .select('name')
-        .lean(),
-    ]);
+    const rows = await OneOnOneCounselor.find({
+      isActive: true,
+      name: { $exists: true, $ne: '' },
+    })
+      .select('name')
+      .sort({ name: 1 })
+      .lean();
 
-    const names = new Set();
-    counsellorNames.forEach((row) => {
-      const name = typeof row.name === 'string' ? row.name.trim() : '';
-      if (name.length >= 2) names.add(name);
-    });
-    feedbackNames.forEach((row) => {
-      const name = typeof row.name === 'string' ? row.name.trim() : '';
-      if (name.length >= 2) names.add(name);
-    });
-
-    const data = [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    const data = rows
+      .map((row) => (typeof row.name === 'string' ? row.name.trim() : ''))
+      .filter((name) => name.length >= 2);
 
     return res.status(200).json({ success: true, data });
   } catch (err) {
@@ -108,7 +98,6 @@ exports.submitIitainSessionFeedback = async (req, res) => {
     const counselorName = b.counselorName != null ? String(b.counselorName).trim() : '';
     const studentName = b.studentName != null ? String(b.studentName).trim() : '';
     const registeredForNat = parseYesNo(b.registeredForNat);
-    const registeredForNad = parseYesNo(b.registeredForNad);
     const sessionSummary = b.sessionSummary != null ? String(b.sessionSummary).trim() : '';
     const sessionRecordingLink =
       b.sessionRecordingLink != null ? String(b.sessionRecordingLink).trim().slice(0, 2000) : '';
@@ -122,11 +111,11 @@ exports.submitIitainSessionFeedback = async (req, res) => {
     if (registeredForNat === null) {
       return res.status(400).json({ success: false, message: 'Select whether the student registered for NAT.' });
     }
-    if (registeredForNad === null) {
-      return res.status(400).json({ success: false, message: 'Select whether the student registered for NAD.' });
-    }
     if (sessionSummary.length < 5) {
       return res.status(400).json({ success: false, message: 'Describe what happened in the session (at least 5 characters).' });
+    }
+    if (!sessionRecordingLink) {
+      return res.status(400).json({ success: false, message: 'Session recording link is required.' });
     }
     if (!isValidUrl(sessionRecordingLink)) {
       return res.status(400).json({ success: false, message: 'Enter a valid session recording link (http or https).' });
@@ -136,7 +125,6 @@ exports.submitIitainSessionFeedback = async (req, res) => {
       counselorName,
       studentName,
       registeredForNat,
-      registeredForNad,
       sessionSummary,
       sessionRecordingLink,
     });
@@ -179,16 +167,12 @@ exports.getIitainSessionFeedbackSubmissions = async (req, res) => {
     }
     if (req.query.registeredForNat === 'yes') match.registeredForNat = true;
     if (req.query.registeredForNat === 'no') match.registeredForNat = false;
-    if (req.query.registeredForNad === 'yes') match.registeredForNad = true;
-    if (req.query.registeredForNad === 'no') match.registeredForNad = false;
 
-    const [docs, total, natYes, natNo, nadYes, nadNo] = await Promise.all([
+    const [docs, total, natYes, natNo] = await Promise.all([
       IitainSessionFeedbackSubmission.find(match).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
       IitainSessionFeedbackSubmission.countDocuments(match),
       IitainSessionFeedbackSubmission.countDocuments({ ...match, registeredForNat: true }),
       IitainSessionFeedbackSubmission.countDocuments({ ...match, registeredForNat: false }),
-      IitainSessionFeedbackSubmission.countDocuments({ ...match, registeredForNad: true }),
-      IitainSessionFeedbackSubmission.countDocuments({ ...match, registeredForNad: false }),
     ]);
 
     return res.status(200).json({
@@ -204,8 +188,6 @@ exports.getIitainSessionFeedbackSubmissions = async (req, res) => {
         total,
         registeredForNatYes: natYes,
         registeredForNatNo: natNo,
-        registeredForNadYes: nadYes,
-        registeredForNadNo: nadNo,
       },
     });
   } catch (err) {
