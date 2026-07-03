@@ -1,0 +1,105 @@
+{
+  "runAt": "2026-06-26T06:02:51.514Z",
+  "verdict": "PASS",
+  "metrics": {
+    "total": 1224,
+    "allowedAccuracy": 1,
+    "blockedAccuracy": 1,
+    "injectionSuccessRate": 0,
+    "llmBypassCount": 0,
+    "crashCount": 0,
+    "avgClassifyMs": 0.03007610866013122,
+    "p95ClassifyMs": 0.03620800000001623,
+    "totalDurationMs": 199.23787499999997,
+    "precision": 1,
+    "recall": 1,
+    "falsePositives": 0,
+    "falseNegatives": 0,
+    "enforceMode": true
+  },
+  "byCategory": {
+    "programming": {
+      "total": 120,
+      "pass": 120,
+      "fail": 0,
+      "rate": 1
+    },
+    "general_knowledge": {
+      "total": 85,
+      "pass": 85,
+      "fail": 0,
+      "rate": 1
+    },
+    "entertainment": {
+      "total": 55,
+      "pass": 55,
+      "fail": 0,
+      "rate": 1
+    },
+    "shopping": {
+      "total": 55,
+      "pass": 55,
+      "fail": 0,
+      "rate": 1
+    },
+    "medical_legal_finance": {
+      "total": 80,
+      "pass": 80,
+      "fail": 0,
+      "rate": 1
+    },
+    "prompt_injection": {
+      "total": 180,
+      "pass": 180,
+      "fail": 0,
+      "rate": 1
+    },
+    "mixed": {
+      "total": 160,
+      "pass": 160,
+      "fail": 0,
+      "rate": 1
+    },
+    "obfuscated": {
+      "total": 105,
+      "pass": 105,
+      "fail": 0,
+      "rate": 1
+    },
+    "translation_summarization": {
+      "total": 84,
+      "pass": 84,
+      "fail": 0,
+      "rate": 1
+    },
+    "in_scope_counselling": {
+      "total": 180,
+      "pass": 180,
+      "fail": 0,
+      "rate": 1
+    },
+    "boundary": {
+      "total": 80,
+      "pass": 80,
+      "fail": 0,
+      "rate": 1
+    },
+    "stress": {
+      "total": 40,
+      "pass": 40,
+      "fail": 0,
+      "rate": 1
+    }
+  },
+  "failures": [],
+  "recommendedFixes": [],
+  "orchestrator": {
+    "checked": 200,
+    "llmLeaks": []
+  },
+  "memory": {
+    "heapUsedBeforeMb": 19,
+    "heapUsedAfterMb": 65,
+    "rssAfterMb": 145
+  }
+}

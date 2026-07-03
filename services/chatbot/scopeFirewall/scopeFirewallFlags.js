@@ -14,7 +14,18 @@ function isScopeFirewallShadowMode() {
   return raw === '1';
 }
 
+/**
+ * Allow-list-first: only confident in-domain matches proceed; default reject.
+ * Set CHATBOT_SCOPE_ALLOW_LIST_FIRST=0 to use legacy deny-pattern-first rules.
+ */
+function isAllowListFirstMode() {
+  const raw = String(process.env.CHATBOT_SCOPE_ALLOW_LIST_FIRST ?? '').trim();
+  if (raw === '0') return false;
+  return true;
+}
+
 module.exports = {
   isScopeFirewallEnabled,
   isScopeFirewallShadowMode,
+  isAllowListFirstMode,
 };

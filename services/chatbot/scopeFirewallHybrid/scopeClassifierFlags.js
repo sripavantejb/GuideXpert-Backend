@@ -1,7 +1,12 @@
 'use strict';
 
 function isScopeClassifierEnabled() {
-  return String(process.env.CHATBOT_SCOPE_CLASSIFIER_ENABLED || '').trim() === '1';
+  const explicit = String(process.env.CHATBOT_SCOPE_CLASSIFIER_ENABLED ?? '').trim();
+  if (explicit === '1') return true;
+  if (explicit === '0') return false;
+  // Default on when scope firewall is enabled (allow-list-first requires semantic gate for unknowns).
+  const { isScopeFirewallEnabled } = require('../scopeFirewall/scopeFirewallFlags');
+  return isScopeFirewallEnabled();
 }
 
 function isScopeClassifierReady() {

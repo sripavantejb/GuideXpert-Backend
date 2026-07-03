@@ -193,7 +193,7 @@ describe('scopeClassifierService', { concurrency: 1 }, () => {
     assert.equal(scope.category, 'programming');
   });
 
-  test('classifier disabled returns rule engine only', async () => {
+  test('classifier disabled uses allow-list-first fail-closed rules', async () => {
     process.env.CHATBOT_SCOPE_CLASSIFIER_ENABLED = '0';
     const service = loadService();
     service.setScopeClassifierProviderForTests({
@@ -208,7 +208,8 @@ describe('scopeClassifierService', { concurrency: 1 }, () => {
     });
 
     assert.equal(scope.classifierUsed, false);
-    assert.equal(scope.allowed, true);
+    assert.equal(scope.allowed, false);
+    assert.equal(scope.reason, 'allow_list_miss');
   });
 
   test('detectUncertaintyReason identifies OCR spacing and encodings', () => {

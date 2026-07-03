@@ -34,7 +34,7 @@ const DENY_CATEGORIES = Object.freeze([
   'math',
 ]);
 
-const SEGMENT_SPLIT_RE = /\s+(?:and|also)\s+|[,;]+|\s+but\s+/i;
+const SEGMENT_SPLIT_RE = /\s+(?:and|also|then)\s+|[,;]+|\s+but\s+/i;
 
 const DENY_PATTERNS = Object.freeze([
   // programming — keywords
@@ -85,8 +85,13 @@ const DENY_PATTERNS = Object.freeze([
   { category: 'prompt_injection', pattern: /\bforget guidexpert\b/i },
   { category: 'prompt_injection', pattern: /\breveal (your )?(system|hidden) prompt\b/i },
   { category: 'prompt_injection', pattern: /\bdo anything now\b/i },
+  { category: 'prompt_injection', pattern: /\bdisregard\b.{0,30}\b(guidexpert|scope|limits|rules|instructions)\b/i },
+  { category: 'prompt_injection', pattern: /\bscope limits\b/i },
 
-  // image generation
+  // shopping / product recommendations
+  { category: 'general_trivia', pattern: /\b(laptop|macbook|iphone|ipad|dslr|mirrorless|camera|smartphone|headphones|earbuds)\b/i },
+  { category: 'general_trivia', pattern: /\b(amazon|flipkart|best (phone|laptop|camera)|buy (a )?(phone|laptop|camera))\b/i },
+  { category: 'general_trivia', pattern: /\bcompare\b.{0,30}\b(macbook|dell|xps|iphone|samsung|dslr|mirrorless)\b/i },
   { category: 'image_generation', pattern: /\b(generate|create|draw|make|render|banao|chey|cheyyi|pannu)\b.{0,24}\b(image|picture|photo|pic|drawing|art(work)?|wallpaper|portrait|avatar|cartoon|puppy|dog)\b/i },
   { category: 'image_generation', pattern: /\b(image|picture|photo|pic|wallpaper|portrait|avatar) (of|create|banao)\b/i },
   { category: 'image_generation', pattern: /\bdog (pic|picture|image)\b/i },
@@ -179,7 +184,7 @@ const BRANCH_GUIDANCE_PATTERN =
 
 /** Career comparison context — allows Python/Java mentions for placements/jobs. */
 const CAREER_CONTEXT_PATTERN =
-  /\b(placement|placements|career|job|jobs|software jobs?|for placements?|vs|versus)\b/i;
+  /\b(placement|placements|career|careers|job|jobs|software jobs?|for placements?|machine learning branch|ai careers?)\b/i;
 
 const CODE_WRITING_REQUEST_PATTERN =
   /\b(write|give|generate|share|implement|debug|sorting code|code for|source code|teach me python|teach me java|teach me c\+\+|solve two sum|leetcode)\b/i;

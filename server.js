@@ -27,11 +27,9 @@ const iitFirstFormRoutes = require('./routes/iitFirstFormRoutes');
 const iitSecondFormRoutes = require('./routes/iitSecondFormRoutes');
 const collegeDostFormRoutes = require('./routes/collegeDostFormRoutes');
 const collegeDostMeetRoutes = require('./routes/collegeDostMeetRoutes');
-const natCampaignRoutes = require('./routes/natCampaignRoutes');
 const trainingRoutes = require('./routes/trainingRoutes');
 const feedbackRoutes = require('./routes/feedbackRoutes');
 const trainingFormRoutes = require('./routes/trainingFormRoutes');
-const progressCheckInRoutes = require('./routes/progressCheckInRoutes');
 const iitainSessionFeedbackRoutes = require('./routes/iitainSessionFeedbackRoutes');
 const oneOnOneCounselingRoutes = require('./routes/oneOnOneCounselingRoutes');
 const guidanceBookingRoutes = require('./routes/guidanceBookingRoutes');
@@ -190,7 +188,7 @@ const corsOptions = {
   optionsSuccessStatus: 204,
 };
 app.use(cors(corsOptions));
-// Poster templates: large SVG + JSON overhead; keep above MAX_POSTER_SVG_CHARS in posterTemplateController (3 MB markup)
+// Poster templates: large SVG + JSON overhead; keep above MAX_SVG_CHARS in posterTemplateController (~2MB markup alone)
 function logAdminPosterJsonBody(req, res, buf) {
   try {
     if (req.method !== 'POST') return;
@@ -375,11 +373,9 @@ app.use('/api/iit-first-form', iitFirstFormRoutes);
 app.use('/api/iit-second-form', iitSecondFormRoutes);
 app.use('/api/college-dost-form', collegeDostFormRoutes);
 app.use('/api/college-dost-meet', collegeDostMeetRoutes);
-app.use('/api/nat-campaign', natCampaignRoutes);
 app.use('/api/training', trainingRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/training-form', trainingFormRoutes);
-app.use('/api/progress-check-in', progressCheckInRoutes);
 app.use('/api/iitain-session-feedback', iitainSessionFeedbackRoutes);
 app.use('/api/one-on-one-counseling', oneOnOneCounselingRoutes);
 app.use('/api/guidance-booking', guidanceBookingRoutes);

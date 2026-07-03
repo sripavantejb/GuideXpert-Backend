@@ -280,7 +280,7 @@ function buildMarkdown(report) {
     '- **Mixed queries:** Product policy expects partial counselling responses when both in-scope and out-of-scope segments appear. Current rule engine only splits when the out-of-scope segment matches a deny pattern (e.g. explicit "write Python code"). Prompts like "JoSAA + Bubble Sort" without code keywords are not split today.'
   );
   lines.push(
-    '- **Classifier:** Certification ran with `CHATBOT_SCOPE_CLASSIFIER_ENABLED=0` (rule engine only). Enabling the semantic classifier would improve ambiguous/obfuscated coverage but adds LLM latency.'
+    '- **Classifier:** Certification ran with `CHATBOT_SCOPE_CLASSIFIER_ENABLED=0` (allow-list-first rule layer only). Unknown queries invoke the semantic classifier in production when enabled.'
   );
   lines.push(
     '- **Known-good paths:** In-scope counselling (100%), boundary career questions (100%), and stress cases (100%) pass. Core deny patterns (explicit Python/code requests, weather, movies, injection with standard phrasing) block correctly.'

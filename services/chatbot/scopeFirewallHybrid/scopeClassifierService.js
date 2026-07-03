@@ -1,6 +1,8 @@
 'use strict';
 
-const { evaluateScope, buildCandidates } = require('../scopeFirewall/scopeFirewallService');
+const { evaluateScope } = require('../scopeFirewall/scopeFirewallService');
+const { evaluateAllowListScope, buildCandidates } = require('../scopeFirewall/allowListScopeService');
+const { isAllowListFirstMode } = require('../scopeFirewall/scopeFirewallFlags');
 const {
   ALLOW_SIGNAL_PATTERN,
   BRANCH_GUIDANCE_PATTERN,
@@ -224,13 +226,26 @@ async function classifyScope({ originalText, englishMessage, normalizedText }) {
   return normalized;
 }
 
+function shouldInvokeClassifierAllowListFirst(scope, { originalText, englishMessage } = {}) {
+  if (scope.policyBlock) return false;
+  if (scope.partialAllowed) return false;
+  if (scope.allowed && scope.reason === 'allow_list_match') return false;
+  if (scope.allowed && scope.confidence === 1) return false;
+  if (!scope.allowed && scope.reason === 'allow_list_miss') return true;
+  if (!scope.allowed && isDisputedRuleBlock(scope, originalText, englishMessage)) return true;
+  return false;
+}
+
 /**
  * Rule engine + optional LLM classifier for uncertain cases.
  * @param {{ originalText?: string, englishMessage?: string, intent?: string, botState?: object }} params
  */
 async function evaluateScopeWithClassifier(params = {}) {
   const { originalText, englishMessage } = params;
-  const scope = evaluateScope({ originalText, englishMessage });
+  const allowListFirst = isAllowListFirstMode();
+  const scope = allowListFirst
+    ? evaluateAllowListScope({ originalText, englishMessage })
+    : evaluateScope({ originalText, englishMessage });
 
   const base = {
     ...scope,
@@ -243,7 +258,11 @@ async function evaluateScopeWithClassifier(params = {}) {
     return base;
   }
 
-  if (!shouldInvokeClassifier(scope, params)) {
+  const invokeClassifier = allowListFirst
+    ? shouldInvokeClassifierAllowListFirst(scope, params)
+    : shouldInvokeClassifier(scope, params);
+
+  if (!invokeClassifier) {
     return base;
   }
 
@@ -264,6 +283,7 @@ module.exports = {
   classifyScope,
   evaluateScopeWithClassifier,
   shouldInvokeClassifier,
+  shouldInvokeClassifierAllowListFirst,
   isConfidentRuleDecision,
   detectUncertaintyReason,
   isDisputedRuleBlock,

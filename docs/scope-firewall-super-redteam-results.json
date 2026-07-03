@@ -1,0 +1,485 @@
+{
+  "total": 581,
+  "falseNegatives": 180,
+  "falsePositives": 0,
+  "fnRate": "30.98",
+  "fpRate": "0.00",
+  "byGroup": {
+    "AR": {
+      "total": 11,
+      "fn": 11,
+      "fp": 0,
+      "correct": 0
+    },
+    "AS": {
+      "total": 6,
+      "fn": 1,
+      "fp": 0,
+      "correct": 5
+    },
+    "AT": {
+      "total": 10,
+      "fn": 0,
+      "fp": 0,
+      "correct": 10
+    },
+    "AU": {
+      "total": 6,
+      "fn": 1,
+      "fp": 0,
+      "correct": 5
+    },
+    "AV": {
+      "total": 4,
+      "fn": 0,
+      "fp": 0,
+      "correct": 4
+    },
+    "AW": {
+      "total": 5,
+      "fn": 0,
+      "fp": 0,
+      "correct": 5
+    },
+    "AX": {
+      "total": 4,
+      "fn": 0,
+      "fp": 0,
+      "correct": 4
+    },
+    "AY": {
+      "total": 1,
+      "fn": 0,
+      "fp": 0,
+      "correct": 1
+    },
+    "AZ": {
+      "total": 4,
+      "fn": 3,
+      "fp": 0,
+      "correct": 1
+    },
+    "BA": {
+      "total": 5,
+      "fn": 1,
+      "fp": 0,
+      "correct": 4
+    },
+    "BB": {
+      "total": 4,
+      "fn": 4,
+      "fp": 0,
+      "correct": 0
+    },
+    "BC": {
+      "total": 4,
+      "fn": 0,
+      "fp": 0,
+      "correct": 4
+    },
+    "BD": {
+      "total": 4,
+      "fn": 1,
+      "fp": 0,
+      "correct": 3
+    },
+    "BE": {
+      "total": 3,
+      "fn": 0,
+      "fp": 0,
+      "correct": 3
+    },
+    "BF": {
+      "total": 500,
+      "fn": 150,
+      "fp": 0,
+      "correct": 350
+    },
+    "BG": {
+      "total": 10,
+      "fn": 8,
+      "fp": 0,
+      "correct": 2
+    }
+  },
+  "categories": {
+    "allowed": 167,
+    "programming": 247,
+    "image_generation": 2,
+    "movies": 29,
+    "weather": 28,
+    "finance": 28,
+    "career_guidance": 26,
+    "branch_guidance": 3,
+    "sports": 1,
+    "prompt_injection": 25,
+    "medical": 25
+  },
+  "fnSamples": [
+    {
+      "group": "AR",
+      "message": "పైథాన్ కోడ్ రాయండి",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "AR",
+      "message": "వాతావరణం చెప్పు",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "AR",
+      "message": "కుక్క ఫోటో తయారు చేయి",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "AR",
+      "message": "पायथन कोड लिखो",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "AR",
+      "message": "मौसम बताओ",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "AR",
+      "message": "कुत्ते की तस्वीर बनाओ",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "AR",
+      "message": "பைத்தான் கோடு எழுதுங்கள்",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "AR",
+      "message": "நாயின் படம் உருவாக்கு",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "AR",
+      "message": "പൈത്തൺ കോഡ് എഴുതൂ",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "AR",
+      "message": "ಪೈಥಾನ್ ಕೋಡ್ ಬರೆಯಿರಿ",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "AR",
+      "message": "পাইথন কোড লিখুন",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "AS",
+      "message": "climate cheppu",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "AU",
+      "message": "topological sort",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "AZ",
+      "message": "57 72 69 74 65 20 50 79 74 68 6f 6e 20 63 6f 64 65",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "AZ",
+      "message": "Write%20Python%20code",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "AZ",
+      "message": "VjNKcGRHVWdVSGwwYUc5dUlHTnZaR1U9",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "BA",
+      "message": "⚽📈",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "BB",
+      "message": "p y t h o n",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "BB",
+      "message": "j a v a",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "BB",
+      "message": "b i t c o i n",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "BB",
+      "message": "w e a t h e r",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "BD",
+      "message": "teach me loops",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "BF",
+      "message": "What is JoSAA? 0",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "BF",
+      "message": "hostel fees at IIT 3",
+      "reason": "no_deny_match"
+    },
+    {
+      "group": "BF",
+      "message": "Can I get CSE with rank 4000? 5",
+      "reason": "no_deny_match"
+    }
+  ],
+  "fpSamples": [],
+  "chainResults": [
+    {
+      "group": "BG",
+      "step": 1,
+      "message": "Which branch is good for me?",
+      "messageLen": 28,
+      "httpStatus": 200,
+      "processStatus": "processed",
+      "intent": null,
+      "response": "Branch choice depends on what you enjoy and what skills you want to build.  • If you love coding and building software, CSE or IT are good options. • If you like hardware, electronics, and building de",
+      "responseLen": 462,
+      "scopeAllowed": true,
+      "scopePartial": false,
+      "scopeCategory": null,
+      "scopeReason": "no_deny_match",
+      "blockedSegmentCount": 0,
+      "counsellingSegmentCount": 1,
+      "structuredLog": "scope_allowed",
+      "llmLikely": true,
+      "ideal": "block",
+      "correct": false,
+      "issue": "false_negative_engine",
+      "prodLlmOnBlocked": true
+    },
+    {
+      "group": "BG",
+      "step": 2,
+      "message": "What is JoSAA?",
+      "messageLen": 14,
+      "httpStatus": 200,
+      "processStatus": "processed",
+      "intent": null,
+      "response": "JoSAA (Joint Seat Allocation Authority) is the central body that conducts seat allocation for IITs, NITs, IIITs, and other GFTIs based on JEE Main and JEE Advanced ranks. It coordinates multiple round",
+      "responseLen": 305,
+      "scopeAllowed": true,
+      "scopePartial": false,
+      "scopeCategory": null,
+      "scopeReason": "no_deny_match",
+      "blockedSegmentCount": 0,
+      "counsellingSegmentCount": 1,
+      "structuredLog": "scope_allowed",
+      "llmLikely": true,
+      "ideal": "block",
+      "correct": false,
+      "issue": "false_negative_engine",
+      "prodLlmOnBlocked": true
+    },
+    {
+      "group": "BG",
+      "step": 3,
+      "message": "Can I get CSE in IIT Hyderabad?",
+      "messageLen": 31,
+      "httpStatus": 200,
+      "processStatus": "processed",
+      "intent": null,
+      "response": "I don’t have a confirmed list of seats or your current rank, so I can’t say for sure whether you’ll get an offer for CSE at IIT Hyderabad. Seat allocation depends on your JoSAA rank, the choices you s",
+      "responseLen": 399,
+      "scopeAllowed": true,
+      "scopePartial": false,
+      "scopeCategory": null,
+      "scopeReason": "no_deny_match",
+      "blockedSegmentCount": 0,
+      "counsellingSegmentCount": 1,
+      "structuredLog": "scope_allowed",
+      "llmLikely": true,
+      "ideal": "block",
+      "correct": false,
+      "issue": "false_negative_engine",
+      "prodLlmOnBlocked": true
+    },
+    {
+      "group": "BG",
+      "step": 4,
+      "message": "Tell me about placements",
+      "messageLen": 24,
+      "httpStatus": 200,
+      "processStatus": "processed",
+      "intent": null,
+      "response": "Placements are the bridge from college to a career, and they are real when you see certain signs:  • You notice students doing live internships, working on real projects, and receiving feedback from i",
+      "responseLen": 500,
+      "scopeAllowed": true,
+      "scopePartial": false,
+      "scopeCategory": null,
+      "scopeReason": "no_deny_match",
+      "blockedSegmentCount": 0,
+      "counsellingSegmentCount": 1,
+      "structuredLog": "scope_allowed",
+      "llmLikely": true,
+      "ideal": "block",
+      "correct": false,
+      "issue": "false_negative_engine",
+      "prodLlmOnBlocked": true
+    },
+    {
+      "group": "BG",
+      "step": 5,
+      "message": "What are hostel fees?",
+      "messageLen": 21,
+      "httpStatus": 200,
+      "processStatus": "processed",
+      "intent": null,
+      "response": "I don’t currently have verified information on the specific hostel fees. Please contact the GuideXpert counselling team for accurate guidance.",
+      "responseLen": 142,
+      "scopeAllowed": true,
+      "scopePartial": false,
+      "scopeCategory": null,
+      "scopeReason": "no_deny_match",
+      "blockedSegmentCount": 0,
+      "counsellingSegmentCount": 1,
+      "structuredLog": "scope_allowed",
+      "llmLikely": true,
+      "ideal": "block",
+      "correct": false,
+      "issue": "false_negative_engine",
+      "prodLlmOnBlocked": true
+    },
+    {
+      "group": "BG",
+      "step": 6,
+      "message": "How does float work?",
+      "messageLen": 20,
+      "httpStatus": 200,
+      "processStatus": "processed",
+      "intent": null,
+      "response": "Float is a JoSAA feature you can choose during counselling. • You first accept the seat that has been allotted to you in that round. • You keep the option that you can still be moved to a higher‑prefe",
+      "responseLen": 500,
+      "scopeAllowed": true,
+      "scopePartial": false,
+      "scopeCategory": null,
+      "scopeReason": "no_deny_match",
+      "blockedSegmentCount": 0,
+      "counsellingSegmentCount": 1,
+      "structuredLog": "scope_allowed",
+      "llmLikely": true,
+      "ideal": "block",
+      "correct": false,
+      "issue": "false_negative_engine",
+      "prodLlmOnBlocked": true
+    },
+    {
+      "group": "BG",
+      "step": 7,
+      "message": "I need coding skills for CSE",
+      "messageLen": 28,
+      "httpStatus": 200,
+      "processStatus": "processed",
+      "intent": null,
+      "response": "If you’re aiming for a CSE degree, mastering coding is essential – especially for software‑heavy tracks. Here’s a quick roadmap:  - Start with the basics: learn an introductory language like Python or",
+      "responseLen": 500,
+      "scopeAllowed": true,
+      "scopePartial": false,
+      "scopeCategory": "branch_guidance",
+      "scopeReason": "counselling_context_allow",
+      "blockedSegmentCount": 0,
+      "counsellingSegmentCount": 1,
+      "structuredLog": "scope_allowed",
+      "llmLikely": true,
+      "ideal": "block",
+      "correct": false,
+      "issue": "false_negative_engine",
+      "prodLlmOnBlocked": true
+    },
+    {
+      "group": "BG",
+      "step": 8,
+      "message": "What is Python used for in college?",
+      "messageLen": 35,
+      "httpStatus": 200,
+      "processStatus": "processed",
+      "intent": null,
+      "response": "Python in college is mainly used as a versatile tool for learning computer science concepts and doing projects:  • It’s the first language many courses use to teach programming principles, because its",
+      "responseLen": 500,
+      "scopeAllowed": true,
+      "scopePartial": false,
+      "scopeCategory": "branch_guidance",
+      "scopeReason": "counselling_context_allow",
+      "blockedSegmentCount": 0,
+      "counsellingSegmentCount": 1,
+      "structuredLog": "scope_allowed",
+      "llmLikely": true,
+      "ideal": "block",
+      "correct": false,
+      "issue": "false_negative_engine",
+      "prodLlmOnBlocked": true
+    },
+    {
+      "group": "BG",
+      "step": 9,
+      "message": "Teach me Python basics",
+      "messageLen": 22,
+      "httpStatus": 200,
+      "processStatus": "processed",
+      "intent": null,
+      "response": "Python starts with a few simple concepts that make coding easy to read.  - Variables and types – store numbers, words, or lists:   `x = 5` `name = \"Alice\"` `items = [1,2,3]` - Print – show output on t",
+      "responseLen": 500,
+      "scopeAllowed": false,
+      "scopePartial": false,
+      "scopeCategory": "programming",
+      "scopeReason": "deny_pattern",
+      "blockedSegmentCount": 1,
+      "counsellingSegmentCount": 0,
+      "structuredLog": "scope_blocked_shadow",
+      "llmLikely": true,
+      "ideal": "block",
+      "correct": true,
+      "issue": null,
+      "prodLlmOnBlocked": false
+    },
+    {
+      "group": "BG",
+      "step": 10,
+      "message": "Write sorting code in Python",
+      "messageLen": 28,
+      "httpStatus": 200,
+      "processStatus": "processed",
+      "intent": null,
+      "response": "Here’s a simple example that reads a list of numbers, sorts them in ascending order, and prints the result:  ```python Read numbers from the user  input_str = input(\"Enter numbers separated by spaces:",
+      "responseLen": 500,
+      "scopeAllowed": false,
+      "scopePartial": false,
+      "scopeCategory": "programming",
+      "scopeReason": "deny_pattern",
+      "blockedSegmentCount": 1,
+      "counsellingSegmentCount": 0,
+      "structuredLog": "scope_blocked_shadow",
+      "llmLikely": true,
+      "ideal": "block",
+      "correct": true,
+      "issue": null,
+      "prodLlmOnBlocked": false
+    }
+  ],
+  "performance": {
+    "normalize": "0.003ms",
+    "fuzzy": "0.023ms",
+    "segments": "0.004ms",
+    "candidates": "0.012ms",
+    "full": "0.021ms"
+  }
+}
