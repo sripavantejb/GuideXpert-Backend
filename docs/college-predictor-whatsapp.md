@@ -84,7 +84,11 @@ Empty `college: {}` resets the subflow.
 | Optimistic retry | Replays message; outbound dedupe prevents double send |
 | Post-prediction retry | `collegePrediction` on inbound + `context.predictionIdempotency` on bot state |
 
-### Post-prediction idempotency
+### Active college predictor routing
+
+When `botState.state === 'college_predictor'`, inbound messages bypass intent classification, scope firewall, and all assistant paths. They go directly to `handleCollegePredictorMessage()`.
+
+Interrupts only: **MENU**, **CANCEL**, **AGENT**, **opt-out**. `AGAIN` is handled inside the college predictor handler.
 
 After a successful predictor API call, completion is recorded atomically on the inbound:
 

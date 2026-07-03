@@ -12,6 +12,9 @@ const {
 const { retrieveFacts } = require('../services/chatbot/knowledgeRetrievalService');
 const { buildAssignedExpertReply } = require('../services/chatbot/leadContextService');
 const { classifyIntent } = require('../services/chatbot/intentClassifierService');
+const {
+  setCollegePredictionIdempotencyDeps,
+} = require('../services/chatbot/whatsappCollegePredictor/collegePredictionIdempotencyService');
 
 const CONVERSATION_ID = new mongoose.Types.ObjectId();
 const INBOUND_ID = new mongoose.Types.ObjectId();
@@ -62,6 +65,14 @@ describe('chatbotOrchestrator integration', () => {
     buildLeadContextCalls = 0;
     transitionCalls = [];
 
+    setCollegePredictionIdempotencyDeps({
+      getInboundPredictionCompletion: async () => null,
+      claimInboundPredictionCompletion: async (_inboundId, completion) => ({
+        record: completion,
+        isNewClaim: true,
+      }),
+    });
+
     setChatbotOrchestratorTestHooks({
       buildLeadContext: async () => {
         buildLeadContextCalls += 1;
@@ -100,6 +111,7 @@ describe('chatbotOrchestrator integration', () => {
 
   afterEach(() => {
     setChatbotOrchestratorTestHooks(null);
+    setCollegePredictionIdempotencyDeps({});
   });
 
   test('MENU loads lead context once per inbound', async () => {

@@ -2,16 +2,17 @@ const WhatsAppConversation = require('../../models/WhatsAppConversation');
 const {
   classifyIntent,
   isCounsellorProgramQuestion,
+  shouldBypassScopeFirewall,
 } = require('./intentClassifierService');
+const { tryRouteActiveGuidedFlow, applyGuidedFlowSwitchTurn } = require('./guidedFlows/guidedFlowOrchestrator');
+const { getGuidedFlowByIntent } = require('./guidedFlows/guidedFlowRegistry');
 const { isSupportedLanguage, normalizeLanguageCode } = require('../../constants/languageConstants');
 const botStateService = require('./botStateService');
 const { OptimisticLockFailedError } = botStateService;
 const leadContextService = require('./leadContextService');
 const { retrieveFacts } = require('./knowledgeRetrievalService');
-const { searchStaticFaq, searchBlog, formatFaqAnswerAsync } = require('./faqService');
 const { buildDemoSupportReply } = require('./demoSupportService');
-const { handleRankPredictorMessage, listExamsMessage } = require('./rankPredictorChatService');
-const { handleCollegePredictorMessage } = require('./collegePredictorChatService');
+const { listExamsMessage } = require('./rankPredictorChatService');
 const handoffService = require('./handoffService');
 const whatsappOutbound = require('./whatsappOutboundService');
 const { tryLlmReply } = require('./llmReplyService');
@@ -67,11 +68,6 @@ const {
   resolveSystemReply,
   resolveKnowledgeAssistantFallback,
 } = require('../../constants/localizedSystemReplies');
-const {
-  resolveCollegePredictorMaintenanceReply,
-  resolveCollegePredictorRankQueryUnavailableReply,
-} = require('../../constants/collegePredictorUnavailableReplies');
-const { isRankBranchCollegePredictorQuery, normalizeText } = require('./intentClassifierService');
 const {
   isScopeFirewallEnabled,
   isScopeFirewallShadowMode,
@@ -533,6 +529,25 @@ async function processInboundCore({
     botState = { state: 'main_menu', context: emptySubflows() };
   }
 
+  const collegeRoutingText =
+    multilingualInbound?.englishMessage || String(inbound.text || '').trim();
+
+  const guidedResult = await tryRouteActiveGuidedFlow({
+    activeConversation,
+    inbound,
+    botState,
+    multilingualInbound,
+    startedAt,
+    transitionState,
+    deliverOutboundReply,
+    logInboundResult,
+    h,
+    resolvedLanguageFrom,
+  });
+  if (guidedResult) {
+    return guidedResult;
+  }
+
   if (multilingualInbound && botState?.context?.iitCounsellingExpertActive) {
     const detectedLang = normalizeLanguageCode(multilingualInbound.detectedLanguage);
     const minConfidence = Number(process.env.LANGUAGE_DETECT_MIN_CONFIDENCE) || 0.75;
@@ -754,7 +769,7 @@ async function processInboundCore({
   let routingInboundText =
     multilingualInbound?.englishMessage || String(inbound.text || '').trim();
 
-  if (isScopeFirewallEnabled()) {
+  if (isScopeFirewallEnabled() && !shouldBypassScopeFirewall(botState, intentResult.intent)) {
     const inboundText = String(inbound.text || '');
     const scope = await evaluateInboundScope({
       originalText: inbound.text,
@@ -914,15 +929,28 @@ async function processInboundCore({
       break;
     case 'faq':
     case 'faq_query':
-      await transitionState(activeConversation._id, activeConversation.phone, 'faq', contextPatch);
-      replyText = resolveSystemReply('faqPrompt', resolvedLanguageFrom(multilingualInbound));
-      if (intentResult.intent === 'faq_query' && inbound.text) {
-        const staticHits = searchStaticFaq(inbound.text);
-        const blogHits = await searchBlog(inbound.text);
-        replyText = await formatFaqAnswerAsync(staticHits, blogHits, inbound.text);
-        nextState = 'faq_answer';
-      }
+    case 'rank_predictor':
+    case 'rank_predictor_continue':
+    case 'college_predictor':
+    case 'college_predictor_continue': {
+      const flow = getGuidedFlowByIntent(intentResult.intent);
+      if (!flow) break;
+      const applied = await applyGuidedFlowSwitchTurn({
+        flow,
+        intentResult,
+        activeConversation,
+        inbound,
+        contextPatch,
+        routingInboundText,
+        multilingualInbound,
+        transitionState,
+        resolvedLanguageFrom,
+      });
+      replyText = applied.replyText;
+      nextState = applied.nextState;
+      contextPatch = applied.contextPatch;
       break;
+    }
     case 'counselling_support':
       replyText = buildLocalizedCounsellingSupportReply(
         resolvedLanguageFrom(multilingualInbound),
@@ -935,78 +963,6 @@ async function processInboundCore({
       replyText = await buildDemoSupportReply(leadContext);
       nextState = 'demo_support';
       break;
-    case 'rank_predictor':
-    case 'rank_predictor_continue': {
-      await transitionState(activeConversation._id, activeConversation.phone, 'rank_predictor', contextPatch);
-      const rankInboundText = routingInboundText;
-      const r = handleRankPredictorMessage(rankInboundText, contextPatch.rank || {});
-      replyText = r.reply;
-      contextPatch = {
-        ...contextPatch,
-        rank: r.context,
-        knowledgeAssistantActive: false,
-        counsellorProgramAssistantActive: false,
-        iitCounsellingExpertActive: false,
-        iitCounsellingExpertSessionLanguage: null,
-        iitCounsellingStrategyActive: false,
-        iitCounsellingStrategySessionLanguage: null,
-      };
-      nextState = 'rank_predictor';
-      if (contextPatch.rank?.step === 'done') {
-        nextState = 'main_menu';
-      }
-      break;
-    }
-    case 'college_predictor':
-    case 'college_predictor_continue': {
-      if (!isCollegePredictorEnabled()) {
-        const resolvedLang =
-          multilingualInbound?.language || multilingualInbound?.resolvedLanguage || 'en';
-        const rankBranchCheckText = normalizeText(
-          multilingualInbound?.englishMessage || inbound.text
-        );
-        replyText = isRankBranchCollegePredictorQuery(rankBranchCheckText, inbound.text)
-          ? resolveCollegePredictorRankQueryUnavailableReply(resolvedLang)
-          : resolveCollegePredictorMaintenanceReply(resolvedLang);
-        contextPatch = emptySubflows();
-        nextState = 'main_menu';
-        break;
-      }
-      const isNewEntry = intentResult.intent === 'college_predictor';
-      await transitionState(
-        activeConversation._id,
-        activeConversation.phone,
-        'college_predictor',
-        contextPatch
-      );
-      const c = await handleCollegePredictorMessage(
-        multilingualInbound?.englishMessage || inbound.text,
-        contextPatch.college || {},
-        {
-          isNewEntry,
-          inboundId: inbound._id,
-          predictionIdempotency: contextPatch.predictionIdempotency || null,
-        }
-      );
-      replyText = c.reply;
-      if (c.predictionIdempotency) {
-        await transitionState(activeConversation._id, activeConversation.phone, 'college_predictor', {
-          predictionIdempotency: c.predictionIdempotency,
-          college: c.clearState ? {} : contextPatch.college || {},
-        });
-      }
-      if (c.clearState) {
-        contextPatch = { college: {}, predictionIdempotency: null };
-        nextState = 'main_menu';
-      } else {
-        contextPatch = {
-          college: c.context,
-          predictionIdempotency: c.predictionIdempotency || contextPatch.predictionIdempotency || null,
-        };
-        nextState = 'college_predictor';
-      }
-      break;
-    }
     case 'greeting': {
       if (String(process.env.CHATBOT_INTENT_DEBUG || '').trim() === '1') {
         console.log(

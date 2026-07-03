@@ -14,6 +14,9 @@ const {
   resolveCollegePredictorRankQueryUnavailableReply,
   COLLEGE_PREDICTOR_RANK_QUERY_UNAVAILABLE,
 } = require('../constants/collegePredictorUnavailableReplies');
+const {
+  setCollegePredictionIdempotencyDeps,
+} = require('../services/chatbot/whatsappCollegePredictor/collegePredictionIdempotencyService');
 
 const PRODUCT_LINE = 'iit_counselling';
 const orchestratorPath = require.resolve('../services/chatbot/chatbotOrchestratorService');
@@ -112,12 +115,20 @@ describe('predictor intent orchestrator college rank+branch routing', () => {
 
   afterEach(() => {
     delete process.env.CHATBOT_MULTILINGUAL_ENABLED;
+    setCollegePredictionIdempotencyDeps({});
     mock.restoreAll();
     [orchestratorPath, middlewarePath, conversationLangPath].forEach((p) => delete require.cache[p]);
   });
 
   async function runCase({ text, mockInbound, expectedSnippet }) {
     let finalizeCalls = 0;
+    setCollegePredictionIdempotencyDeps({
+      getInboundPredictionCompletion: async () => null,
+      claimInboundPredictionCompletion: async (_inboundId, completion) => ({
+        record: completion,
+        isNewClaim: true,
+      }),
+    });
     const orchestrator = loadOrchestratorWithMocks({
       prepareMultilingualInbound: async () => mockInbound,
       finalizeMultilingualOutbound: async () => {
@@ -156,6 +167,7 @@ describe('predictor intent orchestrator college rank+branch routing', () => {
     });
 
     orchestrator.setChatbotOrchestratorTestHooks(null);
+    setCollegePredictionIdempotencyDeps({});
     assert.equal(finalizeCalls, 0);
     assert.ok(outbound.length >= 1);
     assert.match(String(outbound[0]), expectedSnippet);
