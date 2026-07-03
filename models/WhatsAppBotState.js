@@ -27,7 +27,7 @@ const whatsAppBotStateSchema = new mongoose.Schema(
     context: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
     stateEnteredAt: { type: Date, default: Date.now },
     stateExpiresAt: { type: Date, default: null, index: true },
-    version: { type: Number, default: 1, min: 1 },
+    version: { type: Number, default: 0, min: 0 },
   },
   { timestamps: true }
 );

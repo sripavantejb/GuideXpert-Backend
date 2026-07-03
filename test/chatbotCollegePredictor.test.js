@@ -17,10 +17,10 @@ const {
   EXAM_JEE_MAIN,
   EXAM_JEE_ADV,
   EXAM_MHT,
-  PROMPT_EXAM,
   AP_OC_MALE_BLOCKED_REPLY,
   mapExamChoice,
 } = require('../constants/whatsappCollegePredictor');
+const { buildConversationalWelcome } = require('../services/chatbot/whatsappCollegePredictor/collegePredictorConversation');
 
 const MOCK_COLLEGES = {
   colleges: [
@@ -221,7 +221,7 @@ describe('chatbotCollegePredictor', () => {
     r = await handleCollegePredictorMessage('again', r.context);
     assert.equal(r.context.step, 'exam');
     assert.equal(r.restart, true);
-    assert.equal(r.reply, PROMPT_EXAM);
+    assert.equal(r.reply, buildConversationalWelcome());
   });
 
   test('AGAIN during category step restarts at exam', async () => {
@@ -278,7 +278,7 @@ describe('chatbotCollegePredictor', () => {
     r = await handleCollegePredictorMessage('2', r.context);
     r = await handleCollegePredictorMessage('9', r.context);
     assert.equal(r.context.step, 'region');
-    assert.match(r.reply, /1 or 2/);
+    assert.match(r.reply, /1 for AU, 2 for SVU/);
   });
 
   test('predictor API failure preserves state for retry', async () => {
@@ -294,9 +294,17 @@ describe('chatbotCollegePredictor', () => {
   });
 
   test('state cleanup after success', async () => {
-    const r = await runFlow(['2', '15000', '1', '2']);
-    assert.equal(r.clearState, true);
-    assert.equal(r.context.step, 'done');
+    const lines = [];
+    const orig = console.info;
+    console.info = (_t, line) => lines.push(line);
+    try {
+      const r = await runFlow(['2', '15000', '1', '2']);
+      assert.equal(r.clearState, true);
+      assert.equal(r.context.step, 'done');
+      assert.ok(lines.some((l) => l.includes('predictor_success')));
+    } finally {
+      console.info = orig;
+    }
   });
 
   test('classifyIntent MENU during college_predictor', () => {
@@ -325,7 +333,95 @@ describe('chatbotCollegePredictor', () => {
   });
 
   test('PROMPT_EXAM shows expanded exam list', () => {
-    assert.match(PROMPT_EXAM, /AP EAMCET/);
-    assert.match(PROMPT_EXAM, /MHT CET/);
+    assert.match(buildConversationalWelcome(), /AP EAMCET/);
+    assert.match(buildConversationalWelcome(), /MHT CET/);
+  });
+
+  test('conversational welcome on new entry', async () => {
+    const r = await handleCollegePredictorMessage('I want to predict colleges', {}, { isNewEntry: true });
+    assert.match(r.reply, /Sure! I can help you predict colleges/);
+    assert.match(r.reply, /Which entrance exam did you write/);
+    assert.equal(r.context.step, 'exam');
+    assert.equal(calls.length, 0);
+  });
+
+  test('natural language extracts exam and rank then asks category', async () => {
+    let r = await handleCollegePredictorMessage('My TS EAMCET rank is 18453', {}, { isNewEntry: true });
+    assert.equal(r.context.exam, EXAM_TS);
+    assert.equal(r.context.rank, 18453);
+    assert.equal(r.context.step, 'category');
+    assert.match(r.reply, /category/i);
+    assert.equal(calls.length, 0);
+  });
+
+  test('natural language full TS EAMCET sentence predicts', async () => {
+    const r = await handleCollegePredictorMessage(
+      'TS EAMCET rank 18453 BC-B male',
+      {},
+      { isNewEntry: true }
+    );
+    assert.equal(r.clearState, true);
+    assert.match(r.reply, /TS EAMCET/);
+    assert.match(r.reply, /18453/);
+    assert.equal(calls.at(-1).body.reservation_category_codes[0], 'BCB BOYS');
+  });
+
+  test('natural language AP EAMCET extracts multiple slots', async () => {
+    let r = await handleCollegePredictorMessage(
+      'My AP EAMCET rank is 5432 BC-A Female',
+      {},
+      { isNewEntry: true }
+    );
+    assert.equal(r.context.exam, EXAM_AP);
+    assert.equal(r.context.rank, 5432);
+    assert.match(r.context.categoryLabel, /BC-A/);
+    assert.equal(r.context.gender, 'female');
+    assert.equal(r.context.step, 'region');
+    assert.equal(calls.length, 0);
+  });
+
+  test('exam alias ts eamcet works', async () => {
+    const r = await handleCollegePredictorMessage('ts eamcet', {}, { isNewEntry: true });
+    assert.equal(r.context.exam, EXAM_TS);
+    assert.equal(r.context.step, 'rank');
+  });
+
+  test('changing exam midway clears dependent slots', async () => {
+    let r = await handleCollegePredictorMessage('2', {}, { isNewEntry: true });
+    r = await handleCollegePredictorMessage('15000', r.context);
+    r = await handleCollegePredictorMessage('KCET', r.context);
+    assert.equal(r.context.exam, EXAM_KCET);
+    assert.equal(r.context.rank, undefined);
+    assert.equal(r.context.step, 'rank');
+  });
+
+  test('natural language got rank in exam sentence', async () => {
+    let r = await handleCollegePredictorMessage('I got 18453 in TS EAMCET.', {}, { isNewEntry: true });
+    assert.equal(r.context.exam, EXAM_TS);
+    assert.equal(r.context.rank, 18453);
+    assert.equal(r.context.step, 'category');
+  });
+
+  test('natural language JEE Main AIR', async () => {
+    let r = await handleCollegePredictorMessage('I wrote JEE Main AIR 24000.', {}, { isNewEntry: true });
+    assert.equal(r.context.exam, EXAM_JEE_MAIN);
+    assert.equal(r.context.rank, 24000);
+    assert.equal(r.context.step, 'gender');
+  });
+
+  test('natural language MHT CET percentile', async () => {
+    let r = await handleCollegePredictorMessage('I got 94.3 percentile in MHT CET.', {}, { isNewEntry: true });
+    assert.equal(r.context.exam, EXAM_MHT);
+    assert.equal(r.context.percentile, 94.3);
+    assert.equal(r.context.step, 'admission_type');
+  });
+
+  test('empty prediction results message', async () => {
+    setCollegePredictorDeps({
+      getPredictedColleges: async () => ({ colleges: [], total_no_of_colleges: 0 }),
+    });
+    const r = await runFlow(['2', '15000', '4', '2']);
+    assert.match(r.reply, /No colleges found/i);
+    assert.equal(r.clearState, true);
   });
 });

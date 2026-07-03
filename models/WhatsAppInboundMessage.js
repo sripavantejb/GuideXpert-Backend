@@ -48,6 +48,17 @@ const whatsAppInboundMessageSchema = new mongoose.Schema(
     processError: { type: String, maxlength: 2000, default: null },
     intent: { type: String, trim: true, maxlength: 64, default: null },
     dedupeKey: { type: String, trim: true, maxlength: 128, default: null },
+    collegePrediction: {
+      lastPredictionInboundId: { type: String, trim: true, maxlength: 64, default: null },
+      predictionCompleted: { type: Boolean, default: false },
+      predictionTimestamp: { type: String, trim: true, maxlength: 64, default: null },
+      predictionHash: { type: String, trim: true, maxlength: 64, default: null },
+      cachedReply: { type: String, maxlength: 4096, default: null },
+      predictorExam: { type: String, trim: true, maxlength: 64, default: null },
+      rank: { type: Number, default: null },
+      category: { type: String, trim: true, maxlength: 64, default: null },
+      collegeCount: { type: Number, default: null },
+    },
     whatsappWebhookEventId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'WhatsAppWebhookEvent',

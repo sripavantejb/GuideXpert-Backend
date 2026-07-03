@@ -3,43 +3,56 @@ const { fetchCollegeDostColleges } = require('../collegePredictorCore');
 const {
   EXAM_AP,
   EXAM_TS,
-  EXAM_TNEA,
-  EXAM_KCET,
-  EXAM_KEAM,
-  EXAM_WBJEE,
-  EXAM_JEE_MAIN,
-  EXAM_JEE_ADV,
   EXAM_MHT,
   initialContext,
-  PROMPT_EXAM,
-  PROMPT_RANK,
-  PROMPT_PERCENTILE,
-  PROMPT_GENDER,
-  buildNumberedPrompt,
-  mapById,
-  PROMPT_REGION,
-  mapExamChoice,
-  mapGenderChoice,
   isApOcMaleBlocked,
   AP_OC_MALE_BLOCKED_REPLY,
-  mapRegionChoice,
   formatPredictionReply,
 } = require('../../constants/whatsappCollegePredictor');
-const { AP_TS_CATEGORY_OPTIONS, resolveApTsReservationCode } = require('./whatsappCollegePredictor/apTs');
-const { TNEA_CATEGORY_OPTIONS } = require('./whatsappCollegePredictor/tnea');
-const { KCET_ADMISSION_OPTIONS, KCET_CATEGORY_OPTIONS } = require('./whatsappCollegePredictor/kcet');
-const { KEAM_CATEGORY_OPTIONS } = require('./whatsappCollegePredictor/keam');
-const { WBJEE_CATEGORY_OPTIONS, WBJEE_QUOTA_OPTIONS, getWbjeeReservationCategoryCode } = require('./whatsappCollegePredictor/wbjee');
-const { JEE_CATEGORY_OPTIONS, getJeeReservationCategoryCodes } = require('./whatsappCollegePredictor/jee');
-const {
-  MHT_CET_ADMISSION_OPTIONS,
-  getMhtCategoryOptionsByAdmissionType,
-  normalizeMhtReservationCodeForApi,
-  percentileToMhtCutoffRange,
-} = require('./whatsappCollegePredictor/mhtCet');
+const { resolveApTsReservationCode } = require('./whatsappCollegePredictor/apTs');
 const { logChatbotEvent } = require('./chatbotStructuredLog');
+const { extractSlotsFromMessage } = require('./whatsappCollegePredictor/collegePredictorSlotExtractor');
+const {
+  getMissingSlots,
+  isPredictionReady,
+  clearDependentSlots,
+  buildPredictionContext,
+  slotToLegacyStep,
+} = require('./whatsappCollegePredictor/collegePredictorSlots');
+const {
+  buildConversationalWelcome,
+  buildQuestionForSlot,
+  buildInvalidMessage,
+  buildPredictingMessage,
+} = require('./whatsappCollegePredictor/collegePredictorConversation');
+const { SLOT_EXAM } = require('./whatsappCollegePredictor/collegePredictorSlots');
+const {
+  buildPredictionHash,
+  buildPredictionCompletion,
+  findCompletedPrediction,
+} = require('./whatsappCollegePredictor/predictionIdempotency');
+const {
+  getInboundPredictionCompletion,
+  claimInboundPredictionCompletion,
+} = require('./whatsappCollegePredictor/collegePredictionIdempotencyService');
+
+function isNeutralPredictorEntry(text) {
+  const t = String(text || '').trim().toLowerCase();
+  if (!t) return true;
+  if (
+    /^(hi|hello|hey|help|start|menu|again|predict|college predictor|i want to predict|want to predict|predict my colleges|predict colleges)$/.test(
+      t
+    )
+  ) {
+    return true;
+  }
+  return /college prediction|predict colleges|college predictor|help me with college|can you predict|need college/i.test(
+    t
+  );
+}
 
 let fetchCollegeDostCollegesFn = fetchCollegeDostColleges;
+let logEventFn = logChatbotEvent;
 
 function setCollegePredictorDeps(deps = {}) {
   if (deps.fetchCollegeDostColleges) {
@@ -50,6 +63,7 @@ function setCollegePredictorDeps(deps = {}) {
   } else {
     fetchCollegeDostCollegesFn = fetchCollegeDostColleges;
   }
+  logEventFn = deps.logChatbotEvent || logChatbotEvent;
 }
 
 /** Same request shape as counsellor POST /api/counsellor/college-predictor/colleges */
@@ -68,36 +82,92 @@ function buildCounsellorStyleRequestBody(ctx) {
   return body;
 }
 
-function parsePositiveIntRank(text) {
-  const t = String(text || '').trim();
-  if (!/^\d+$/.test(t)) return null;
-  const n = parseInt(t, 10);
-  if (!Number.isInteger(n) || n < 1) return null;
-  return n;
+function syncApTsReservationCodes(ctx) {
+  if ((ctx.exam !== EXAM_AP && ctx.exam !== EXAM_TS) || !ctx.categoryN || !ctx.gender) {
+    return ctx;
+  }
+  const code = resolveApTsReservationCode(ctx.exam, ctx.categoryN, ctx.gender);
+  if (!code) return ctx;
+  return { ...ctx, reservation_category_codes: [code] };
 }
 
-function parsePercentile(text) {
-  const t = String(text || '').trim();
-  if (!/^\d+(\.\d+)?$/.test(t)) return null;
-  const n = Number(t);
-  if (!Number.isFinite(n) || n < 1 || n > 100) return null;
-  return n;
+function applyExtractedSlots(ctx, extracted) {
+  if (!extracted || !Object.keys(extracted).length) return { ...ctx };
+
+  let next = { ...ctx };
+
+  if (extracted.exam) {
+    if (next.exam && extracted.exam !== next.exam) {
+      next = { ...clearDependentSlots(next, false), exam: extracted.exam, conversational: true };
+    } else {
+      next.exam = extracted.exam;
+    }
+  }
+
+  if (extracted.rank != null) next.rank = extracted.rank;
+  if (extracted.percentile != null) next.percentile = extracted.percentile;
+  if (extracted.admissionType) {
+    next.admissionType = extracted.admissionType;
+    next.admission_category_name_enum = extracted.admission_category_name_enum;
+  }
+  if (extracted.categoryLabel) {
+    next.categoryLabel = extracted.categoryLabel;
+    next.categoryN = extracted.categoryN;
+    next.baseCategory = extracted.baseCategory;
+  }
+  if (extracted.gender) next.gender = extracted.gender;
+  if (extracted.quota) next.quota = extracted.quota;
+  if (extracted.admission_category_name_enum && next.exam === EXAM_AP) {
+    next.admission_category_name_enum = extracted.admission_category_name_enum;
+  }
+
+  if (next.exam && next.exam !== EXAM_MHT) {
+    delete next.percentile;
+  }
+  if (next.exam === EXAM_MHT) {
+    delete next.rank;
+  }
+
+  return syncApTsReservationCodes(next);
 }
 
-function parseMenuDigit(text) {
-  const t = String(text || '').trim();
-  if (!/^\d+$/.test(t)) return null;
-  const n = parseInt(t, 10);
-  if (!Number.isInteger(n)) return null;
-  return n;
+async function resolveCompletedPrediction(ctx, opts = {}) {
+  const inboundId = opts.inboundId;
+  if (!inboundId) return null;
+
+  const fromInbound = await getInboundPredictionCompletion(inboundId);
+  const inboundHit = findCompletedPrediction(fromInbound, inboundId);
+  if (inboundHit) return inboundHit;
+
+  const hash = buildPredictionHash(ctx);
+  const fromContext = findCompletedPrediction(opts.predictionIdempotency, inboundId, hash);
+  if (fromContext) return fromContext;
+
+  return null;
 }
 
-async function runPrediction(ctx) {
+function buildIdempotentPredictionResult(ctx, completed) {
+  return {
+    reply: completed.cachedReply,
+    context: { ...ctx, step: 'done' },
+    clearState: true,
+    predictionIdempotency: completed,
+    idempotentReplay: true,
+  };
+}
+
+async function runPrediction(ctx, opts = {}) {
   const PREDICT_RETRY_REPLY =
     'We could not fetch college predictions right now. Please try again in a moment.\n\nYour details are saved — send any message to retry.';
   const PREDICT_RETRY_REPLY_AT_PREDICT =
     'We could not fetch college predictions right now. Please try again in a moment.\n\nSend any message to retry.';
 
+  const completed = await resolveCompletedPrediction(ctx, opts);
+  if (completed) {
+    return buildIdempotentPredictionResult(ctx, completed);
+  }
+
+  const startedAt = Date.now();
   try {
     const data = await fetchCollegeDostCollegesFn(
       ctx.exam,
@@ -106,18 +176,71 @@ async function runPrediction(ctx) {
       buildCounsellorStyleRequestBody(ctx)
     );
     const colleges = data?.colleges || [];
-    const reply = formatPredictionReply(ctx, colleges);
+    const results = formatPredictionReply(ctx, colleges);
+    const prefix = ctx.conversational ? `${buildPredictingMessage(ctx)}\n\n` : '';
+    const reply = `${prefix}${results}`;
+
+    let predictionIdempotency = null;
+    let analyticsEmitted = false;
+
+    if (opts.inboundId) {
+      const completion = buildPredictionCompletion({
+        inboundId: opts.inboundId,
+        ctx,
+        cachedReply: reply,
+        collegeCount: colleges.length,
+      });
+      const { record, isNewClaim } = await claimInboundPredictionCompletion(
+        opts.inboundId,
+        completion
+      );
+      predictionIdempotency = record || completion;
+
+      if (!isNewClaim && record?.cachedReply) {
+        return buildIdempotentPredictionResult(ctx, record);
+      }
+
+      if (isNewClaim) {
+        logEventFn('predictor_success', {
+          predictorExam: ctx.exam || null,
+          rank: ctx.rank ?? ctx.percentile ?? null,
+          category: ctx.categoryLabel || null,
+          botState: 'college_predictor',
+          collegeCount: colleges.length,
+          durationMs: Date.now() - startedAt,
+          idempotent: false,
+        });
+        analyticsEmitted = true;
+      }
+    } else {
+      logEventFn('predictor_success', {
+        predictorExam: ctx.exam || null,
+        rank: ctx.rank ?? ctx.percentile ?? null,
+        category: ctx.categoryLabel || null,
+        botState: 'college_predictor',
+        collegeCount: colleges.length,
+        durationMs: Date.now() - startedAt,
+        idempotent: false,
+      });
+      analyticsEmitted = true;
+    }
+
+    if (!analyticsEmitted && predictionIdempotency?.cachedReply) {
+      return buildIdempotentPredictionResult(ctx, predictionIdempotency);
+    }
+
     return {
       reply,
       context: { ...ctx, step: 'done' },
       clearState: true,
+      predictionIdempotency,
     };
   } catch (err) {
     const upstreamStatus =
       err.http_status_code != null
         ? String(err.http_status_code)
         : err.res_status || err.code || 'predict_failed';
-    logChatbotEvent('predictor_failed', {
+    logEventFn('predictor_failed', {
       predictorExam: ctx.exam || null,
       upstreamStatus,
       botState: 'college_predictor',
@@ -129,43 +252,8 @@ async function runPrediction(ctx) {
   }
 }
 
-function categoryPrompt(options, title = 'Please select your category.') {
-  return buildNumberedPrompt(title, options, `Reply ${options[0]?.id || 1}`);
-}
-
-function admissionPrompt(options, title = 'Please select admission type.') {
-  return buildNumberedPrompt(title, options, `Reply ${options[0]?.id || 1}`);
-}
-
-function quotaPrompt(options) {
-  return buildNumberedPrompt('Please select your quota.', options, 'Reply 1');
-}
-
-function nextStepAfterRank(exam) {
-  if (exam === EXAM_AP || exam === EXAM_TS) return 'category';
-  if (exam === EXAM_TNEA) return 'category';
-  if (exam === EXAM_KCET) return 'admission_type';
-  if (exam === EXAM_KEAM) return 'category';
-  if (exam === EXAM_WBJEE) return 'category';
-  if (exam === EXAM_JEE_MAIN || exam === EXAM_JEE_ADV) return 'gender';
-  return 'category';
-}
-
-function buildExamCategoryPrompt(ctx) {
-  if (ctx.exam === EXAM_AP || ctx.exam === EXAM_TS) return categoryPrompt(AP_TS_CATEGORY_OPTIONS);
-  if (ctx.exam === EXAM_TNEA) return categoryPrompt(TNEA_CATEGORY_OPTIONS);
-  if (ctx.exam === EXAM_KCET) return categoryPrompt(KCET_CATEGORY_OPTIONS);
-  if (ctx.exam === EXAM_KEAM) return categoryPrompt(KEAM_CATEGORY_OPTIONS);
-  if (ctx.exam === EXAM_WBJEE) return categoryPrompt(WBJEE_CATEGORY_OPTIONS);
-  if (ctx.exam === EXAM_JEE_MAIN || ctx.exam === EXAM_JEE_ADV) return categoryPrompt(JEE_CATEGORY_OPTIONS);
-  if (ctx.exam === EXAM_MHT) {
-    return categoryPrompt(getMhtCategoryOptionsByAdmissionType(ctx.admissionType));
-  }
-  return 'Please select a valid category.';
-}
-
 /**
- * WhatsApp College Predictor multi-exam orchestrator.
+ * WhatsApp College Predictor — conversational slot-filling orchestrator.
  * @param {string} text
  * @param {object} context — WhatsAppBotState.context.college
  * @param {{ isNewEntry?: boolean }} [opts]
@@ -174,299 +262,112 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
   const t = normalizeText(text);
 
   if (/^again$/.test(t)) {
-    return { reply: PROMPT_EXAM, context: initialContext(), restart: true };
+    return {
+      reply: buildConversationalWelcome(),
+      context: initialContext(),
+      restart: true,
+    };
+  }
+
+  if (opts.inboundId) {
+    const completed = await resolveCompletedPrediction(
+      { ...context, conversational: true },
+      opts
+    );
+    if (completed) {
+      return buildIdempotentPredictionResult(
+        { ...context, conversational: true },
+        completed
+      );
+    }
   }
 
   let ctx = opts.isNewEntry ? initialContext() : { ...context };
+  if (!ctx.flow) ctx = initialContext();
+  if (!ctx.step || ctx.step === 'done') ctx = initialContext();
+  ctx.conversational = true;
 
-  if (!ctx.flow) {
-    ctx = initialContext();
+  if (ctx.step === 'predict') {
+    if (isApOcMaleBlocked(ctx.exam, ctx.categoryN, ctx.gender)) {
+      return {
+        reply: AP_OC_MALE_BLOCKED_REPLY,
+        context: { ...ctx, step: 'done' },
+        clearState: true,
+      };
+    }
+    return await runPrediction(ctx, opts);
   }
-  if (!ctx.step || ctx.step === 'done') {
-    ctx = initialContext();
+
+  const beforeMissing = getMissingSlots(ctx);
+  const extracted = extractSlotsFromMessage(text, ctx);
+  const merged = applyExtractedSlots(ctx, extracted);
+  const afterMissing = getMissingSlots(merged);
+
+  const trimmed = String(text || '').trim();
+  if (
+    beforeMissing.length > 0 &&
+    afterMissing.length > 0 &&
+    beforeMissing[0] === afterMissing[0] &&
+    trimmed &&
+    Object.keys(extracted).length === 0
+  ) {
+    if (beforeMissing[0] === SLOT_EXAM && isNeutralPredictorEntry(text)) {
+      return {
+        reply: buildConversationalWelcome(),
+        context: { ...merged, step: 'exam', conversational: true },
+      };
+    }
+    return {
+      reply: buildInvalidMessage(beforeMissing[0], merged),
+      context: { ...merged, step: slotToLegacyStep(beforeMissing[0]), conversational: true },
+    };
   }
 
-  const digit = parseMenuDigit(t);
+  ctx = merged;
 
-  switch (ctx.step) {
-    case 'exam': {
-      if (digit == null) {
-        return { reply: PROMPT_EXAM, context: ctx };
-      }
-      const exam = mapExamChoice(digit);
-      if (!exam) {
-        return {
-          reply: `${PROMPT_EXAM}\n\nPlease reply with a number from 1 to 9.`,
-          context: ctx,
-        };
-      }
-      return {
-        reply: exam === EXAM_MHT ? PROMPT_PERCENTILE : PROMPT_RANK,
-        context: { ...ctx, step: exam === EXAM_MHT ? 'percentile' : 'rank', exam },
-      };
-    }
-
-    case 'rank': {
-      const rank = parsePositiveIntRank(t);
-      if (rank == null) {
-        return {
-          reply: 'Please enter a valid positive number for your rank.\n\nExample: 15000',
-          context: ctx,
-        };
-      }
-      const step = nextStepAfterRank(ctx.exam);
-      if (step === 'admission_type') {
-        return {
-          reply: admissionPrompt(KCET_ADMISSION_OPTIONS, 'Please select your admission type.'),
-          context: { ...ctx, step, rank },
-        };
-      }
-      if (step === 'gender') {
-        return {
-          reply: PROMPT_GENDER,
-          context: { ...ctx, step: 'gender', rank },
-        };
-      }
-      return {
-        reply: buildExamCategoryPrompt({ ...ctx, rank }),
-        context: { ...ctx, step, rank },
-      };
-    }
-
-    case 'percentile': {
-      const percentile = parsePercentile(t);
-      if (percentile == null) {
-        return {
-          reply: `${PROMPT_PERCENTILE}\n\nPlease enter a valid number from 1 to 100.`,
-          context: ctx,
-        };
-      }
-      return {
-        reply: admissionPrompt(MHT_CET_ADMISSION_OPTIONS, 'Please select your admission route.'),
-        context: { ...ctx, step: 'admission_type', percentile },
-      };
-    }
-
-    case 'admission_type': {
-      if (digit == null) {
-        const options = ctx.exam === EXAM_KCET ? KCET_ADMISSION_OPTIONS : MHT_CET_ADMISSION_OPTIONS;
-        return {
-          reply: `${admissionPrompt(options)}\n\nPlease reply with a valid option number.`,
-          context: ctx,
-        };
-      }
-      const options = ctx.exam === EXAM_KCET ? KCET_ADMISSION_OPTIONS : MHT_CET_ADMISSION_OPTIONS;
-      const mapped = mapById(options, digit);
-      if (!mapped) {
-        return {
-          reply: `${admissionPrompt(options)}\n\nPlease reply with a valid option number.`,
-          context: ctx,
-        };
-      }
-      return {
-        reply: buildExamCategoryPrompt({ ...ctx, admissionType: mapped.value }),
-        context: {
-          ...ctx,
-          step: 'category',
-          admissionType: mapped.value,
-          admission_category_name_enum: mapped.apiValue || mapped.value,
-        },
-      };
-    }
-
-    case 'category': {
-      if (digit == null) {
-        return {
-          reply: `${buildExamCategoryPrompt(ctx)}\n\nPlease reply with a valid option number.`,
-          context: ctx,
-        };
-      }
-      let mapped = null;
-      if (ctx.exam === EXAM_AP || ctx.exam === EXAM_TS) mapped = mapById(AP_TS_CATEGORY_OPTIONS, digit);
-      if (ctx.exam === EXAM_TNEA) mapped = mapById(TNEA_CATEGORY_OPTIONS, digit);
-      if (ctx.exam === EXAM_KCET) mapped = mapById(KCET_CATEGORY_OPTIONS, digit);
-      if (ctx.exam === EXAM_KEAM) mapped = mapById(KEAM_CATEGORY_OPTIONS, digit);
-      if (ctx.exam === EXAM_WBJEE) mapped = mapById(WBJEE_CATEGORY_OPTIONS, digit);
-      if (ctx.exam === EXAM_JEE_MAIN || ctx.exam === EXAM_JEE_ADV) mapped = mapById(JEE_CATEGORY_OPTIONS, digit);
-      if (ctx.exam === EXAM_MHT) mapped = mapById(getMhtCategoryOptionsByAdmissionType(ctx.admissionType), digit);
-      if (!mapped) {
-        return {
-          reply: `${buildExamCategoryPrompt(ctx)}\n\nPlease reply with a valid option number.`,
-          context: ctx,
-        };
-      }
-
-      const next = { ...ctx, categoryLabel: mapped.label, categoryN: mapped.id, baseCategory: mapped.value };
-
-      if (ctx.exam === EXAM_AP || ctx.exam === EXAM_TS) {
-        return {
-          reply: PROMPT_GENDER,
-          context: { ...next, step: 'gender' },
-        };
-      }
-      if (ctx.exam === EXAM_WBJEE) {
-        return {
-          reply: quotaPrompt(WBJEE_QUOTA_OPTIONS),
-          context: { ...next, step: 'quota' },
-        };
-      }
-      if (ctx.exam === EXAM_JEE_MAIN || ctx.exam === EXAM_JEE_ADV) {
-        if (!ctx.gender) {
-          return {
-            reply: `${PROMPT_GENDER}\n\nPlease select gender first.`,
-            context: { ...next, step: 'gender' },
-          };
-        }
-        const reservation_category_codes = getJeeReservationCategoryCodes(ctx.exam, ctx.gender, mapped.value);
-        if (!reservation_category_codes.length) {
-          return {
-            reply: `${buildExamCategoryPrompt(ctx)}\n\nPlease reply with a valid option number.`,
-            context: ctx,
-          };
-        }
-        return await runPrediction({
-          ...next,
-          reservation_category_codes,
-          admission_category_name_enum: 'DEFAULT',
-          step: 'predict',
-        });
-      }
-      if (ctx.exam === EXAM_MHT) {
-        const normalized = normalizeMhtReservationCodeForApi(ctx.admissionType, mapped.value);
-        const [cutoff_from, cutoff_to] = percentileToMhtCutoffRange(ctx.percentile);
-        return await runPrediction({
-          ...next,
-          reservation_category_codes: [normalized],
-          cutoff_from,
-          cutoff_to,
-          step: 'predict',
-        });
-      }
-      const admission = ctx.exam === EXAM_KCET ? ctx.admissionType : 'DEFAULT';
-      return await runPrediction({
-        ...next,
-        reservation_category_codes: [mapped.value],
-        admission_category_name_enum: admission,
-        step: 'predict',
-      });
-    }
-
-    case 'gender': {
-      if (digit == null) {
-        return {
-          reply: `${PROMPT_GENDER}\n\nPlease reply 1 for Male or 2 for Female.`,
-          context: ctx,
-        };
-      }
-      const gender = mapGenderChoice(digit);
-      if (!gender) {
-        return {
-          reply: `${PROMPT_GENDER}\n\nPlease reply 1 for Male or 2 for Female.`,
-          context: ctx,
-        };
-      }
-      if (ctx.exam === EXAM_AP || ctx.exam === EXAM_TS) {
-        if (isApOcMaleBlocked(ctx.exam, ctx.categoryN, gender)) {
-          return {
-            reply: AP_OC_MALE_BLOCKED_REPLY,
-            context: { ...ctx, gender, step: 'done' },
-            clearState: true,
-          };
-        }
-        const code = resolveApTsReservationCode(ctx.exam, ctx.categoryN, gender);
-        if (!code) {
-          return {
-            reply: `${PROMPT_GENDER}\n\nPlease reply 1 for Male or 2 for Female.`,
-            context: ctx,
-          };
-        }
-        const next = { ...ctx, gender, reservation_category_codes: [code] };
-        if (ctx.exam === EXAM_AP) {
-          return { reply: PROMPT_REGION, context: { ...next, step: 'region' } };
-        }
-        return await runPrediction({
-          ...next,
-          admission_category_name_enum: 'DEFAULT',
-          step: 'predict',
-        });
-      }
-      if (ctx.exam === EXAM_JEE_MAIN || ctx.exam === EXAM_JEE_ADV) {
-        return {
-          reply: buildExamCategoryPrompt({ ...ctx, gender }),
-          context: { ...ctx, gender, step: 'category' },
-        };
-      }
-      return { reply: PROMPT_EXAM, context: initialContext() };
-    }
-
-    case 'quota': {
-      if (digit == null) {
-        return {
-          reply: `${quotaPrompt(WBJEE_QUOTA_OPTIONS)}\n\nPlease reply with a valid option number.`,
-          context: ctx,
-        };
-      }
-      const quota = mapById(WBJEE_QUOTA_OPTIONS, digit);
-      if (!quota) {
-        return {
-          reply: `${quotaPrompt(WBJEE_QUOTA_OPTIONS)}\n\nPlease reply with a valid option number.`,
-          context: ctx,
-        };
-      }
-      const code = getWbjeeReservationCategoryCode(ctx.baseCategory, quota.value);
-      if (!code) {
-        return {
-          reply: 'Selected category is not available for that quota. Please choose another quota/category.',
-          context: { ...ctx, step: 'category' },
-        };
-      }
-      return await runPrediction({
-        ...ctx,
-        reservation_category_codes: [code],
-        admission_category_name_enum: 'DEFAULT',
-        step: 'predict',
-        quota: quota.value,
-      });
-    }
-
-    case 'region': {
-      if (digit == null) {
-        return {
-          reply: `${PROMPT_REGION}\n\nPlease reply 1 or 2 only.`,
-          context: ctx,
-        };
-      }
-      const region = mapRegionChoice(digit);
-      if (!region) {
-        return {
-          reply: `${PROMPT_REGION}\n\nPlease reply 1 or 2 only.`,
-          context: ctx,
-        };
-      }
-      return await runPrediction({
-        ...ctx,
-        step: 'predict',
-        admission_category_name_enum: region,
-      });
-    }
-
-    case 'predict': {
-      if (isApOcMaleBlocked(ctx.exam, ctx.categoryN, ctx.gender)) {
-        return {
-          reply: AP_OC_MALE_BLOCKED_REPLY,
-          context: { ...ctx, step: 'done' },
-          clearState: true,
-        };
-      }
-      return await runPrediction(ctx);
-    }
-
-    default:
-      return { reply: PROMPT_EXAM, context: initialContext() };
+  if (ctx.exam === EXAM_AP && ctx.gender && isApOcMaleBlocked(ctx.exam, ctx.categoryN, ctx.gender)) {
+    return {
+      reply: AP_OC_MALE_BLOCKED_REPLY,
+      context: { ...ctx, step: 'done' },
+      clearState: true,
+    };
   }
+
+  if (!isPredictionReady(ctx)) {
+    const nextSlot = getMissingSlots(ctx)[0];
+    const reply =
+      opts.isNewEntry && nextSlot === SLOT_EXAM && isNeutralPredictorEntry(text)
+        ? buildConversationalWelcome()
+        : buildQuestionForSlot(nextSlot, ctx);
+    return {
+      reply,
+      context: { ...ctx, step: slotToLegacyStep(nextSlot), conversational: true },
+    };
+  }
+
+  const built = buildPredictionContext(ctx);
+  if (built.blocked) {
+    return {
+      reply: AP_OC_MALE_BLOCKED_REPLY,
+      context: { ...ctx, step: 'done' },
+      clearState: true,
+    };
+  }
+  if (built.error) {
+    const slot = getMissingSlots(ctx)[0] || 'category';
+    return {
+      reply: built.error,
+      context: { ...ctx, step: slotToLegacyStep(slot), conversational: true },
+    };
+  }
+
+  return await runPrediction(built.ctx, opts);
 }
 
 module.exports = {
   handleCollegePredictorMessage,
   setCollegePredictorDeps,
+  buildCounsellorStyleRequestBody,
+  runPrediction,
+  resolveCompletedPrediction,
 };

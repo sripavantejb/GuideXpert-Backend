@@ -5,6 +5,7 @@ const {
 } = require('./intentClassifierService');
 const { isSupportedLanguage, normalizeLanguageCode } = require('../../constants/languageConstants');
 const botStateService = require('./botStateService');
+const { OptimisticLockFailedError } = botStateService;
 const leadContextService = require('./leadContextService');
 const { retrieveFacts } = require('./knowledgeRetrievalService');
 const { searchStaticFaq, searchBlog, formatFaqAnswerAsync } = require('./faqService');
@@ -145,9 +146,9 @@ function previewLogText(text, max = 200) {
   return value.length > max ? `${value.slice(0, max)}…` : value;
 }
 
-/** Set CHATBOT_COLLEGE_PREDICTOR_ENABLED=1 to turn the WhatsApp college predictor back on. */
+/** WhatsApp college predictor is always enabled (no env flag). */
 function isCollegePredictorEnabled() {
-  return String(process.env.CHATBOT_COLLEGE_PREDICTOR_ENABLED || '').trim() === '1';
+  return true;
 }
 
 function outboundSucceeded(result) {
@@ -178,6 +179,7 @@ const defaultHooks = {
   retrieveFacts: (links, ctx) => retrieveFacts(links, ctx),
   getBotState: (id) => botStateService.getBotState(id),
   transitionState: (...args) => botStateService.transitionState(...args),
+  resetToMainMenu: (...args) => botStateService.resetToMainMenu(...args),
   isBotPausedForConversation: (c) => handoffService.isBotPausedForConversation(c),
   createHandoff: (args) => handoffService.createHandoff(args),
   cancelActiveHandoffForUser: (conversation) =>
@@ -364,9 +366,56 @@ async function processInbound({ conversation, inbound, leadLinks }) {
   const startedAt = Date.now();
   const h = hooks();
   try {
-    const result = await processInboundCore({ conversation, inbound, leadLinks, startedAt });
-    return { ...result, ...summarizeProcessResult(result) };
+    const result = await botStateService.runWithOptimisticLockRetry({
+      conversationId: conversation._id,
+      phone10: conversation.phone,
+      operation: async (attempt) => {
+        const core = await processInboundCore({
+          conversation,
+          inbound,
+          leadLinks,
+          startedAt,
+          optimisticRetryAttempt: attempt,
+        });
+        return { ...core, ...summarizeProcessResult(core) };
+      },
+    });
+    return result;
   } catch (err) {
+    if (err instanceof OptimisticLockFailedError) {
+      logInboundResult({
+        event: 'inbound_failed',
+        conversation,
+        botState: null,
+        intent: null,
+        contextPatch: {},
+        durationMs: Date.now() - startedAt,
+        errMessage: 'optimistic_lock_failed',
+      });
+      console.error('[chatbot] optimistic lock failed after retries', {
+        phone_tail: maskPhoneTail(conversation.phone),
+        conversation_id: String(conversation._id),
+        previous_version: err.meta?.previousVersion ?? null,
+        current_version: err.meta?.currentVersion ?? null,
+      });
+      try {
+        const fallbackText = resolveSystemReply('orchestratorFallback', 'en');
+        const result = await h.outbound.sendBotTextReply({
+          conversationId: conversation._id,
+          phone10: conversation.phone,
+          text: fallbackText,
+          inReplyToInboundId: inbound._id,
+        });
+        return {
+          ...result,
+          ...summarizeProcessResult(result),
+          optimisticLockFailed: true,
+        };
+      } catch (sendErr) {
+        console.error('[chatbot] optimistic lock fallback reply failed', sendErr.message);
+        throw err;
+      }
+    }
     logInboundResult({
       event: 'inbound_failed',
       conversation,
@@ -397,8 +446,24 @@ async function processInbound({ conversation, inbound, leadLinks }) {
   }
 }
 
-async function processInboundCore({ conversation, inbound, leadLinks, startedAt }) {
+async function processInboundCore({
+  conversation,
+  inbound,
+  leadLinks,
+  startedAt,
+  optimisticRetryAttempt = 1,
+}) {
   const h = hooks();
+  const transitionState = (conversationId, phone10, nextState, contextPatch = {}, opts = {}) =>
+    h.transitionState(conversationId, phone10, nextState, contextPatch, {
+      ...opts,
+      retryAttempt: optimisticRetryAttempt,
+    });
+  const resetToMainMenu = (conversationId, phone10, opts = {}) =>
+    h.resetToMainMenu(conversationId, phone10, {
+      ...opts,
+      retryAttempt: optimisticRetryAttempt,
+    });
   let activeConversation = conversation;
   const leadContext = await h.buildLeadContext(leadLinks);
   await seedPreferredLanguageFromLead(activeConversation._id, leadContext);
@@ -462,7 +527,11 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
   }
 
   const facts = await h.retrieveFacts(leadLinks, leadContext);
-  const botState = await h.getBotState(activeConversation._id);
+  let botState = await h.getBotState(activeConversation._id);
+  if (botStateService.isStateExpired(botState)) {
+    await resetToMainMenu(activeConversation._id, activeConversation.phone);
+    botState = { state: 'main_menu', context: emptySubflows() };
+  }
 
   if (multilingualInbound && botState?.context?.iitCounsellingExpertActive) {
     const detectedLang = normalizeLanguageCode(multilingualInbound.detectedLanguage);
@@ -618,7 +687,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
   }
 
   if (intentResult.intent === 'opt_out') {
-    await h.transitionState(activeConversation._id, activeConversation.phone, 'idle', {
+    await transitionState(activeConversation._id, activeConversation.phone, 'idle', {
       optedOut: true,
       knowledgeAssistantActive: false,
     });
@@ -665,7 +734,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
   }
 
   if (intentResult.intent === 'main_menu') {
-    await h.transitionState(activeConversation._id, activeConversation.phone, 'main_menu', emptySubflows());
+    await transitionState(activeConversation._id, activeConversation.phone, 'main_menu', emptySubflows());
     const result = await sendMainMenu(activeConversation, leadContext, inbound._id, multilingualInbound);
     logInboundResult({
       event: 'inbound_processed',
@@ -845,7 +914,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       break;
     case 'faq':
     case 'faq_query':
-      await h.transitionState(activeConversation._id, activeConversation.phone, 'faq', contextPatch);
+      await transitionState(activeConversation._id, activeConversation.phone, 'faq', contextPatch);
       replyText = resolveSystemReply('faqPrompt', resolvedLanguageFrom(multilingualInbound));
       if (intentResult.intent === 'faq_query' && inbound.text) {
         const staticHits = searchStaticFaq(inbound.text);
@@ -868,7 +937,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
       break;
     case 'rank_predictor':
     case 'rank_predictor_continue': {
-      await h.transitionState(activeConversation._id, activeConversation.phone, 'rank_predictor', contextPatch);
+      await transitionState(activeConversation._id, activeConversation.phone, 'rank_predictor', contextPatch);
       const rankInboundText = routingInboundText;
       const r = handleRankPredictorMessage(rankInboundText, contextPatch.rank || {});
       replyText = r.reply;
@@ -904,23 +973,36 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
         break;
       }
       const isNewEntry = intentResult.intent === 'college_predictor';
-      await h.transitionState(
+      await transitionState(
         activeConversation._id,
         activeConversation.phone,
         'college_predictor',
         contextPatch
       );
       const c = await handleCollegePredictorMessage(
-        inbound.text,
+        multilingualInbound?.englishMessage || inbound.text,
         contextPatch.college || {},
-        { isNewEntry }
+        {
+          isNewEntry,
+          inboundId: inbound._id,
+          predictionIdempotency: contextPatch.predictionIdempotency || null,
+        }
       );
       replyText = c.reply;
+      if (c.predictionIdempotency) {
+        await transitionState(activeConversation._id, activeConversation.phone, 'college_predictor', {
+          predictionIdempotency: c.predictionIdempotency,
+          college: c.clearState ? {} : contextPatch.college || {},
+        });
+      }
       if (c.clearState) {
-        contextPatch = { college: {} };
+        contextPatch = { college: {}, predictionIdempotency: null };
         nextState = 'main_menu';
       } else {
-        contextPatch = { college: c.context };
+        contextPatch = {
+          college: c.context,
+          predictionIdempotency: c.predictionIdempotency || contextPatch.predictionIdempotency || null,
+        };
         nextState = 'college_predictor';
       }
       break;
@@ -1271,7 +1353,7 @@ async function processInboundCore({ conversation, inbound, leadLinks, startedAt 
     };
   }
 
-  await h.transitionState(activeConversation._id, activeConversation.phone, nextState, contextPatch);
+  await transitionState(activeConversation._id, activeConversation.phone, nextState, contextPatch);
 
   if (!replyText) {
     replyText = listExamsMessage();

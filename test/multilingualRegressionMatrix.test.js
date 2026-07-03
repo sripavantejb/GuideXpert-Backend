@@ -107,7 +107,7 @@ describe('multilingual regression matrix', () => {
     });
   }
 
-  test('college_predictor outbound uses localized unavailable reply when resolved te', async () => {
+  test('college_predictor rank+branch starts conversational flow when resolved te', async () => {
     let finalizeCalls = 0;
     const orchestrator = loadOrchestratorWithMocks({
       prepareMultilingualInbound: async () => ({
@@ -144,8 +144,6 @@ describe('multilingual regression matrix', () => {
       },
     });
 
-    delete process.env.CHATBOT_COLLEGE_PREDICTOR_ENABLED;
-
     await orchestrator.processInbound({
       conversation: {
         _id: CONVERSATION_ID,
@@ -162,7 +160,10 @@ describe('multilingual regression matrix', () => {
     });
 
     assert.equal(finalizeCalls, 0);
-    assert.match(String(outbound[0] || ''), /Rank Predictor అవసరం లేదు/);
+    assert.match(
+      String(outbound[0] || ''),
+      /Sure! I can help you predict colleges|Which entrance exam did you write/
+    );
 
     orchestrator.setChatbotOrchestratorTestHooks(null);
     [

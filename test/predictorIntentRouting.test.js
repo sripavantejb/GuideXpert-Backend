@@ -105,14 +105,12 @@ describe('predictor intent routing', () => {
   });
 });
 
-describe('predictor intent orchestrator college unavailable', () => {
+describe('predictor intent orchestrator college rank+branch routing', () => {
   beforeEach(() => {
-    delete process.env.CHATBOT_COLLEGE_PREDICTOR_ENABLED;
     process.env.CHATBOT_MULTILINGUAL_ENABLED = '1';
   });
 
   afterEach(() => {
-    delete process.env.CHATBOT_COLLEGE_PREDICTOR_ENABLED;
     delete process.env.CHATBOT_MULTILINGUAL_ENABLED;
     mock.restoreAll();
     [orchestratorPath, middlewarePath, conversationLangPath].forEach((p) => delete require.cache[p]);
@@ -163,7 +161,7 @@ describe('predictor intent orchestrator college unavailable', () => {
     assert.match(String(outbound[0]), expectedSnippet);
   }
 
-  test('English rank+branch returns college predictor unavailable message', async () => {
+  test('English rank+branch starts college predictor conversational flow', async () => {
     await runCase({
       text: 'Can I get CSE with rank 15000?',
       mockInbound: {
@@ -175,11 +173,11 @@ describe('predictor intent orchestrator college unavailable', () => {
         translationApplied: false,
         resolvedLanguage: 'en',
       },
-      expectedSnippet: /You already provided your rank/,
+      expectedSnippet: /Sure! I can help you predict colleges/,
     });
   });
 
-  test('Telugu rank+branch returns Telugu college predictor unavailable message', async () => {
+  test('Telugu rank+branch starts college predictor with extracted rank', async () => {
     await runCase({
       text: '15000 ర్యాంక్‌తో CSE వస్తుందా?',
       mockInbound: {
@@ -191,7 +189,7 @@ describe('predictor intent orchestrator college unavailable', () => {
         translationApplied: true,
         resolvedLanguage: 'te',
       },
-      expectedSnippet: /Rank Predictor అవసరం లేదు/,
+      expectedSnippet: /Sure! I can help you predict colleges|Which entrance exam did you write/,
     });
   });
 });

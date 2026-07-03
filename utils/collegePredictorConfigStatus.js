@@ -1,7 +1,7 @@
 'use strict';
 
 function isCollegePredictorEnabled() {
-  return String(process.env.CHATBOT_COLLEGE_PREDICTOR_ENABLED || '').trim() === '1';
+  return true;
 }
 
 function getCollegePredictorConfigStatus() {
@@ -17,7 +17,7 @@ function getCollegePredictorConfigStatus() {
 function logCollegePredictorConfigStatus() {
   const s = getCollegePredictorConfigStatus();
   if (s.enabled && !s.ready) {
-    console.warn('[env] CHATBOT_COLLEGE_PREDICTOR_ENABLED=1 but NW_PREDICTORS_ACCESS_TOKEN is missing.');
+    console.warn('[env] College predictor is enabled but NW_PREDICTORS_ACCESS_TOKEN is missing.');
   }
 }
 

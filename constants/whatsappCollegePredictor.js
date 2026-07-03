@@ -31,7 +31,7 @@ const EXAM_OPTIONS = [
 
 const EXAM_DISPLAY = Object.fromEntries(EXAM_OPTIONS.map((it) => [it.value, it.label]));
 
-const FOOTER_ACTIONS = ['', 'Reply:', '', 'MENU -> Main Menu', 'AGENT -> Talk to Expert', 'AGAIN -> Run Another Prediction'].join('\n');
+const FOOTER_ACTIONS = ['', 'Reply:', '', 'MENU -> Main Menu', 'AGAIN -> New Prediction', 'AGENT -> Talk to Counsellor'].join('\n');
 
 const AP_OC_MALE_BLOCKED_REPLY = [
   'We currently need your exact AP EAMCET reservation category to provide an accurate prediction.',
@@ -127,31 +127,51 @@ function buildPredictorRequestBody(ctx) {
   };
 }
 
-function pickBranchLine(college) {
+function pickBranchDetails(college) {
   const b = Array.isArray(college?.branches) ? college.branches[0] : null;
-  return b?.branch_name || b?.branch_code || 'NA';
+  if (!b) {
+    return { branch: 'NA', cutoff: null, category: null };
+  }
+  const rc = Array.isArray(b.reservation_categories) ? b.reservation_categories[0] : null;
+  return {
+    branch: b.branch_name || b.branch_code || 'NA',
+    cutoff: rc?.cutoff_rank ?? rc?.cutoff ?? null,
+    category: rc?.category_name ?? rc?.reservation_category_code ?? null,
+  };
+}
+
+function pickBranchLine(college) {
+  return pickBranchDetails(college).branch;
 }
 
 function formatPredictionReply(ctx, colleges) {
   const lines = [
-    'Based on your profile:',
+    'Here are your predicted colleges:',
     '',
     `Exam: ${EXAM_DISPLAY[ctx.exam] || ctx.exam}`,
     `Rank/Percentile: ${ctx.percentile != null ? ctx.percentile : ctx.rank}`,
     `Category: ${ctx.categoryLabel || 'NA'}`,
-    `Gender: ${formatGenderLabel(ctx.gender)}`,
-    '',
-    'Top Matches:',
-    '',
   ];
+  if (ctx.gender) {
+    lines.push(`Gender: ${formatGenderLabel(ctx.gender)}`);
+  }
+  lines.push('', 'Top Matches:', '');
+
   const list = Array.isArray(colleges) ? colleges.slice(0, 5) : [];
   if (list.length === 0) {
     lines.push('No colleges found for this profile.');
     lines.push('Try AGAIN with different inputs.');
   } else {
     list.forEach((c, i) => {
+      const details = pickBranchDetails(c);
       lines.push(`${i + 1}. ${c.college_name || 'College'}`);
-      lines.push(pickBranchLine(c));
+      lines.push(`   Branch: ${details.branch}`);
+      if (details.cutoff != null) {
+        lines.push(`   Cutoff: ${details.cutoff}`);
+      }
+      if (details.category) {
+        lines.push(`   Category: ${details.category}`);
+      }
       lines.push('');
     });
   }
@@ -160,7 +180,7 @@ function formatPredictionReply(ctx, colleges) {
 }
 
 function initialContext() {
-  return { flow: FLOW, step: 'exam' };
+  return { flow: FLOW, step: 'exam', conversational: true };
 }
 
 module.exports = {
