@@ -1,4 +1,9 @@
 const axios = require('axios');
+const {
+  maskBearerToken,
+  logPredictorPipeline,
+  previewText,
+} = require('./chatbot/whatsappCollegePredictor/collegePredictorPipelineLog');
 
 const BASE_URL = process.env.NW_PREDICTORS_BASE_URL || 'https://nw-predictors-backend-beta.earlywave.in';
 
@@ -249,15 +254,42 @@ function buildInnerBodyV2(body, apiExamEnum) {
   };
 }
 
-async function callUpstream(url, payload, token) {
+async function callUpstream(url, payload, token, meta = {}) {
+  logPredictorPipeline('predictor_upstream_request', {
+    endpoint: url,
+    authorizationMasked: maskBearerToken(token),
+    requestBodyPreview: previewText(JSON.stringify(payload)),
+    apiVersion: meta.apiVersion || null,
+    predictorExam: meta.exam || null,
+  });
   try {
     const res = await axios.post(url, payload, {
       headers: buildPredictorAuthHeaders(token),
       timeout: 30000,
       validateStatus: () => true,
     });
-    if (res.status >= 200 && res.status < 300) return res.data;
+    if (res.status >= 200 && res.status < 300) {
+      logPredictorPipeline('predictor_upstream_response', {
+        endpoint: url,
+        upstreamStatus: String(res.status),
+        apiVersion: meta.apiVersion || null,
+        predictorExam: meta.exam || null,
+        collegeCount: Array.isArray(res.data?.colleges) ? res.data.colleges.length : null,
+        totalColleges: res.data?.total_no_of_colleges ?? null,
+        responsePreview: previewText(JSON.stringify(res.data)),
+      });
+      return res.data;
+    }
     const errBody = res.data || {};
+    logPredictorPipeline('predictor_upstream_error', {
+      endpoint: url,
+      upstreamStatus: String(errBody.http_status_code ?? res.status),
+      resStatus: errBody.res_status || 'UPSTREAM_ERROR',
+      errorKind: res.status === 401 || res.status === 403 ? 'authentication_error' : 'upstream_api_error',
+      apiVersion: meta.apiVersion || null,
+      predictorExam: meta.exam || null,
+      upstreamResponse: previewText(errBody.response || JSON.stringify(errBody)),
+    });
     const err = new Error(errBody.response || `Predictor API returned ${res.status}`);
     err.http_status_code = errBody.http_status_code ?? res.status;
     err.res_status = errBody.res_status || 'UPSTREAM_ERROR';
@@ -266,6 +298,15 @@ async function callUpstream(url, payload, token) {
     throw err;
   } catch (error) {
     if (error.http_status_code != null) throw error;
+    logPredictorPipeline('predictor_upstream_error', {
+      endpoint: url,
+      upstreamStatus: '502',
+      resStatus: 'SERVICE_UNAVAILABLE',
+      errorKind: error.code === 'ECONNABORTED' ? 'timeout' : 'upstream_api_error',
+      apiVersion: meta.apiVersion || null,
+      predictorExam: meta.exam || null,
+      errMessage: error.message,
+    });
     const err = new Error(
       error.code === 'ECONNABORTED' ? 'Predictor request timed out' :
       error.message === 'Network Error' ? 'Cannot reach predictor service' :
@@ -279,7 +320,7 @@ async function callUpstream(url, payload, token) {
 }
 
 /**
- * Call the earlywave college predictor API. JEE multi-code requests go directly to v2;
+ * Call the earlywave college predictor API.
  * all other exams try v1 first and fall back to v2 on INVALID_RESERVATION_CATEGORY_CODE.
  *
  * @param {string} exam
@@ -291,6 +332,13 @@ async function callUpstream(url, payload, token) {
 async function getPredictedColleges(exam, offset, limit, body) {
   const token = getPredictorAccessToken();
   if (!token) {
+    logPredictorPipeline('predictor_upstream_error', {
+      upstreamStatus: '503',
+      resStatus: 'SERVICE_UNAVAILABLE',
+      errorKind: 'authentication_error',
+      predictorExam: exam,
+      errMessage: 'predictor_access_token_missing',
+    });
     const err = new Error('Access token is not configured');
     err.http_status_code = 503;
     err.res_status = 'SERVICE_UNAVAILABLE';
@@ -322,12 +370,22 @@ async function getPredictedColleges(exam, offset, limit, body) {
       console.log('[collegeDost] exam:', exam, '-> apiEnum:', apiExamEnum, '| JEE multi-code -> v2 direct');
       console.log('[collegeDost] outbound v2 body:', JSON.stringify(payloadV2));
     }
-    return callUpstream(urlV2, payloadV2, token);
+    return callUpstream(urlV2, payloadV2, token, { apiVersion: 'v2', exam });
   }
 
   const urlV1 = `${BASE_URL}${V1_PATH}?offset=${encodeURIComponent(offset)}&limit=${encodeURIComponent(limit)}`;
   const innerV1 = buildInnerBodyV1(body, apiExamEnum);
   const requestPayloadV1 = buildOutboundBody(innerV1);
+
+  logPredictorPipeline('predictor_upstream_request', {
+    endpoint: urlV1,
+    authorizationMasked: maskBearerToken(token),
+    apiVersion: 'v1',
+    predictorExam: exam,
+    requestBodyPreview: previewText(JSON.stringify(requestPayloadV1)),
+    legacyWrapped: useLegacyWrappedPayload(),
+    innerPayload: previewText(JSON.stringify(innerV1)),
+  });
 
   if (process.env.NODE_ENV !== 'production') {
     console.log('[collegeDost] exam:', exam, '-> key:', examKey, 'apiEnum:', apiExamEnum, '| url:', urlV1);
@@ -343,10 +401,28 @@ async function getPredictedColleges(exam, offset, limit, body) {
     });
 
     if (res.status >= 200 && res.status < 300) {
+      logPredictorPipeline('predictor_upstream_response', {
+        endpoint: urlV1,
+        upstreamStatus: String(res.status),
+        apiVersion: 'v1',
+        predictorExam: exam,
+        collegeCount: Array.isArray(res.data?.colleges) ? res.data.colleges.length : null,
+        totalColleges: res.data?.total_no_of_colleges ?? null,
+        responsePreview: previewText(JSON.stringify(res.data)),
+      });
       return res.data;
     }
 
     const errBody = res.data || {};
+    logPredictorPipeline('predictor_upstream_error', {
+      endpoint: urlV1,
+      upstreamStatus: String(errBody.http_status_code ?? res.status),
+      resStatus: errBody.res_status || 'UPSTREAM_ERROR',
+      errorKind: res.status === 401 || res.status === 403 ? 'authentication_error' : 'upstream_api_error',
+      apiVersion: 'v1',
+      predictorExam: exam,
+      upstreamResponse: previewText(errBody.response || JSON.stringify(errBody)),
+    });
     const shouldTryV2 =
       res.status === 400 &&
       errBody.res_status === 'INVALID_RESERVATION_CATEGORY_CODE' &&
@@ -360,7 +436,7 @@ async function getPredictedColleges(exam, offset, limit, body) {
       if (process.env.NODE_ENV !== 'production') {
         console.log('[collegeDost] outbound v2 body:', JSON.stringify(payloadV2));
       }
-      return callUpstream(urlV2, payloadV2, token);
+      return callUpstream(urlV2, payloadV2, token, { apiVersion: 'v2', exam });
     }
 
     const err = new Error(errBody.response || `Predictor API returned ${res.status}`);
@@ -371,6 +447,15 @@ async function getPredictedColleges(exam, offset, limit, body) {
     throw err;
   } catch (error) {
     if (error.http_status_code != null) throw error;
+    logPredictorPipeline('predictor_upstream_error', {
+      endpoint: urlV1,
+      upstreamStatus: '502',
+      resStatus: 'SERVICE_UNAVAILABLE',
+      errorKind: error.code === 'ECONNABORTED' ? 'timeout' : 'upstream_api_error',
+      apiVersion: 'v1',
+      predictorExam: exam,
+      errMessage: error.message,
+    });
     const err = new Error(
       error.code === 'ECONNABORTED' ? 'Predictor request timed out' :
       error.message === 'Network Error' ? 'Cannot reach predictor service' :

@@ -35,6 +35,11 @@ const {
   getInboundPredictionCompletion,
   claimInboundPredictionCompletion,
 } = require('./whatsappCollegePredictor/collegePredictionIdempotencyService');
+const {
+  classifyPredictorError,
+  logPredictorPipeline,
+  previewText,
+} = require('./whatsappCollegePredictor/collegePredictorPipelineLog');
 
 function isNeutralPredictorEntry(text) {
   const t = String(text || '').trim().toLowerCase();
@@ -168,15 +173,45 @@ async function runPrediction(ctx, opts = {}) {
   }
 
   const startedAt = Date.now();
+  const requestBody = buildCounsellorStyleRequestBody(ctx);
+  logPredictorPipeline('predictor_payload_built', {
+    predictorExam: ctx.exam || null,
+    rank: ctx.rank ?? ctx.percentile ?? null,
+    category: ctx.categoryLabel || null,
+    gender: ctx.gender || null,
+    requestBody,
+  });
+
   try {
-    const data = await fetchCollegeDostCollegesFn(
-      ctx.exam,
-      0,
-      5,
-      buildCounsellorStyleRequestBody(ctx)
-    );
+    const data = await fetchCollegeDostCollegesFn(ctx.exam, 0, 5, requestBody);
     const colleges = data?.colleges || [];
-    const results = formatPredictionReply(ctx, colleges);
+    logPredictorPipeline('predictor_upstream_response', {
+      predictorExam: ctx.exam || null,
+      upstreamStatus: '200',
+      collegeCount: colleges.length,
+      totalColleges: data?.total_no_of_colleges ?? colleges.length,
+      durationMs: Date.now() - startedAt,
+    });
+
+    let results;
+    try {
+      results = formatPredictionReply(ctx, colleges);
+      logPredictorPipeline('predictor_reply_formatted', {
+        predictorExam: ctx.exam || null,
+        collegeCount: colleges.length,
+        replyLength: results.length,
+        replyPreview: previewText(results),
+      });
+    } catch (formatErr) {
+      logPredictorPipeline('predictor_stage_error', {
+        stage: 'formatter',
+        errorKind: 'formatter_error',
+        predictorExam: ctx.exam || null,
+        errMessage: formatErr.message,
+      });
+      throw formatErr;
+    }
+
     const prefix = ctx.conversational ? `${buildPredictingMessage(ctx)}\n\n` : '';
     const reply = `${prefix}${results}`;
 
@@ -190,10 +225,19 @@ async function runPrediction(ctx, opts = {}) {
         cachedReply: reply,
         collegeCount: colleges.length,
       });
-      const { record, isNewClaim } = await claimInboundPredictionCompletion(
-        opts.inboundId,
-        completion
-      );
+      let claimResult;
+      try {
+        claimResult = await claimInboundPredictionCompletion(opts.inboundId, completion);
+      } catch (claimErr) {
+        logPredictorPipeline('predictor_stage_error', {
+          stage: 'idempotency_persist',
+          errorKind: 'idempotency_error',
+          predictorExam: ctx.exam || null,
+          errMessage: claimErr.message,
+        });
+        throw claimErr;
+      }
+      const { record, isNewClaim } = claimResult;
       predictionIdempotency = record || completion;
 
       if (!isNewClaim && record?.cachedReply) {
@@ -236,18 +280,30 @@ async function runPrediction(ctx, opts = {}) {
       predictionIdempotency,
     };
   } catch (err) {
+    const errorKind = classifyPredictorError(err);
     const upstreamStatus =
       err.http_status_code != null
         ? String(err.http_status_code)
         : err.res_status || err.code || 'predict_failed';
+    logPredictorPipeline('predictor_upstream_error', {
+      predictorExam: ctx.exam || null,
+      upstreamStatus,
+      errorKind,
+      resStatus: err.res_status || null,
+      upstreamResponse: previewText(err.response || err.message),
+      durationMs: Date.now() - startedAt,
+      errMessage: err.message,
+    });
     logEventFn('predictor_failed', {
       predictorExam: ctx.exam || null,
       upstreamStatus,
+      errorKind,
       botState: 'college_predictor',
     });
     return {
       reply: ctx.step === 'predict' ? PREDICT_RETRY_REPLY_AT_PREDICT : PREDICT_RETRY_REPLY,
       context: { ...ctx, step: 'predict' },
+      predictionErrorKind: errorKind,
     };
   }
 }

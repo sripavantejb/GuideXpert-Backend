@@ -420,11 +420,14 @@ async function processInbound({ conversation, inbound, leadLinks }) {
       contextPatch: {},
       durationMs: Date.now() - startedAt,
       errMessage: err.message,
+      errorKind: err.predictionErrorKind || err.code || err.name || 'orchestrator_error',
     });
     console.error('[chatbot] processInbound failed', {
       phone_tail: maskPhoneTail(conversation.phone),
       conversation_id: String(conversation._id),
       err_message: err.message,
+      error_kind: err.predictionErrorKind || err.code || err.name || 'orchestrator_error',
+      stack: err.stack ? String(err.stack).split('\n').slice(0, 5).join(' | ') : null,
     });
     try {
       const fallbackText = resolveSystemReply('orchestratorFallback', 'en');

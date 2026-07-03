@@ -13,6 +13,7 @@ const { aiDebugLog } = require('../services/chatbot/aiDebugLog');
 const { isMultilingualEnabled } = require('../utils/multilingualFlags');
 const { formatForWhatsApp } = require('../utils/whatsappMessageFormatter');
 const { assertReplyLanguage } = require('../utils/replyLanguageVerifier');
+const { logChatbotEvent } = require('../services/chatbot/chatbotStructuredLog');
 const {
   resolveConversationLanguage,
   recordDetectedLanguage,
@@ -273,12 +274,38 @@ async function applyMultilingualOutbound({
   }
 
   if (!verification.pass && lang !== 'en') {
-    const localized = resolveSystemReply('orchestratorFallback', lang);
-    if (localized) {
-      text = formatForWhatsApp(localized);
-      trace.usedLocalizedFallback = true;
+    const englishSource = formatForWhatsApp(String(replyText || '').trim());
+
+    if (englishSource) {
+      aiDebugLog('LANG', 'applyMultilingualOutbound english fallback after translation failure', {
+        targetLanguage: lang,
+        verificationReason: verification.reason,
+        inputLength: englishSource.length,
+        translateFromEnglishExecuted: trace.translateFromEnglishExecuted,
+        outboundTranslationPassThrough: trace.outboundTranslationPassThrough,
+      });
+      logChatbotEvent('outbound_translation_english_fallback', {
+        resolvedLanguage: lang,
+        verificationReason: verification.reason,
+        replyLength: englishSource.length,
+        errorKind: 'outbound_translation_error',
+        translateFromEnglishExecuted: trace.translateFromEnglishExecuted,
+        outboundTranslationPassThrough: trace.outboundTranslationPassThrough,
+      });
+      text = englishSource;
+      trace.usedEnglishFallback = true;
       trace.outboundTranslationPassThrough = true;
-      verification = assertReplyLanguage(text, lang);
+      trace.outboundTranslationFailureReason = verification.reason || 'translation_failed';
+      verification = { pass: true, detected: 'en', reason: 'english_fallback_after_translation_failure' };
+    } else {
+      const localized = resolveSystemReply('orchestratorFallback', lang);
+      if (localized) {
+        text = formatForWhatsApp(localized);
+        trace.usedLocalizedFallback = true;
+        trace.outboundTranslationPassThrough = true;
+        trace.outboundOrchestratorFallback = true;
+        verification = assertReplyLanguage(text, lang);
+      }
     }
   }
 
