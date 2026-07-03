@@ -74,20 +74,12 @@ function getNextSlotDayStrings(count = 2, now = new Date()) {
   return days;
 }
 
-function getTomorrowISTDateString(now = new Date()) {
-  const ist = getISTParts(now);
-  const today = parseISODateLocal(istDateStringFromParts(ist));
-  return toISODateLocal(addCalendarDays(today, 1));
-}
-
 function isSlotStillAvailable(slotDate, slotTime, now = new Date()) {
   if (!SLOT_TIMES.includes(slotTime)) return false;
   const allowedDays = getNextSlotDayStrings(2, now);
   if (!allowedDays.includes(slotDate)) return false;
   const ist = getISTParts(now);
   const todayStr = istDateStringFromParts(ist);
-  const tomorrowStr = getTomorrowISTDateString(now);
-  if (slotDate === tomorrowStr && slotTime === '15:00') return false;
   if (slotDate !== todayStr) return true;
   const [h, m] = slotTime.split(':').map(Number);
   const nowMinutes = ist.hour * 60 + ist.minute;
