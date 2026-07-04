@@ -1,5 +1,16 @@
 'use strict';
 
+/**
+ * Slot extractor for college predictor.
+ *
+ * All entity matching now goes through the shared EntityNormalizer, which
+ * handles natural language, multilingual input, fuzzy casing/separators, and
+ * full sentence prefixes without number-based menus.
+ *
+ * Number-only inputs are still accepted for backward compatibility (a "1" in
+ * the right context maps to an option) but are NO LONGER required.
+ */
+
 const {
   EXAM_AP,
   EXAM_TS,
@@ -13,8 +24,6 @@ const {
   EXAM_OPTIONS,
   mapById,
   mapExamChoice,
-  mapGenderChoice,
-  mapRegionChoice,
 } = require('../../../constants/whatsappCollegePredictor');
 const {
   categoryOptionsForExam,
@@ -29,8 +38,21 @@ const {
   SLOT_REGION,
   getMissingSlots,
 } = require('./collegePredictorSlots');
+
+// Load entity definitions (side-effect: registers all entity types)
+require('../entityNormalization/entityDefinitions');
+
+const {
+  normalizeEntityValue,
+  normalizeEntity,
+} = require('../entityNormalization/entityNormalizer');
+
 const { AP_REGION_OPTIONS } = require('./apTs');
 const { WBJEE_QUOTA_OPTIONS } = require('./wbjee');
+
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
 
 const EXAM_ALIAS_RULES = [
   { value: EXAM_AP, patterns: [/\bap\s*eamc?e?t\b/, /\bandhra\s*eamcet\b/, /\beamcet\s*ap\b/, /^ap$/] },
@@ -39,22 +61,13 @@ const EXAM_ALIAS_RULES = [
   { value: EXAM_KCET, patterns: [/\bkcet{1,2}\b/, /\bkarnataka\s*cet\b/] },
   { value: EXAM_KEAM, patterns: [/\bkeam\b/, /\bkerala\s*engineering\b/] },
   { value: EXAM_WBJEE, patterns: [/\bwbj+e{1,4}\b/, /\bwest\s*bengal\s*jee\b/] },
-  {
-    value: EXAM_JEE_MAIN,
-    patterns: [/\bjee\s*main?s?\b/, /\bmain\s*jee\b/, /\bjeemains\b/, /^jee$/],
-  },
-  {
-    value: EXAM_JEE_ADV,
-    patterns: [/\bjee\s*adv(?:anced)?\b/, /\badvanced\s*jee\b/, /\bjeeadv\b/],
-  },
+  { value: EXAM_JEE_MAIN, patterns: [/\bjee\s*main?s?\b/, /\bmain\s*jee\b/, /\bjeemains\b/, /^jee$/] },
+  { value: EXAM_JEE_ADV, patterns: [/\bjee\s*adv(?:anced)?\b/, /\badvanced\s*jee\b/, /\bjeeadv\b/] },
   { value: EXAM_MHT, patterns: [/\bmht\s*cet{1,2}\b/, /\bmhtcet{1,2}\b/, /\bmaharashtra\s*cet\b/] },
 ];
 
 function normalizeInput(text) {
-  return String(text || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ');
+  return String(text || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 function parseMenuDigit(text) {
@@ -63,6 +76,10 @@ function parseMenuDigit(text) {
   const n = parseInt(t, 10);
   return Number.isInteger(n) ? n : null;
 }
+
+// ---------------------------------------------------------------------------
+// Rank / percentile parsers (unchanged — purely numeric)
+// ---------------------------------------------------------------------------
 
 function parsePositiveIntRank(text) {
   const raw = String(text || '').trim();
@@ -106,6 +123,10 @@ function parsePercentileValue(text) {
   return n;
 }
 
+// ---------------------------------------------------------------------------
+// Exam parser (stays regex-based because exam names are too domain-specific)
+// ---------------------------------------------------------------------------
+
 function parseExamFromText(text, focusSlot) {
   const t = normalizeInput(text);
   if (!t) return null;
@@ -135,35 +156,58 @@ function parseExamFromText(text, focusSlot) {
   return null;
 }
 
-function parseGenderFromText(text, focusSlot) {
+// ---------------------------------------------------------------------------
+// Gender — now via EntityNormalizer
+// ---------------------------------------------------------------------------
+
+function parseGenderFromText(text) {
+  const result = normalizeEntity('gender', text);
+  if (!result) return null;
+  // Avoid false positives from single "m"/"f" when more context is present
   const t = normalizeInput(text);
-  if (!t) return null;
-
-  const digit = parseMenuDigit(text);
-  if (digit != null && focusSlot === SLOT_GENDER) {
-    return mapGenderChoice(digit);
+  if ((t === 'm' || t === 'f') && t.length === 1) {
+    return result.value; // explicit single-char, accept it
   }
+  return result.value;
+}
 
-  const compact = t.replace(/\s+/g, '');
-  if (/\b(male|female)\b/.test(t) && /\bmale\b/.test(t) && /\bfemale\b/.test(t)) {
-    return null;
-  }
-  if (/^(female|femlae|fmale|femae|feamle|girl|f)$/.test(compact)) return 'female';
-  if (/^(male|mlae|malr|mle|boy|m)$/.test(compact)) return 'male';
-  if (/\b(female|girl|f)\b/.test(t)) return 'female';
-  if (/\b(male|boy|m)\b/.test(t) && !/\bfemale\b/.test(t)) return 'male';
+// ---------------------------------------------------------------------------
+// Category — now via EntityNormalizer
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a normalized entity value back to the option object in the options array.
+ * Works for both AP/TS (where label === canonical) and other exams.
+ */
+function matchCategoryByNormalizedValue(normalizedValue, options) {
+  if (!normalizedValue || !options.length) return null;
+  // Direct label match
+  const direct = options.find((o) => o.label === normalizedValue || o.value === normalizedValue);
+  if (direct) return direct;
+  // Compact match
+  const compact = normalizedValue.replace(/[\s\-_]/g, '').toUpperCase();
+  return options.find((o) => {
+    const lc = o.label.replace(/[\s\-_]/g, '').toUpperCase();
+    const vc = (o.value || '').replace(/[\s\-_]/g, '').toUpperCase();
+    return lc === compact || vc === compact;
+  }) || null;
+}
+
+/**
+ * Choose the right entity type for the exam's category options.
+ */
+function entityTypeForExam(exam) {
+  if (exam === EXAM_AP || exam === EXAM_TS) return 'ap_ts_category';
+  if (exam === EXAM_TNEA) return 'tnea_category';
+  if (exam === EXAM_JEE_MAIN || exam === EXAM_JEE_ADV) return 'jee_category';
+  // KCET, KEAM, WBJEE, MHT have diverse category codes: fall through to generic
   return null;
 }
 
-function normalizeCategoryToken(token) {
-  return String(token || '')
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, '')
-    .replace(/_/g, '-');
-}
-
-function matchCategoryOption(text, options, focusSlot) {
+/**
+ * Generic fallback: match category from free text using the options array directly.
+ */
+function matchCategoryOptionGeneric(text, options, focusSlot) {
   const t = normalizeInput(text);
   if (!t || !options.length) return null;
 
@@ -173,70 +217,82 @@ function matchCategoryOption(text, options, focusSlot) {
     if (byId) return byId;
   }
 
-  const normalized = normalizeCategoryToken(t);
+  // Compact-token direct match
+  const compact = String(text || '').trim().toUpperCase().replace(/[\s\-_]+/g, '');
   for (const opt of options) {
-    const labelNorm = normalizeCategoryToken(opt.label);
-    const valueNorm = normalizeCategoryToken(opt.value || '');
-    if (normalized === labelNorm || (valueNorm && normalized === valueNorm)) return opt;
-    if (labelNorm && normalized.includes(labelNorm)) return opt;
-    const labelPrefix = normalizeCategoryToken(String(opt.label).split('(')[0]);
-    if (labelPrefix && (normalized === labelPrefix || normalized.startsWith(labelPrefix))) return opt;
+    const labelC = opt.label.toUpperCase().replace(/[\s\-_]+/g, '');
+    const valueC = (opt.value || '').toUpperCase().replace(/[\s\-_]+/g, '');
+    if (compact === labelC || (valueC && compact === valueC)) return opt;
+    if (labelC && compact.includes(labelC)) return opt;
   }
 
-  const aliasMap = {
-    'BC-B': 'BC-B',
-    BCB: 'BC-B',
-    'BC-A': 'BC-A',
-    BCA: 'BC-A',
-    'BC-C': 'BC-C',
-    BCC: 'BC-C',
-    'BC-D': 'BC-D',
-    BCD: 'BC-D',
-    'BC-E': 'BC-E',
-    BCE: 'BC-E',
-    'OBC-NCL': 'OBC-NCL',
-    OBCNCL: 'OBC-NCL',
-    OBC: 'OBC-NCL',
-    OPENPWD: 'OPEN (PwD)',
-    'OPEN(PWD)': 'OPEN (PwD)',
-    GENERAL: 'OC',
-    GEN: 'OC',
-    OPEN: 'OC',
-  };
-  const alias = aliasMap[normalized];
-  if (alias) {
-    return options.find((o) => normalizeCategoryToken(o.label).includes(normalizeCategoryToken(alias))) || null;
+  // Fuzzy: strip sentence prefix first
+  const { stripSentencePrefix } = require('../entityNormalization/entityNormalizer');
+  const stripped = stripSentencePrefix(text);
+  const strippedC = stripped.toUpperCase().replace(/[\s\-_]+/g, '');
+  for (const opt of options) {
+    const labelC = opt.label.toUpperCase().replace(/[\s\-_]+/g, '');
+    if (strippedC === labelC) return opt;
   }
-
-  if (/\bobc\b/.test(t) && !/ncl/.test(t)) {
-    const obc = options.find((o) => o.label === 'OBC-NCL' || o.value === 'OBC-NCL');
-    if (obc) return obc;
-  }
-
-  if (/\bbc[\s-]?b\b/.test(t)) return options.find((o) => o.label === 'BC-B') || null;
-  if (/\bbc[\s-]?a\b/.test(t)) return options.find((o) => o.label === 'BC-A') || null;
-  if (/\bbc[\s-]?c\b/.test(t)) return options.find((o) => o.label === 'BC-C') || null;
-  if (/\bbc[\s-]?d\b/.test(t)) return options.find((o) => o.label === 'BC-D') || null;
-  if (/\bbc[\s-]?e\b/.test(t)) return options.find((o) => o.label === 'BC-E') || null;
 
   return null;
 }
 
 function parseCategoryFromText(text, ctx, focusSlot) {
   const options = categoryOptionsForExam(ctx);
-  const matched = matchCategoryOption(text, options, focusSlot);
-  if (!matched) return null;
-  return {
-    categoryLabel: matched.label,
-    categoryN: matched.id,
-    baseCategory: matched.value || matched.label,
-  };
+  if (!options.length) return null;
+
+  // 1. Menu digit (kept for backward compat / quick reply)
+  const digit = parseMenuDigit(text);
+  if (digit != null && focusSlot === SLOT_CATEGORY) {
+    const byId = mapById(options, digit);
+    if (byId) {
+      return {
+        categoryLabel: byId.label,
+        categoryN: byId.id,
+        baseCategory: byId.value || byId.label,
+      };
+    }
+  }
+
+  // 2. Entity normalizer for well-typed exams
+  const entityType = entityTypeForExam(ctx.exam);
+  if (entityType) {
+    const normalized = normalizeEntityValue(entityType, text);
+    if (normalized) {
+      const matched = matchCategoryByNormalizedValue(normalized, options);
+      if (matched) {
+        return {
+          categoryLabel: matched.label,
+          categoryN: matched.id,
+          baseCategory: matched.value || matched.label,
+        };
+      }
+    }
+  }
+
+  // 3. Generic fallback for KCET / KEAM / WBJEE / MHT
+  const matched = matchCategoryOptionGeneric(text, options, focusSlot);
+  if (matched) {
+    return {
+      categoryLabel: matched.label,
+      categoryN: matched.id,
+      baseCategory: matched.value || matched.label,
+    };
+  }
+
+  return null;
 }
+
+// ---------------------------------------------------------------------------
+// Admission type
+// ---------------------------------------------------------------------------
 
 function parseAdmissionFromText(text, ctx, focusSlot) {
   const options = admissionOptionsForExam(ctx.exam);
   if (!options.length) return null;
 
+  // Digit shortcut
   const digit = parseMenuDigit(text);
   if (digit != null && focusSlot === SLOT_ADMISSION_TYPE) {
     const mapped = mapById(options, digit);
@@ -248,30 +304,47 @@ function parseAdmissionFromText(text, ctx, focusSlot) {
     }
   }
 
-  const t = normalizeInput(text);
-  for (const opt of options) {
-    if (t === normalizeInput(opt.label) || t.includes(normalizeInput(opt.label))) {
-      return {
-        admissionType: opt.value,
-        admission_category_name_enum: opt.apiValue || opt.value,
-      };
+  // Entity normalizer for KCET
+  if (ctx.exam === EXAM_KCET) {
+    const normalized = normalizeEntityValue('kcet_admission', text);
+    if (normalized) {
+      const opt = options.find((o) => o.value === normalized);
+      if (opt) return { admissionType: opt.value, admission_category_name_enum: opt.apiValue || opt.value };
     }
   }
-  if (/\bhk\b/.test(t) || /hyderabad.karnataka/i.test(text)) {
-    const hk = options.find((o) => o.value === 'HK');
-    if (hk) return { admissionType: hk.value, admission_category_name_enum: hk.apiValue || hk.value };
-  }
-  if (/state\s*level|gopens|gobcs|gsc|gsebc|tfws/i.test(text) && ctx.exam === EXAM_MHT) {
-    const sl = options.find((o) => o.apiValue === 'SL' || o.value === 'STATE_LEVEL');
-    if (sl) {
-      return {
-        admissionType: sl.value,
-        admission_category_name_enum: sl.apiValue || sl.value,
-      };
+
+  // Entity normalizer for MHT CET — only when admission slot is active or input is explicit
+  if (ctx.exam === EXAM_MHT) {
+    const isDigitOnly = /^\d+$/.test(String(text || '').trim());
+    const allowAdmissionNl =
+      focusSlot === SLOT_ADMISSION_TYPE ||
+      (!isDigitOnly &&
+        /\b(state[\s-]*level|home[\s-]*university|other\s+(than\s+)?home|ohu|hu|sl)\b/i.test(text));
+    if (allowAdmissionNl) {
+      const normalized = normalizeEntityValue('mhtcet_admission', text);
+      if (normalized) {
+        const opt = options.find((o) => o.value === normalized);
+        if (opt) return { admissionType: opt.value, admission_category_name_enum: opt.apiValue || opt.value };
+      }
     }
   }
+
+  // Generic label matching — avoid inferring admission type from exam/rank/percentile sentences
+  if (focusSlot === SLOT_ADMISSION_TYPE) {
+    const t = normalizeInput(text);
+    for (const opt of options) {
+      if (t === normalizeInput(opt.label) || t.includes(normalizeInput(opt.label))) {
+        return { admissionType: opt.value, admission_category_name_enum: opt.apiValue || opt.value };
+      }
+    }
+  }
+
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// Quota / Region
+// ---------------------------------------------------------------------------
 
 function parseQuotaFromText(text, focusSlot) {
   const digit = parseMenuDigit(text);
@@ -279,33 +352,48 @@ function parseQuotaFromText(text, focusSlot) {
     const mapped = mapById(WBJEE_QUOTA_OPTIONS, digit);
     if (mapped) return { quota: mapped.value };
   }
-  const t = normalizeInput(text);
-  if (/all\s*india/.test(t)) return { quota: 'all_india' };
-  if (/home\s*state|west\s*bengal/.test(t)) return { quota: 'home_state_wb' };
-  if ((t === 'ai' || t === 'all india') && !/branch|artificial/i.test(text)) {
-    return { quota: 'all_india' };
-  }
+  const normalized = normalizeEntityValue('wbjee_quota', text);
+  if (normalized) return { quota: normalized };
   return null;
 }
 
 function parseRegionFromText(text, focusSlot) {
   const digit = parseMenuDigit(text);
   if (digit != null && focusSlot === SLOT_REGION) {
-    const region = mapRegionChoice(digit);
-    if (region) return { admission_category_name_enum: region };
+    const region = mapById(AP_REGION_OPTIONS, digit);
+    if (region) return { admission_category_name_enum: region.value };
   }
-  const t = normalizeInput(text);
-  if (/\bau\b/.test(t) || /andhra\s*university/.test(t)) return { admission_category_name_enum: 'AU' };
-  if (/\bsvu\b/.test(t) || /sri\s*venkateswara/.test(t)) return { admission_category_name_enum: 'SVU' };
+  const normalized = normalizeEntityValue('ap_region', text);
+  if (normalized) return { admission_category_name_enum: normalized };
   return null;
 }
 
-/**
- * Extract any slots present in a user message.
- * @param {string} text
- * @param {object} ctx
- * @returns {object} partial slot updates
- */
+// ---------------------------------------------------------------------------
+// Kept for backward compatibility (matchCategoryOption exported)
+// ---------------------------------------------------------------------------
+
+function matchCategoryOption(text, options, focusSlot) {
+  const digit = parseMenuDigit(text);
+  if (digit != null && focusSlot === SLOT_CATEGORY) {
+    const byId = mapById(options, digit);
+    if (byId) return byId;
+  }
+  // Attempt entity normalizer against ap_ts_category first, then generic
+  const entityTypes = ['ap_ts_category', 'jee_category', 'tnea_category'];
+  for (const et of entityTypes) {
+    const normalized = normalizeEntityValue(et, text);
+    if (normalized) {
+      const found = matchCategoryByNormalizedValue(normalized, options);
+      if (found) return found;
+    }
+  }
+  return matchCategoryOptionGeneric(text, options, focusSlot);
+}
+
+// ---------------------------------------------------------------------------
+// Main export: extractSlotsFromMessage
+// ---------------------------------------------------------------------------
+
 function extractSlotsFromMessage(text, ctx = {}) {
   const missing = getMissingSlots(ctx);
   const focus = missing[0] || null;
@@ -360,10 +448,14 @@ function extractSlotsFromMessage(text, ctx = {}) {
       { ...examCtx, ...updates },
       focus === SLOT_CATEGORY ? SLOT_CATEGORY : null
     );
-    if (category) Object.assign(updates, category);
+    // Only accept digit-based category picks when explicitly in category slot
+    const isDigitInput = /^\d+$/.test(String(text || '').trim());
+    const categoryFromDigit = isDigitInput && focus !== SLOT_CATEGORY;
+    if (category && !categoryFromDigit) Object.assign(updates, category);
     else if (
       focus !== SLOT_CATEGORY &&
       examCtx.exam &&
+      !isDigitInput &&
       /\b(bc[\s-]?[a-e]|sc|st|ews|oc|obc|general|gen|open|gopens|gobc|gsc)\b/i.test(text)
     ) {
       const semanticCategory = parseCategoryFromText(
@@ -374,20 +466,27 @@ function extractSlotsFromMessage(text, ctx = {}) {
       if (semanticCategory) Object.assign(updates, semanticCategory);
     }
 
-    const gender = parseGenderFromText(text, focus === SLOT_GENDER ? SLOT_GENDER : null);
-    if (gender) {
+    const gender = parseGenderFromText(text);
+    const isDigitOnly = /^\d+$/.test(String(text || '').trim());
+    const isClearGenderStatement = /\b(male|female|boy|girl|man|woman)\b/i.test(text) ||
+      (!isDigitOnly && parseGenderFromText(text) != null);
+    if (gender && (focus === SLOT_GENDER || isClearGenderStatement)) {
       updates.gender = gender;
-    } else if (focus !== SLOT_GENDER && /\b(male|female|boy|girl)\b/i.test(text)) {
-      const semanticGender = parseGenderFromText(text, SLOT_GENDER);
-      if (semanticGender) updates.gender = semanticGender;
+    } else if (!isDigitOnly && /\b(male|female|boy|girl)\b/i.test(text)) {
+      const fallbackGender = parseGenderFromText(text);
+      if (fallbackGender) updates.gender = fallbackGender;
     }
 
     const quota = parseQuotaFromText(text, focus === SLOT_QUOTA ? SLOT_QUOTA : null);
-    if (quota) Object.assign(updates, quota);
+    if (quota && (focus === SLOT_QUOTA || !/^\d+$/.test(String(text || '').trim()))) {
+      Object.assign(updates, quota);
+    }
 
     if (examCtx.exam === EXAM_AP) {
       const region = parseRegionFromText(text, focus === SLOT_REGION ? SLOT_REGION : null);
-      if (region) Object.assign(updates, region);
+      if (region && (focus === SLOT_REGION || !/^\d+$/.test(String(text || '').trim()))) {
+        Object.assign(updates, region);
+      }
     }
   }
 

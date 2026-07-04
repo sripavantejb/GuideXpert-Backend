@@ -115,7 +115,7 @@ function admissionOptionsForExam(exam) {
  */
 function buildPredictionContext(ctx) {
   if (ctx.exam === EXAM_AP || ctx.exam === EXAM_TS) {
-    if (isApOcMaleBlocked(ctx.exam, ctx.categoryN, ctx.gender)) {
+    if (ctx.exam === EXAM_AP && isApOcMaleBlocked(ctx.categoryN, ctx.gender)) {
       return { blocked: true };
     }
     const code = resolveApTsReservationCode(ctx.exam, ctx.categoryN, ctx.gender);

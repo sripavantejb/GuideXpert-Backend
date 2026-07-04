@@ -51,21 +51,16 @@ function buildNumberedPrompt(title, options, example) {
   return lines.join('\n');
 }
 
-function buildExamPrompt() {
-  return buildNumberedPrompt(
-    'College Predictor\n\nWhich exam would you like to predict colleges for?',
-    EXAM_OPTIONS,
-    'Reply 1 for AP EAMCET'
-  );
-}
-
-const PROMPT_EXAM = buildExamPrompt();
+const PROMPT_EXAM = [
+  'College Predictor',
+  '',
+  'Which entrance exam did you write?',
+  '',
+  `You can type the exam name — e.g. AP EAMCET, TS EAMCET, JEE Main, KCET, KEAM, WBJEE, MHT CET, TNEA, JEE Advanced.`,
+].join('\n');
 const PROMPT_RANK = ['Please enter your rank.', '', 'Example: 15000'].join('\n');
 const PROMPT_PERCENTILE = ['Please enter your percentile (1 to 100).', '', 'Example: 92.5'].join('\n');
-const PROMPT_GENDER = buildNumberedPrompt('Please select your gender.', [
-  { id: 1, value: 'male', label: 'Male' },
-  { id: 2, value: 'female', label: 'Female' },
-], 'Reply 1 for Male');
+const PROMPT_GENDER = 'What is your gender? (Male / Female)';
 
 function mapById(options, id) {
   return options.find((it) => Number(it.id) === Number(id)) || null;
@@ -207,7 +202,7 @@ module.exports = {
   PROMPT_RANK,
   PROMPT_PERCENTILE,
   PROMPT_GENDER,
-  PROMPT_REGION: buildNumberedPrompt('Please select your region.', AP_REGION_OPTIONS, 'Reply 1 for AU'),
+  PROMPT_REGION: 'Which university region do you belong to for AP EAMCET?\n\nType AU (Andhra University) or SVU (Sri Venkateswara University).',
   FOOTER_ACTIONS,
   AP_OC_MALE_BLOCKED_REPLY,
   buildNumberedPrompt,
