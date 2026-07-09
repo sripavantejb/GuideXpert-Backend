@@ -1,4 +1,5 @@
 const IitFirstFormSubmission = require('../models/IitFirstFormSubmission');
+const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
 const { ADMIN_LIST_MAX_LIMIT } = require('../constants/listPagination');
 const otpRepository = require('../utils/otpRepository');
 
@@ -92,13 +93,14 @@ function buildSearchQuery(q) {
   return { $or: clauses };
 }
 
-function mapFirstFormRow(r) {
+function mapFirstFormRow(r, langMap = {}) {
   return {
     id: r._id,
     name: r.name,
     mobileNumber: r.mobileNumber,
     timestamp: r.submittedAt,
     interestedInAiLearning: r.interestedInAiLearning,
+    language: langMap[r.mobileNumber] || '—',
   };
 }
 
@@ -146,7 +148,19 @@ exports.getIitFirstFormSubmissions = async (req, res) => {
       const duplicateCount = Math.max(0, totalRecords - uniqueAttendees);
       const totalPages = Math.ceil(uniqueAttendees / limit) || 1;
 
-      const data = records.map(mapFirstFormRow);
+      const mobileNumbers = records.map(r => r.mobileNumber).filter(Boolean);
+      const counsellingRecords = await IitCounsellingSubmission.find(
+        { phone: { $in: mobileNumbers } },
+        { phone: 1, 'iitCounselling.section2Data.preferredLanguage': 1 }
+      ).lean();
+      const langMap = {};
+      counsellingRecords.forEach(cr => {
+        if (cr.iitCounselling?.section2Data?.preferredLanguage) {
+          langMap[cr.phone] = cr.iitCounselling.section2Data.preferredLanguage;
+        }
+      });
+
+      const data = records.map(r => mapFirstFormRow(r, langMap));
 
       return res.status(200).json({
         success: true,
@@ -166,7 +180,19 @@ exports.getIitFirstFormSubmissions = async (req, res) => {
     const duplicateCount = Math.max(0, totalRecords - uniqueAttendees);
     const totalPages = Math.ceil(totalRecords / limit) || 1;
 
-    const data = records.map(mapFirstFormRow);
+    const mobileNumbers = records.map(r => r.mobileNumber).filter(Boolean);
+    const counsellingRecords = await IitCounsellingSubmission.find(
+      { phone: { $in: mobileNumbers } },
+      { phone: 1, 'iitCounselling.section2Data.preferredLanguage': 1 }
+    ).lean();
+    const langMap = {};
+    counsellingRecords.forEach(cr => {
+      if (cr.iitCounselling?.section2Data?.preferredLanguage) {
+        langMap[cr.phone] = cr.iitCounselling.section2Data.preferredLanguage;
+      }
+    });
+
+    const data = records.map(r => mapFirstFormRow(r, langMap));
 
     return res.status(200).json({
       success: true,
