@@ -97,6 +97,16 @@ const MESSAGES = Object.freeze({
 /** Pattern-matched brief answers for in-journey counselling questions (no brand names). */
 const COUNSELLING_QA = Object.freeze([
   {
+    patterns: [/\bniat\b/i, /\bwhat exactly is niat\b/i, /\bniat means\b/i],
+    answer:
+      'NIAT is an industry-ready upskilling program run with partner universities. Alongside the degree, it focuses on practical skills, projects, AI tools, internships, and industry exposure so students become job-ready — not just exam-ready.',
+  },
+  {
+    patterns: [/\bnew[- ]?age(?:\s+college)?\b/i, /\bnew age college means\b/i],
+    answer:
+      'A new-age college usually means a modern, industry-aligned learning approach — practical projects, updated curriculum, internships, and mentoring — not just theory and rankings. NIAT partners with colleges that follow this style of learning.',
+  },
+  {
     patterns: [/\bplacement(s)?\b/i, /\bjob(s)? after college\b/i],
     answer:
       'Placements depend on many factors — curriculum quality, projects, internships, and interview preparation. Look at how a college trains students, not just the final placement brochure.',

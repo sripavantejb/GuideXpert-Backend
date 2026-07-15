@@ -177,7 +177,7 @@ const POLICY_CATEGORIES = Object.freeze([
 ]);
 
 const ALLOW_SIGNAL_PATTERN =
-  /\b(iit|nit|iiit|jee|josaa|csab|rank|ranks|branch|branches|cse|ece|eee|mech|civil|admission|admissions|college|colleges|hostel|fee|fees|placement|placements|scholarship|scholarships|counsell?ing|counsel(or|lor)|float|freeze|slide|cutoff|cutoffs|quota|seat|guidexpert|aiml|data science)\b/i;
+  /\b(iit|nit|iiit|jee|josaa|csab|rank|ranks|branch|branches|cse|ece|eee|mech|civil|admission|admissions|college|colleges|hostel|fee|fees|placement|placements|scholarship|scholarships|counsell?ing|counsel(or|lor)|float|freeze|slide|cutoff|cutoffs|quota|seat|guidexpert|niat|nat|new[- ]?age|aiml|data science)\b/i;
 
 const BRANCH_GUIDANCE_PATTERN =
   /\b(which|what|best|good)\b.{0,30}\b(branch|stream|course|college|career)\b/i;

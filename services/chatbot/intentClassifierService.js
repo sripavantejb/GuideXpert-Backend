@@ -38,8 +38,10 @@ const {
 
 const KNOWLEDGE_QUESTION_PATTERNS = [
   /\bwhat is\b/i,
+  /\bwhat exactly is\b/i,
   /\bwhat are\b/i,
   /\bwhat do\b/i,
+  /\bwhat does\b.{0,40}\bmean\b/i,
   /\bhow much\b/i,
   /\bhow does\b/i,
   /\bhow do\b/i,
@@ -62,7 +64,18 @@ const KNOWLEDGE_QUESTION_PATTERNS = [
   /\bwant to know\b/i,
   /\bknow about\b/i,
   /\b(tell me|want to know|know) about guidexpert\b/i,
+  /\bmeans?\b/i,
+  /\bmeaning of\b/i,
+  /\bdefine\b/i,
+  /\bdefinition\b/i,
+  /\bkya hai\b/i,
+  /\bkya hota hai\b/i,
 ];
+
+/** Brand / product definition queries that should hit the knowledge assistant. */
+const BRAND_KNOWLEDGE_PATTERN = /\b(niat|nat|guidexpert|new[- ]?age(?:\s+college)?)\b/i;
+const DEFINITION_SIGNAL_PATTERN =
+  /\b(means?|meaning|define|definition|exact(?:ly)?|kya hai|kya hota hai|about|tell me|what|know)\b/i;
 
 const CAPABILITY_QUESTION_PATTERNS = [
   /\bwhat can you do\b/i,
@@ -247,11 +260,20 @@ function intentTextCandidates(text, originalText = null) {
  * General knowledge / exploratory questions routed to the Knowledge Assistant.
  * @param {string} text - normalized (lowercase, collapsed spaces)
  */
+function isBrandKnowledgeQuery(text) {
+  const t = String(text || '').trim();
+  if (!t || !BRAND_KNOWLEDGE_PATTERN.test(t)) return false;
+  // Bare brand name, or brand + definition / about phrasing.
+  if (/^(niat|nat|guidexpert|new[- ]?age(?:\s+college)?)\s*[?.!]*$/i.test(t)) return true;
+  return DEFINITION_SIGNAL_PATTERN.test(t) || KNOWLEDGE_QUESTION_PATTERNS.some((p) => p.test(t));
+}
+
 function isKnowledgeQuestion(text) {
   const t = String(text || '').trim();
   if (!t || /^\d+$/.test(t)) {
     return false;
   }
+  if (isBrandKnowledgeQuery(t)) return true;
   return KNOWLEDGE_QUESTION_PATTERNS.some((pattern) => pattern.test(t));
 }
 
@@ -538,8 +560,12 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     if (/^4$/.test(t)) return { intent: 'human_handoff', confidence: 'high' };
   }
 
-  if (isKnowledgeQuestion(t)) {
-    return { intent: 'knowledge_assistant', confidence: 'medium' };
+  if (isKnowledgeQuestion(t) || isBrandKnowledgeQuery(t)) {
+    return {
+      intent: 'knowledge_assistant',
+      confidence: isBrandKnowledgeQuery(t) ? 'high' : 'medium',
+      intentReason: isBrandKnowledgeQuery(t) ? 'brand_knowledge_query' : 'knowledge_question',
+    };
   }
 
   if (/^1$|my details|my booking|my slot|profile/.test(t)) {
@@ -551,7 +577,13 @@ function classifyIntent(text, botState, productLine, originalText = null) {
   if (/\b(predict rank|rank predictor)\b/i.test(t)) {
     return { intent: 'rank_predictor', confidence: 'high', intentReason: 'explicit_rank_predictor_entry' };
   }
-  if (/^4$|college|which college|colleges/.test(t)) {
+  // Avoid bare "college" hijacking definition questions (e.g. "new age college means").
+  if (
+    /^4$/.test(t) ||
+    /\b(college predictor|predict(?:ing)?\s+(?:my\s+)?college|which college(?:s)?(?:\s+(?:can|should|for|with))?)\b/i.test(
+      t
+    )
+  ) {
     return { intent: 'college_predictor', confidence: 'medium' };
   }
   if (/^5$|agent|human|talk/.test(t)) {
@@ -588,6 +620,7 @@ module.exports = {
   normalizeText,
   shouldBypassScopeFirewall,
   isKnowledgeQuestion,
+  isBrandKnowledgeQuery,
   isCapabilityQuestion,
   isCounsellorProgramQuestion,
   isGuideXpertIdentityQuestion,

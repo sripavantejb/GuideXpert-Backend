@@ -86,8 +86,14 @@
   {
     "id": 15,
     "category": "niit_counselling",
-    "question": "What exactly is NIAT?",
+    "question": "What exactly is NIAT? What does NIAT mean? NIAT means?",
     "answer": "NIAT is an industry-ready upskilling program. It is designed to prepare students for future technologies and the software industry.\nAlong with traditional learning, there is a higher focus on real-world skills, projects, AI tools, internships, industry exposure, and practical learning. NIAT collaborates with different universities to provide an industry-aligned learning experience.\nSimply put, NIAT's main goal is to develop students to be genuinely industry-ready, rather than just helping them get a degree."
+  },
+  {
+    "id": 378,
+    "category": "niit_counselling",
+    "question": "What is a new age college? What does new-age college mean?",
+    "answer": "A new-age college usually means a modern, industry-aligned learning environment — with practical and project-based learning, updated curriculum (often including AI and emerging skills), internships, career mentoring, and stronger focus on job readiness — not just theory and exams.\nNIAT works with partner universities/colleges in this kind of model: students pursue their degree with a partner college while getting industry-oriented upskilling, projects, and real-world exposure.\nSo \"new age\" is about the learning approach (practical + industry-ready), not just a marketing label."
   },
   {
     "id": 16,
