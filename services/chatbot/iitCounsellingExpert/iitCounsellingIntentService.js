@@ -151,6 +151,7 @@ const CONTEXT_EXPANSIONS = [
   { re: /^reporting\s*[.!?]?$/i, text: 'Explain JoSAA reporting after seat allotment' },
   { re: /^mock( allotments?)?\s*[.!?]?$/i, text: 'What is JoSAA mock allotment and how does it work?' },
   { re: /^payment( failed|pending|successful)?\s*[.!?]?$/i, text: 'Explain JoSAA seat acceptance payment status and next steps' },
+  { re: /^which should i choose\??$/i, text: 'In JoSAA, which should I choose between Freeze, Float, and Slide?' },
   { re: /^general\s*[.!?]?$/i, text: 'How does General category affect JoSAA / IIT counselling seat chances?' },
   { re: /^obc\s*[.!?]?$/i, text: 'How does OBC category affect JoSAA / IIT counselling?' },
   { re: /^sc\s*[.!?]?$/i, text: 'How does SC category affect JoSAA / IIT counselling?' },

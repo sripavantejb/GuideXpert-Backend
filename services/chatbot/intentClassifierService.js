@@ -10,6 +10,7 @@ const {
   isIitCounsellingExpertSessionActive,
   isIitCounsellingExpertQuestion,
   isIitCounsellingEntryRequest,
+  isIitCounsellingInSessionTopic,
 } = require('./iitCounsellingExpert/iitCounsellingIntentService');
 const {
   shouldBypassScopeFirewallForIit,
@@ -472,6 +473,31 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     };
   }
 
+  // Prefer sticky/process ICE topics (Round, Freeze/Float choose, Documents, AIR…)
+  // over Strategy when the utterance is JoSAA-process vocabulary.
+  if (isIitCounsellingExpertEnabled() && isIitCounsellingExpertSessionActive(botState)) {
+    if (isIitSessionExitRequest(t, original)) {
+      return { intent: 'main_menu', confidence: 'high', intentReason: 'iit_counselling_session_exit' };
+    }
+    return {
+      intent: 'iit_counselling_expert',
+      confidence: 'medium',
+      intentReason: 'iit_counselling_session_active',
+    };
+  }
+
+  if (
+    isIitCounsellingExpertEnabled() &&
+    (isIitCounsellingInSessionTopic(t, original) || isIitCounsellingEntryRequest(t, original)) &&
+    !isIitCounsellingStrategySessionActive(botState)
+  ) {
+    return {
+      intent: 'iit_counselling_expert',
+      confidence: 'medium',
+      intentReason: 'iit_counselling_process_topic',
+    };
+  }
+
   if (
     isIitCounsellingStrategyEnabled() &&
     isIitCounsellingStrategySessionActive(botState) &&
@@ -490,17 +516,6 @@ function classifyIntent(text, botState, productLine, originalText = null) {
       intent: 'iit_counselling_strategy',
       confidence: 'medium',
       intentReason: 'iit_counselling_strategy_question',
-    };
-  }
-
-  if (isIitCounsellingExpertEnabled() && isIitCounsellingExpertSessionActive(botState)) {
-    if (isIitSessionExitRequest(t, original)) {
-      return { intent: 'main_menu', confidence: 'high', intentReason: 'iit_counselling_session_exit' };
-    }
-    return {
-      intent: 'iit_counselling_expert',
-      confidence: 'medium',
-      intentReason: 'iit_counselling_session_active',
     };
   }
 
