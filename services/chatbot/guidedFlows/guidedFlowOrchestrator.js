@@ -9,6 +9,17 @@ const { GLOBAL_KEYWORDS } = require('../../../constants/chatbotStates');
 const { matchesAny, matchesMenuCommands } = require('../intentTextUtils');
 const { isGuidedFlowInterrupt } = require('./guidedFlowInterruptPolicy');
 const { processGuidedFlowTurn } = require('./guidedFlowProcessors');
+const { isScopeFirewallEnabled } = require('../scopeFirewall/scopeFirewallFlags');
+const { evaluateInboundScope, buildScopeLogFields } = require('../scopeFirewall/scopeIntentGate');
+const {
+  resolveScopeFirewallReply,
+  resolvePolicyRefusal,
+} = require('../../../constants/scopeFirewallReplies');
+const {
+  isObviousOutOfPredictorDomain,
+  isPredictorInFlowMessage,
+} = require('../whatsappCollegePredictor/collegePredictorSessionService');
+const { logChatbotEvent } = require('../chatbotStructuredLog');
 
 function logCareerJourneyInterrupt(flow, botState, routingText) {
   if (flow?.id !== 'career_counselling_journey') return;
@@ -126,6 +137,71 @@ async function executeActiveGuidedFlowTurn({
 }
 
 /**
+ * Scope Firewall while College Predictor owns conversation.
+ * Refuse OOS without clearing college slots / sticky results.
+ */
+async function refuseOutOfScopeInPredictor({
+  activeConversation,
+  inbound,
+  botState,
+  multilingualInbound,
+  startedAt,
+  deliverOutboundReply,
+  logInboundResult,
+  h,
+  resolvedLanguageFrom,
+  routingText,
+}) {
+  const scope = await evaluateInboundScope({
+    originalText: inbound.text,
+    englishMessage: routingText || inbound.text,
+    intent: 'college_predictor_continue',
+    botState,
+  });
+
+  const scopeLogFields = buildScopeLogFields(scope, {
+    conversationId: activeConversation._id,
+    intent: 'college_predictor_continue',
+    botState: botState?.state || null,
+    inboundMessageLength: String(inbound.text || '').length,
+    scopeBlockedSegmentCount: scope.blockedSegments?.length || 0,
+  });
+
+  const refusalText = scope.policyBlock
+    ? resolvePolicyRefusal(scope.category, resolvedLanguageFrom(multilingualInbound))
+    : resolveScopeFirewallReply(resolvedLanguageFrom(multilingualInbound));
+
+  logChatbotEvent('scope_blocked', {
+    ...scopeLogFields,
+    scopeReason: scope.reason || 'predictor_session_oos',
+    predictorStatePreserved: true,
+  });
+
+  const outboundText = await deliverOutboundReply({
+    replyText: refusalText,
+    multilingualInbound,
+    intent: 'college_predictor_continue',
+    localizationTier: 'static',
+    preLocalized: false,
+  });
+  const result = await h.outbound.sendBotTextReply({
+    conversationId: activeConversation._id,
+    phone10: activeConversation.phone,
+    text: outboundText,
+    inReplyToInboundId: inbound._id,
+  });
+  logInboundResult({
+    event: 'inbound_processed',
+    conversation: activeConversation,
+    botState,
+    intent: 'college_predictor_continue',
+    contextPatch: botState?.context || {},
+    durationMs: Date.now() - startedAt,
+  });
+  return result;
+}
+
+/**
  * Returns guided flow result when an active flow should handle this inbound, or null to continue
  * normal orchestrator routing (interrupts, idle states, etc.).
  */
@@ -140,11 +216,25 @@ async function tryRouteActiveGuidedFlow(params) {
     return null;
   }
 
+  // Section D V2: Scope Firewall still runs inside College Predictor ownership.
+  if (flow.id === 'college_predictor' && isScopeFirewallEnabled()) {
+    const collegeCtx = botState?.context?.college || {};
+    const oos =
+      isObviousOutOfPredictorDomain(routingText, inbound.text) &&
+      !isPredictorInFlowMessage(routingText, collegeCtx);
+    if (oos) {
+      return refuseOutOfScopeInPredictor({
+        ...params,
+        routingText,
+      });
+    }
+  }
+
   return executeActiveGuidedFlowTurn({ ...params, flow });
 }
 
 /**
- * Run a guided flow turn from intent-classifier switch routing (new entry or continue after interrupt).
+ * Run a guided flow turn from intent-classifier switch routing (new entry or after interrupt).
  */
 async function applyGuidedFlowSwitchTurn({
   flow,

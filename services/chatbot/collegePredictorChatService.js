@@ -40,6 +40,17 @@ const {
   logPredictorPipeline,
   previewText,
 } = require('./whatsappCollegePredictor/collegePredictorPipelineLog');
+const {
+  PAGE_SIZE,
+  isShowMoreRequest,
+  isTopCollegesRequest,
+  isPredictorRestartRequest,
+  isPredictorFollowUpAction,
+  resolveBranchFilter,
+  resolveOwnershipFilter,
+  filterCollegesLocally,
+  slicePage,
+} = require('./whatsappCollegePredictor/collegePredictorSessionService');
 
 function isNeutralPredictorEntry(text) {
   const t = String(text || '').trim().toLowerCase();
@@ -51,7 +62,7 @@ function isNeutralPredictorEntry(text) {
   ) {
     return true;
   }
-  return /college prediction|predict colleges|college predictor|help me with college|can you predict|need college/i.test(
+  return /college prediction|predict colleges|college predictor|help me with college|can you predict|need college|show colleges|which colleges|suggest colleges/i.test(
     t
   );
 }
@@ -154,10 +165,64 @@ async function resolveCompletedPrediction(ctx, opts = {}) {
 function buildIdempotentPredictionResult(ctx, completed) {
   return {
     reply: completed.cachedReply,
-    context: { ...ctx, step: 'done' },
-    clearState: true,
+    context: buildResultsContext(ctx, {
+      resultCache: ctx.resultCache || [],
+      pageOffset: ctx.pageOffset || 0,
+      apiOffset: ctx.apiOffset || PAGE_SIZE,
+      ownershipFilter: ctx.ownershipFilter || null,
+      branchFilter: ctx.branchFilter || null,
+      totalColleges: ctx.totalColleges || null,
+      predictionHash: completed.predictionHash || ctx.predictionHash || null,
+    }),
+    clearState: false,
     predictionIdempotency: completed,
     idempotentReplay: true,
+  };
+}
+
+function buildResultsContext(ctx, extras = {}) {
+  const {
+    resultCache = [],
+    pageOffset = 0,
+    apiOffset = PAGE_SIZE,
+    ownershipFilter = null,
+    branchFilter = null,
+    filterLabel = null,
+    totalColleges = null,
+    predictionHash = null,
+    lastRequestBody = null,
+  } = extras;
+  return {
+    ...ctx,
+    step: 'results',
+    conversational: true,
+    conversationOwner: 'COLLEGE_PREDICTOR',
+    resultCache,
+    pageOffset,
+    apiOffset,
+    pageSize: PAGE_SIZE,
+    ownershipFilter,
+    branchFilter,
+    filterLabel,
+    totalColleges,
+    predictionHash,
+    lastRequestBody: lastRequestBody || ctx.lastRequestBody || null,
+  };
+}
+
+function buildFilterLabel(ownershipFilter, branchFilter) {
+  const parts = [];
+  if (branchFilter) parts.push(branchFilter);
+  if (ownershipFilter) parts.push(ownershipFilter === 'government' ? 'Government' : 'Private');
+  return parts.length ? parts.join(' + ') : null;
+}
+
+async function fetchPredictionPage(ctx, offset, limit, requestBody) {
+  const data = await fetchCollegeDostCollegesFn(ctx.exam, offset, limit, requestBody);
+  return {
+    colleges: data?.colleges || [],
+    total: data?.total_no_of_colleges ?? (data?.colleges || []).length,
+    data,
   };
 }
 
@@ -183,22 +248,24 @@ async function runPrediction(ctx, opts = {}) {
   });
 
   try {
-    const data = await fetchCollegeDostCollegesFn(ctx.exam, 0, 5, requestBody);
-    const colleges = data?.colleges || [];
+    // Fetch a larger window once so Show more / local filters can reuse the set.
+    const fetchLimit = Math.max(PAGE_SIZE * 5, 25);
+    const { colleges, total } = await fetchPredictionPage(ctx, 0, fetchLimit, requestBody);
     logPredictorPipeline('predictor_upstream_response', {
       predictorExam: ctx.exam || null,
       upstreamStatus: '200',
       collegeCount: colleges.length,
-      totalColleges: data?.total_no_of_colleges ?? colleges.length,
+      totalColleges: total,
       durationMs: Date.now() - startedAt,
     });
 
+    const page = slicePage(colleges, 0, PAGE_SIZE);
     let results;
     try {
-      results = formatPredictionReply(ctx, colleges);
+      results = formatPredictionReply(ctx, page, { pageOffset: 0 });
       logPredictorPipeline('predictor_reply_formatted', {
         predictorExam: ctx.exam || null,
-        collegeCount: colleges.length,
+        collegeCount: page.length,
         replyLength: results.length,
         replyPreview: previewText(results),
       });
@@ -214,6 +281,13 @@ async function runPrediction(ctx, opts = {}) {
 
     const prefix = ctx.conversational ? `${buildPredictingMessage(ctx)}\n\n` : '';
     const reply = `${prefix}${results}`;
+    const stickyCtx = buildResultsContext(ctx, {
+      resultCache: colleges,
+      pageOffset: page.length,
+      apiOffset: colleges.length,
+      totalColleges: total,
+      lastRequestBody: requestBody,
+    });
 
     let predictionIdempotency = null;
     let analyticsEmitted = false;
@@ -221,9 +295,9 @@ async function runPrediction(ctx, opts = {}) {
     if (opts.inboundId) {
       const completion = buildPredictionCompletion({
         inboundId: opts.inboundId,
-        ctx,
+        ctx: stickyCtx,
         cachedReply: reply,
-        collegeCount: colleges.length,
+        collegeCount: page.length,
       });
       let claimResult;
       try {
@@ -239,9 +313,10 @@ async function runPrediction(ctx, opts = {}) {
       }
       const { record, isNewClaim } = claimResult;
       predictionIdempotency = record || completion;
+      stickyCtx.predictionHash = completion.predictionHash || stickyCtx.predictionHash;
 
       if (!isNewClaim && record?.cachedReply) {
-        return buildIdempotentPredictionResult(ctx, record);
+        return buildIdempotentPredictionResult(stickyCtx, record);
       }
 
       if (isNewClaim) {
@@ -250,9 +325,14 @@ async function runPrediction(ctx, opts = {}) {
           rank: ctx.rank ?? ctx.percentile ?? null,
           category: ctx.categoryLabel || null,
           botState: 'college_predictor',
-          collegeCount: colleges.length,
+          collegeCount: page.length,
           durationMs: Date.now() - startedAt,
           idempotent: false,
+        });
+        logEventFn('predictor_journey_event', {
+          eventType: 'prediction_completed',
+          predictorExam: ctx.exam || null,
+          durationMs: Date.now() - startedAt,
         });
         analyticsEmitted = true;
       }
@@ -262,21 +342,26 @@ async function runPrediction(ctx, opts = {}) {
         rank: ctx.rank ?? ctx.percentile ?? null,
         category: ctx.categoryLabel || null,
         botState: 'college_predictor',
-        collegeCount: colleges.length,
+        collegeCount: page.length,
         durationMs: Date.now() - startedAt,
         idempotent: false,
+      });
+      logEventFn('predictor_journey_event', {
+        eventType: 'prediction_completed',
+        predictorExam: ctx.exam || null,
+        durationMs: Date.now() - startedAt,
       });
       analyticsEmitted = true;
     }
 
     if (!analyticsEmitted && predictionIdempotency?.cachedReply) {
-      return buildIdempotentPredictionResult(ctx, predictionIdempotency);
+      return buildIdempotentPredictionResult(stickyCtx, predictionIdempotency);
     }
 
     return {
       reply,
-      context: { ...ctx, step: 'done' },
-      clearState: true,
+      context: stickyCtx,
+      clearState: false,
       predictionIdempotency,
     };
   } catch (err) {
@@ -300,12 +385,174 @@ async function runPrediction(ctx, opts = {}) {
       errorKind,
       botState: 'college_predictor',
     });
+    logEventFn('predictor_journey_event', {
+      eventType: 'prediction_failed',
+      predictorExam: ctx.exam || null,
+      errorKind,
+    });
     return {
       reply: ctx.step === 'predict' ? PREDICT_RETRY_REPLY_AT_PREDICT : PREDICT_RETRY_REPLY,
       context: { ...ctx, step: 'predict' },
       predictionErrorKind: errorKind,
     };
   }
+}
+
+async function handleResultsFollowUp(text, ctx) {
+  const branch = resolveBranchFilter(text);
+  let ownership = resolveOwnershipFilter(text);
+  const bare = normalizeText(text);
+  if (!ownership) {
+    if (/^government\s*[.!?]?$/i.test(bare)) ownership = 'government';
+    if (/^private\s*[.!?]?$/i.test(bare)) ownership = 'private';
+  }
+  const showMore = isShowMoreRequest(text) || isTopCollegesRequest(text);
+  const isFilterTurn = Boolean(branch || ownership);
+
+  if (!showMore && !isFilterTurn && !isPredictorFollowUpAction(text, ctx)) {
+    return null;
+  }
+
+  let ownershipFilter = isFilterTurn && ownership ? ownership : ctx.ownershipFilter || null;
+  let branchFilter = isFilterTurn && branch ? branch.code : ctx.branchFilter || null;
+  if (isFilterTurn) {
+    // Replacing filters on explicit filter utterance
+    if (ownership) ownershipFilter = ownership;
+    if (branch) branchFilter = branch.code;
+    // Bare "CSE" should clear ownership unless combined
+    if (branch && !ownership && /^(cse|ece|eee|mechanical|civil|ai)\s*[.!?]?$/i.test(bare)) {
+      // keep prior ownership if any — stacking is OK
+    }
+  }
+
+  let resultCache = Array.isArray(ctx.resultCache) ? [...ctx.resultCache] : [];
+  let pageOffset = Number(ctx.pageOffset || 0);
+  let apiOffset = Number(ctx.apiOffset || resultCache.length || 0);
+  const requestBody = ctx.lastRequestBody || buildCounsellorStyleRequestBody(ctx);
+  const filterLabel = buildFilterLabel(ownershipFilter, branchFilter);
+
+  if (isFilterTurn) {
+    let filtered = filterCollegesLocally(resultCache, {
+      ownership: ownershipFilter,
+      branchCode: branchFilter,
+    });
+    if (filtered.length < PAGE_SIZE) {
+      try {
+        const more = await fetchPredictionPage(ctx, 0, Math.max(50, PAGE_SIZE * 10), requestBody);
+        resultCache = more.colleges;
+        apiOffset = more.colleges.length;
+        filtered = filterCollegesLocally(resultCache, {
+          ownership: ownershipFilter,
+          branchCode: branchFilter,
+        });
+      } catch (_) {
+        /* keep */
+      }
+    }
+    const page = slicePage(filtered, 0, PAGE_SIZE);
+    logEventFn('predictor_journey_event', {
+      eventType: 'filter_applied',
+      ownershipFilter,
+      branchFilter,
+      collegeCount: page.length,
+    });
+    return {
+      reply: formatPredictionReply(ctx, page, {
+        pageOffset: 0,
+        filterLabel,
+        exhausted: page.length === 0,
+      }),
+      context: buildResultsContext(ctx, {
+        resultCache: filtered,
+        pageOffset: page.length,
+        apiOffset,
+        ownershipFilter,
+        branchFilter,
+        filterLabel,
+        totalColleges: filtered.length,
+        lastRequestBody: requestBody,
+        predictionHash: ctx.predictionHash,
+      }),
+      clearState: false,
+    };
+  }
+
+  // Pagination — reuse cache; extend from API only when exhausted.
+  const working = filterCollegesLocally(resultCache, {
+    ownership: ownershipFilter,
+    branchCode: branchFilter,
+  });
+  let page = slicePage(working, pageOffset, PAGE_SIZE);
+
+  if (page.length === 0) {
+    try {
+      const more = await fetchPredictionPage(ctx, apiOffset, PAGE_SIZE * 5, requestBody);
+      if (more.colleges.length) {
+        const seen = new Set(working.map((c) => String(c.college_name || '').toLowerCase()));
+        for (const c of more.colleges) {
+          const key = String(c.college_name || '').toLowerCase();
+          if (key && !seen.has(key)) {
+            working.push(c);
+            seen.add(key);
+          }
+        }
+        resultCache = working;
+        apiOffset += more.colleges.length;
+        page = slicePage(working, pageOffset, PAGE_SIZE);
+      }
+    } catch (_) {
+      /* exhausted */
+    }
+  }
+
+  if (page.length === 0) {
+    logEventFn('predictor_journey_event', { eventType: 'pagination_exhausted' });
+    return {
+      reply: formatPredictionReply(ctx, [], {
+        pageOffset,
+        filterLabel,
+        exhausted: true,
+        continuation: true,
+      }),
+      context: buildResultsContext(ctx, {
+        resultCache: working,
+        pageOffset,
+        apiOffset,
+        ownershipFilter,
+        branchFilter,
+        filterLabel,
+        totalColleges: ctx.totalColleges,
+        lastRequestBody: requestBody,
+        predictionHash: ctx.predictionHash,
+      }),
+      clearState: false,
+    };
+  }
+
+  logEventFn('predictor_journey_event', {
+    eventType: 'pagination',
+    pageOffset,
+    collegeCount: page.length,
+  });
+  return {
+    reply: formatPredictionReply(ctx, page, {
+      pageOffset,
+      filterLabel,
+      continuation: true,
+    }),
+    context: buildResultsContext(ctx, {
+      resultCache: working,
+      pageOffset: pageOffset + page.length,
+      apiOffset,
+      ownershipFilter,
+      branchFilter,
+      filterLabel,
+      totalColleges: ctx.totalColleges,
+      lastRequestBody: requestBody,
+      predictionHash: ctx.predictionHash,
+    }),
+    clearState: false,
+  };
 }
 
 /**
@@ -317,15 +564,17 @@ async function runPrediction(ctx, opts = {}) {
 async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
   const t = normalizeText(text);
 
-  if (/^again$/.test(t)) {
+  if (isPredictorRestartRequest(t) || /^again$/.test(t)) {
+    logEventFn('predictor_journey_event', { eventType: 'restart' });
     return {
       reply: buildConversationalWelcome(),
       context: initialContext(),
       restart: true,
+      clearState: false,
     };
   }
 
-  if (opts.inboundId) {
+  if (opts.inboundId && context.step !== 'results') {
     const completed = await resolveCompletedPrediction(
       { ...context, conversational: true },
       opts
@@ -340,8 +589,21 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
 
   let ctx = opts.isNewEntry ? initialContext() : { ...context };
   if (!ctx.flow) ctx = initialContext();
+  // Sticky post-result ownership — never treat results as a fresh entry.
+  if (ctx.step === 'results') {
+    const followUp = await handleResultsFollowUp(text, ctx);
+    if (followUp) return followUp;
+    // Unrecognized follow-up: keep ownership and remind actions.
+    return {
+      reply:
+        'You are still in College Predictor.\n\nReply SHOW MORE for more colleges, or CSE / ECE / Government / Private to filter.\n\nOr AGAIN for a new prediction / MENU to exit.',
+      context: ctx,
+      clearState: false,
+    };
+  }
   if (!ctx.step || ctx.step === 'done') ctx = initialContext();
   ctx.conversational = true;
+  ctx.conversationOwner = 'COLLEGE_PREDICTOR';
 
   if (ctx.step === 'predict') {
     if (isApOcMaleBlocked(ctx.exam, ctx.categoryN, ctx.gender)) {
@@ -368,14 +630,20 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
     Object.keys(extracted).length === 0
   ) {
     if (beforeMissing[0] === SLOT_EXAM && isNeutralPredictorEntry(text)) {
+      logEventFn('predictor_journey_event', { eventType: 'prediction_started' });
       return {
         reply: buildConversationalWelcome(),
-        context: { ...merged, step: 'exam', conversational: true },
+        context: { ...merged, step: 'exam', conversational: true, conversationOwner: 'COLLEGE_PREDICTOR' },
       };
     }
     return {
       reply: buildInvalidMessage(beforeMissing[0], merged),
-      context: { ...merged, step: slotToLegacyStep(beforeMissing[0]), conversational: true },
+      context: {
+        ...merged,
+        step: slotToLegacyStep(beforeMissing[0]),
+        conversational: true,
+        conversationOwner: 'COLLEGE_PREDICTOR',
+      },
     };
   }
 
@@ -395,9 +663,17 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
       opts.isNewEntry && nextSlot === SLOT_EXAM && isNeutralPredictorEntry(text)
         ? buildConversationalWelcome()
         : buildQuestionForSlot(nextSlot, ctx);
+    if (opts.isNewEntry) {
+      logEventFn('predictor_journey_event', { eventType: 'prediction_started' });
+    }
     return {
       reply,
-      context: { ...ctx, step: slotToLegacyStep(nextSlot), conversational: true },
+      context: {
+        ...ctx,
+        step: slotToLegacyStep(nextSlot),
+        conversational: true,
+        conversationOwner: 'COLLEGE_PREDICTOR',
+      },
     };
   }
 
@@ -413,7 +689,12 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
     const slot = getMissingSlots(ctx)[0] || 'category';
     return {
       reply: built.error,
-      context: { ...ctx, step: slotToLegacyStep(slot), conversational: true },
+      context: {
+        ...ctx,
+        step: slotToLegacyStep(slot),
+        conversational: true,
+        conversationOwner: 'COLLEGE_PREDICTOR',
+      },
     };
   }
 
@@ -426,4 +707,5 @@ module.exports = {
   buildCounsellorStyleRequestBody,
   runPrediction,
   resolveCompletedPrediction,
+  handleResultsFollowUp,
 };

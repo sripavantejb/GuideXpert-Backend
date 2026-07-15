@@ -5,7 +5,7 @@ const { GLOBAL_KEYWORDS } = require('../../../constants/chatbotStates');
 const { normalizeText, matchesAny, matchesMenuCommands } = require('../intentTextUtils');
 
 const EXPLICIT_EXIT_RE =
-  /^(home|exit|main menu|main_menu|stop|unsubscribe|opt out|optout|cancel)$/i;
+  /^(home|exit|main menu|main_menu|stop|unsubscribe|opt out|optout|cancel|restart|start over|start again|reset|new prediction)$/i;
 
 /**
  * Returns true when the user explicitly intends to leave the active guided workflow.

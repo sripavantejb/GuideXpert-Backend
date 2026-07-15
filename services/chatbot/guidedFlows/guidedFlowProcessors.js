@@ -63,12 +63,20 @@ async function processCollegePredictorTurn({
     nextContext = clearAssistantSessionFlags({
       college: {},
       predictionIdempotency: null,
+      collegePredictorActive: false,
+      currentJourney: null,
     });
     nextState = flow.completeBotState;
   } else {
     nextContext.college = c.context;
+    nextContext.collegePredictorActive = true;
+    nextContext.currentJourney = 'COLLEGE_PREDICTOR';
     if (c.predictionIdempotency) {
       nextContext.predictionIdempotency = c.predictionIdempotency;
+    }
+    // Soft restart (AGAIN) keeps journey but clears result cache via initialContext.
+    if (c.restart) {
+      nextContext.predictionIdempotency = null;
     }
   }
 

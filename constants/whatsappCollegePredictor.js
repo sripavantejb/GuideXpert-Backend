@@ -31,7 +31,16 @@ const EXAM_OPTIONS = [
 
 const EXAM_DISPLAY = Object.fromEntries(EXAM_OPTIONS.map((it) => [it.value, it.label]));
 
-const FOOTER_ACTIONS = ['', 'Reply:', '', 'MENU -> Main Menu', 'AGAIN -> New Prediction', 'AGENT -> Talk to Counsellor'].join('\n');
+const FOOTER_ACTIONS = [
+  '',
+  'Reply:',
+  '',
+  'SHOW MORE -> Next colleges',
+  'CSE / ECE / Government / Private -> Filter',
+  'AGAIN -> New Prediction',
+  'MENU -> Main Menu',
+  'AGENT -> Talk to Counsellor',
+].join('\n');
 
 const AP_OC_MALE_BLOCKED_REPLY = [
   'We currently need your exact AP EAMCET reservation category to provide an accurate prediction.',
@@ -139,9 +148,12 @@ function pickBranchLine(college) {
   return pickBranchDetails(college).branch;
 }
 
-function formatPredictionReply(ctx, colleges) {
+function formatPredictionReply(ctx, colleges, opts = {}) {
+  const pageOffset = Number(opts.pageOffset || 0);
+  const filterLabel = opts.filterLabel || null;
+  const exhausted = Boolean(opts.exhausted);
   const lines = [
-    'Here are your predicted colleges:',
+    opts.continuation ? 'Here are more predicted colleges:' : 'Here are your predicted colleges:',
     '',
     `Exam: ${EXAM_DISPLAY[ctx.exam] || ctx.exam}`,
     `Rank/Percentile: ${ctx.percentile != null ? ctx.percentile : ctx.rank}`,
@@ -150,16 +162,19 @@ function formatPredictionReply(ctx, colleges) {
   if (ctx.gender) {
     lines.push(`Gender: ${formatGenderLabel(ctx.gender)}`);
   }
-  lines.push('', 'Top Matches:', '');
+  if (filterLabel) {
+    lines.push(`Filter: ${filterLabel}`);
+  }
+  lines.push('', opts.continuation ? 'More Matches:' : 'Top Matches:', '');
 
   const list = Array.isArray(colleges) ? colleges.slice(0, 5) : [];
   if (list.length === 0) {
-    lines.push('No colleges found for this profile.');
-    lines.push('Try AGAIN with different inputs.');
+    lines.push(exhausted ? 'No more colleges for this profile.' : 'No colleges found for this profile.');
+    lines.push(exhausted ? 'Try a different filter or AGAIN with new inputs.' : 'Try AGAIN with different inputs.');
   } else {
     list.forEach((c, i) => {
       const details = pickBranchDetails(c);
-      lines.push(`${i + 1}. ${c.college_name || 'College'}`);
+      lines.push(`${pageOffset + i + 1}. ${c.college_name || 'College'}`);
       lines.push(`   Branch: ${details.branch}`);
       if (details.cutoff != null) {
         lines.push(`   Cutoff: ${details.cutoff}`);

@@ -13,6 +13,7 @@ function emptySubflows() {
     iitCounsellingStrategySessionLanguage: null,
     jeeCounsellingActive: false,
     jeeExamTrack: null,
+    collegePredictorActive: false,
     currentJourney: null,
   };
 }
