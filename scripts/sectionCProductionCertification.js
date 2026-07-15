@@ -40,7 +40,7 @@ const HALLUCINATED_DATE =
 const FAKE_GUARANTEE =
   /guarantee[sd]?|100\s*%|definitely\s+(get|in|admit)|sure(?:ly)?\s+(get|admit)|will\s+definitely|all OBC students will|VIP round exists|secret.*round.*confirmed/i;
 const WRONG_JOURNEY =
-  /college predictor|predict (your )?colleges|enter your (rank|score|AIR)|career counselling journey|book (a )?counsell|counsellor program|schedule a session|Which entrance exam are you preparing/i;
+  /college predictor|predict (your )?colleges|career counselling journey|book (a )?counsell(?:ing)? session|counsellor program|schedule a session|Which entrance exam are you preparing/i;
 const REFUSE_INVENT =
   /don't have (the )?(latest|official|confirmed)|cannot confirm|not (publicly )?announced|check (the )?official|verify on (the )?official|I(?:'m| am) not (aware|certain)|no (official|confirmed) (information|dates)|unable to confirm|without official|may vary|subject to change|official (website|notification|sources)/i;
 
