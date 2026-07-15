@@ -13,6 +13,12 @@ const {
   resolveIitSessionTurn,
   shouldDeferFoundationForIit,
 } = require('./iitCounsellingExpert/iitCounsellingSessionService');
+const {
+  resolveJeeSessionTurn,
+  shouldDeferFoundationForJee,
+  resolveJeeExamTrack,
+  JEE_EXAM_CLARIFY_REPLY,
+} = require('./jeeCounselling/jeeCounsellingSessionService');
 const { isSupportedLanguage, normalizeLanguageCode } = require('../../constants/languageConstants');
 const botStateService = require('./botStateService');
 const { OptimisticLockFailedError } = botStateService;
@@ -560,17 +566,24 @@ async function processInboundCore({
   }
 
   // Foundation Conversation Router — BEFORE intent classification and Scope Firewall.
-  // Deterministic everyday conversation. Deferred when sticky/cold IIT vocabulary owns the turn.
+  // Deterministic everyday conversation. Deferred when sticky/cold IIT/JEE vocabulary owns the turn.
   {
     const foundationText =
       multilingualInbound?.englishMessage || String(inbound.text || '').trim();
     const foundationOriginal = String(inbound.text || '').trim();
-    const deferFoundation = shouldDeferFoundationForIit(
-      foundationText,
-      foundationOriginal,
-      botState,
-      activeConversation.productLine
-    );
+    const deferFoundation =
+      shouldDeferFoundationForIit(
+        foundationText,
+        foundationOriginal,
+        botState,
+        activeConversation.productLine
+      ) ||
+      shouldDeferFoundationForJee(
+        foundationText,
+        foundationOriginal,
+        botState,
+        activeConversation.productLine
+      );
 
     if (!deferFoundation) {
     const menuText = buildMainMenuText(leadContext);
@@ -876,36 +889,82 @@ async function processInboundCore({
     return result;
   }
 
-  // IIT Context Resolver + Scope Firewall.
+  // JEE / IIT Context Resolver + Scope Firewall.
   // Sticky / ICE-owned turns expand short forms (routing only) and bypass firewall
-  // for IIT context only — true OOS (Python/IPL) still hits the firewall.
+  // for JEE/IIT context only — true OOS (Python/IPL/shopping) still hits the firewall.
   let scopePartialContext = null;
   let routingInboundText =
     multilingualInbound?.englishMessage || String(inbound.text || '').trim();
   const scopeOriginalText = String(inbound.text || '').trim();
 
   {
+    const jeeTurn = resolveJeeSessionTurn({
+      text: routingInboundText,
+      originalText: scopeOriginalText,
+      botState,
+      intent: intentResult.intent,
+      productLine: activeConversation.productLine,
+    });
     const iitTurn = resolveIitSessionTurn({
       text: routingInboundText,
       originalText: scopeOriginalText,
       botState,
       intent: intentResult.intent,
     });
-    if (iitTurn.expandedText) {
-      routingInboundText = iitTurn.expandedText;
+    const expandedText = jeeTurn.expandedText || iitTurn.expandedText;
+    const expansionReason = jeeTurn.expansionReason || iitTurn.expansionReason;
+    if (expandedText) {
+      routingInboundText = expandedText;
       if (multilingualInbound) {
-        multilingualInbound.englishMessage = iitTurn.expandedText;
+        multilingualInbound.englishMessage = expandedText;
       }
       logChatbotEvent('iit_context_resolved', {
         conversationId: activeConversation._id,
         phoneTail: maskPhoneTail(activeConversation.phone),
         intent: intentResult.intent,
         botState: botState?.state || null,
-        expansionReason: iitTurn.expansionReason,
+        expansionReason,
         originalPreview: scopeOriginalText.slice(0, 80),
-        expandedPreview: iitTurn.expandedText.slice(0, 120),
+        expandedPreview: expandedText.slice(0, 120),
       });
     }
+  }
+
+  // Ambiguous JEE Main vs Advanced — clarify before ICE / firewall.
+  if (intentResult.intent === 'jee_exam_clarify') {
+    const track = resolveJeeExamTrack(routingInboundText, scopeOriginalText);
+    await transitionState(activeConversation._id, activeConversation.phone, 'idle', {
+      ...(botState?.context || {}),
+      jeeCounsellingActive: true,
+      iitCounsellingExpertActive: true,
+      currentJourney: 'JEE_COUNSELLING',
+      jeeExamTrack: track || 'clarify',
+      knowledgeAssistantActive: false,
+      counsellorProgramAssistantActive: false,
+      iitCounsellingStrategyActive: false,
+    });
+    await h.updateConversationIntent(activeConversation._id, 'jee_exam_clarify');
+    const outboundText = await deliverOutboundReply({
+      replyText: JEE_EXAM_CLARIFY_REPLY,
+      multilingualInbound,
+      intent: 'jee_exam_clarify',
+      localizationTier: 'static',
+      preLocalized: false,
+    });
+    const result = await h.outbound.sendBotTextReply({
+      conversationId: activeConversation._id,
+      phone10: activeConversation.phone,
+      text: outboundText,
+      inReplyToInboundId: inbound._id,
+    });
+    logInboundResult({
+      event: 'inbound_processed',
+      conversation: activeConversation,
+      botState,
+      intent: intentResult.intent,
+      durationMs: Date.now() - startedAt,
+    });
+    return result;
   }
 
   const bypassScope =
@@ -1135,6 +1194,9 @@ async function processInboundCore({
         iitCounsellingExpertSessionLanguage: null,
         iitCounsellingStrategyActive: false,
         iitCounsellingStrategySessionLanguage: null,
+        jeeCounsellingActive: false,
+        jeeExamTrack: null,
+        currentJourney: null,
       };
       break;
     }
@@ -1346,9 +1408,22 @@ async function processInboundCore({
       !isIitCounsellingExpertEnabled() &&
       Boolean(knowledgeAssistantResult?.model && knowledgeAssistantResult?.text);
     const iceReplyOk = Boolean(iitCounsellingResult?.model && iitCounsellingResult?.text);
-    const hadIceSession = Boolean(botState?.context?.iitCounsellingExpertActive);
+    const hadIceSession = Boolean(
+      botState?.context?.iitCounsellingExpertActive || botState?.context?.jeeCounsellingActive
+    );
+    // Activate sticky JEE/IIT journey on successful reply OR entry (even if model empty).
+    const entrySticky =
+      intentResult.intentReason === 'jee_main_entry' ||
+      intentResult.intentReason === 'jee_advanced_entry' ||
+      intentResult.intentReason === 'iit_counselling_entry' ||
+      intentResult.intentReason === 'iit_counselling_process_topic' ||
+      intentResult.intentReason === 'jee_counselling_session_active';
     const iceActive =
-      isIitCounsellingExpertEnabled() && (iceReplyOk || hadIceSession);
+      isIitCounsellingExpertEnabled() && (iceReplyOk || hadIceSession || entrySticky);
+    const examTrack =
+      resolveJeeExamTrack(routingInboundText, inbound.text) ||
+      botState?.context?.jeeExamTrack ||
+      null;
     const sessionLanguage = resolvedLanguageFrom(multilingualInbound);
     const persistedSessionLanguage =
       sessionLanguage ||
@@ -1364,6 +1439,9 @@ async function processInboundCore({
       ...contextPatch,
       iitCounsellingExpertActive: iceActive,
       iitCounsellingExpertSessionLanguage: iceActive ? persistedSessionLanguage : null,
+      jeeCounsellingActive: iceActive,
+      currentJourney: iceActive ? 'JEE_COUNSELLING' : null,
+      jeeExamTrack: iceActive ? examTrack : null,
       iitCounsellingStrategyActive: false,
       iitCounsellingStrategySessionLanguage: null,
       knowledgeAssistantActive: kaFallbackActive,

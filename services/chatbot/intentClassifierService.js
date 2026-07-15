@@ -17,6 +17,16 @@ const {
   isIitSessionExitRequest,
 } = require('./iitCounsellingExpert/iitCounsellingSessionService');
 const {
+  isJeeCounsellingSessionActive,
+  isJeeSessionExitRequest,
+  isJeeAdvancedEntry,
+  isJeeMainEntry,
+  isJeeAmbiguousEntry,
+  isJeeInSessionTopic,
+  isCommerceOutOfScopeRequest,
+  shouldBypassScopeFirewallForJee,
+} = require('./jeeCounselling/jeeCounsellingSessionService');
+const {
   isIitCounsellingStrategyEnabled,
 } = require('./iitCounsellingStrategy/iitCounsellingStrategyFlags');
 const {
@@ -425,6 +435,11 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     return { intent: 'greeting', confidence: 'high', intentReason };
   }
 
+  // Commerce must never reach FAQ / guided flows — Scope Firewall owns denial.
+  if (isCommerceOutOfScopeRequest(t, original)) {
+    return { intent: 'unknown', confidence: 'low', intentReason: 'commerce_out_of_scope' };
+  }
+
   if (isIitCounsellingExpertEnabled() && isFactualIceDelegation(t, original)) {
     const inStrategySession =
       isIitCounsellingStrategyEnabled() && isIitCounsellingStrategySessionActive(botState);
@@ -473,22 +488,49 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     };
   }
 
-  // Prefer sticky/process ICE topics (Round, Freeze/Float choose, Documents, AIR…)
-  // over Strategy when the utterance is JoSAA-process vocabulary.
-  if (isIitCounsellingExpertEnabled() && isIitCounsellingExpertSessionActive(botState)) {
-    if (isIitSessionExitRequest(t, original)) {
+  // Prefer sticky/process ICE+JEE topics over Strategy / CPA when journey is active.
+  if (
+    isIitCounsellingExpertEnabled() &&
+    (isIitCounsellingExpertSessionActive(botState) || isJeeCounsellingSessionActive(botState))
+  ) {
+    if (isIitSessionExitRequest(t, original) || isJeeSessionExitRequest(t, original)) {
       return { intent: 'main_menu', confidence: 'high', intentReason: 'iit_counselling_session_exit' };
     }
     return {
       intent: 'iit_counselling_expert',
       confidence: 'medium',
-      intentReason: 'iit_counselling_session_active',
+      intentReason: 'jee_counselling_session_active',
+    };
+  }
+
+  // JEE Main vs Advanced entry priority — never CPA.
+  if (isIitCounsellingExpertEnabled() && isJeeAmbiguousEntry(t, original)) {
+    return {
+      intent: 'jee_exam_clarify',
+      confidence: 'high',
+      intentReason: 'jee_exam_clarify',
+    };
+  }
+  if (isIitCounsellingExpertEnabled() && isJeeAdvancedEntry(t, original)) {
+    return {
+      intent: 'iit_counselling_expert',
+      confidence: 'high',
+      intentReason: 'jee_advanced_entry',
+    };
+  }
+  if (isIitCounsellingExpertEnabled() && isJeeMainEntry(t, original)) {
+    return {
+      intent: 'iit_counselling_expert',
+      confidence: 'high',
+      intentReason: 'jee_main_entry',
     };
   }
 
   if (
     isIitCounsellingExpertEnabled() &&
-    (isIitCounsellingInSessionTopic(t, original) || isIitCounsellingEntryRequest(t, original)) &&
+    (isIitCounsellingInSessionTopic(t, original) ||
+      isIitCounsellingEntryRequest(t, original) ||
+      isJeeInSessionTopic(t, original)) &&
     !isIitCounsellingStrategySessionActive(botState)
   ) {
     return {
@@ -606,7 +648,8 @@ function classifyIntent(text, botState, productLine, originalText = null) {
   if (/^1$|my details|my booking|my slot|profile/.test(t)) {
     return { intent: 'lead_lookup', confidence: 'high' };
   }
-  if (/^2$|faq|question|help me/.test(t)) {
+  // Menu-style FAQ only — never match "help me shop on Amazon".
+  if (/^2$|^(faq|question)$|^help me\s*[.!?]?$/.test(t)) {
     return { intent: 'faq', confidence: 'high' };
   }
   if (/\b(predict rank|rank predictor)\b/i.test(t)) {
@@ -655,7 +698,10 @@ function classifyIntent(text, botState, productLine, originalText = null) {
 }
 
 function shouldBypassScopeFirewall(botState, intent, text = null, originalText = null) {
+  // Commerce never bypasses — even if mis-routed to FAQ.
+  if (isCommerceOutOfScopeRequest(text, originalText)) return false;
   if (shouldBypassScopeFirewallForGuided(botState, intent)) return true;
+  if (shouldBypassScopeFirewallForJee(botState, text, originalText, intent)) return true;
   return shouldBypassScopeFirewallForIit(botState, text, originalText, intent);
 }
 

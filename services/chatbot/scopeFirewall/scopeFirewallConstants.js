@@ -88,9 +88,11 @@ const DENY_PATTERNS = Object.freeze([
   { category: 'prompt_injection', pattern: /\bdisregard\b.{0,30}\b(guidexpert|scope|limits|rules|instructions)\b/i },
   { category: 'prompt_injection', pattern: /\bscope limits\b/i },
 
-  // shopping / product recommendations
+  // shopping / product recommendations — never FAQ/RAG; Scope Firewall owns these
   { category: 'general_trivia', pattern: /\b(laptop|macbook|iphone|ipad|dslr|mirrorless|camera|smartphone|headphones|earbuds)\b/i },
-  { category: 'general_trivia', pattern: /\b(amazon|flipkart|best (phone|laptop|camera)|buy (a )?(phone|laptop|camera))\b/i },
+  { category: 'general_trivia', pattern: /\b(amazon|flipkart|myntra|meesho|shopping|shop on|purchase|discount|best price)\b/i },
+  { category: 'general_trivia', pattern: /\b(buy|order)\b.{0,40}\b(phone|laptop|camera|iphone|macbook|online|amazon|flipkart)\b/i },
+  { category: 'general_trivia', pattern: /\b(best (phone|laptop|camera)|buy (a )?(phone|laptop|camera))\b/i },
   { category: 'general_trivia', pattern: /\bcompare\b.{0,30}\b(macbook|dell|xps|iphone|samsung|dslr|mirrorless)\b/i },
   { category: 'image_generation', pattern: /\b(generate|create|draw|make|render|banao|chey|cheyyi|pannu)\b.{0,24}\b(image|picture|photo|pic|drawing|art(work)?|wallpaper|portrait|avatar|cartoon|puppy|dog)\b/i },
   { category: 'image_generation', pattern: /\b(image|picture|photo|pic|wallpaper|portrait|avatar) (of|create|banao)\b/i },

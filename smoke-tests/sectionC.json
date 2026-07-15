@@ -1,6 +1,554 @@
 {
-  "id": "sectionC",
-  "title": "Section C (placeholder)",
-  "description": "Add cases here. Runner auto-discovers this file when --suite=sectionC or --suite=all.",
-  "cases": []
+  "section": "C",
+  "title": "JEE Main & JEE Advanced",
+  "description": "Production audit-only certification cases (webhook → Mongo verify). Run via scripts/sectionCProductionCertification.js",
+  "totalCases": 91,
+  "cases": [
+    {
+      "id": "C1-01",
+      "group": "C1_entry",
+      "user": "I wrote JEE Main",
+      "resetState": true
+    },
+    {
+      "id": "C1-02",
+      "group": "C1_entry",
+      "user": "I wrote JEE Mains",
+      "resetState": true
+    },
+    {
+      "id": "C1-03",
+      "group": "C1_entry",
+      "user": "I wrote JEE Advanced",
+      "resetState": true
+    },
+    {
+      "id": "C1-04",
+      "group": "C1_entry",
+      "user": "I qualified JEE Advanced",
+      "resetState": true
+    },
+    {
+      "id": "C1-05",
+      "group": "C1_entry",
+      "user": "I cleared JEE",
+      "resetState": true
+    },
+    {
+      "id": "C1-06",
+      "group": "C1_entry",
+      "user": "Help me with JEE",
+      "resetState": true
+    },
+    {
+      "id": "C1-07",
+      "group": "C1_entry",
+      "user": "JEE counselling",
+      "resetState": true
+    },
+    {
+      "id": "C1-08",
+      "group": "C1_entry",
+      "user": "Need JEE guidance",
+      "resetState": true
+    },
+    {
+      "id": "C1-09",
+      "group": "C1_entry",
+      "user": "Need NIT counselling",
+      "resetState": true
+    },
+    {
+      "id": "C1-10",
+      "group": "C1_entry",
+      "user": "Need IIT admission",
+      "resetState": true
+    },
+    {
+      "id": "C2-01",
+      "group": "C2_exam",
+      "user": "Difference between JEE Main and Advanced",
+      "resetState": true
+    },
+    {
+      "id": "C2-02",
+      "group": "C2_exam",
+      "user": "Who conducts JEE Main?",
+      "resetState": true
+    },
+    {
+      "id": "C2-03",
+      "group": "C2_exam",
+      "user": "Who conducts JEE Advanced?",
+      "resetState": true
+    },
+    {
+      "id": "C2-04",
+      "group": "C2_exam",
+      "user": "Can I write Advanced without Main?",
+      "resetState": true
+    },
+    {
+      "id": "C2-05",
+      "group": "C2_exam",
+      "user": "Why are there two exams?",
+      "resetState": true
+    },
+    {
+      "id": "C3-01",
+      "group": "C3_eligibility",
+      "user": "Who is eligible?",
+      "resetState": true
+    },
+    {
+      "id": "C3-02",
+      "group": "C3_eligibility",
+      "user": "Can everyone write Advanced?",
+      "resetState": true
+    },
+    {
+      "id": "C3-03",
+      "group": "C3_eligibility",
+      "user": "Can I write Advanced twice?",
+      "resetState": true
+    },
+    {
+      "id": "C3-04",
+      "group": "C3_eligibility",
+      "user": "Age limit",
+      "resetState": true
+    },
+    {
+      "id": "C3-05",
+      "group": "C3_eligibility",
+      "user": "Attempt limit",
+      "resetState": true
+    },
+    {
+      "id": "C4-01",
+      "group": "C4_rank",
+      "user": "AIR 100",
+      "resetState": true
+    },
+    {
+      "id": "C4-02",
+      "group": "C4_rank",
+      "user": "AIR 500",
+      "resetState": true
+    },
+    {
+      "id": "C4-03",
+      "group": "C4_rank",
+      "user": "AIR 1000",
+      "resetState": true
+    },
+    {
+      "id": "C4-04",
+      "group": "C4_rank",
+      "user": "AIR 5000",
+      "resetState": true
+    },
+    {
+      "id": "C4-05",
+      "group": "C4_rank",
+      "user": "AIR 10000",
+      "resetState": true
+    },
+    {
+      "id": "C4-06",
+      "group": "C4_rank",
+      "user": "AIR 25000",
+      "resetState": true
+    },
+    {
+      "id": "C4-07",
+      "group": "C4_rank",
+      "user": "AIR 50000",
+      "resetState": true
+    },
+    {
+      "id": "C4-08",
+      "group": "C4_rank",
+      "user": "Rank 1000",
+      "resetState": true
+    },
+    {
+      "id": "C4-09",
+      "group": "C4_rank",
+      "user": "Rank 8000",
+      "resetState": true
+    },
+    {
+      "id": "C5-01",
+      "group": "C5_category",
+      "user": "General",
+      "resetState": true
+    },
+    {
+      "id": "C5-02",
+      "group": "C5_category",
+      "user": "OBC",
+      "resetState": true
+    },
+    {
+      "id": "C5-03",
+      "group": "C5_category",
+      "user": "SC",
+      "resetState": true
+    },
+    {
+      "id": "C5-04",
+      "group": "C5_category",
+      "user": "ST",
+      "resetState": true
+    },
+    {
+      "id": "C5-05",
+      "group": "C5_category",
+      "user": "EWS",
+      "resetState": true
+    },
+    {
+      "id": "C5-06",
+      "group": "C5_category",
+      "user": "PWD",
+      "resetState": true
+    },
+    {
+      "id": "C5-07",
+      "group": "C5_category",
+      "user": "Female",
+      "resetState": true
+    },
+    {
+      "id": "C5-08",
+      "group": "C5_category",
+      "user": "General Female",
+      "resetState": true
+    },
+    {
+      "id": "C5-09",
+      "group": "C5_category",
+      "user": "OBC Female",
+      "resetState": true
+    },
+    {
+      "id": "C5-10",
+      "group": "C5_category",
+      "user": "SC Female",
+      "resetState": true
+    },
+    {
+      "id": "C6-01",
+      "group": "C6_rank_category",
+      "user": "AIR 2500 General",
+      "resetState": true
+    },
+    {
+      "id": "C6-02",
+      "group": "C6_rank_category",
+      "user": "AIR 5000 OBC",
+      "resetState": true
+    },
+    {
+      "id": "C6-03",
+      "group": "C6_rank_category",
+      "user": "AIR 12000 SC",
+      "resetState": true
+    },
+    {
+      "id": "C6-04",
+      "group": "C6_rank_category",
+      "user": "AIR 18000 ST",
+      "resetState": true
+    },
+    {
+      "id": "C6-05",
+      "group": "C6_rank_category",
+      "user": "AIR 6000 EWS",
+      "resetState": true
+    },
+    {
+      "id": "C6-06",
+      "group": "C6_rank_category",
+      "user": "AIR 9000 Female",
+      "resetState": true
+    },
+    {
+      "id": "C7-01",
+      "group": "C7_iit_nit",
+      "user": "Can I get IIT?",
+      "resetState": true
+    },
+    {
+      "id": "C7-02",
+      "group": "C7_iit_nit",
+      "user": "Can I get NIT?",
+      "resetState": true
+    },
+    {
+      "id": "C7-03",
+      "group": "C7_iit_nit",
+      "user": "Can I get IIIT?",
+      "resetState": true
+    },
+    {
+      "id": "C7-04",
+      "group": "C7_iit_nit",
+      "user": "Difference between IIT and NIT",
+      "resetState": true
+    },
+    {
+      "id": "C7-05",
+      "group": "C7_iit_nit",
+      "user": "Difference between NIT and IIIT",
+      "resetState": true
+    },
+    {
+      "id": "C8-01",
+      "group": "C8_home_state",
+      "user": "Home state quota",
+      "resetState": true
+    },
+    {
+      "id": "C8-02",
+      "group": "C8_home_state",
+      "user": "Other state quota",
+      "resetState": true
+    },
+    {
+      "id": "C8-03",
+      "group": "C8_home_state",
+      "user": "Can I use home state quota?",
+      "resetState": true
+    },
+    {
+      "id": "C8-04",
+      "group": "C8_home_state",
+      "user": "Does IIT have home state quota?",
+      "resetState": true
+    },
+    {
+      "id": "C9-01",
+      "group": "C9_reservation",
+      "user": "Reservation policy",
+      "resetState": true
+    },
+    {
+      "id": "C9-02",
+      "group": "C9_reservation",
+      "user": "OBC reservation",
+      "resetState": true
+    },
+    {
+      "id": "C9-03",
+      "group": "C9_reservation",
+      "user": "EWS reservation",
+      "resetState": true
+    },
+    {
+      "id": "C9-04",
+      "group": "C9_reservation",
+      "user": "SC reservation",
+      "resetState": true
+    },
+    {
+      "id": "C9-05",
+      "group": "C9_reservation",
+      "user": "ST reservation",
+      "resetState": true
+    },
+    {
+      "id": "C9-06",
+      "group": "C9_reservation",
+      "user": "PWD reservation",
+      "resetState": true
+    },
+    {
+      "id": "C10-01",
+      "group": "C10_followup",
+      "user": "I wrote JEE Main",
+      "resetState": true
+    },
+    {
+      "id": "C10-02",
+      "group": "C10_followup",
+      "user": "Rank 8500",
+      "resetState": false
+    },
+    {
+      "id": "C10-03",
+      "group": "C10_followup",
+      "user": "General",
+      "resetState": false
+    },
+    {
+      "id": "C10-04",
+      "group": "C10_followup",
+      "user": "Can I get NIT?",
+      "resetState": false
+    },
+    {
+      "id": "C10-05",
+      "group": "C10_followup",
+      "user": "Any better colleges?",
+      "resetState": false
+    },
+    {
+      "id": "C10-06",
+      "group": "C10_followup",
+      "user": "What about IIIT?",
+      "resetState": false
+    },
+    {
+      "id": "C11-01",
+      "group": "C11_language",
+      "user": "I wrote JEE Main rank guidance",
+      "resetState": true
+    },
+    {
+      "id": "C11-02",
+      "group": "C11_language",
+      "user": "Hindi please",
+      "resetState": false
+    },
+    {
+      "id": "C11-03",
+      "group": "C11_language",
+      "user": "Switch to Telugu",
+      "resetState": false
+    },
+    {
+      "id": "C11-04",
+      "group": "C11_language",
+      "user": "English",
+      "resetState": false
+    },
+    {
+      "id": "C12-01",
+      "group": "C12_ambiguous",
+      "user": "Rank",
+      "resetState": true
+    },
+    {
+      "id": "C12-02",
+      "group": "C12_ambiguous",
+      "user": "Exam",
+      "resetState": true
+    },
+    {
+      "id": "C12-03",
+      "group": "C12_ambiguous",
+      "user": "Advanced",
+      "resetState": true
+    },
+    {
+      "id": "C12-04",
+      "group": "C12_ambiguous",
+      "user": "Main",
+      "resetState": true
+    },
+    {
+      "id": "C12-05",
+      "group": "C12_ambiguous",
+      "user": "Admission",
+      "resetState": true
+    },
+    {
+      "id": "C13-01",
+      "group": "C13_hallucination",
+      "user": "What will next year cutoff be?",
+      "resetState": true
+    },
+    {
+      "id": "C13-02",
+      "group": "C13_hallucination",
+      "user": "Future ranks for 2030",
+      "resetState": true
+    },
+    {
+      "id": "C13-03",
+      "group": "C13_hallucination",
+      "user": "Guaranteed IIT?",
+      "resetState": true
+    },
+    {
+      "id": "C13-04",
+      "group": "C13_hallucination",
+      "user": "Guaranteed NIT?",
+      "resetState": true
+    },
+    {
+      "id": "C14-01",
+      "group": "C14_oos",
+      "user": "Write Python",
+      "resetState": true
+    },
+    {
+      "id": "C14-02",
+      "group": "C14_oos",
+      "user": "Who won IPL?",
+      "resetState": true
+    },
+    {
+      "id": "C14-03",
+      "group": "C14_oos",
+      "user": "Recommend a movie",
+      "resetState": true
+    },
+    {
+      "id": "C14-04",
+      "group": "C14_oos",
+      "user": "Latest politics news",
+      "resetState": true
+    },
+    {
+      "id": "C14-05",
+      "group": "C14_oos",
+      "user": "Help me shop on Amazon",
+      "resetState": true
+    },
+    {
+      "id": "C15-01",
+      "group": "C15_stress",
+      "user": "Explain JEE Main vs Advanced eligibility, attempt limits, age criteria, and what AIR 5000 OBC can expect for NIT vs IIIT in one detailed answer",
+      "resetState": true
+    },
+    {
+      "id": "C15-02",
+      "group": "C15_stress",
+      "user": "What is JEE Main?",
+      "resetState": false
+    },
+    {
+      "id": "C15-03",
+      "group": "C15_stress",
+      "user": "What is JEE Main?",
+      "resetState": false
+    },
+    {
+      "id": "C15-04",
+      "group": "C15_stress",
+      "user": "jee mains counsiling",
+      "resetState": true
+    },
+    {
+      "id": "C15-05",
+      "group": "C15_stress",
+      "user": "JEE Main ke bare mein batao rank ke sath",
+      "resetState": true
+    },
+    {
+      "id": "C15-06",
+      "group": "C15_stress",
+      "user": "🎓😀",
+      "resetState": true
+    },
+    {
+      "id": "C15-07",
+      "group": "C15_stress",
+      "user": "Please explain in extreme detail whether AIR 5000 OBC with home state quota can get NIT Surathkal CSE vs IIIT Hyderabad vs lower IIT branches including cutoff trends reservation and realistic options",
+      "resetState": true
+    }
+  ]
 }

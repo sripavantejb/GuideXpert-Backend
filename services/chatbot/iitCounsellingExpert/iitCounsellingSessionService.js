@@ -61,7 +61,11 @@ function shouldBypassScopeFirewallForIit(botState, text, originalText, intent) {
   if (isIitSessionExitRequest(text, originalText)) return false;
 
   const sessionActive = isIitCounsellingExpertSessionActive(botState);
-  const iceIntent = intent === 'iit_counselling_expert';
+  const iceIntent =
+    intent === 'iit_counselling_expert' ||
+    intent === 'iit_counselling_strategy' ||
+    intent === 'jee_exam_clarify' ||
+    intent === 'jee_main_counselling';
 
   if (!sessionActive && !iceIntent) return false;
 
@@ -73,18 +77,24 @@ function shouldBypassScopeFirewallForIit(botState, text, originalText, intent) {
     // Sticky session owns short / contextual follow-ups classified as ICE.
     return true;
   }
-  if (iceIntent && (isIitCounsellingExpertQuestion(text, originalText) || isIitCounsellingEntryRequest(text, originalText))) {
+  if (
+    iceIntent &&
+    (isIitCounsellingExpertQuestion(text, originalText) || isIitCounsellingEntryRequest(text, originalText))
+  ) {
     return true;
   }
+  // Strategy questions (rank + college options) stay inside IIT/JEE — never firewall.
+  if (intent === 'iit_counselling_strategy') return true;
   return false;
 }
 
 function isObviousOutOfIitDomain(text, originalText = null) {
   const hay = `${text || ''} ${originalText || ''}`.toLowerCase();
   return (
-    /\b(python|javascript|java code|ipl|cricket|movie|bollywood|politics|weather|bitcoin|crypto)\b/i.test(
+    /\b(python|javascript|java code|ipl|cricket|movie|bollywood|politics|weather|bitcoin|crypto|amazon|flipkart|myntra|meesho|shopping)\b/i.test(
       hay
-    ) || /\b(teach me|write (a |some )?code|who won)\b/i.test(hay)
+    ) ||
+    /\b(teach me|write (a |some )?code|who won|shop on|buy (a |an |the )?(laptop|phone))\b/i.test(hay)
   );
 }
 
