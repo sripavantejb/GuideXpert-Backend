@@ -69,6 +69,10 @@ const WRONG_INTENTS = new Set([
   'knowledge_assistant',
 ]);
 
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 function parseArgs(argv) {
   const out = { from: FROM_CASE, rerun: [...RERUN_IDS], mergeLog: MERGE_LOG };
   for (const arg of argv) {
