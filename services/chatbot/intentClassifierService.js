@@ -9,7 +9,12 @@ const {
 const {
   isIitCounsellingExpertSessionActive,
   isIitCounsellingExpertQuestion,
+  isIitCounsellingEntryRequest,
 } = require('./iitCounsellingExpert/iitCounsellingIntentService');
+const {
+  shouldBypassScopeFirewallForIit,
+  isIitSessionExitRequest,
+} = require('./iitCounsellingExpert/iitCounsellingSessionService');
 const {
   isIitCounsellingStrategyEnabled,
 } = require('./iitCounsellingStrategy/iitCounsellingStrategyFlags');
@@ -21,7 +26,7 @@ const {
 } = require('./iitCounsellingStrategy/iitCounsellingStrategyIntentService');
 const {
   getGuidedFlowByBotState,
-  shouldBypassScopeFirewall,
+  shouldBypassScopeFirewall: shouldBypassScopeFirewallForGuided,
 } = require('./guidedFlows/guidedFlowRegistry');
 const {
   isCareerCounsellingJourneyEntryQuery,
@@ -110,8 +115,11 @@ const COUNSELLOR_PROGRAM_PATTERNS = [
   /\b(program|package|counselling|counseling)\s+fees\b/i,
   /\bfees for (the )?(program|package|counselling|counseling)\b/i,
   /\b(career|admission) guidance\b/i,
-  /\b(iit|college) counselling\b/i,
-  /\b(iit|college) counseling\b/i,
+  // Program / service marketing only — not "I need IIT counselling" (ICE owns that).
+  /\b(college) counselling (program|package|service|support)\b/i,
+  /\b(college) counseling (program|package|service|support)\b/i,
+  /\biit counselling (program|package|service|services)\b/i,
+  /\biit counseling (program|package|service|services)\b/i,
   /\bcollege (prediction|predictor) support\b/i,
   /\b(do you (offer|provide)|what).*\bmentor(ship)?\b/i,
   /\bguidexpert (program|services|counselling|counseling)\b/i,
@@ -174,6 +182,13 @@ function isGuideXpertIdentityQuestion(text, originalText = null) {
 
 function isCounsellorProgramQuestion(text, originalText = null) {
   if (isIitLeadSupportQuery(text) || isIitLeadSupportQuery(originalText)) {
+    return false;
+  }
+  // Priority 1: explicit IIT counselling entry / JoSAA process → ICE, not CPA.
+  if (isIitCounsellingExpertEnabled() && isIitCounsellingEntryRequest(text, originalText)) {
+    return false;
+  }
+  if (isIitCounsellingExpertEnabled() && isIitCounsellingExpertQuestion(text, originalText)) {
     return false;
   }
   if (isGuideXpertIdentityQuestion(text, originalText)) {
@@ -479,6 +494,9 @@ function classifyIntent(text, botState, productLine, originalText = null) {
   }
 
   if (isIitCounsellingExpertEnabled() && isIitCounsellingExpertSessionActive(botState)) {
+    if (isIitSessionExitRequest(t, original)) {
+      return { intent: 'main_menu', confidence: 'high', intentReason: 'iit_counselling_session_exit' };
+    }
     return {
       intent: 'iit_counselling_expert',
       confidence: 'medium',
@@ -486,11 +504,13 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     };
   }
 
-  if (isIitCounsellingExpertQuestion(t, original)) {
+  if (isIitCounsellingExpertQuestion(t, original) || isIitCounsellingEntryRequest(t, original)) {
     return {
       intent: 'iit_counselling_expert',
       confidence: 'medium',
-      intentReason: 'iit_counselling_question',
+      intentReason: isIitCounsellingEntryRequest(t, original)
+        ? 'iit_counselling_entry'
+        : 'iit_counselling_question',
     };
   }
 
@@ -594,7 +614,11 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     if (/assigned expert|my counsellor|my bda|who is my expert/.test(t)) {
       return { intent: 'assigned_expert', confidence: 'high' };
     }
-    if (/iit|counselling|counseling|session|slot|telugu|hindi|bda/.test(t)) {
+    // Session / booking summary only — not JoSAA expertise ("IIT counselling", choice filling, etc.).
+    if (
+      /\b(my session|my slot|meeting link|when is my|assigned)\b/i.test(t) ||
+      /\b(telugu|hindi)\s*(session|slot)\b/i.test(t)
+    ) {
       return { intent: 'counselling_support', confidence: 'medium' };
     }
   }
@@ -613,6 +637,11 @@ function classifyIntent(text, botState, productLine, originalText = null) {
   }
 
   return { intent: 'unknown', confidence: 'low' };
+}
+
+function shouldBypassScopeFirewall(botState, intent, text = null, originalText = null) {
+  if (shouldBypassScopeFirewallForGuided(botState, intent)) return true;
+  return shouldBypassScopeFirewallForIit(botState, text, originalText, intent);
 }
 
 module.exports = {

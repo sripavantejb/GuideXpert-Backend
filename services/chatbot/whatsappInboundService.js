@@ -248,7 +248,8 @@ async function handleInboundWebhook(req, body, receivedAt = new Date()) {
     return { handled: true, rateLimited: true };
   }
 
-  const dedupeKey = buildInboundDedupeKey(parsed, body);
+  let dedupeKey = buildInboundDedupeKey(parsed, body);
+  let usedProviderScopedDedupe = false;
 
   const { conversation, leadLinks } = await getOrCreateConversation(parsed.phone10);
 
@@ -266,9 +267,36 @@ async function handleInboundWebhook(req, body, receivedAt = new Date()) {
     });
   } catch (e) {
     if (e && (e.code === 11000 || String(e.message).includes('E11000'))) {
-      return { handled: true, dedupe: true };
+      // Content-hash collision (Gupshup+Meta dual delivery OR intentional rapid re-ask).
+      // If this inbound has a distinct providerMessageId, process it — never silent-drop
+      // a uniquely identified user message.
+      const pmid = parsed.providerMessageId;
+      if (pmid && !String(dedupeKey).includes(pmid)) {
+        dedupeKey = `in:provider:${pmid}`;
+        usedProviderScopedDedupe = true;
+        try {
+          webhookEvent = await WhatsAppWebhookEvent.create({
+            eventKind: 'inbound',
+            webhookDedupeKey: `in:${dedupeKey}`,
+            receivedAt,
+            phone: parsed.phone10,
+            status: 'inbound',
+            rawPayloadSnippet: sanitizeInboundSnippet(body),
+            matchedBy: 'inbound_provider_retry',
+            matchConfidence: 'high',
+          });
+        } catch (e2) {
+          if (e2 && (e2.code === 11000 || String(e2.message).includes('E11000'))) {
+            return { handled: true, dedupe: true };
+          }
+          throw e2;
+        }
+      } else {
+        return { handled: true, dedupe: true };
+      }
+    } else {
+      throw e;
     }
-    throw e;
   }
 
   let inboundDoc;
@@ -283,16 +311,40 @@ async function handleInboundWebhook(req, body, receivedAt = new Date()) {
         webhookEventId: webhookEvent._id,
       })
     );
-    await WhatsAppWebhookEvent.updateOne(
-      { _id: webhookEvent._id },
-      { $set: { inboundMessageId: inboundDoc._id } }
-    );
   } catch (e) {
     if (e && (e.code === 11000 || String(e.message).includes('E11000'))) {
-      return { handled: true, dedupe: true };
+      if (!usedProviderScopedDedupe && parsed.providerMessageId) {
+        const providerKey = `in:provider:${parsed.providerMessageId}`;
+        try {
+          inboundDoc = await WhatsAppInboundMessage.create(
+            buildInboundMessageFields({
+              conversationId: conversation._id,
+              parsed,
+              body,
+              receivedAt,
+              dedupeKey: providerKey,
+              webhookEventId: webhookEvent._id,
+            })
+          );
+          dedupeKey = providerKey;
+        } catch (e2) {
+          if (e2 && (e2.code === 11000 || String(e2.message).includes('E11000'))) {
+            return { handled: true, dedupe: true, webhookEventId: webhookEvent?._id };
+          }
+          throw e2;
+        }
+      } else {
+        return { handled: true, dedupe: true, webhookEventId: webhookEvent?._id };
+      }
+    } else {
+      throw e;
     }
-    throw e;
   }
+
+  await WhatsAppWebhookEvent.updateOne(
+    { _id: webhookEvent._id },
+    { $set: { inboundMessageId: inboundDoc._id } }
+  );
 
   await touchInbound(conversation._id, receivedAt);
 

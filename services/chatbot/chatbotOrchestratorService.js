@@ -9,6 +9,10 @@ const { getGuidedFlowByIntent } = require('./guidedFlows/guidedFlowRegistry');
 const {
   tryFoundationConversation,
 } = require('./foundationConversation/foundationConversationRouter');
+const {
+  resolveIitSessionTurn,
+  shouldDeferFoundationForIit,
+} = require('./iitCounsellingExpert/iitCounsellingSessionService');
 const { isSupportedLanguage, normalizeLanguageCode } = require('../../constants/languageConstants');
 const botStateService = require('./botStateService');
 const { OptimisticLockFailedError } = botStateService;
@@ -556,13 +560,19 @@ async function processInboundCore({
   }
 
   // Foundation Conversation Router — BEFORE intent classification and Scope Firewall.
-  // Deterministic everyday conversation: greetings, identity, capability, navigation,
-  // gratitude, goodbye, small talk, language switch, ambiguous single-word clarifications.
-  // Never RAG / never LLM / never firewall.
+  // Deterministic everyday conversation. Deferred when sticky/cold IIT vocabulary owns the turn.
   {
     const foundationText =
       multilingualInbound?.englishMessage || String(inbound.text || '').trim();
     const foundationOriginal = String(inbound.text || '').trim();
+    const deferFoundation = shouldDeferFoundationForIit(
+      foundationText,
+      foundationOriginal,
+      botState,
+      activeConversation.productLine
+    );
+
+    if (!deferFoundation) {
     const menuText = buildMainMenuText(leadContext);
     const foundation = tryFoundationConversation({
       text: foundationText,
@@ -648,6 +658,7 @@ async function processInboundCore({
           : null,
       });
       return result;
+    }
     }
   }
 
@@ -865,18 +876,51 @@ async function processInboundCore({
     return result;
   }
 
-  // Scope Firewall: runs after control-intent early returns and before assistant
-  // routing. Every message (including sticky KA sessions) is re-checked so
-  // out-of-domain topics never reach any LLM path.
+  // IIT Context Resolver + Scope Firewall.
+  // Sticky / ICE-owned turns expand short forms (routing only) and bypass firewall
+  // for IIT context only — true OOS (Python/IPL) still hits the firewall.
   let scopePartialContext = null;
   let routingInboundText =
     multilingualInbound?.englishMessage || String(inbound.text || '').trim();
+  const scopeOriginalText = String(inbound.text || '').trim();
 
-  if (isScopeFirewallEnabled() && !shouldBypassScopeFirewall(botState, intentResult.intent)) {
+  {
+    const iitTurn = resolveIitSessionTurn({
+      text: routingInboundText,
+      originalText: scopeOriginalText,
+      botState,
+      intent: intentResult.intent,
+    });
+    if (iitTurn.expandedText) {
+      routingInboundText = iitTurn.expandedText;
+      if (multilingualInbound) {
+        multilingualInbound.englishMessage = iitTurn.expandedText;
+      }
+      logChatbotEvent('iit_context_resolved', {
+        conversationId: activeConversation._id,
+        phoneTail: maskPhoneTail(activeConversation.phone),
+        intent: intentResult.intent,
+        botState: botState?.state || null,
+        expansionReason: iitTurn.expansionReason,
+        originalPreview: scopeOriginalText.slice(0, 80),
+        expandedPreview: iitTurn.expandedText.slice(0, 120),
+      });
+    }
+  }
+
+  const bypassScope =
+    shouldBypassScopeFirewall(
+      botState,
+      intentResult.intent,
+      routingInboundText,
+      scopeOriginalText
+    );
+
+  if (isScopeFirewallEnabled() && !bypassScope) {
     const inboundText = String(inbound.text || '');
     const scope = await evaluateInboundScope({
       originalText: inbound.text,
-      englishMessage: multilingualInbound?.englishMessage || inbound.text,
+      englishMessage: routingInboundText || multilingualInbound?.englishMessage || inbound.text,
       intent: intentResult.intent,
       botState,
     });
