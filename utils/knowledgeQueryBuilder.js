@@ -48,6 +48,14 @@ function expandKnowledgeQuery(query) {
     'new-age college': 'What is a new age college? What does new-age college mean?',
     'what is new age college': 'What is a new age college? What does new-age college mean?',
     'tell me about new age college': 'What is a new age college? What does new-age college mean?',
+    'tell me about josaa': 'What is JoSAA?',
+    'tell me about josaa counselling': 'What is JoSAA?',
+    'about josaa': 'What is JoSAA?',
+    'about josaa counselling': 'What is JoSAA?',
+    'what is josaa': 'What is JoSAA?',
+    'josaa counselling': 'What is JoSAA?',
+    'tell me about csab': 'What is CSAB?',
+    'what is csab': 'What is CSAB?',
   };
 
   const expanded = expansions[normalized];
@@ -58,6 +66,12 @@ function expandKnowledgeQuery(query) {
   }
   if (/\bnew[- ]?age\b/i.test(normalized)) {
     return `${raw} What is a new age college? What does new-age college mean?`;
+  }
+  if (/\bjos+a+a?\b/i.test(normalized)) {
+    return `${raw} What is JoSAA?`;
+  }
+  if (/\bcsab\b/i.test(normalized) && /\b(about|tell|know|what|mean)/i.test(normalized)) {
+    return `${raw} What is CSAB?`;
   }
 
   return raw;

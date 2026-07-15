@@ -104,9 +104,34 @@ function resolveDirectKbAnswer(kbResults = [], userMessage = '') {
   return null;
 }
 
+function resolveDefinitionKbAnswer(kbResults = [], userMessage = '') {
+  const q = String(userMessage || '').toLowerCase();
+  const looksDefinitional =
+    /\b(what is|tell me about|know about|about|means?|meaning|kya hai|define)\b/i.test(q);
+  if (!looksDefinitional) return null;
+
+  const preferredPrefixes = [];
+  if (/\bjos+a+a?\b/i.test(q)) preferredPrefixes.push('what is josaa');
+  if (/\bcsab\b/i.test(q)) preferredPrefixes.push('what is csab');
+  if (/\bfloat\b/i.test(q)) preferredPrefixes.push('what is float');
+  if (/\bslide\b/i.test(q)) preferredPrefixes.push('what is slide');
+  if (/\bfreeze\b/i.test(q)) preferredPrefixes.push('what is freezing');
+
+  for (const prefix of preferredPrefixes) {
+    const hit = kbResults.find((entry) =>
+      normalizeQuestionKey(entry.question).startsWith(prefix)
+    );
+    if (hit?.answer) return String(hit.answer).trim();
+  }
+  return null;
+}
+
 function resolveGroundedKbFallback(kbResults = [], userMessage = '') {
   const direct = resolveDirectKbAnswer(kbResults, userMessage);
   if (direct) return direct;
+
+  const definitional = resolveDefinitionKbAnswer(kbResults, userMessage);
+  if (definitional) return definitional;
 
   const topicFallback = resolveTopicFallbackChunks(userMessage);
   if (topicFallback[0]?.answer) {
