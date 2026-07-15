@@ -1,0 +1,720 @@
+{
+  "id": "sectionA",
+  "title": "Conversation Foundation (Section A Certification)",
+  "description": "Full Section A UAT cases. Foundation Router must score ≥98%.",
+  "cases": [
+    {
+      "id": "A1-01",
+      "group": "A1_greetings",
+      "user": "Hello",
+      "resetState": true
+    },
+    {
+      "id": "A1-02",
+      "group": "A1_greetings",
+      "user": "Hi",
+      "resetState": true
+    },
+    {
+      "id": "A1-03",
+      "group": "A1_greetings",
+      "user": "Hey",
+      "resetState": true
+    },
+    {
+      "id": "A1-04",
+      "group": "A1_greetings",
+      "user": "Hii",
+      "resetState": true
+    },
+    {
+      "id": "A1-05",
+      "group": "A1_greetings",
+      "user": "Hiiii",
+      "resetState": true
+    },
+    {
+      "id": "A1-06",
+      "group": "A1_greetings",
+      "user": "Helloo",
+      "resetState": true
+    },
+    {
+      "id": "A1-07",
+      "group": "A1_greetings",
+      "user": "Good morning",
+      "resetState": true
+    },
+    {
+      "id": "A1-08",
+      "group": "A1_greetings",
+      "user": "Good afternoon",
+      "resetState": true
+    },
+    {
+      "id": "A1-09",
+      "group": "A1_greetings",
+      "user": "Good evening",
+      "resetState": true
+    },
+    {
+      "id": "A1-10",
+      "group": "A1_greetings",
+      "user": "Good night",
+      "resetState": true
+    },
+    {
+      "id": "A1-11",
+      "group": "A1_greetings",
+      "user": "Greetings",
+      "resetState": true
+    },
+    {
+      "id": "A1-12",
+      "group": "A1_greetings",
+      "user": "Namaste",
+      "resetState": true
+    },
+    {
+      "id": "A1-13",
+      "group": "A1_greetings",
+      "user": "Vanakkam",
+      "resetState": true
+    },
+    {
+      "id": "A1-14",
+      "group": "A1_greetings",
+      "user": "Salaam",
+      "resetState": true
+    },
+    {
+      "id": "A1-15",
+      "group": "A1_greetings",
+      "user": "Yo",
+      "resetState": true
+    },
+    {
+      "id": "A1-16",
+      "group": "A1_greetings",
+      "user": "Sup",
+      "resetState": true
+    },
+    {
+      "id": "A1-17",
+      "group": "A1_greetings",
+      "user": "What's up",
+      "resetState": true
+    },
+    {
+      "id": "A1-18",
+      "group": "A1_greetings",
+      "user": "Start",
+      "resetState": true
+    },
+    {
+      "id": "A1-19",
+      "group": "A1_greetings",
+      "user": "/start",
+      "resetState": true
+    },
+    {
+      "id": "A1-20",
+      "group": "A1_greetings",
+      "user": "Hi there",
+      "resetState": true
+    },
+    {
+      "id": "A1-21",
+      "group": "A1_greetings",
+      "user": "Hello GuideXpert",
+      "resetState": true
+    },
+    {
+      "id": "A1-22",
+      "group": "A1_greetings",
+      "user": "Hey GuideXpert",
+      "resetState": true
+    },
+    {
+      "id": "A2-01",
+      "group": "A2_identity",
+      "user": "Who are you?",
+      "resetState": true
+    },
+    {
+      "id": "A2-02",
+      "group": "A2_identity",
+      "user": "What are you?",
+      "resetState": true
+    },
+    {
+      "id": "A2-03",
+      "group": "A2_identity",
+      "user": "Are you ChatGPT?",
+      "resetState": true
+    },
+    {
+      "id": "A2-04",
+      "group": "A2_identity",
+      "user": "Are you AI?",
+      "resetState": true
+    },
+    {
+      "id": "A2-05",
+      "group": "A2_identity",
+      "user": "Are you human?",
+      "resetState": true
+    },
+    {
+      "id": "A2-06",
+      "group": "A2_identity",
+      "user": "Who created you?",
+      "resetState": true
+    },
+    {
+      "id": "A2-07",
+      "group": "A2_identity",
+      "user": "What company are you from?",
+      "resetState": true
+    },
+    {
+      "id": "A2-08",
+      "group": "A2_identity",
+      "user": "What is GuideXpert?",
+      "resetState": true
+    },
+    {
+      "id": "A3-01",
+      "group": "A3_capability",
+      "user": "What can you do?",
+      "resetState": true
+    },
+    {
+      "id": "A3-02",
+      "group": "A3_capability",
+      "user": "How can you help?",
+      "resetState": true
+    },
+    {
+      "id": "A3-03",
+      "group": "A3_capability",
+      "user": "Can you help me?",
+      "resetState": true
+    },
+    {
+      "id": "A3-04",
+      "group": "A3_capability",
+      "user": "What services do you provide?",
+      "resetState": true
+    },
+    {
+      "id": "A3-05",
+      "group": "A3_capability",
+      "user": "Can you help with admissions?",
+      "resetState": true
+    },
+    {
+      "id": "A3-06",
+      "group": "A3_capability",
+      "user": "Can you help with counselling?",
+      "resetState": true
+    },
+    {
+      "id": "A3-07",
+      "group": "A3_capability",
+      "user": "Can you predict colleges?",
+      "resetState": true
+    },
+    {
+      "id": "A3-08",
+      "group": "A3_capability",
+      "user": "Can you explain JoSAA?",
+      "resetState": true
+    },
+    {
+      "id": "A3-09",
+      "group": "A3_capability",
+      "user": "Can you book counselling?",
+      "resetState": true
+    },
+    {
+      "id": "A4-01",
+      "group": "A4_help",
+      "user": "Help",
+      "resetState": true
+    },
+    {
+      "id": "A4-02",
+      "group": "A4_help",
+      "user": "Support",
+      "resetState": true
+    },
+    {
+      "id": "A4-03",
+      "group": "A4_help",
+      "user": "Menu",
+      "resetState": true
+    },
+    {
+      "id": "A4-04",
+      "group": "A4_help",
+      "user": "Main menu",
+      "resetState": true
+    },
+    {
+      "id": "A4-05",
+      "group": "A4_help",
+      "user": "Go back",
+      "resetState": true
+    },
+    {
+      "id": "A4-06",
+      "group": "A4_help",
+      "user": "Start over",
+      "resetState": true
+    },
+    {
+      "id": "A4-07",
+      "group": "A4_help",
+      "user": "Restart",
+      "resetState": true
+    },
+    {
+      "id": "A4-08",
+      "group": "A4_help",
+      "user": "Cancel",
+      "resetState": true
+    },
+    {
+      "id": "A4-09",
+      "group": "A4_help",
+      "user": "Home",
+      "resetState": true
+    },
+    {
+      "id": "A5-01",
+      "group": "A5_gratitude",
+      "user": "Thanks",
+      "resetState": true
+    },
+    {
+      "id": "A5-02",
+      "group": "A5_gratitude",
+      "user": "Thank you",
+      "resetState": true
+    },
+    {
+      "id": "A5-03",
+      "group": "A5_gratitude",
+      "user": "Thank you so much",
+      "resetState": true
+    },
+    {
+      "id": "A5-04",
+      "group": "A5_gratitude",
+      "user": "Awesome",
+      "resetState": true
+    },
+    {
+      "id": "A5-05",
+      "group": "A5_gratitude",
+      "user": "Perfect",
+      "resetState": true
+    },
+    {
+      "id": "A5-06",
+      "group": "A5_gratitude",
+      "user": "Great",
+      "resetState": true
+    },
+    {
+      "id": "A5-07",
+      "group": "A5_gratitude",
+      "user": "Nice",
+      "resetState": true
+    },
+    {
+      "id": "A5-08",
+      "group": "A5_gratitude",
+      "user": "Helpful",
+      "resetState": true
+    },
+    {
+      "id": "A5-09",
+      "group": "A5_gratitude",
+      "user": "Love it",
+      "resetState": true
+    },
+    {
+      "id": "A6-01",
+      "group": "A6_goodbye",
+      "user": "Bye",
+      "resetState": true
+    },
+    {
+      "id": "A6-02",
+      "group": "A6_goodbye",
+      "user": "Goodbye",
+      "resetState": true
+    },
+    {
+      "id": "A6-03",
+      "group": "A6_goodbye",
+      "user": "See you",
+      "resetState": true
+    },
+    {
+      "id": "A6-04",
+      "group": "A6_goodbye",
+      "user": "Talk later",
+      "resetState": true
+    },
+    {
+      "id": "A6-05",
+      "group": "A6_goodbye",
+      "user": "Catch you later",
+      "resetState": true
+    },
+    {
+      "id": "A6-06",
+      "group": "A6_goodbye",
+      "user": "Exit",
+      "resetState": true
+    },
+    {
+      "id": "A6-07",
+      "group": "A6_goodbye",
+      "user": "Quit",
+      "resetState": true
+    },
+    {
+      "id": "A6-08",
+      "group": "A6_goodbye",
+      "user": "Stop",
+      "resetState": true
+    },
+    {
+      "id": "A7-01",
+      "group": "A7_small_talk",
+      "user": "How are you?",
+      "resetState": true
+    },
+    {
+      "id": "A7-02",
+      "group": "A7_small_talk",
+      "user": "Hope you're doing well",
+      "resetState": true
+    },
+    {
+      "id": "A7-03",
+      "group": "A7_small_talk",
+      "user": "How's your day?",
+      "resetState": true
+    },
+    {
+      "id": "A7-04",
+      "group": "A7_small_talk",
+      "user": "Nice to meet you",
+      "resetState": true
+    },
+    {
+      "id": "A7-05",
+      "group": "A7_small_talk",
+      "user": "Good job",
+      "resetState": true
+    },
+    {
+      "id": "A8-01",
+      "group": "A8_ambiguous",
+      "user": "College",
+      "resetState": true
+    },
+    {
+      "id": "A8-02",
+      "group": "A8_ambiguous",
+      "user": "Admission",
+      "resetState": true
+    },
+    {
+      "id": "A8-03",
+      "group": "A8_ambiguous",
+      "user": "Help",
+      "resetState": true
+    },
+    {
+      "id": "A8-04",
+      "group": "A8_ambiguous",
+      "user": "Counselling",
+      "resetState": true
+    },
+    {
+      "id": "A8-05",
+      "group": "A8_ambiguous",
+      "user": "Fees",
+      "resetState": true
+    },
+    {
+      "id": "A8-06",
+      "group": "A8_ambiguous",
+      "user": "Documents",
+      "resetState": true
+    },
+    {
+      "id": "A8-07",
+      "group": "A8_ambiguous",
+      "user": "Scholarship",
+      "resetState": true
+    },
+    {
+      "id": "A8-08",
+      "group": "A8_ambiguous",
+      "user": "Hostel",
+      "resetState": true
+    },
+    {
+      "id": "A8-09",
+      "group": "A8_ambiguous",
+      "user": "Placements",
+      "resetState": true
+    },
+    {
+      "id": "A8-10",
+      "group": "A8_ambiguous",
+      "user": "IIT",
+      "resetState": true
+    },
+    {
+      "id": "A8-11",
+      "group": "A8_ambiguous",
+      "user": "NIT",
+      "resetState": true
+    },
+    {
+      "id": "A9-01",
+      "group": "A9_typos",
+      "user": "Helo",
+      "resetState": true
+    },
+    {
+      "id": "A9-02",
+      "group": "A9_typos",
+      "user": "Hiiii",
+      "resetState": true
+    },
+    {
+      "id": "A9-03",
+      "group": "A9_typos",
+      "user": "Counsling",
+      "resetState": true
+    },
+    {
+      "id": "A9-04",
+      "group": "A9_typos",
+      "user": "Admision",
+      "resetState": true
+    },
+    {
+      "id": "A9-05",
+      "group": "A9_typos",
+      "user": "Collage predictor",
+      "resetState": true
+    },
+    {
+      "id": "A9-06",
+      "group": "A9_typos",
+      "user": "Josaa",
+      "resetState": true
+    },
+    {
+      "id": "A9-07",
+      "group": "A9_typos",
+      "user": "Jee mains",
+      "resetState": true
+    },
+    {
+      "id": "A9-08",
+      "group": "A9_typos",
+      "user": "Advnced",
+      "resetState": true
+    },
+    {
+      "id": "A10-01",
+      "group": "A10_empty_inputs",
+      "user": "",
+      "resetState": true,
+      "note": "empty"
+    },
+    {
+      "id": "A10-02",
+      "group": "A10_empty_inputs",
+      "user": " ",
+      "resetState": true,
+      "note": "space"
+    },
+    {
+      "id": "A10-03",
+      "group": "A10_empty_inputs",
+      "user": "\t",
+      "resetState": true,
+      "note": "tab"
+    },
+    {
+      "id": "A10-04",
+      "group": "A10_empty_inputs",
+      "user": "😀",
+      "resetState": true,
+      "note": "emoji"
+    },
+    {
+      "id": "A10-05",
+      "group": "A10_empty_inputs",
+      "user": "👍",
+      "resetState": true,
+      "note": "emoji"
+    },
+    {
+      "id": "A10-06",
+      "group": "A10_empty_inputs",
+      "user": "🙏",
+      "resetState": true,
+      "note": "emoji"
+    },
+    {
+      "id": "A10-07",
+      "group": "A10_empty_inputs",
+      "user": "❤️",
+      "resetState": true,
+      "note": "emoji"
+    },
+    {
+      "id": "A10-08",
+      "group": "A10_empty_inputs",
+      "user": "😂",
+      "resetState": true,
+      "note": "emoji"
+    },
+    {
+      "id": "A10-09",
+      "group": "A10_empty_inputs",
+      "user": "???",
+      "resetState": true,
+      "note": "punct"
+    },
+    {
+      "id": "A10-10",
+      "group": "A10_empty_inputs",
+      "user": "...",
+      "resetState": true,
+      "note": "punct"
+    },
+    {
+      "id": "A10-11",
+      "group": "A10_empty_inputs",
+      "user": "!!!",
+      "resetState": true,
+      "note": "punct"
+    },
+    {
+      "id": "A11-01",
+      "group": "A11_multilang_greetings",
+      "user": "नमस्ते",
+      "resetState": true
+    },
+    {
+      "id": "A11-02",
+      "group": "A11_multilang_greetings",
+      "user": "హలో",
+      "resetState": true
+    },
+    {
+      "id": "A11-03",
+      "group": "A11_multilang_greetings",
+      "user": "வணக்கம்",
+      "resetState": true
+    },
+    {
+      "id": "A11-04",
+      "group": "A11_multilang_greetings",
+      "user": "ഹലോ",
+      "resetState": true
+    },
+    {
+      "id": "A11-05",
+      "group": "A11_multilang_greetings",
+      "user": "Hello नमस्ते",
+      "resetState": true
+    },
+    {
+      "id": "A11-06",
+      "group": "A11_multilang_greetings",
+      "user": "Hi హలో",
+      "resetState": true
+    },
+    {
+      "id": "A12-01",
+      "group": "A12_session_continuity",
+      "user": "Hello",
+      "resetState": true
+    },
+    {
+      "id": "A12-02",
+      "group": "A12_session_continuity",
+      "user": "Thanks",
+      "resetState": false
+    },
+    {
+      "id": "A12-03",
+      "group": "A12_session_continuity",
+      "user": "Help",
+      "resetState": false
+    },
+    {
+      "id": "A12-04",
+      "group": "A12_session_continuity",
+      "user": "Bye",
+      "resetState": false
+    },
+    {
+      "id": "A12-05",
+      "group": "A12_session_continuity",
+      "user": "Hello again",
+      "resetState": false
+    },
+    {
+      "id": "A13-01",
+      "group": "A13_rapid_messages",
+      "user": "Hi",
+      "resetState": true
+    },
+    {
+      "id": "A13-02",
+      "group": "A13_rapid_messages",
+      "user": "Hello",
+      "resetState": false
+    },
+    {
+      "id": "A13-03",
+      "group": "A13_rapid_messages",
+      "user": "Help",
+      "resetState": false
+    },
+    {
+      "id": "A13-04",
+      "group": "A13_rapid_messages",
+      "user": "College",
+      "resetState": false
+    },
+    {
+      "id": "A13-05",
+      "group": "A13_rapid_messages",
+      "user": "Thanks",
+      "resetState": false
+    },
+    {
+      "id": "A13-06",
+      "group": "A13_rapid_messages",
+      "user": "Bye",
+      "resetState": false
+    }
+  ]
+}

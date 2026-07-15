@@ -6,6 +6,9 @@ const {
 } = require('./intentClassifierService');
 const { tryRouteActiveGuidedFlow, applyGuidedFlowSwitchTurn } = require('./guidedFlows/guidedFlowOrchestrator');
 const { getGuidedFlowByIntent } = require('./guidedFlows/guidedFlowRegistry');
+const {
+  tryFoundationConversation,
+} = require('./foundationConversation/foundationConversationRouter');
 const { isSupportedLanguage, normalizeLanguageCode } = require('../../constants/languageConstants');
 const botStateService = require('./botStateService');
 const { OptimisticLockFailedError } = botStateService;
@@ -550,6 +553,102 @@ async function processInboundCore({
   });
   if (guidedResult) {
     return guidedResult;
+  }
+
+  // Foundation Conversation Router — BEFORE intent classification and Scope Firewall.
+  // Deterministic everyday conversation: greetings, identity, capability, navigation,
+  // gratitude, goodbye, small talk, language switch, ambiguous single-word clarifications.
+  // Never RAG / never LLM / never firewall.
+  {
+    const foundationText =
+      multilingualInbound?.englishMessage || String(inbound.text || '').trim();
+    const foundationOriginal = String(inbound.text || '').trim();
+    const menuText = buildMainMenuText(leadContext);
+    const foundation = tryFoundationConversation({
+      text: foundationText,
+      originalText: foundationOriginal,
+      menuText,
+    });
+
+    if (foundation?.handled) {
+      logChatbotEvent('foundation_conversation_handled', {
+        conversationId: activeConversation._id,
+        phoneTail: maskPhoneTail(activeConversation.phone),
+        intent: foundation.intent,
+        botState: botState?.state || null,
+        productLine: activeConversation.productLine || null,
+        foundationCategory: foundation.category,
+        durationMs: foundation.durationMs ?? null,
+      });
+
+      if (foundation.preferredLanguage) {
+        try {
+          await updatePreferredLanguage(activeConversation._id, foundation.preferredLanguage);
+          if (multilingualInbound) {
+            multilingualInbound.resolvedLanguage = foundation.preferredLanguage;
+            multilingualInbound.language = foundation.preferredLanguage;
+            multilingualInbound.resolutionReason = 'foundation_language_switch';
+          }
+        } catch (e) {
+          console.warn('[chatbot] foundation language update failed', e.message);
+        }
+      }
+
+      let contextPatch = botState?.context || {};
+      if (foundation.clearSubflows) {
+        contextPatch = emptySubflows();
+      }
+
+      if (foundation.nextState) {
+        await transitionState(
+          activeConversation._id,
+          activeConversation.phone,
+          foundation.nextState,
+          contextPatch
+        );
+      }
+
+      await h.updateConversationIntent(
+        activeConversation._id,
+        foundation.intent || 'foundation'
+      );
+
+      const outboundText = await deliverOutboundReply({
+        replyText: foundation.replyText,
+        multilingualInbound,
+        intent: foundation.intent || 'foundation',
+        localizationTier: 'translate',
+        preLocalized: false,
+      });
+
+      const result = await h.outbound.sendBotTextReply({
+        conversationId: activeConversation._id,
+        phone10: activeConversation.phone,
+        text: outboundText,
+        inReplyToInboundId: inbound._id,
+      });
+
+      logInboundResult({
+        event: 'inbound_processed',
+        conversation: activeConversation,
+        botState,
+        intent: foundation.intent || 'foundation',
+        contextPatch,
+        durationMs: Date.now() - startedAt,
+        multilingual: multilingualInbound
+          ? {
+              originalMessage: multilingualInbound.originalMessage,
+              detectedLanguage: multilingualInbound.detectedLanguage,
+              confidence: multilingualInbound.confidence,
+              preferredLanguage: multilingualInbound.preferredLanguage,
+              resolvedLanguage: multilingualInbound.resolvedLanguage,
+              englishMessage: multilingualInbound.englishMessage,
+              finalResponse: outboundText,
+            }
+          : null,
+      });
+      return result;
+    }
   }
 
   if (multilingualInbound && botState?.context?.iitCounsellingExpertActive) {

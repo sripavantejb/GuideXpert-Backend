@@ -1,5 +1,9 @@
 const { GLOBAL_KEYWORDS } = require('../../constants/chatbotStates');
 const {
+  isExplicitHumanHandoffRequest,
+  isHumanHandoffMenuDigit,
+} = require('./foundationConversation/humanHandoffIntent');
+const {
   isIitCounsellingExpertEnabled,
 } = require('./iitCounsellingExpert/iitCounsellingFlags');
 const {
@@ -366,11 +370,8 @@ function classifyIntent(text, botState, productLine, originalText = null) {
   const t = normalizeText(text);
   const original = String(originalText || text || '').trim();
 
-  if (
-    matchesAny(t, GLOBAL_KEYWORDS.agent) &&
-    !isCounsellorProgramQuestion(t, original)
-  ) {
-    return { intent: 'human_handoff', confidence: 'high' };
+  if (isExplicitHumanHandoffRequest(t, original) || isHumanHandoffMenuDigit(t, productLine)) {
+    return { intent: 'human_handoff', confidence: 'high', intentReason: 'explicit_human_handoff' };
   }
   if (matchesMainMenuTrigger(t)) {
     return { intent: 'main_menu', confidence: 'high' };
@@ -378,7 +379,8 @@ function classifyIntent(text, botState, productLine, originalText = null) {
   if (matchesAny(t, GLOBAL_KEYWORDS.cancel)) {
     return { intent: 'main_menu', confidence: 'high' };
   }
-  if (matchesAny(t, GLOBAL_KEYWORDS.stop)) {
+  // Hard opt-out only (stop alone is farewell, handled by Foundation Router).
+  if (/\b(unsubscribe|opt[\s-]?out)\b/i.test(t) || matchesAny(t, ['unsubscribe', 'opt out', 'optout'])) {
     return { intent: 'opt_out', confidence: 'high' };
   }
 
@@ -545,19 +547,17 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     if (/^3$/.test(t)) return { intent: 'assigned_expert', confidence: 'high' };
     if (/^4$/.test(t)) return { intent: 'rank_predictor', confidence: 'high' };
     if (/^5$/.test(t)) return { intent: 'college_predictor', confidence: 'high' };
-    if (/^6$/.test(t)) return { intent: 'human_handoff', confidence: 'high' };
+    // 6 = handoff handled above via isHumanHandoffMenuDigit
   }
 
   if (productLine === 'guidexpert') {
     if (/^[1-5]$/.test(t)) return { intent: 'faq', confidence: 'high' };
-    if (/^6$/.test(t)) return { intent: 'human_handoff', confidence: 'high' };
   }
 
   if (productLine === 'unknown') {
     if (/^1$/.test(t)) return { intent: 'counselling_support', confidence: 'high' };
     if (/^2$/.test(t)) return { intent: 'demo_support', confidence: 'high' };
     if (/^3$/.test(t)) return { intent: 'rank_predictor', confidence: 'high' };
-    if (/^4$/.test(t)) return { intent: 'human_handoff', confidence: 'high' };
   }
 
   if (isKnowledgeQuestion(t) || isBrandKnowledgeQuery(t)) {
@@ -586,8 +586,8 @@ function classifyIntent(text, botState, productLine, originalText = null) {
   ) {
     return { intent: 'college_predictor', confidence: 'medium' };
   }
-  if (/^5$|agent|human|talk/.test(t)) {
-    return { intent: 'human_handoff', confidence: 'high' };
+  if (isExplicitHumanHandoffRequest(t, original)) {
+    return { intent: 'human_handoff', confidence: 'high', intentReason: 'explicit_human_handoff_fallback' };
   }
 
   if (productLine === 'iit_counselling') {
@@ -636,6 +636,7 @@ module.exports = {
   isRankBranchCollegePredictorQuery,
   isRankBranchRecommendationQuery,
   isCareerCounsellingJourneyEntryQuery,
+  isExplicitHumanHandoffRequest,
   hasRankSignal,
   hasBranchSignal,
   intentTextCandidates,

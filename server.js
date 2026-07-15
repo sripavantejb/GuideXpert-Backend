@@ -36,6 +36,10 @@ const guidanceBookingRoutes = require('./routes/guidanceBookingRoutes');
 const oneOnOneCounselorRoutes = require('./routes/oneOnOneCounselorRoutes');
 const referralRoutes = require('./routes/referralRoutes');
 const cronRoutes = require('./routes/cronRoutes');
+const {
+  createInternalSmokeRouter,
+  isInternalSmokeEndpointEnabled,
+} = require('./routes/internalSmokeRoutes');
 const counsellorAuthRoutes = require('./routes/counsellorAuthRoutes');
 const counsellorWebinarProgressRoutes = require('./routes/counsellorWebinarProgressRoutes');
 const posterRoutes = require('./routes/posterRoutes');
@@ -382,6 +386,11 @@ app.use('/api/guidance-booking', guidanceBookingRoutes);
 app.use('/api/one-on-one-counselor', oneOnOneCounselorRoutes);
 app.use('/api/referral', referralRoutes);
 app.use('/api/cron', cronRoutes);
+// Production-only conversation smoke (disabled unless NODE_ENV=production + INTERNAL_SMOKE_TEST_SECRET).
+if (isInternalSmokeEndpointEnabled()) {
+  app.use('/api/internal/smoke', createInternalSmokeRouter());
+  console.log('[internal-smoke] POST /api/internal/smoke/send enabled');
+}
 app.use('/api/certificate', certificateRoutes);
 app.use('/api/webinar-assessment', webinarAssessmentRoutes);
 app.use('/api/webinar-progress', webinarProgressRoutes);

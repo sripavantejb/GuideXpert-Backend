@@ -1,0 +1,6 @@
+{
+  "id": "sectionB",
+  "title": "Section B (placeholder)",
+  "description": "Add cases here. Runner auto-discovers this file when --suite=sectionB or --suite=all.",
+  "cases": []
+}
