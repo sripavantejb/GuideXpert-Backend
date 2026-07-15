@@ -93,6 +93,7 @@ function localizationTierForIntent(intent) {
     case 'main_menu':
     case 'counselling_support':
     case 'college_predictor':
+    case 'career_counselling_journey':
     case 'faq':
       return 'static';
     default:
@@ -935,7 +936,9 @@ async function processInboundCore({
     case 'rank_predictor':
     case 'rank_predictor_continue':
     case 'college_predictor':
-    case 'college_predictor_continue': {
+    case 'college_predictor_continue':
+    case 'career_counselling_journey':
+    case 'career_counselling_journey_continue': {
       const flow = getGuidedFlowByIntent(intentResult.intent);
       if (!flow) break;
       const applied = await applyGuidedFlowSwitchTurn({

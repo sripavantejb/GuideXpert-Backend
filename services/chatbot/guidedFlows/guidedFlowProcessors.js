@@ -3,6 +3,10 @@
 const { emptySubflows } = require('../botSubflowContext');
 const { handleCollegePredictorMessage } = require('../collegePredictorChatService');
 const { handleRankPredictorMessage } = require('../rankPredictorChatService');
+const {
+  handleCareerCounsellingMessage,
+} = require('../careerCounselling/careerCounsellingJourneyService');
+const { isCareerCounsellingJourneyEnabled } = require('../../../constants/careerCounsellingJourney');
 const faqService = require('../faqService');
 const { resolveSystemReply } = require('../../../constants/localizedSystemReplies');
 const {
@@ -99,6 +103,44 @@ function processRankPredictorTurn({ flow, inboundText, contextPatch }) {
   };
 }
 
+function processCareerCounsellingTurn({
+  flow,
+  inboundText,
+  contextPatch,
+  isNewEntry = false,
+  analytics = {},
+}) {
+  if (!isCareerCounsellingJourneyEnabled()) {
+    return {
+      replyText:
+        'Career counselling guidance is temporarily unavailable. Please try again later or type MENU.',
+      nextState: 'main_menu',
+      contextPatch: emptySubflows(),
+      intent: 'career_counselling_journey',
+      preLocalized: true,
+      localizationTier: 'static',
+    };
+  }
+
+  const result = handleCareerCounsellingMessage(
+    inboundText,
+    contextPatch.careerCounselling || {},
+    { isNewEntry, analytics }
+  );
+
+  const nextContext = clearAssistantSessionFlags({
+    ...contextPatch,
+    careerCounselling: result.context,
+  });
+
+  return {
+    replyText: result.reply,
+    nextState: flow.botState,
+    contextPatch: nextContext,
+    intent: isNewEntry ? 'career_counselling_journey' : flow.continueIntent,
+  };
+}
+
 async function processFaqTurn({
   flow,
   inboundText,
@@ -159,6 +201,16 @@ async function processGuidedFlowTurn({
       return processCollegePredictorTurn({ flow, inboundText, inbound, contextPatch, isNewEntry });
     case 'rank_predictor':
       return processRankPredictorTurn({ flow, inboundText, contextPatch });
+    case 'career_counselling_journey':
+      return processCareerCounsellingTurn({
+        flow,
+        inboundText,
+        contextPatch,
+        isNewEntry,
+        analytics: {
+          conversationId: inbound?.conversationId || null,
+        },
+      });
     case 'faq':
       return processFaqTurn({
         flow,
@@ -179,5 +231,6 @@ module.exports = {
   processGuidedFlowTurn,
   processCollegePredictorTurn,
   processRankPredictorTurn,
+  processCareerCounsellingTurn,
   processFaqTurn,
 };

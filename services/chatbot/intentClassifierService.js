@@ -20,6 +20,10 @@ const {
   shouldBypassScopeFirewall,
 } = require('./guidedFlows/guidedFlowRegistry');
 const {
+  isCareerCounsellingJourneyEntryQuery,
+} = require('./careerCounselling/careerCounsellingIntentService');
+const { isCareerCounsellingJourneyEnabled } = require('../../constants/careerCounsellingJourney');
+const {
   normalizeText,
   escapeRegExp,
   matchesWordBoundary,
@@ -406,6 +410,17 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     return { intent: 'rank_predictor', confidence: 'high', intentReason: 'marks_based_rank_query' };
   }
 
+  if (
+    isCareerCounsellingJourneyEnabled() &&
+    isCareerCounsellingJourneyEntryQuery(t, original)
+  ) {
+    return {
+      intent: 'career_counselling_journey',
+      confidence: 'high',
+      intentReason: 'career_counselling_journey_entry',
+    };
+  }
+
   if (isRankBranchCollegePredictorQuery(t, original)) {
     return { intent: 'college_predictor', confidence: 'high', intentReason: 'rank_branch_college_query' };
   }
@@ -587,6 +602,7 @@ module.exports = {
   isMarksBasedRankPredictorQuery,
   isRankBranchCollegePredictorQuery,
   isRankBranchRecommendationQuery,
+  isCareerCounsellingJourneyEntryQuery,
   hasRankSignal,
   hasBranchSignal,
   intentTextCandidates,

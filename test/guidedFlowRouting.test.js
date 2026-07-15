@@ -37,7 +37,7 @@ const COLLEGE_CTX_AFTER_EXAM = {
 describe('guided flow registry', () => {
   test('every registered flow has bot state, handler path, and continue intent', () => {
     const flows = listGuidedFlows();
-    assert.ok(flows.length >= 3);
+    assert.ok(flows.length >= 4);
     for (const flow of flows) {
       assert.ok(flow.id);
       assert.ok(flow.botState);

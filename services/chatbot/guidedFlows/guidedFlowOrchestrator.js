@@ -1,8 +1,31 @@
 'use strict';
 
 const { resolveActiveGuidedFlow, getGuidedFlowByIntent } = require('./guidedFlowRegistry');
+const {
+  logCareerDropoff,
+  logCareerInterruption,
+} = require('../careerCounselling/careerCounsellingAnalytics');
+const { GLOBAL_KEYWORDS } = require('../../../constants/chatbotStates');
+const { matchesAny, matchesMenuCommands } = require('../intentTextUtils');
 const { isGuidedFlowInterrupt } = require('./guidedFlowInterruptPolicy');
 const { processGuidedFlowTurn } = require('./guidedFlowProcessors');
+
+function logCareerJourneyInterrupt(flow, botState, routingText) {
+  if (flow?.id !== 'career_counselling_journey') return;
+  const cc = botState?.context?.careerCounselling || {};
+  const t = String(routingText || '').trim().toLowerCase();
+  const isAgent = matchesAny(t, GLOBAL_KEYWORDS.agent);
+  const isMenu = matchesMenuCommands(t);
+  const isCancel = matchesAny(t, GLOBAL_KEYWORDS.cancel) || matchesAny(t, GLOBAL_KEYWORDS.stop);
+
+  if (isAgent) {
+    logCareerInterruption({ phase: cc.phase, step: cc.step, kind: 'agent' });
+  }
+  if (isMenu || isCancel) {
+    logCareerInterruption({ phase: cc.phase, step: cc.step, kind: isMenu ? 'menu' : 'cancel' });
+    logCareerDropoff({ phase: cc.phase, step: cc.step, reason: isMenu ? 'menu' : 'cancel' });
+  }
+}
 
 /**
  * Execute one turn of an active guided workflow and persist state transitions.
@@ -113,6 +136,7 @@ async function tryRouteActiveGuidedFlow(params) {
 
   const routingText = multilingualInbound?.englishMessage || String(inbound.text || '').trim();
   if (isGuidedFlowInterrupt(routingText, inbound.text)) {
+    logCareerJourneyInterrupt(flow, botState, routingText);
     return null;
   }
 

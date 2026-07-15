@@ -36,6 +36,16 @@ const GUIDED_FLOW_DEFINITIONS = Object.freeze([
     completeBotState: 'faq_answer',
     localizationTier: 'static',
   }),
+  Object.freeze({
+    id: 'career_counselling_journey',
+    botState: 'career_counselling_journey',
+    contextKey: 'careerCounselling',
+    continueIntent: 'career_counselling_journey_continue',
+    entryIntents: Object.freeze(['career_counselling_journey']),
+    slotFilling: false,
+    completeBotState: 'career_counselling_journey',
+    localizationTier: 'translate',
+  }),
 ]);
 
 const BY_BOT_STATE = new Map(GUIDED_FLOW_DEFINITIONS.map((flow) => [flow.botState, flow]));

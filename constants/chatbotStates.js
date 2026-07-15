@@ -15,6 +15,7 @@ const BOT_STATES = Object.freeze([
   'demo_support',
   'rank_predictor',
   'college_predictor',
+  'career_counselling_journey',
   'human_handoff',
   'idle',
 ]);
