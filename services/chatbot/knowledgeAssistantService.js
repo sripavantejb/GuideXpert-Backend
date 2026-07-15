@@ -7,7 +7,7 @@ const { getConversationHistory } = require('./conversationHistoryService');
 const { buildContext, formatUnifiedContext } = require('./contextBuilderService');
 const { validateAiResponse } = require('./aiGuardrailService');
 const { aiDebugLog } = require('./aiDebugLog');
-const { buildRetrievalQuery } = require('../../utils/knowledgeQueryBuilder');
+const { buildRetrievalQuery, expandKnowledgeQuery } = require('../../utils/knowledgeQueryBuilder');
 const { recordKnowledgeAssistantLanguageTurn } = require('./knowledgeAssistantLanguageLogService');
 const {
   isScopeFirewallEnabled,
@@ -21,9 +21,12 @@ const {
 const { assertRagAllowed, refusalForRagBlock } = require('./scopeFirewall/ragScopeGuard');
 const { resolveScopeFirewallReply, resolvePolicyRefusal } = require('../../constants/scopeFirewallReplies');
 const { logChatbotEvent } = require('./chatbotStructuredLog');
+const { searchKnowledge } = require('./knowledgeSearchService');
+const { isBrandKnowledgeQuery } = require('./intentClassifierService');
 
 const provider = new OpenAiCompatibleProvider();
 const DEFAULT_TIMEOUT_MS = Number(process.env.KNOWLEDGE_ASSISTANT_TIMEOUT_MS) || 8000;
+const DIRECT_FAQ_MIN_SCORE = Number(process.env.KNOWLEDGE_DIRECT_FAQ_MIN_SCORE) || 40;
 
 function isKnowledgeAssistantEnabled() {
   return (
@@ -82,6 +85,50 @@ function resolveLlmTimeoutMs(requestedTimeoutMs) {
   const configured = Number(process.env.LLM_TIMEOUT_MS) || 20000;
   const budget = Number(requestedTimeoutMs) || DEFAULT_TIMEOUT_MS;
   return Math.max(3000, Math.min(configured, budget - 1500));
+}
+
+function formatDirectFaqAnswer(entry) {
+  if (!entry) return null;
+  const question = String(entry.question || '').trim();
+  const answer = String(entry.answer || '').trim();
+  if (!answer) return null;
+  const titleMatch = question.match(/\b(NIAT|GuideXpert|new[- ]?age college)\b/i);
+  const title = titleMatch ? titleMatch[0].replace(/\bniat\b/i, 'NIAT') : null;
+  if (title) {
+    return `*${title}*\n\n${answer}`;
+  }
+  return answer;
+}
+
+/**
+ * Grounded fallback when LLM times out / fails — still answer from top FAQ hit.
+ */
+function groundedFaqFallback(inboundText) {
+  const text = String(inboundText || '').trim();
+  if (!text) return null;
+  const expanded = expandKnowledgeQuery(text);
+  const hits = searchKnowledge(expanded, 3);
+  const top = hits[0];
+  if (!top || !(top.score >= DIRECT_FAQ_MIN_SCORE)) {
+    // Brand questions: accept a lower bar so "tell me about niat" still answers.
+    if (isBrandKnowledgeQuery(text) && top?.score > 0 && top.answer) {
+      return {
+        text: formatDirectFaqAnswer(top),
+        model: null,
+        guardrailModified: false,
+        guardrailReason: 'grounded_faq_fallback_brand',
+        languageLog: null,
+      };
+    }
+    return null;
+  }
+  return {
+    text: formatDirectFaqAnswer(top),
+    model: null,
+    guardrailModified: false,
+    guardrailReason: 'grounded_faq_fallback',
+    languageLog: null,
+  };
 }
 
 function logRetrievalMetrics(metrics = {}) {
@@ -234,7 +281,8 @@ async function answer({
       removeCurrentInboundFromHistory(rawHistory, text)
     );
     const retrievalQuery = buildRetrievalQuery({ currentMessage: text, history });
-    const { results: knowledgeResults, metrics } = await searchKnowledgeAsync(text, {
+    const searchText = expandKnowledgeQuery(text);
+    const { results: knowledgeResults, metrics } = await searchKnowledgeAsync(searchText, {
       retrievalQuery,
       limit: 5,
     });
@@ -269,6 +317,30 @@ async function answer({
         guardrailReason: ragCheck.reason,
         languageLog: null,
       };
+    }
+
+    // Brand definition questions with a strong FAQ hit: answer directly (avoids
+    // follow-up LLM timeouts that produced "I am not sure I understood").
+    const topHit = knowledgeResults[0];
+    if (
+      isBrandKnowledgeQuery(text) &&
+      topHit &&
+      (topHit.score >= DIRECT_FAQ_MIN_SCORE || /\bniat\b/i.test(text))
+    ) {
+      const direct = formatDirectFaqAnswer(topHit);
+      if (direct) {
+        aiDebugLog('LLM-DEBUG', 'direct FAQ answer for brand knowledge query', {
+          id: topHit.id,
+          score: topHit.score,
+        });
+        return {
+          text: direct,
+          model: null,
+          guardrailModified: false,
+          guardrailReason: 'direct_brand_faq',
+          languageLog: null,
+        };
+      }
     }
 
     const messages = [
@@ -325,10 +397,15 @@ async function answer({
   } catch (e) {
     console.warn('[chatbot] knowledge assistant error', e.message);
     aiDebugLog('LLM-DEBUG', 'caught error =', e.message);
+    const fallback = groundedFaqFallback(text);
+    if (fallback) {
+      aiDebugLog('LLM-DEBUG', 'using grounded FAQ fallback after error');
+      return fallback;
+    }
   }
 
   aiDebugLog('LLM-DEBUG', 'answer return null: fallthrough after try/catch');
-  return null;
+  return groundedFaqFallback(text);
 }
 
 async function answerWithTimeout(params, timeoutMs = DEFAULT_TIMEOUT_MS) {
@@ -354,6 +431,11 @@ async function answerWithTimeout(params, timeoutMs = DEFAULT_TIMEOUT_MS) {
     return await Promise.race([answerPromise, timeoutPromise]);
   } catch (e) {
     console.warn('[chatbot] knowledge_assistant_fallback', e.message);
+    const fallback = groundedFaqFallback(params?.inboundText);
+    if (fallback) {
+      aiDebugLog('LLM-DEBUG', 'using grounded FAQ fallback after timeout');
+      return fallback;
+    }
     return null;
   }
 }
