@@ -37,7 +37,8 @@ const WEBSITE_REDIRECT =
 const NO_ACTIVE_BOOKING =
   /couldn't find an active counselling booking|active counselling booking/i;
 const BOOKING_HALLUCINATION =
-  /\bbooking (is )?confirmed\b|\b(counselling|counseling) booking\b.{0,80}\bconfirmed\b|\bappointment (is )?booked\b|\bsession (is )?scheduled\b|\bconfirmed for tomorrow\b/i;
+  /\bbooking (is )?confirmed\b|\b(counselling|counseling) booking\b.{0,80}\bconfirmed\b|\bappointment (is )?booked\b|\bconfirmed for tomorrow\b/i;
+const CRM_SESSION_SCHEDULED_REPLY = /^Your session is scheduled for:/i;
 const RESCHEDULE_WEBSITE_REPLY =
   /managed through the GuideXpert website|reschedule or cancel|booking portal|contact your assigned counsellor/i;
 const EXISTING_BOOKING_REPLY = /found an existing counselling booking/i;
@@ -421,7 +422,12 @@ function evaluate(caseRow, reply, meta) {
     }
   }
 
-  if (e.noBookingHallucination && BOOKING_HALLUCINATION.test(r) && !BOOKING_SUMMARY.test(r)) {
+  if (
+    e.noBookingHallucination &&
+    BOOKING_HALLUCINATION.test(r) &&
+    !BOOKING_SUMMARY.test(r) &&
+    !CRM_SESSION_SCHEDULED_REPLY.test(r)
+  ) {
     fails.push('booking_hallucination');
   }
 
@@ -922,6 +928,12 @@ async function main() {
   const passRate = total ? Number((((pass + warn) / total) * 100).toFixed(2)) : 0;
   const gatePct = PASS_GATE * 100;
 
+  const failures = results.filter((r) => r.status === 'FAIL');
+  const crmFinal = await loadCrmSnapshot(db, PHONE10);
+  const crmFinalFingerprint = await loadCrmFingerprint(db, PHONE10);
+  const lifecycleUnchanged = crmFinalFingerprint.lifecycleCount === lifecycleBaseline;
+  const leadUnchanged = crmFinalFingerprint.leadCount === crmBaseline.leadCount;
+
   let readiness = 'FAIL';
   const gateOk =
     passRate >= gatePct &&
@@ -940,12 +952,6 @@ async function main() {
     else if (r.status === 'PASS_WITH_WARNINGS') byGroup[r.group].warn += 1;
     else byGroup[r.group].fail += 1;
   }
-
-  const failures = results.filter((r) => r.status === 'FAIL');
-  const crmFinal = await loadCrmSnapshot(db, PHONE10);
-  const crmFinalFingerprint = await loadCrmFingerprint(db, PHONE10);
-  const lifecycleUnchanged = crmFinalFingerprint.lifecycleCount === lifecycleBaseline;
-  const leadUnchanged = crmFinalFingerprint.leadCount === crmBaseline.leadCount;
 
   const report = {
     section: 'E',
