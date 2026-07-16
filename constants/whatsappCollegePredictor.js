@@ -134,13 +134,17 @@ function buildPredictorRequestBody(ctx) {
 function pickBranchDetails(college) {
   const b = Array.isArray(college?.branches) ? college.branches[0] : null;
   if (!b) {
-    return { branch: 'NA', cutoff: null, category: null };
+    return { branch: 'NA', cutoff: null, category: null, opening: null, closing: null };
   }
   const rc = Array.isArray(b.reservation_categories) ? b.reservation_categories[0] : null;
+  const opening = rc?.cutoff_from != null && rc.cutoff_from !== '' ? rc.cutoff_from : null;
+  const closing = rc?.cutoff_to != null && rc.cutoff_to !== '' ? rc.cutoff_to : null;
   return {
     branch: b.branch_name || b.branch_code || 'NA',
     cutoff: rc?.cutoff_rank ?? rc?.cutoff ?? null,
     category: rc?.category_name ?? rc?.reservation_category_code ?? null,
+    opening,
+    closing,
   };
 }
 
@@ -178,6 +182,16 @@ function formatPredictionReply(ctx, colleges, opts = {}) {
       lines.push(`   Branch: ${details.branch}`);
       if (details.cutoff != null) {
         lines.push(`   Cutoff: ${details.cutoff}`);
+      }
+      if (details.opening != null && details.closing != null) {
+        lines.push(`   Opening–Closing: ${details.opening}–${details.closing}`);
+      } else {
+        if (details.opening != null) {
+          lines.push(`   Opening: ${details.opening}`);
+        }
+        if (details.closing != null) {
+          lines.push(`   Closing: ${details.closing}`);
+        }
       }
       if (details.category) {
         lines.push(`   Category: ${details.category}`);
