@@ -56,7 +56,6 @@ const { isIitCounsellingStrategyQuestion } = require('./iitCounsellingStrategy/i
 const { isLeadEventExtractionEnabled } = require('./leadEventExtraction/leadEventExtractionFlags');
 const { extractAndPersist } = require('./leadEventExtraction/leadEventExtractionService');
 const { buildWelcomeMenuText } = require('./welcomeMessageService');
-const { getDemoMeetingLink } = require('../../utils/slotNotificationFormatters');
 const { emptySubflows } = require('./botSubflowContext');
 const { maskPhoneTail } = require('../../utils/chatbotPhone');
 const { logChatbotEvent, extractPredictorExam } = require('./chatbotStructuredLog');
@@ -76,7 +75,15 @@ const {
 const { incrementLanguageRequest } = require('../analytics/languageRequestAnalyticsService');
 const { resolveGreetingReply } = require('../../constants/greetingReplies');
 const { buildLocalizedWelcomeMenu } = require('../../constants/localizedMenuReplies');
-const { buildLocalizedCounsellingSupportReply } = require('../../constants/localizedCounsellingReplies');
+const {
+  buildLeadContextWithBooking,
+} = require('./bookingContext/bookingContextResolver');
+const {
+  tryBookingSupportRouter,
+  buildBookingSupportReply,
+  bookingCreateCheckReply,
+  rescheduleCancelReply,
+} = require('./bookingContext/bookingSupportRouter');
 const {
   resolveSystemReply,
   resolveKnowledgeAssistantFallback,
@@ -316,7 +323,18 @@ async function sendMainMenu(conversation, leadContext, inReplyToInboundId, multi
 
 async function buildLeadLookupReply(leadContext) {
   const lines = [];
-  if (leadContext.hasIit && leadContext.iit) {
+  if (leadContext.booking?.exists || leadContext.bookingContext?.exists) {
+    const b = leadContext.booking;
+    lines.push('📋 Counselling booking (website):');
+    lines.push(`Name: ${b.fullName || '—'}`);
+    lines.push(`Booking ID: ${b.bookingId || '—'}`);
+    lines.push(`Status: ${b.bookingStatus || '—'}`);
+    lines.push(`Session: ${b.sessionSlotLabel || '—'}`);
+    lines.push(`When: ${b.sessionInstantLabel || b.sessionDate || '—'}`);
+    lines.push(`Counsellor: ${b.assignedCounsellor || '—'}`);
+    lines.push(`College preference: ${b.preferredCollege || '—'}`);
+    lines.push(`Meeting link: ${b.meetingLink || leadContext.meetingLink || '—'}`);
+  } else if (leadContext.hasIit && leadContext.iit) {
     lines.push('📋 IIT Counselling profile:');
     lines.push(`Name: ${leadContext.iit.fullName || '—'}`);
     lines.push(`Slot: ${leadContext.iit.slotBooking || '—'}`);
@@ -478,7 +496,11 @@ async function processInboundCore({
       retryAttempt: optimisticRetryAttempt,
     });
   let activeConversation = conversation;
-  const leadContext = await h.buildLeadContext(leadLinks);
+  const leadContext = await buildLeadContextWithBooking(
+    leadLinks,
+    activeConversation._id,
+    activeConversation
+  );
   await seedPreferredLanguageFromLead(activeConversation._id, leadContext);
 
   let multilingualInbound = null;
@@ -672,6 +694,79 @@ async function processInboundCore({
       });
       return result;
     }
+    }
+  }
+
+  // Booking Support Router — deterministic CRM-backed replies (no LLM / RAG / ICE / CPA / ICS).
+  {
+    const bookingText =
+      multilingualInbound?.englishMessage || String(inbound.text || '').trim();
+    const bookingOriginal = String(inbound.text || '').trim();
+    const bookingRoute = tryBookingSupportRouter({
+      text: bookingText,
+      originalText: bookingOriginal,
+      leadContext,
+      resolvedLanguage: resolvedLanguageFrom(multilingualInbound),
+    });
+
+    if (bookingRoute?.handled) {
+      logChatbotEvent('booking_support_router_handled', {
+        conversationId: activeConversation._id,
+        phoneTail: maskPhoneTail(activeConversation.phone),
+        intent: bookingRoute.intent,
+        queryId: bookingRoute.queryId,
+        deterministic: true,
+        bookingContextLoaded: bookingRoute.bookingContextLoaded,
+        mongoQueries: bookingRoute.mongoQueries,
+        resolveMs: bookingRoute.resolveMs,
+        reason: bookingRoute.reason,
+      });
+
+      await transitionState(
+        activeConversation._id,
+        activeConversation.phone,
+        bookingRoute.nextState || 'counselling_support',
+        botState?.context || {}
+      );
+      await h.updateConversationIntent(activeConversation._id, bookingRoute.intent);
+
+      const outboundText = await deliverOutboundReply({
+        replyText: bookingRoute.replyText,
+        multilingualInbound,
+        intent: bookingRoute.intent,
+        localizationTier: 'static',
+        preLocalized: true,
+      });
+
+      const result = await h.outbound.sendBotTextReply({
+        conversationId: activeConversation._id,
+        phone10: activeConversation.phone,
+        text: outboundText,
+        inReplyToInboundId: inbound._id,
+      });
+
+      logInboundResult({
+        event: 'inbound_processed',
+        conversation: activeConversation,
+        botState,
+        intent: bookingRoute.intent,
+        contextPatch: botState?.context || {},
+        durationMs: Date.now() - startedAt,
+        bookingSupport: {
+          deterministic: true,
+          queryId: bookingRoute.queryId,
+          mongoQueries: bookingRoute.mongoQueries,
+          resolveMs: bookingRoute.resolveMs,
+        },
+        multilingual: multilingualInbound
+          ? {
+              originalMessage: multilingualInbound.originalMessage,
+              detectedLanguage: multilingualInbound.detectedLanguage,
+              resolvedLanguage: multilingualInbound.resolvedLanguage,
+            }
+          : null,
+      });
+      return result;
     }
   }
 
@@ -1160,10 +1255,32 @@ async function processInboundCore({
       break;
     }
     case 'counselling_support':
-      replyText = buildLocalizedCounsellingSupportReply(
+      replyText = buildBookingSupportReply({
+        resolvedLanguage: resolvedLanguageFrom(multilingualInbound),
+        bookingContext: leadContext.bookingContext || leadContext.booking,
+        userText: inbound.text,
+        queryId: intentResult.queryId || null,
+      });
+      nextState = 'counselling_support';
+      break;
+    case 'booking_create_check':
+      replyText = bookingCreateCheckReply(
         resolvedLanguageFrom(multilingualInbound),
-        leadContext,
-        { meetingLink: getDemoMeetingLink() }
+        leadContext.bookingContext || leadContext.booking
+      );
+      nextState = 'counselling_support';
+      break;
+    case 'booking_website_redirect':
+      replyText = bookingCreateCheckReply(
+        resolvedLanguageFrom(multilingualInbound),
+        leadContext.bookingContext || leadContext.booking
+      );
+      nextState = 'counselling_support';
+      break;
+    case 'booking_reschedule_cancel':
+      replyText = rescheduleCancelReply(
+        resolvedLanguageFrom(multilingualInbound),
+        leadContext.bookingContext || leadContext.booking
       );
       nextState = 'counselling_support';
       break;

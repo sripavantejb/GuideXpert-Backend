@@ -26,6 +26,7 @@ const {
   isCommerceOutOfScopeRequest,
   shouldBypassScopeFirewallForJee,
 } = require('./jeeCounselling/jeeCounsellingSessionService');
+const { resolveBookingSupportIntent } = require('./bookingContext/bookingSupportIntentService');
 const {
   isIitCounsellingStrategyEnabled,
 } = require('./iitCounsellingStrategy/iitCounsellingStrategyFlags');
@@ -195,6 +196,9 @@ function isGuideXpertIdentityQuestion(text, originalText = null) {
 }
 
 function isCounsellorProgramQuestion(text, originalText = null) {
+  if (resolveBookingSupportIntent(text, originalText)) {
+    return false;
+  }
   if (isIitLeadSupportQuery(text) || isIitLeadSupportQuery(originalText)) {
     return false;
   }
@@ -445,6 +449,39 @@ function classifyIntent(text, botState, productLine, originalText = null) {
   // Commerce must never reach FAQ / guided flows — Scope Firewall owns denial.
   if (isCommerceOutOfScopeRequest(t, original)) {
     return { intent: 'unknown', confidence: 'low', intentReason: 'commerce_out_of_scope' };
+  }
+
+  const bookingSupportIntent = resolveBookingSupportIntent(t, original);
+  if (bookingSupportIntent) {
+    if (bookingSupportIntent.kind === 'human_handoff') {
+      return {
+        intent: 'human_handoff',
+        confidence: 'high',
+        intentReason: 'booking_support_handoff',
+      };
+    }
+    if (bookingSupportIntent.kind === 'booking_reschedule_cancel') {
+      return {
+        intent: 'booking_reschedule_cancel',
+        confidence: bookingSupportIntent.confidence,
+        intentReason: 'website_booking_manage',
+      };
+    }
+    if (bookingSupportIntent.kind === 'booking_create_check') {
+      return {
+        intent: 'booking_create_check',
+        confidence: bookingSupportIntent.confidence,
+        intentReason: 'website_booking_create_check',
+      };
+    }
+    if (bookingSupportIntent.kind === 'booking_deterministic') {
+      return {
+        intent: 'counselling_support',
+        confidence: bookingSupportIntent.confidence,
+        intentReason: 'booking_deterministic_support',
+        queryId: bookingSupportIntent.queryId,
+      };
+    }
   }
 
   // JEE / ICE ownership BEFORE rank/college predictors / CPA (Section C V2).

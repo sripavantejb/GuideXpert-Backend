@@ -3,7 +3,7 @@
 const WhatsAppAgentHandoff = require('../../../models/WhatsAppAgentHandoff');
 const WhatsAppLeadScore = require('../../../models/WhatsAppLeadScore');
 const IitCounsellingSubmission = require('../../../models/IitCounsellingSubmission');
-const { buildLeadContext } = require('../leadContextService');
+const { buildLeadContextWithBooking } = require('../bookingContext/bookingContextResolver');
 const { getLeadDetails } = require('../leadInsights/leadInsightsService');
 const { getConversationTranscript, getConversationTranscriptPage } = require('../chatbotAdminService');
 const { resolveHandoff } = require('../handoffService');
@@ -177,11 +177,16 @@ async function getHandoffDetail(handoffId) {
 
   const [transcript, leadContext, leadDetails, scoreDoc, priorHandoffs, iitExtras] = await Promise.all([
     getConversationTranscript(handoff.conversationId, 120),
-    buildLeadContext({
+    buildLeadContextWithBooking({
       phone10: handoff.phone,
       productLine: handoff.productLine,
       formSubmissionId: handoff.formSubmissionId,
       iitCounsellingSubmissionId: handoff.iitCounsellingSubmissionId,
+    }, handoff.conversationId, {
+      _id: handoff.conversationId,
+      currentHandoffId: handoff._id,
+      status: 'handoff',
+      botPaused: true,
     }),
     getLeadDetails(handoff.phone),
     WhatsAppLeadScore.findOne({ phone: handoff.phone })

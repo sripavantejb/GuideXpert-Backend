@@ -22,8 +22,9 @@ function formatIst(date) {
 /**
  * Build unified lead context for orchestrator and handoff summaries.
  * @param {{ phone10: string, formSubmissionId?: object, iitCounsellingSubmissionId?: object }} links
+ * @param {{ preloadedIit?: object|null }} [options] — when set, skips IIT Mongo lookup (BookingContext path).
  */
-async function buildLeadContext(links) {
+async function buildLeadContext(links, options = {}) {
   const phone = links.phone;
   const ctx = {
     phone,
@@ -36,27 +37,33 @@ async function buildLeadContext(links) {
     iitPageUrl: process.env.IIT_COUNSELLING_PAGE_URL || 'https://www.guidexpert.co.in/iit-counselling',
   };
 
-  if (links.iitCounsellingSubmissionId) {
+  const mapIit = (iit) => {
+    if (!iit) return;
+    ctx.hasIit = true;
+    ctx.productLine = ctx.productLine === 'unknown' ? 'iit_counselling' : ctx.productLine;
+    const s1 = iit.iitCounselling?.section1Data || {};
+    const s2 = iit.iitCounselling?.section2Data || {};
+    ctx.iit = {
+      fullName: iit.fullName,
+      slotBooking: s1.slotBooking || null,
+      slotBookingDate: s1.slotBookingDate || null,
+      slotInstantLabel: formatIst(iit.counsellingSlotInstantUtc),
+      preferredLanguage: s2.preferredLanguage || null,
+      city: s1.city || null,
+      assignedBdaName: iit.assignedBdaName || null,
+      callStatusLabel: CALL_STATUS_LABELS[iit.callStatus] || iit.callStatus,
+      demoStatusLabel: DEMO_STATUS_LABELS[iit.demoStatus] || iit.demoStatus,
+      paymentStatusLabel: PAYMENT_STATUS_LABELS[iit.paymentStatus] || iit.paymentStatus,
+      currentStep: iit.iitCounselling?.currentStep || iit.currentStep,
+      isCompleted: iit.isCompleted || iit.iitCounselling?.isCompleted,
+    };
+  };
+
+  if (Object.prototype.hasOwnProperty.call(options, 'preloadedIit')) {
+    mapIit(options.preloadedIit);
+  } else if (links.iitCounsellingSubmissionId) {
     const iit = await IitCounsellingSubmission.findById(links.iitCounsellingSubmissionId).lean();
-    if (iit) {
-      ctx.hasIit = true;
-      const s1 = iit.iitCounselling?.section1Data || {};
-      const s2 = iit.iitCounselling?.section2Data || {};
-      ctx.iit = {
-        fullName: iit.fullName,
-        slotBooking: s1.slotBooking || null,
-        slotBookingDate: s1.slotBookingDate || null,
-        slotInstantLabel: formatIst(iit.counsellingSlotInstantUtc),
-        preferredLanguage: s2.preferredLanguage || null,
-        city: s1.city || null,
-        assignedBdaName: iit.assignedBdaName || null,
-        callStatusLabel: CALL_STATUS_LABELS[iit.callStatus] || iit.callStatus,
-        demoStatusLabel: DEMO_STATUS_LABELS[iit.demoStatus] || iit.demoStatus,
-        paymentStatusLabel: PAYMENT_STATUS_LABELS[iit.paymentStatus] || iit.paymentStatus,
-        currentStep: iit.iitCounselling?.currentStep || iit.currentStep,
-        isCompleted: iit.isCompleted || iit.iitCounselling?.isCompleted,
-      };
-    }
+    mapIit(iit);
   }
 
   if (links.formSubmissionId) {
@@ -93,7 +100,7 @@ async function buildLeadContext(links) {
     }
   }
 
-  if (!ctx.hasIit && phone) {
+  if (!Object.prototype.hasOwnProperty.call(options, 'preloadedIit') && !ctx.hasIit && phone) {
     const iit = await IitCounsellingSubmission.findOne({ phone }).sort({ updatedAt: -1 }).lean();
     if (iit) {
       ctx.hasIit = true;
@@ -121,6 +128,15 @@ async function buildLeadContext(links) {
 }
 
 function buildAssignedExpertReply(leadContext) {
+  const booking = leadContext?.booking;
+  if (booking?.exists && booking.assignedCounsellor) {
+    return [
+      `Your assigned IIT counselling expert is ${booking.assignedCounsellor}.`,
+      'They will support you through your counselling journey.',
+      'Reply AGENT to message our team directly, or MENU for options.',
+    ].join('\n\n');
+  }
+
   if (!leadContext.hasIit || !leadContext.iit) {
     return [
       'We could not find an IIT counselling registration for this number.',
@@ -149,6 +165,17 @@ async function buildHandoffSummary(leadContext) {
   const lines = [];
   lines.push(`Phone: ****${String(leadContext.phone || '').slice(-4)}`);
   lines.push(`Product: ${leadContext.productLine}`);
+  if (leadContext.booking?.exists || leadContext.bookingContext?.exists) {
+    const b = leadContext.bookingContext || leadContext.booking;
+    lines.push(`Booking ID: ${b.bookingId || '—'}`);
+    lines.push(`Booking status: ${b.bookingStatus || '—'}`);
+    lines.push(`Session: ${b.sessionSlotLabel || '—'} (${b.sessionInstantLabel || '—'})`);
+    lines.push(`Counsellor: ${b.assignedCounsellor || 'unassigned'}`);
+    lines.push(`Lifecycle: ${b.lifecycleStage || '—'}`);
+    if (b.humanCopilot?.active) {
+      lines.push(`Active handoff: ${b.humanCopilot.handoffId || 'yes'}`);
+    }
+  }
   if (leadContext.iit) {
     lines.push(`Name: ${leadContext.iit.fullName || '—'}`);
     lines.push(`IIT slot: ${leadContext.iit.slotBooking || '—'} (${leadContext.iit.slotInstantLabel || '—'})`);
