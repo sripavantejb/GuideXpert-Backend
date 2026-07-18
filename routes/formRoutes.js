@@ -12,6 +12,7 @@ const {
   checkRegistrationStatus,
   savePostRegistrationData,
   saveRankPredictorPrediction,
+  saveCollegePredictorPrediction,
   getAllSubmissions,
   saveIitSection1,
   saveIitSection2,
@@ -33,6 +34,7 @@ router.post('/save-step3', saveStep3);
 router.get('/check-registration/:phone', checkRegistrationStatus);
 router.post('/save-post-registration', savePostRegistrationData);
 router.post('/save-rank-predictor-prediction', saveRankPredictorPrediction);
+router.post('/save-college-predictor-prediction', saveCollegePredictorPrediction);
 router.get('/submissions', getAllSubmissions); // Diagnostic endpoint
 router.get('/iit-counselling/slots', getIitCounsellingSlots);
 router.post('/iit-counselling/section1', saveIitSection1);
