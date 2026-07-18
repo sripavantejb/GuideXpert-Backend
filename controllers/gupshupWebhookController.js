@@ -758,6 +758,24 @@ async function replayGupshupWebhookBody(body, receivedAt = new Date()) {
       updatedEventCount = n;
       if (n > 0) updatePath = 'providerIds';
     }
+    try {
+      const {
+        applyDeliveryStatusToAttempt,
+      } = require('../services/conversationRecovery/conversationRecoveryDeliveryService');
+      for (const pid of providerIds) {
+        const updatedAttempt = await applyDeliveryStatusToAttempt({
+          gupshupMessageId: pid,
+          status: newStatus,
+          at: transitionTs,
+        });
+        if (updatedAttempt) {
+          if (updatePath === 'none') updatePath = 'conversation_recovery';
+          break;
+        }
+      }
+    } catch (_) {
+      // never block replay on recovery DLR
+    }
   }
 
   if (newStatus && updatedEventCount === 0 && phone10) {
@@ -989,6 +1007,25 @@ exports.ingestGupshupWebhook = async (req, res) => {
           updatePath = 'chatbot_outbound';
           updatedEventCount = 1;
         }
+      }
+      // Platform Feature #1 — Conversation Recovery attempts (gsId match; additive)
+      try {
+        const {
+          applyDeliveryStatusToAttempt,
+        } = require('../services/conversationRecovery/conversationRecoveryDeliveryService');
+        for (const pid of providerIds) {
+          const updatedAttempt = await applyDeliveryStatusToAttempt({
+            gupshupMessageId: pid,
+            status: newStatus,
+            at: transitionTs,
+          });
+          if (updatedAttempt) {
+            if (updatePath === 'none') updatePath = 'conversation_recovery';
+            break;
+          }
+        }
+      } catch (_) {
+        // never block webhook on recovery DLR
       }
     }
 

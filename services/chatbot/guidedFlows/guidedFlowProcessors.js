@@ -6,7 +6,7 @@ const { handleRankPredictorMessage } = require('../rankPredictorChatService');
 const {
   handleCareerCounsellingMessage,
 } = require('../careerCounselling/careerCounsellingJourneyService');
-const { isCareerCounsellingJourneyEnabled } = require('../../../constants/careerCounsellingJourney');
+const { isCareerCounsellingV2Enabled } = require('../../../constants/careerCounsellingV2Discovery');
 const faqService = require('../faqService');
 const { resolveSystemReply } = require('../../../constants/localizedSystemReplies');
 const {
@@ -17,6 +17,12 @@ const {
   isRankBranchCollegePredictorQuery,
 } = require('../intentClassifierService');
 const { normalizeText } = require('../intentTextUtils');
+const {
+  upsertFromTurn,
+} = require('../../conversationRecovery/conversationRecoverySnapshotService');
+const {
+  markPostRecoveryOutcomesFromSnapshot,
+} = require('../../conversationRecovery/conversationRecoveryResumeService');
 
 /** Clears sticky assistant session flags while preserving guided subflow context. */
 function clearAssistantSessionFlags(contextPatch) {
@@ -111,14 +117,17 @@ function processRankPredictorTurn({ flow, inboundText, contextPatch }) {
   };
 }
 
-function processCareerCounsellingTurn({
+async function processCareerCounsellingTurn({
   flow,
   inboundText,
   contextPatch,
   isNewEntry = false,
   analytics = {},
+  preferredLanguage = null,
+  phone = null,
+  conversationId = null,
 }) {
-  if (!isCareerCounsellingJourneyEnabled()) {
+  if (!isCareerCounsellingV2Enabled()) {
     return {
       replyText:
         'Career counselling guidance is temporarily unavailable. Please try again later or type MENU.',
@@ -130,10 +139,10 @@ function processCareerCounsellingTurn({
     };
   }
 
-  const result = handleCareerCounsellingMessage(
+  const result = await handleCareerCounsellingMessage(
     inboundText,
     contextPatch.careerCounselling || {},
-    { isNewEntry, analytics }
+    { isNewEntry, analytics, preferredLanguage }
   );
 
   const nextContext = clearAssistantSessionFlags({
@@ -141,8 +150,30 @@ function processCareerCounsellingTurn({
     careerCounselling: result.context,
   });
 
+  const resolvedPhone = phone || analytics.phone || null;
+  const resolvedConversationId =
+    conversationId || analytics.conversationId || null;
+  if (resolvedPhone && resolvedConversationId && result.context) {
+    try {
+      const snapshot = await upsertFromTurn({
+        phone: resolvedPhone,
+        conversationId: resolvedConversationId,
+        context: result.context,
+      });
+      if (snapshot) {
+        await markPostRecoveryOutcomesFromSnapshot(snapshot).catch(() => {});
+      }
+    } catch (err) {
+      console.warn(
+        '[conversationRecovery] snapshot upsert failed:',
+        err?.message || err
+      );
+    }
+  }
+
   return {
     replyText: result.reply,
+    replyParts: Array.isArray(result.replyParts) ? result.replyParts : null,
     nextState: flow.botState,
     contextPatch: nextContext,
     intent: isNewEntry ? 'career_counselling_journey' : flow.continueIntent,
@@ -190,6 +221,8 @@ async function processGuidedFlowTurn({
   isNewEntry = false,
   resolvedLanguage = 'en',
   intent = null,
+  phone = null,
+  conversationId = null,
 }) {
   switch (flow.id) {
     case 'college_predictor':
@@ -209,14 +242,18 @@ async function processGuidedFlowTurn({
       return processCollegePredictorTurn({ flow, inboundText, inbound, contextPatch, isNewEntry });
     case 'rank_predictor':
       return processRankPredictorTurn({ flow, inboundText, contextPatch });
-    case 'career_counselling_journey':
-      return processCareerCounsellingTurn({
+    case 'career_counselling_v2':
+      return await processCareerCounsellingTurn({
         flow,
         inboundText,
         contextPatch,
         isNewEntry,
+        preferredLanguage: resolvedLanguage,
+        phone,
+        conversationId: conversationId || inbound?.conversationId || null,
         analytics: {
-          conversationId: inbound?.conversationId || null,
+          conversationId: conversationId || inbound?.conversationId || null,
+          phone: phone || null,
         },
       });
     case 'faq':

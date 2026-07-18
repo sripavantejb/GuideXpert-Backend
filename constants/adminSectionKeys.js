@@ -34,6 +34,7 @@ const ADMIN_SECTION_KEYS = [
   'ai-calls',
   'iit-ai-calls-summary',
   'whatsapp-ops',
+  'conversation-recovery',
   'settings',
 ];
 

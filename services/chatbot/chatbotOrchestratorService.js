@@ -114,6 +114,8 @@ function localizationTierForIntent(intent) {
     case 'counselling_support':
     case 'college_predictor':
     case 'career_counselling_journey':
+    case 'career_counselling_journey_continue':
+      return 'translate';
     case 'faq':
       return 'static';
     default:
@@ -563,7 +565,30 @@ async function processInboundCore({
 
   const facts = await h.retrieveFacts(leadLinks, leadContext);
   let botState = await h.getBotState(activeConversation._id);
-  if (botStateService.isStateExpired(botState)) {
+
+  const inboundTextForRecovery =
+    multilingualInbound?.englishMessage || String(inbound.text || '').trim();
+  let recoveryResume = { restored: false };
+  try {
+    const {
+      tryResumeFromRecovery,
+    } = require('../conversationRecovery/conversationRecoveryResumeService');
+    recoveryResume = await tryResumeFromRecovery({
+      phone: activeConversation.phone,
+      conversationId: activeConversation._id,
+      inboundText: inboundTextForRecovery,
+      botState,
+    });
+  } catch (err) {
+    console.warn('[conversationRecovery] resume intercept failed:', err?.message || err);
+  }
+
+  if (recoveryResume.restored && recoveryResume.context) {
+    botState = {
+      state: 'career_counselling_v2',
+      context: recoveryResume.context,
+    };
+  } else if (botStateService.isStateExpired(botState)) {
     await resetToMainMenu(activeConversation._id, activeConversation.phone);
     botState = { state: 'main_menu', context: emptySubflows() };
   }
@@ -1252,6 +1277,12 @@ async function processInboundCore({
       replyText = applied.replyText;
       nextState = applied.nextState;
       contextPatch = applied.contextPatch;
+      if (flow.id === 'career_counselling_v2' && Array.isArray(applied.replyParts)) {
+        contextPatch = {
+          ...contextPatch,
+          _careerCounsellingReplyParts: applied.replyParts,
+        };
+      }
       break;
     }
     case 'counselling_support':
@@ -1696,40 +1727,75 @@ async function processInboundCore({
     });
   }
 
-  if (replyText) {
-    replyText = await deliverOutboundReply({
-      replyText,
-      multilingualInbound,
-      intent: intentResult.intent,
-      localizationTier: tier,
-      preLocalized,
-      guardrailModified: Boolean(assistantResult?.guardrailModified),
-      outboundTrace,
-    });
-
-    if (iitCounsellingStrategyResult?.languageLog) {
-      iitCounsellingStrategyResult.languageLog.finalResponse = replyText;
-    }
-    if (iitCounsellingResult?.languageLog) {
-      iitCounsellingResult.languageLog.finalResponse = replyText;
-    }
-    if (counsellorProgramResult?.languageLog) {
-      counsellorProgramResult.languageLog.finalResponse = replyText;
-    }
-    if (knowledgeAssistantResult?.languageLog) {
-      knowledgeAssistantResult.languageLog.finalResponse = replyText;
-    }
-    if (unknownLlmResult?.languageLog) {
-      unknownLlmResult.languageLog.finalResponse = replyText;
-    }
+  const careerReplyParts = Array.isArray(contextPatch?._careerCounsellingReplyParts)
+    ? contextPatch._careerCounsellingReplyParts.filter(Boolean)
+    : null;
+  if (contextPatch && Object.prototype.hasOwnProperty.call(contextPatch, '_careerCounsellingReplyParts')) {
+    const { _careerCounsellingReplyParts, ...rest } = contextPatch;
+    contextPatch = rest;
   }
 
-  const result = await h.outbound.sendBotTextReply({
-    conversationId: activeConversation._id,
-    phone10: activeConversation.phone,
-    text: replyText,
-    inReplyToInboundId: inbound._id,
-  });
+  let result = null;
+  if (careerReplyParts && careerReplyParts.length > 1) {
+    const localizedParts = [];
+    for (const part of careerReplyParts) {
+      let partText = part;
+      if (partText) {
+        partText = await deliverOutboundReply({
+          replyText: partText,
+          multilingualInbound,
+          intent: intentResult.intent,
+          localizationTier: tier,
+          preLocalized,
+          guardrailModified: Boolean(assistantResult?.guardrailModified),
+          outboundTrace,
+        });
+      }
+      localizedParts.push(partText);
+      result = await h.outbound.sendBotTextReply({
+        conversationId: activeConversation._id,
+        phone10: activeConversation.phone,
+        text: partText,
+        inReplyToInboundId: inbound._id,
+      });
+    }
+    replyText = localizedParts.join('\n\n');
+  } else {
+    if (replyText) {
+      replyText = await deliverOutboundReply({
+        replyText,
+        multilingualInbound,
+        intent: intentResult.intent,
+        localizationTier: tier,
+        preLocalized,
+        guardrailModified: Boolean(assistantResult?.guardrailModified),
+        outboundTrace,
+      });
+
+      if (iitCounsellingStrategyResult?.languageLog) {
+        iitCounsellingStrategyResult.languageLog.finalResponse = replyText;
+      }
+      if (iitCounsellingResult?.languageLog) {
+        iitCounsellingResult.languageLog.finalResponse = replyText;
+      }
+      if (counsellorProgramResult?.languageLog) {
+        counsellorProgramResult.languageLog.finalResponse = replyText;
+      }
+      if (knowledgeAssistantResult?.languageLog) {
+        knowledgeAssistantResult.languageLog.finalResponse = replyText;
+      }
+      if (unknownLlmResult?.languageLog) {
+        unknownLlmResult.languageLog.finalResponse = replyText;
+      }
+    }
+
+    result = await h.outbound.sendBotTextReply({
+      conversationId: activeConversation._id,
+      phone10: activeConversation.phone,
+      text: replyText,
+      inReplyToInboundId: inbound._id,
+    });
+  }
 
   logInboundResult({
     event: 'inbound_processed',

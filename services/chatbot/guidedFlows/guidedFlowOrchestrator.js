@@ -4,7 +4,7 @@ const { resolveActiveGuidedFlow, getGuidedFlowByIntent } = require('./guidedFlow
 const {
   logCareerDropoff,
   logCareerInterruption,
-} = require('../careerCounselling/careerCounsellingAnalytics');
+} = require('../careerCounselling/careerCounsellingV2Analytics');
 const { GLOBAL_KEYWORDS } = require('../../../constants/chatbotStates');
 const { matchesAny, matchesMenuCommands } = require('../intentTextUtils');
 const { isGuidedFlowInterrupt } = require('./guidedFlowInterruptPolicy');
@@ -22,7 +22,7 @@ const {
 const { logChatbotEvent } = require('../chatbotStructuredLog');
 
 function logCareerJourneyInterrupt(flow, botState, routingText) {
-  if (flow?.id !== 'career_counselling_journey') return;
+  if (flow?.id !== 'career_counselling_v2') return;
   const cc = botState?.context?.careerCounselling || {};
   const t = String(routingText || '').trim().toLowerCase();
   const isAgent = matchesAny(t, GLOBAL_KEYWORDS.agent);
@@ -30,11 +30,11 @@ function logCareerJourneyInterrupt(flow, botState, routingText) {
   const isCancel = matchesAny(t, GLOBAL_KEYWORDS.cancel) || matchesAny(t, GLOBAL_KEYWORDS.stop);
 
   if (isAgent) {
-    logCareerInterruption({ phase: cc.phase, step: cc.step, kind: 'agent' });
+    logCareerInterruption({ stage: cc.stage, step: cc.step, kind: 'agent' });
   }
   if (isMenu || isCancel) {
-    logCareerInterruption({ phase: cc.phase, step: cc.step, kind: isMenu ? 'menu' : 'cancel' });
-    logCareerDropoff({ phase: cc.phase, step: cc.step, reason: isMenu ? 'menu' : 'cancel' });
+    logCareerInterruption({ stage: cc.stage, step: cc.step, kind: isMenu ? 'menu' : 'cancel' });
+    logCareerDropoff({ stage: cc.stage, step: cc.step, reason: isMenu ? 'menu' : 'cancel' });
   }
 }
 
@@ -73,6 +73,8 @@ async function executeActiveGuidedFlowTurn({
     isNewEntry: false,
     resolvedLanguage: resolvedLanguageFrom(multilingualInbound),
     intent: flow.continueIntent,
+    phone: activeConversation.phone,
+    conversationId: activeConversation._id,
   });
 
   if (turn.predictionIdempotency && turn.persistIdempotencyBeforeComplete) {
@@ -90,22 +92,50 @@ async function executeActiveGuidedFlowTurn({
   );
 
   let replyText = turn.replyText;
-  if (replyText) {
-    replyText = await deliverOutboundReply({
-      replyText,
-      multilingualInbound,
-      intent: turn.intent,
-      localizationTier: turn.localizationTier || flow.localizationTier || 'translate',
-      preLocalized: Boolean(turn.preLocalized),
+  const replyParts =
+    flow?.id === 'career_counselling_v2' && Array.isArray(turn.replyParts) && turn.replyParts.length > 1
+      ? turn.replyParts
+      : null;
+
+  let result = null;
+  if (replyParts) {
+    for (const part of replyParts) {
+      let partText = part;
+      if (partText) {
+        partText = await deliverOutboundReply({
+          replyText: partText,
+          multilingualInbound,
+          intent: turn.intent,
+          localizationTier: turn.localizationTier || flow.localizationTier || 'translate',
+          preLocalized: Boolean(turn.preLocalized),
+        });
+      }
+      result = await h.outbound.sendBotTextReply({
+        conversationId: activeConversation._id,
+        phone10: activeConversation.phone,
+        text: partText,
+        inReplyToInboundId: inbound._id,
+      });
+    }
+    replyText = replyParts.join('\n\n');
+  } else {
+    if (replyText) {
+      replyText = await deliverOutboundReply({
+        replyText,
+        multilingualInbound,
+        intent: turn.intent,
+        localizationTier: turn.localizationTier || flow.localizationTier || 'translate',
+        preLocalized: Boolean(turn.preLocalized),
+      });
+    }
+
+    result = await h.outbound.sendBotTextReply({
+      conversationId: activeConversation._id,
+      phone10: activeConversation.phone,
+      text: replyText,
+      inReplyToInboundId: inbound._id,
     });
   }
-
-  const result = await h.outbound.sendBotTextReply({
-    conversationId: activeConversation._id,
-    phone10: activeConversation.phone,
-    text: replyText,
-    inReplyToInboundId: inbound._id,
-  });
 
   logInboundResult({
     event: 'inbound_processed',
@@ -262,6 +292,8 @@ async function applyGuidedFlowSwitchTurn({
     isNewEntry: flow.entryIntents.includes(intentResult.intent),
     resolvedLanguage: resolvedLanguageFrom(multilingualInbound),
     intent: intentResult.intent,
+    phone: activeConversation.phone,
+    conversationId: activeConversation._id,
   });
 
   if (turn.predictionIdempotency && turn.persistIdempotencyBeforeComplete) {
@@ -273,6 +305,7 @@ async function applyGuidedFlowSwitchTurn({
 
   return {
     replyText: turn.replyText,
+    replyParts: turn.replyParts || null,
     nextState: turn.nextState,
     contextPatch: turn.contextPatch,
     intent: turn.intent || intentResult.intent,

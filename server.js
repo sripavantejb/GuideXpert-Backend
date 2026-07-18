@@ -17,6 +17,7 @@ const assessment4Routes = require('./routes/assessment4Routes');
 const assessment5Routes = require('./routes/assessment5Routes');
 const adminRoutes = require('./routes/adminRoutes');
 const whatsappOpsAdminRoutes = require('./routes/whatsappOpsAdminRoutes');
+const conversationRecoveryAdminRoutes = require('./routes/conversationRecoveryAdminRoutes');
 const leadInsightsRoutes = require('./routes/leadInsightsRoutes');
 const analyticsExecutiveRoutes = require('./routes/analyticsExecutiveRoutes');
 const influencerRoutes = require('./routes/influencerRoutes');
@@ -224,6 +225,19 @@ mongoose.connection.on('error', (err) => {
   resetDbConnectPromise();
 });
 
+mongoose.connection.on('connected', () => {
+  try {
+    const {
+      loadConversationRecoveryConfigFromStore,
+    } = require('./utils/conversationRecoverySettings');
+    loadConversationRecoveryConfigFromStore().catch((err) => {
+      console.warn('[conversationRecovery] config hydrate failed:', err?.message || err);
+    });
+  } catch (_) {
+    // optional platform feature
+  }
+});
+
 async function ensureDbConnected() {
   if (mongoose.connection.readyState === 1) return;
   if (!dbConnectPromise) {
@@ -362,6 +376,7 @@ app.use('/api/api/blogs', blogRoutes);
 app.use('/api/posters', posterTemplatePublicRoutes);
 // WhatsApp Messaging Ops console — explicit mount before generic /api/admin (same middleware stack elsewhere).
 app.use('/api/admin/whatsapp-ops', requireAdmin, whatsappOpsAdminRoutes);
+app.use('/api/admin/conversation-recovery', requireAdmin, conversationRecoveryAdminRoutes);
 app.use('/api/admin/whatsapp-chat', requireAdmin, whatsappChatAdminRoutes);
 app.use('/api/admin/human-copilot', requireAdmin, humanCopilotRoutes);
 app.use('/api/admin/ai-calls', requireAdmin, aiCallsAdminRoutes);
@@ -415,6 +430,14 @@ const PORT = process.env.PORT || 5000;
 const startServer = async () => {
   try {
     await connectDB();
+    try {
+      const {
+        loadConversationRecoveryConfigFromStore,
+      } = require('./utils/conversationRecoverySettings');
+      await loadConversationRecoveryConfigFromStore();
+    } catch (err) {
+      console.warn('[conversationRecovery] config hydrate skipped:', err?.message || err);
+    }
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
       console.log(`MongoDB connection established. Server ready to accept requests.`);

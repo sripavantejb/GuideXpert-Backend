@@ -377,6 +377,117 @@ router.get('/retry-whatsapp', verifyCronSecret, async (req, res) => {
   }
 });
 
+router.get('/conversation-recovery', verifyCronSecret, async (req, res) => {
+  let cronRun = null;
+  try {
+    console.log('[Cron] Starting conversation recovery job...');
+    cronRun = await startCronRun(CRON_JOB_KEYS.CONVERSATION_RECOVERY);
+    const {
+      runConversationRecoveryCron,
+    } = require('../services/conversationRecovery/conversationRecoveryScheduler');
+    const result = await runConversationRecoveryCron({
+      scanLimit: Number(req.query.scanLimit) || 200,
+      dispatchLimit: Number(req.query.dispatchLimit) || 50,
+    });
+    await finishCronRun(
+      cronRun,
+      {
+        found: result.scan?.scanned || 0,
+        smsSent: 0,
+        smsFailed: 0,
+        waAttempted: (result.dispatch?.sent || 0) + (result.dispatch?.failed || 0),
+        waSucceeded: result.dispatch?.sent || 0,
+        waFailed: result.dispatch?.failed || 0,
+        retriesAttempted: 0,
+        flagsUpdated: result.scan?.scheduled || 0,
+      },
+      { success: true }
+    );
+    return res.status(200).json({
+      success: true,
+      message: 'Conversation recovery cron completed',
+      stats: result,
+    });
+  } catch (error) {
+    console.error('[Cron] conversation-recovery:', error);
+    if (cronRun) {
+      await finishCronRun(
+        cronRun,
+        {
+          found: 0,
+          smsSent: 0,
+          smsFailed: 0,
+          waAttempted: 0,
+          waSucceeded: 0,
+          waFailed: 0,
+          retriesAttempted: 0,
+          flagsUpdated: 0,
+        },
+        { success: false, errorSummary: error.message }
+      ).catch(() => {});
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Internal server error',
+    });
+  }
+});
+
+router.post('/conversation-recovery', verifyCronSecret, async (req, res) => {
+  let cronRun = null;
+  try {
+    cronRun = await startCronRun(CRON_JOB_KEYS.CONVERSATION_RECOVERY);
+    const {
+      runConversationRecoveryCron,
+    } = require('../services/conversationRecovery/conversationRecoveryScheduler');
+    const result = await runConversationRecoveryCron({
+      scanLimit: Number(req.body?.scanLimit || req.query.scanLimit) || 200,
+      dispatchLimit: Number(req.body?.dispatchLimit || req.query.dispatchLimit) || 50,
+    });
+    await finishCronRun(
+      cronRun,
+      {
+        found: result.scan?.scanned || 0,
+        smsSent: 0,
+        smsFailed: 0,
+        waAttempted: (result.dispatch?.sent || 0) + (result.dispatch?.failed || 0),
+        waSucceeded: result.dispatch?.sent || 0,
+        waFailed: result.dispatch?.failed || 0,
+        retriesAttempted: 0,
+        flagsUpdated: result.scan?.scheduled || 0,
+      },
+      { success: true }
+    );
+    return res.status(200).json({
+      success: true,
+      message: 'Conversation recovery cron completed',
+      stats: result,
+    });
+  } catch (error) {
+    console.error('[Cron] conversation-recovery POST:', error);
+    if (cronRun) {
+      await finishCronRun(
+        cronRun,
+        {
+          found: 0,
+          smsSent: 0,
+          smsFailed: 0,
+          waAttempted: 0,
+          waSucceeded: 0,
+          waFailed: 0,
+          retriesAttempted: 0,
+          flagsUpdated: 0,
+        },
+        { success: false, errorSummary: error.message }
+      ).catch(() => {});
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Internal server error',
+    });
+  }
+});
+
 router.get('/osvi-outbound-due', verifyCronSecret, async (req, res) => {
   try {
     if (!isOsviConfigured()) {

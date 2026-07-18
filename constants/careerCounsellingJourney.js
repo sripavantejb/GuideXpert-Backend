@@ -144,9 +144,7 @@ const GENERIC_COUNSELLING_FALLBACK =
 const BREAKOUT_DEFLECTION = [
   'I can help with that separately.',
   '',
-  'For now, let me finish walking you through how to evaluate colleges — it will make any later recommendation much more meaningful.',
-  '',
-  'Reply when you are ready to continue.',
+  'Let’s finish this counseling step first — then that will be easier.',
 ].join('\n');
 
 /**
