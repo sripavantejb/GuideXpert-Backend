@@ -1,0 +1,228 @@
+{
+  "title": "College Predictor Post-Deploy Live Smoke",
+  "phone": "9347763131",
+  "webhook": "https://guide-xpert-backend.vercel.app/webhook/gupshup",
+  "commitExpected": "3f9eb7f",
+  "startedAt": "2026-07-18T15:44:21.307Z",
+  "results": [
+    {
+      "name": "short counselor welcome deployed",
+      "category": "deploy",
+      "status": "pass",
+      "details": {
+        "lines": 3
+      }
+    },
+    {
+      "name": "menu digit 5 not KEAM",
+      "category": "deploy",
+      "status": "pass"
+    },
+    {
+      "name": "TS EAMCET full journey + live API",
+      "category": "journey_ts",
+      "status": "pass",
+      "details": {
+        "outboundStatus": "submitted",
+        "replyLen": 883
+      }
+    },
+    {
+      "name": "sticky CSE filter no crash",
+      "category": "sticky_filters",
+      "status": "pass"
+    },
+    {
+      "name": "sticky Government filter",
+      "category": "sticky_filters",
+      "status": "pass"
+    },
+    {
+      "name": "sticky named CBIT",
+      "category": "sticky_filters",
+      "status": "pass"
+    },
+    {
+      "name": "sticky noise interrupt",
+      "category": "interrupt",
+      "status": "pass"
+    },
+    {
+      "name": "AGAIN restart",
+      "category": "interrupt",
+      "status": "pass"
+    },
+    {
+      "name": "AP EAMCET full journey + AU",
+      "category": "journey_ap",
+      "status": "pass"
+    },
+    {
+      "name": "named entry: Can I get CBIT",
+      "category": "named_college",
+      "status": "pass"
+    },
+    {
+      "name": "named entry: Can I get Vasavi",
+      "category": "named_college",
+      "status": "pass"
+    },
+    {
+      "name": "named entry: Can I get VNR",
+      "category": "named_college",
+      "status": "pass"
+    },
+    {
+      "name": "roman telugu Na rank",
+      "category": "multilingual",
+      "status": "pass"
+    },
+    {
+      "name": "typo eamset colleges",
+      "category": "typos",
+      "status": "pass"
+    },
+    {
+      "name": "out-of-order multi-slot NL",
+      "category": "slots",
+      "status": "pass"
+    },
+    {
+      "name": "no FP: rank predictor",
+      "category": "routing",
+      "status": "pass"
+    },
+    {
+      "name": "no FP: help me",
+      "category": "routing",
+      "status": "pass"
+    },
+    {
+      "name": "no FP: suggest a college",
+      "category": "routing",
+      "status": "pass"
+    },
+    {
+      "name": "prompt injection safe",
+      "category": "security",
+      "status": "pass"
+    },
+    {
+      "name": "no crash on rapid sticky messages",
+      "category": "stress",
+      "status": "pass"
+    }
+  ],
+  "totals": {
+    "executed": 20,
+    "passed": 20,
+    "failed": 0,
+    "warnings": 0
+  },
+  "evidence": [
+    {
+      "name": "welcome",
+      "reply": "Sure!\nWhich entrance exam did you write?\n\ne.g. TS EAMCET, JEE Main, KCET, AP EAMCET"
+    },
+    {
+      "name": "TS_EAMCET",
+      "replyPreview": "Perfect — predicting for your TS EAMCET rank 18453…\n\nHere are your predicted colleges:\n\nExam: TS EAMCET\nRank/Percentile: 18453\nCategory: OC\nGender: Female\n\nTop Matches:\n\n1. MAHATMA GANDHI INSTITUTE OF TECHNOLOGY (AUTONOMOUS)\n   Branch: ELECTRONICS AND COMMUNICATION ENGINEERING\n   Cutoff: 18018\n\n2. CHAITANYA BHARATHI INSTITUTE OF TECHNOLOGY\n   Branch: ELECTRICAL AND ELECTRONICS ENGINEERING\n   Cutof",
+      "status": "submitted"
+    },
+    {
+      "name": "AP_EAMCET",
+      "replyPreview": "Perfect — predicting for your AP EAMCET rank 12000…\n\nHere are your predicted colleges:\n\nExam: AP EAMCET\nRank/Percentile: 12000\nCategory: BC-A\nGender: Female\n\nTop Matches:\n\n1. SHRI VISHNU ENGG. COLLEGE FOR WOMEN\n   Branch: COMPUTER SCIENCE AND ENGINEERING\n   Cutoff: 11819\n\n2. R V R AND J C COLLEGE OF ENGINEERING\n   Branch: COMPUTER SCIENCE AND ENGINEERING\n   Cutoff: 12760\n\n3. VISHNU GRP OF INSTNS -",
+      "status": "submitted"
+    }
+  ],
+  "metrics": {
+    "latenciesMs": [
+      8298,
+      6520,
+      6496,
+      6204,
+      6635,
+      6943,
+      9582,
+      7569,
+      10339,
+      8642,
+      7934,
+      6351,
+      6533,
+      6326,
+      6915,
+      6956,
+      6959,
+      9895,
+      6293,
+      6549,
+      6506,
+      6496,
+      6111,
+      9228,
+      6183,
+      5885,
+      7543,
+      5837,
+      6572,
+      6351,
+      7012,
+      7285,
+      9241,
+      13768,
+      13002,
+      7600,
+      7658
+    ],
+    "webhookStatuses": [
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200
+    ],
+    "summary": {
+      "avgWebhookMs": 7573,
+      "p95WebhookMs": 13002,
+      "maxWebhookMs": 13768,
+      "webhook4xx5xx": 0
+    }
+  },
+  "criticalIssues": [],
+  "finishedAt": "2026-07-18T15:49:32.654Z",
+  "goNoGo": "FULL_PRODUCTION_GO",
+  "productionReady": true
+}
