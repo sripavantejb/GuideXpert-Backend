@@ -604,7 +604,8 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
     };
   }
 
-  if (opts.inboundId && context.step !== 'results') {
+  // Replay cached college reply for the same inbound (including retries after step=results).
+  if (opts.inboundId) {
     const completed = await resolveCompletedPrediction(
       { ...context, conversational: true },
       opts
@@ -623,6 +624,50 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
   if (ctx.step === 'results') {
     const followUp = await handleResultsFollowUp(text, ctx);
     if (followUp) return followUp;
+
+    // AU/SVU on sticky results → update region and re-run prediction (not nav reminder).
+    if (ctx.exam === EXAM_AP) {
+      const regionProbe = { ...ctx };
+      delete regionProbe.admission_category_name_enum;
+      const extracted = extractSlotsFromMessage(text, regionProbe);
+      if (extracted.admission_category_name_enum) {
+        const next = syncApTsReservationCodes({
+          ...ctx,
+          admission_category_name_enum: extracted.admission_category_name_enum,
+          conversational: true,
+          conversationOwner: 'COLLEGE_PREDICTOR',
+          resultCache: undefined,
+          pageOffset: undefined,
+          apiOffset: undefined,
+          ownershipFilter: null,
+          branchFilter: null,
+          filterLabel: null,
+          predictionHash: null,
+          lastRequestBody: null,
+        });
+        delete next.resultCache;
+        delete next.pageOffset;
+        delete next.apiOffset;
+        delete next.predictionHash;
+        delete next.lastRequestBody;
+        const built = buildPredictionContext(next);
+        if (built.blocked) {
+          return {
+            reply: AP_OC_MALE_BLOCKED_REPLY,
+            context: { ...next, step: 'done' },
+            clearState: true,
+          };
+        }
+        if (!built.error) {
+          logEventFn('predictor_journey_event', {
+            eventType: 'region_changed_repredict',
+            region: extracted.admission_category_name_enum,
+          });
+          return await runPrediction(built.ctx, opts);
+        }
+      }
+    }
+
     // Unrecognized follow-up: keep ownership and remind actions.
     return {
       reply:

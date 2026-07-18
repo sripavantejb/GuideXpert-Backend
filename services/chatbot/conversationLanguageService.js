@@ -33,12 +33,45 @@ function isExplicitEnglishMenuGreeting(message) {
 }
 
 /**
+ * Guided-flow slot answers (AU/SVU, menu digits, category/gender codes) are content,
+ * not language signals — must not flip outbound language via lead Telugu memory.
+ */
+function isGuidedFlowSlotLikeToken(message) {
+  const text = String(message || '').trim();
+  if (!text || text.length > 24) return false;
+  if (!/^[\x00-\x7F]+$/u.test(text)) return false;
+  if (AMBIGUOUS_ACK_PATTERN.test(text)) return false;
+  if (isExplicitEnglishMenuGreeting(text)) return false;
+
+  // Menu digits / ranks used in predictors and numbered prompts.
+  if (/^\d{1,8}(\.\d{1,2})?$/.test(text)) return true;
+
+  // Region, gender, common reservation / branch / exam aliases.
+  if (
+    /^(au|svu|male|female|boy|girl|man|woman|oc|bc-?[a-d]?|sc|st|ews|obc(-?ncl)?|general|gen|open|pwd|cse|ece|eee|mech|mechanical|civil|ai|aiml|it|ap|ts|jee|kcet|keam|tnea|wbjee|mht|mhtcet)$/i.test(
+      text
+    )
+  ) {
+    return true;
+  }
+
+  // Short ASCII codes like "AU", "SVU", "OC", "BC-A" (exclude pure acks already handled).
+  if (/^[A-Za-z]{1,8}(-[A-Za-z0-9]{1,4})?$/.test(text) && text.length <= 8) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Short acknowledgements / menu taps — not language signals (Rule 2).
+ * Slot-like tokens are excluded so they do not inherit lead preferredLanguage.
  */
 function isAmbiguousMessage(message) {
   const text = String(message || '').trim();
   if (!text) return true;
   if (isExplicitEnglishMenuGreeting(text)) return false;
+  if (isGuidedFlowSlotLikeToken(text)) return false;
   if (AMBIGUOUS_ACK_PATTERN.test(text)) return true;
   if (/^[1-6]$/.test(text)) return true;
   if (text.length <= 2 && /^[\x00-\x7F]+$/u.test(text)) return true;
@@ -283,6 +316,15 @@ function resolveConversationLanguage(conversation, leadContext, detected = {}, m
     };
   }
 
+  // Guided-flow slot answers (AU, digits, OC, …) — never inherit lead Telugu/Hindi memory.
+  if (isGuidedFlowSlotLikeToken(message)) {
+    return {
+      language: DEFAULT_LANGUAGE,
+      source: 'message',
+      resolutionReason: 'guided_flow_slot_token',
+    };
+  }
+
   // Rule 2: ambiguous messages may use conversation / lead memory.
   if (isAmbiguousMessage(message)) {
     const memory = readStoredPreference(conversation, leadContext);
@@ -406,6 +448,7 @@ module.exports = {
   resolveConversationLanguage,
   resolveSessionAwareLanguage,
   isAmbiguousMessage,
+  isGuidedFlowSlotLikeToken,
   isShortCpaFollowUp,
   isShortIitCounsellingFollowUp,
   isShortIitCounsellingStrategyFollowUp,

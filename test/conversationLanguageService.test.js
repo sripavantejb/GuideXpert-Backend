@@ -71,6 +71,36 @@ describe('conversationLanguageService', () => {
     assert.equal(isAmbiguousMessage('hi'), false);
   });
 
+  test('AU/SVU and menu digits are not ambiguous language signals', () => {
+    assert.equal(isAmbiguousMessage('AU'), false);
+    assert.equal(isAmbiguousMessage('SVU'), false);
+    assert.equal(isAmbiguousMessage('1'), false);
+    assert.equal(isAmbiguousMessage('OC'), false);
+    assert.equal(isAmbiguousMessage('Female'), false);
+  });
+
+  test('AU does not inherit Telugu lead memory when detection is weak', () => {
+    const result = resolveConversationLanguage(
+      { preferredLanguage: 'te' },
+      { iit: { preferredLanguage: 'Telugu' } },
+      { language: 'en', confidence: 0.4 },
+      'AU'
+    );
+    assert.equal(result.language, 'en');
+    assert.equal(result.resolutionReason, 'guided_flow_slot_token');
+  });
+
+  test('SVU does not inherit Telugu conversation preference', () => {
+    const result = resolveConversationLanguage(
+      { preferredLanguage: 'te' },
+      {},
+      { language: 'te', confidence: 0.2 },
+      'SVU'
+    );
+    assert.equal(result.language, 'en');
+    assert.equal(result.resolutionReason, 'guided_flow_slot_token');
+  });
+
   test('explicit English greeting hi switches to English over stored Telugu', () => {
     const result = resolveConversationLanguage(
       { preferredLanguage: 'te' },

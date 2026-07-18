@@ -190,6 +190,57 @@ describe('chatbotCollegePredictor', () => {
     assert.match(r.reply, /GRIET/);
   });
 
+  test('literal AU on region step predicts colleges', async () => {
+    setCollegePredictorDeps({ getPredictedColleges: makeSuccessPredictor(calls) });
+    let r = await handleCollegePredictorMessage('1', {}, { isNewEntry: true });
+    r = await handleCollegePredictorMessage('5000', r.context);
+    r = await handleCollegePredictorMessage('1', r.context);
+    r = await handleCollegePredictorMessage('2', r.context);
+    assert.equal(r.context.step, 'region');
+    r = await handleCollegePredictorMessage('AU', r.context);
+    assert.equal(r.context.admission_category_name_enum, 'AU');
+    assert.equal(r.context.step, 'results');
+    assert.match(r.reply, /Top Matches/);
+    assert.equal(calls.at(-1).body.admission_category_name_enum, 'AU');
+    assert.equal(/still in College Predictor/i.test(r.reply), false);
+  });
+
+  test('AU on results step re-predicts instead of sticky nav', async () => {
+    setCollegePredictorDeps({ getPredictedColleges: makeSuccessPredictor(calls) });
+    let r = await handleCollegePredictorMessage('1', {}, { isNewEntry: true });
+    r = await handleCollegePredictorMessage('5000', r.context);
+    r = await handleCollegePredictorMessage('1', r.context);
+    r = await handleCollegePredictorMessage('2', r.context);
+    r = await handleCollegePredictorMessage('SVU', r.context);
+    assert.equal(r.context.step, 'results');
+    assert.equal(r.context.admission_category_name_enum, 'SVU');
+    const beforeCalls = calls.length;
+    r = await handleCollegePredictorMessage('AU', r.context);
+    assert.equal(r.context.admission_category_name_enum, 'AU');
+    assert.equal(r.context.step, 'results');
+    assert.match(r.reply, /Top Matches/);
+    assert.equal(/still in College Predictor/i.test(r.reply), false);
+    assert.ok(calls.length > beforeCalls);
+    assert.equal(calls.at(-1).body.admission_category_name_enum, 'AU');
+  });
+
+  test('AGAIN clears prior region and result cache', async () => {
+    setCollegePredictorDeps({ getPredictedColleges: makeSuccessPredictor(calls) });
+    let r = await handleCollegePredictorMessage('1', {}, { isNewEntry: true });
+    r = await handleCollegePredictorMessage('5000', r.context);
+    r = await handleCollegePredictorMessage('1', r.context);
+    r = await handleCollegePredictorMessage('2', r.context);
+    r = await handleCollegePredictorMessage('AU', r.context);
+    assert.equal(r.context.step, 'results');
+    assert.ok(Array.isArray(r.context.resultCache));
+    r = await handleCollegePredictorMessage('AGAIN', r.context);
+    assert.equal(r.restart, true);
+    assert.equal(r.context.step, 'exam');
+    assert.equal(r.context.admission_category_name_enum, undefined);
+    assert.equal(r.context.rank, undefined);
+    assert.equal(r.context.resultCache, undefined);
+  });
+
   test('AP OC Male blocks prediction without calling API', async () => {
     setCollegePredictorDeps({ getPredictedColleges: mockPredictorMustNotBeCalled() });
     let r = await handleCollegePredictorMessage('1', {}, { isNewEntry: true });

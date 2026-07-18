@@ -74,14 +74,15 @@ async function processCollegePredictorTurn({
     });
     nextState = flow.completeBotState;
   } else {
+    // Full replace each turn (mergeContext treats college atomically) so AGAIN/restart
+    // cannot leave stale admission_category / resultCache from a prior prediction.
     nextContext.college = c.context;
     nextContext.collegePredictorActive = true;
     nextContext.currentJourney = 'COLLEGE_PREDICTOR';
     if (c.predictionIdempotency) {
       nextContext.predictionIdempotency = c.predictionIdempotency;
     }
-    // Soft restart (AGAIN) keeps journey but clears result cache via initialContext.
-    if (c.restart) {
+    if (c.restart || isNewEntry) {
       nextContext.predictionIdempotency = null;
     }
   }
