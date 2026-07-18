@@ -43,7 +43,7 @@ const {
 const {
   isCareerCounsellingJourneyEntryQuery,
 } = require('./careerCounselling/careerCounsellingIntentService');
-const { isCareerCounsellingV2Enabled } = require('../../constants/careerCounsellingV2Discovery');
+const { isCareerCounsellingJourneyEnabled } = require('../../constants/careerCounsellingJourney');
 const {
   isCollegePredictorEntryQuery,
 } = require('./whatsappCollegePredictor/collegePredictorSessionService');
@@ -626,7 +626,7 @@ function classifyIntent(text, botState, productLine, originalText = null) {
   // Predictor entry already handled above (before ICE process topics).
 
   if (
-    isCareerCounsellingV2Enabled() &&
+    isCareerCounsellingJourneyEnabled() &&
     isCareerCounsellingJourneyEntryQuery(t, original)
   ) {
     return {
