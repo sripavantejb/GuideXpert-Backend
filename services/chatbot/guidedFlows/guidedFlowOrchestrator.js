@@ -15,10 +15,6 @@ const {
   resolveScopeFirewallReply,
   resolvePolicyRefusal,
 } = require('../../../constants/scopeFirewallReplies');
-const {
-  isObviousOutOfPredictorDomain,
-  isPredictorInFlowMessage,
-} = require('../whatsappCollegePredictor/collegePredictorSessionService');
 const { logChatbotEvent } = require('../chatbotStructuredLog');
 
 function logCareerJourneyInterrupt(flow, botState, routingText) {
@@ -246,13 +242,16 @@ async function tryRouteActiveGuidedFlow(params) {
     return null;
   }
 
-  // Section D V2: Scope Firewall still runs inside College Predictor ownership.
+  // P0 sticky ownership: College Predictor owns soft OOS (sticky reminder / re-prompt).
+  // Only hard policy blocks use global scope-firewall copy.
   if (flow.id === 'college_predictor' && isScopeFirewallEnabled()) {
-    const collegeCtx = botState?.context?.college || {};
-    const oos =
-      isObviousOutOfPredictorDomain(routingText, inbound.text) &&
-      !isPredictorInFlowMessage(routingText, collegeCtx);
-    if (oos) {
+    const scope = await evaluateInboundScope({
+      originalText: inbound.text,
+      englishMessage: routingText || inbound.text,
+      intent: 'college_predictor_continue',
+      botState,
+    });
+    if (scope.policyBlock) {
       return refuseOutOfScopeInPredictor({
         ...params,
         routingText,
