@@ -45,8 +45,12 @@ function isCollegePredictorEntryQuery(text, originalText = null) {
   const candidates = [normalizeText(text), normalizeText(originalText || '')].filter(Boolean);
   return candidates.some((t) => {
     if (!t) return false;
+    // Never match rank-predictor phrases here — those belong to Rank Predictor only.
+    if (/\b(rank\s+predictor|rank\s+prediction|predict(?:ing)?\s+(?:my\s+)?rank|estimate(?:ing)?\s+(?:my\s+)?rank)\b/i.test(t)) {
+      return false;
+    }
     if (
-      /^(college predictor|college prediction|predict colleges?|predict my colleges?|need college prediction|show colleges|college list|college options|college suggestions?|college recommendation|rank predictor)\s*[.!?]?$/i.test(
+      /^(college predictor|college prediction|predict colleges?|predict my colleges?|need college prediction|show colleges|college list|college options|college suggestions?|college recommendation)\s*[.!?]?$/i.test(
         t
       )
     ) {

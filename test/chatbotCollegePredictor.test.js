@@ -122,12 +122,20 @@ describe('chatbotCollegePredictor', () => {
   });
 
   test('KEAM happy path', async () => {
-    const r = await runFlow(['5', '5000', '2']);
+    // Menu digit "5" is College Predictor entry — choose KEAM after welcome.
+    const r = await runFlow(['College predictor', '5', '5000', '2']);
     assert.equal(r.clearState, false);
     assert.equal(r.context.step, 'results');
     assert.equal(calls.at(-1).exam, EXAM_KEAM);
     assert.equal(calls.at(-1).body.admission_category_name_enum, 'DEFAULT');
     assert.equal(calls.at(-1).body.reservation_category_codes[0], 'EW');
+  });
+
+  test('menu digit 5 on new entry shows welcome not KEAM', async () => {
+    const r = await handleCollegePredictorMessage('5', {}, { isNewEntry: true });
+    assert.equal(r.context.exam, undefined);
+    assert.equal(r.context.step, 'exam');
+    assert.match(r.reply, /Which entrance exam/i);
   });
 
   test('WBJEE happy path with quota', async () => {

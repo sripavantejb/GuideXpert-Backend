@@ -405,14 +405,21 @@ function extractSlotsFromMessage(text, ctx = {}) {
 
   const examForRank = updates.exam || ctx.exam;
   const percentile = parsePercentileValue(text);
+  const bareDigitOnly =
+    menuDigit != null && String(text || '').trim() === String(menuDigit);
+  // Bare menu digits (1, 2, …) must only fill percentile when that slot is active.
+  // Otherwise MHT admission/category digits corrupt a previously captured percentile.
   if (
     percentile != null &&
     !(focus === SLOT_EXAM && menuDigit != null) &&
-    (examForRank === EXAM_MHT ||
+    (
       focus === SLOT_PERCENTILE ||
-      /\bpercentile\b/i.test(text) ||
-      /\b\d+(?:\.\d+)?\s*%/.test(text) ||
-      /\bmy\s+percentile\s+is\b/i.test(text))
+      (!bareDigitOnly &&
+        (examForRank === EXAM_MHT ||
+          /\bpercentile\b/i.test(text) ||
+          /\b\d+(?:\.\d+)?\s*%/.test(text) ||
+          /\bmy\s+percentile\s+is\b/i.test(text)))
+    )
   ) {
     updates.percentile = percentile;
   }

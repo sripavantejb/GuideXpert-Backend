@@ -18,6 +18,14 @@ const {
   clearDependentSlots,
   buildPredictionContext,
   slotToLegacyStep,
+  SLOT_EXAM,
+  SLOT_RANK,
+  SLOT_PERCENTILE,
+  SLOT_ADMISSION_TYPE,
+  SLOT_CATEGORY,
+  SLOT_GENDER,
+  SLOT_QUOTA,
+  SLOT_REGION,
 } = require('./whatsappCollegePredictor/collegePredictorSlots');
 const {
   buildConversationalWelcome,
@@ -25,7 +33,6 @@ const {
   buildInvalidMessage,
   buildPredictingMessage,
 } = require('./whatsappCollegePredictor/collegePredictorConversation');
-const { SLOT_EXAM } = require('./whatsappCollegePredictor/collegePredictorSlots');
 const {
   buildPredictionHash,
   buildPredictionCompletion,
@@ -55,6 +62,8 @@ const {
 function isNeutralPredictorEntry(text) {
   const t = String(text || '').trim().toLowerCase();
   if (!t) return true;
+  // Bare main-menu College Predictor digit ("5") must not be treated as an exam option.
+  if (/^5$/.test(t)) return true;
   if (
     /^(hi|hello|hey|help|start|menu|again|predict|college predictor|i want to predict|want to predict|predict my colleges|predict colleges)$/.test(
       t
@@ -65,6 +74,11 @@ function isNeutralPredictorEntry(text) {
   return /college prediction|predict colleges|college predictor|help me with college|can you predict|need college|show colleges|which colleges|suggest colleges/i.test(
     t
   );
+}
+
+/** Main-menu College Predictor digit (iit_counselling menu option 5). Must not select KEAM. */
+function isMainMenuEntryDigit(text) {
+  return /^5$/.test(String(text || '').trim());
 }
 
 let fetchCollegeDostCollegesFn = fetchCollegeDostColleges;
@@ -107,10 +121,12 @@ function syncApTsReservationCodes(ctx) {
   return { ...ctx, reservation_category_codes: [code] };
 }
 
-function applyExtractedSlots(ctx, extracted) {
+function applyExtractedSlots(ctx, extracted, focusSlot = null) {
   if (!extracted || !Object.keys(extracted).length) return { ...ctx };
 
   let next = { ...ctx };
+
+  const canWrite = (slot, currentlyFilled) => !currentlyFilled || focusSlot === slot;
 
   if (extracted.exam) {
     if (next.exam && extracted.exam !== next.exam) {
@@ -120,20 +136,34 @@ function applyExtractedSlots(ctx, extracted) {
     }
   }
 
-  if (extracted.rank != null) next.rank = extracted.rank;
-  if (extracted.percentile != null) next.percentile = extracted.percentile;
-  if (extracted.admissionType) {
+  // Slot locking: once a validated value is stored, later menu digits must not overwrite it
+  // unless the bot is explicitly re-asking that slot.
+  if (extracted.rank != null && canWrite(SLOT_RANK, next.rank != null)) {
+    next.rank = extracted.rank;
+  }
+  if (extracted.percentile != null && canWrite(SLOT_PERCENTILE, next.percentile != null)) {
+    next.percentile = extracted.percentile;
+  }
+  if (extracted.admissionType && canWrite(SLOT_ADMISSION_TYPE, Boolean(next.admissionType))) {
     next.admissionType = extracted.admissionType;
     next.admission_category_name_enum = extracted.admission_category_name_enum;
   }
-  if (extracted.categoryLabel) {
+  if (extracted.categoryLabel && canWrite(SLOT_CATEGORY, Boolean(next.categoryLabel))) {
     next.categoryLabel = extracted.categoryLabel;
     next.categoryN = extracted.categoryN;
     next.baseCategory = extracted.baseCategory;
   }
-  if (extracted.gender) next.gender = extracted.gender;
-  if (extracted.quota) next.quota = extracted.quota;
-  if (extracted.admission_category_name_enum && next.exam === EXAM_AP) {
+  if (extracted.gender && canWrite(SLOT_GENDER, Boolean(next.gender))) {
+    next.gender = extracted.gender;
+  }
+  if (extracted.quota && canWrite(SLOT_QUOTA, Boolean(next.quota))) {
+    next.quota = extracted.quota;
+  }
+  if (
+    extracted.admission_category_name_enum &&
+    next.exam === EXAM_AP &&
+    canWrite(SLOT_REGION, Boolean(next.admission_category_name_enum))
+  ) {
     next.admission_category_name_enum = extracted.admission_category_name_enum;
   }
 
@@ -616,20 +646,28 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
     return await runPrediction(ctx, opts);
   }
 
+  // P0: main-menu digits (e.g. "5" = College Predictor) must not select exam options on entry.
+  const slotText =
+    opts.isNewEntry && isMainMenuEntryDigit(text) ? '' : text;
+
   const beforeMissing = getMissingSlots(ctx);
-  const extracted = extractSlotsFromMessage(text, ctx);
-  const merged = applyExtractedSlots(ctx, extracted);
+  const focusSlot = beforeMissing[0] || null;
+  const extracted = extractSlotsFromMessage(slotText, ctx);
+  const merged = applyExtractedSlots(ctx, extracted, focusSlot);
   const afterMissing = getMissingSlots(merged);
 
-  const trimmed = String(text || '').trim();
+  const trimmed = String(slotText || '').trim();
   if (
     beforeMissing.length > 0 &&
     afterMissing.length > 0 &&
     beforeMissing[0] === afterMissing[0] &&
-    trimmed &&
+    (trimmed || (opts.isNewEntry && isMainMenuEntryDigit(text))) &&
     Object.keys(extracted).length === 0
   ) {
-    if (beforeMissing[0] === SLOT_EXAM && isNeutralPredictorEntry(text)) {
+    if (
+      beforeMissing[0] === SLOT_EXAM &&
+      (isNeutralPredictorEntry(text) || isMainMenuEntryDigit(text))
+    ) {
       logEventFn('predictor_journey_event', { eventType: 'prediction_started' });
       return {
         reply: buildConversationalWelcome(),
@@ -660,7 +698,9 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
   if (!isPredictionReady(ctx)) {
     const nextSlot = getMissingSlots(ctx)[0];
     const reply =
-      opts.isNewEntry && nextSlot === SLOT_EXAM && isNeutralPredictorEntry(text)
+      opts.isNewEntry &&
+      nextSlot === SLOT_EXAM &&
+      (isNeutralPredictorEntry(text) || isMainMenuEntryDigit(text))
         ? buildConversationalWelcome()
         : buildQuestionForSlot(nextSlot, ctx);
     if (opts.isNewEntry) {
