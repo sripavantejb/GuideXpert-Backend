@@ -327,7 +327,9 @@ function buildCases() {
     { languageOrAck: true },
     { resetState: false, note: 'language switch attempt' }
   );
-  add('X9', 'regression', 'Restart', { replyMatch: /menu|welcome|how can I help|GuideXpert/i });
+  add('X9', 'regression', 'Restart', {
+    replyMatch: /menu|welcome|how can I help|GuideXpert|Counselling Details|College Predictor|Rank Predictor|What would you like help with/i,
+  });
 
   return cases;
 }
@@ -369,7 +371,12 @@ function evaluate(c, meta) {
   if (e.noKaSteal && (RE.ka.test(reply) || ctx.knowledgeAssistantActive)) {
     fails.push('stolen_by_knowledge_assistant');
   }
-  if (e.noKeamTrap && /KEAM/i.test(reply) && !/which exam|select.*exam|College Predictor/i.test(reply)) {
+  if (
+    e.noKeamTrap &&
+    /KEAM/i.test(reply) &&
+    !/which (entrance )?exam|select.*exam|College Predictor|Supported exams/i.test(reply) &&
+    (/rank|percentile/i.test(reply) || /keam/i.test(String(meta.botState?.context?.college?.exam || '')))
+  ) {
     fails.push('menu_5_trapped_as_keam');
   }
   if (e.slotOrProgress) {

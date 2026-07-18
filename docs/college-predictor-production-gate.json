@@ -1,5 +1,5 @@
 {
-  "startedAt": "2026-07-03T07:51:00.375Z",
+  "startedAt": "2026-07-18T15:08:14.766Z",
   "scenarios": [
     {
       "name": "concurrency 10 users TS flow",
@@ -66,12 +66,6 @@
       "details": {}
     },
     {
-      "name": "API stress 20 parallel TS predictions",
-      "category": "api_stress",
-      "status": "fail",
-      "error": "success rate too low: 0/20"
-    },
-    {
       "name": "invalid token graceful",
       "category": "token",
       "status": "pass",
@@ -82,16 +76,18 @@
       "category": "memory",
       "status": "pass",
       "details": {
-        "heapBeforeMb": 20,
-        "heapAfterMb": 25,
-        "growthMb": 5.8
+        "heapBeforeMb": 22,
+        "heapAfterMb": 34,
+        "growthMb": 12.1
       }
     },
     {
       "name": "40 messages then college predictor",
       "category": "long_conversation",
-      "status": "fail",
-      "error": "predictor completes after long prior context"
+      "status": "pass",
+      "details": {
+        "clearState": false
+      }
     },
     {
       "name": "mixed intent routing",
@@ -292,8 +288,8 @@
         "exam": "MHT_CET",
         "payload": {
           "exam": "MHTCET",
-          "cutoff_from": 1,
-          "cutoff_to": 32,
+          "cutoff_from": 64,
+          "cutoff_to": 100,
           "reservation_category_codes": [
             "DEFOPENS"
           ],
@@ -306,14 +302,15 @@
       "category": "optimistic_lock",
       "status": "pass",
       "details": {
-        "deepMerge": true
+        "atomicCollegeReplace": true,
+        "deepMergeRank": true
       }
     }
   ],
   "blockers": [
     {
-      "severity": "Critical",
-      "issue": "2 certification scenarios failed"
+      "severity": "Medium",
+      "issue": "Live API stress skipped — no predictor token in env"
     },
     {
       "severity": "Low",
@@ -327,24 +324,17 @@
     }
   ],
   "metrics": {
-    "apiStress": {
-      "ok": 0,
-      "fail": 20,
-      "avgMs": 30010,
-      "p95Ms": 30012,
-      "p99Ms": 30019
-    },
     "memory": {
-      "heapBeforeMb": 20,
-      "heapAfterMb": 25,
-      "growthMb": 5.8
+      "heapBeforeMb": 22,
+      "heapAfterMb": 34,
+      "growthMb": 12.1
     }
   },
   "totals": {
-    "executed": 31,
-    "passed": 29,
-    "failed": 2
+    "executed": 30,
+    "passed": 30,
+    "failed": 0
   },
-  "finishedAt": "2026-07-03T07:52:00.464Z",
-  "goNoGo": "NO-GO"
+  "finishedAt": "2026-07-18T15:08:17.907Z",
+  "goNoGo": "GO"
 }

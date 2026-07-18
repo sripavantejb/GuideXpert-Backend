@@ -35,43 +35,29 @@ const BRANCH_FILTER_RULES = [
 
 /** True OOS — must never be answered inside predictor journey. */
 const PREDICTOR_OOS_RE =
-  /\b(python|javascript|java code|teach me code|write (a |some )?code|ipl|cricket|who won|movie|bollywood|politics|weather|bitcoin|crypto|amazon|flipkart|shopping|shop on|medical|mbbs|neet ug)\b/i;
+  /\b(python|javascript|java code|teach me code|write (a |some )?code|ipl|cricket|who won|movie|bollywood|politics|weather|bitcoin|crypto|amazon|flipkart|shopping|shop on|medical|mbbs|neet ug|recipe|cooking|football|instagram|tiktok|homework math|solve this equation)\b/i;
+
+const DISTRICT_FILTER_RULES = [
+  { re: /\b(hyderabad|hyd)\b/i, label: 'Hyderabad', districts: ['Hyderabad', 'Ranga Reddy', 'Medchal'] },
+  { re: /\b(warangal)\b/i, label: 'Warangal', districts: ['Warangal'] },
+  { re: /\b(vijayawada|bezawada)\b/i, label: 'Vijayawada', districts: ['Krishna', 'NTR'] },
+  { re: /\b(visakhapatnam|vizag)\b/i, label: 'Visakhapatnam', districts: ['Visakhapatnam'] },
+  { re: /\b(tirupati)\b/i, label: 'Tirupati', districts: ['Tirupati', 'Chittoor'] },
+  { re: /\b(guntur)\b/i, label: 'Guntur', districts: ['Guntur'] },
+  { re: /\b(kakinada)\b/i, label: 'Kakinada', districts: ['East Godavari', 'Kakinada'] },
+  { re: /\b(nellore)\b/i, label: 'Nellore', districts: ['Nellore', 'SPSR Nellore'] },
+];
+
+const GIRLS_COLLEGE_RE = /\b(girls?\s+colleges?|only\s+girls|women'?s?\s+colleges?)\b/i;
 
 /**
- * Natural-language College Predictor entry (after JEE/ICE / marks-rank checks).
- * Never match bare "college" alone.
+ * Natural-language College Predictor entry — delegates to scored intent service (1A).
  */
 function isCollegePredictorEntryQuery(text, originalText = null) {
-  const candidates = [normalizeText(text), normalizeText(originalText || '')].filter(Boolean);
-  return candidates.some((t) => {
-    if (!t) return false;
-    // Never match rank-predictor phrases here — those belong to Rank Predictor only.
-    if (/\b(rank\s+predictor|rank\s+prediction|predict(?:ing)?\s+(?:my\s+)?rank|estimate(?:ing)?\s+(?:my\s+)?rank)\b/i.test(t)) {
-      return false;
-    }
-    if (
-      /^(college predictor|college prediction|predict colleges?|predict my colleges?|need college prediction|show colleges|college list|college options|college suggestions?|college recommendation)\s*[.!?]?$/i.test(
-        t
-      )
-    ) {
-      return true;
-    }
-    if (
-      /\b(college predictor|college prediction|predict(?:ing)?\s+(?:my\s+)?colleges?|need college prediction|show colleges|suggest(?:ing)?\s+(?:engineering\s+)?colleges|college suggestions?|college recommendation|recommendation for colleges|suitable colleges|eligible colleges|possible colleges|expected colleges|my college options|admission chances|engineering colleges|best colleges for my rank|top colleges for my rank|which engineering colleges|suggest colleges for my rank)\b/i.test(
-        t
-      )
-    ) {
-      return true;
-    }
-    if (
-      /\b(which colleges (?:can|will|should) i get|can you predict (?:my )?colleges?|i want to know which colleges|can i get (cse|ece|eee|government colleges|private colleges|govt colleges))\b/i.test(
-        t
-      )
-    ) {
-      return true;
-    }
-    return false;
-  });
+  const {
+    isCollegePredictorEntryQuery: resolveEntry,
+  } = require('./collegePredictorIntentService');
+  return resolveEntry(text, originalText);
 }
 
 function isPredictorRestartRequest(text, originalText = null) {
@@ -121,13 +107,64 @@ function isTopCollegesRequest(text) {
   return FOLLOWUP_TOP_RE.test(String(text || ''));
 }
 
+function resolveDistrictFilter(text) {
+  const t = String(text || '');
+  for (const rule of DISTRICT_FILTER_RULES) {
+    if (rule.re.test(t)) return { label: rule.label, districts: rule.districts };
+  }
+  return null;
+}
+
+function resolveGirlsFilter(text) {
+  return GIRLS_COLLEGE_RE.test(String(text || ''));
+}
+
+function resolveNamedCollegeFilter(text, preferredCollege = null) {
+  try {
+    const { extractPreferredCollege } = require('./collegePredictorIntentService');
+    const fromText = extractPreferredCollege(text);
+    if (fromText) return fromText;
+  } catch (_) {
+    /* ignore */
+  }
+  if (preferredCollege && String(text || '').trim()) {
+    // "show cbit" style — preferred already known
+    if (new RegExp(String(preferredCollege).replace(/\s+/g, '\\s*'), 'i').test(text)) {
+      return preferredCollege;
+    }
+  }
+  return preferredCollege && /^(show|filter|only|check)\b/i.test(String(text || '').trim())
+    ? preferredCollege
+    : null;
+}
+
+function collegeMatchesNamedCollege(college, name) {
+  if (!name) return true;
+  const n = String(name).toLowerCase();
+  const hay = `${college?.college_name || ''} ${college?.college_code || ''}`.toLowerCase();
+  return hay.includes(n.toLowerCase()) || new RegExp(n.replace(/\s+/g, '\\s*'), 'i').test(hay);
+}
+
+function collegeMatchesDistrict(college, districtFilter) {
+  if (!districtFilter?.districts?.length) return true;
+  const loc = `${college?.district || ''} ${college?.city || ''} ${college?.college_name || ''}`.toLowerCase();
+  return districtFilter.districts.some((d) => loc.includes(String(d).toLowerCase()));
+}
+
+function collegeMatchesGirls(college) {
+  const n = String(college?.college_name || '');
+  return /\b(women|girls|ladies)\b/i.test(n);
+}
+
 function isPredictorFollowUpAction(text, collegeCtx = {}) {
   if (!text) return false;
   if (isShowMoreRequest(text)) return true;
   if (isTopCollegesRequest(text)) return true;
   if (resolveBranchFilter(text)) return true;
   if (resolveOwnershipFilter(text)) return true;
-  if (/\b(girls colleges|only girls)\b/i.test(text)) return true;
+  if (resolveGirlsFilter(text)) return true;
+  if (resolveDistrictFilter(text)) return true;
+  if (resolveNamedCollegeFilter(text, collegeCtx.preferredCollege)) return true;
   if (/\b(lower colleges|higher colleges|any more colleges)\b/i.test(text)) return true;
   if (collegeCtx.step === 'results') {
     if (/^(cse|ece|eee|mechanical|civil|ai|government|private)\s*[.!?]?$/i.test(normalizeText(text))) {
@@ -190,7 +227,16 @@ function collegeMatchesBranch(college, branchCode) {
   return branches.some((b) => re.test(`${b.branch_name || ''} ${b.branch_code || ''}`));
 }
 
-function filterCollegesLocally(colleges, { ownership = null, branchCode = null } = {}) {
+function filterCollegesLocally(
+  colleges,
+  {
+    ownership = null,
+    branchCode = null,
+    namedCollege = null,
+    districtFilter = null,
+    girlsOnly = false,
+  } = {}
+) {
   let list = Array.isArray(colleges) ? [...colleges] : [];
   if (branchCode) {
     list = list.filter((c) => collegeMatchesBranch(c, branchCode));
@@ -199,6 +245,15 @@ function filterCollegesLocally(colleges, { ownership = null, branchCode = null }
     list = list.filter((c) => isLikelyGovernmentCollege(c.college_name));
   } else if (ownership === 'private') {
     list = list.filter((c) => !isLikelyGovernmentCollege(c.college_name));
+  }
+  if (namedCollege) {
+    list = list.filter((c) => collegeMatchesNamedCollege(c, namedCollege));
+  }
+  if (districtFilter) {
+    list = list.filter((c) => collegeMatchesDistrict(c, districtFilter));
+  }
+  if (girlsOnly) {
+    list = list.filter((c) => collegeMatchesGirls(c));
   }
   return list;
 }
@@ -220,8 +275,12 @@ module.exports = {
   isTopCollegesRequest,
   resolveBranchFilter,
   resolveOwnershipFilter,
+  resolveDistrictFilter,
+  resolveGirlsFilter,
+  resolveNamedCollegeFilter,
   isLikelyGovernmentCollege,
   collegeMatchesBranch,
+  collegeMatchesNamedCollege,
   filterCollegesLocally,
   slicePage,
 };

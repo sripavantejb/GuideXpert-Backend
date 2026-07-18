@@ -48,11 +48,17 @@ async function processCollegePredictorTurn({
   inbound,
   contextPatch,
   isNewEntry = false,
+  preferredCollege = null,
 }) {
-  const c = await handleCollegePredictorMessage(inboundText, contextPatch.college || {}, {
+  let collegeCtx = contextPatch.college || {};
+  if (preferredCollege) {
+    collegeCtx = { ...collegeCtx, preferredCollege };
+  }
+  const c = await handleCollegePredictorMessage(inboundText, collegeCtx, {
     isNewEntry,
     inboundId: inbound._id,
     predictionIdempotency: contextPatch.predictionIdempotency || null,
+    preferredCollege: preferredCollege || collegeCtx.preferredCollege || null,
   });
 
   let nextState = flow.botState;
@@ -224,6 +230,7 @@ async function processGuidedFlowTurn({
   intent = null,
   phone = null,
   conversationId = null,
+  preferredCollege = null,
 }) {
   switch (flow.id) {
     case 'college_predictor':
@@ -240,7 +247,14 @@ async function processGuidedFlowTurn({
           localizationTier: 'static',
         };
       }
-      return processCollegePredictorTurn({ flow, inboundText, inbound, contextPatch, isNewEntry });
+      return processCollegePredictorTurn({
+        flow,
+        inboundText,
+        inbound,
+        contextPatch,
+        isNewEntry,
+        preferredCollege,
+      });
     case 'rank_predictor':
       return processRankPredictorTurn({ flow, inboundText, contextPatch });
     case 'career_counselling_v2':

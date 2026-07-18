@@ -45,8 +45,9 @@ const {
 } = require('./careerCounselling/careerCounsellingIntentService');
 const { isCareerCounsellingJourneyEnabled } = require('../../constants/careerCounsellingJourney');
 const {
-  isCollegePredictorEntryQuery,
-} = require('./whatsappCollegePredictor/collegePredictorSessionService');
+  resolveCollegePredictorEntry,
+  isHighConfidenceCollegePredictorEntry,
+} = require('./whatsappCollegePredictor/collegePredictorIntentService');
 const {
   normalizeText,
   escapeRegExp,
@@ -424,6 +425,9 @@ function isRankOnlyCollegePredictorQuery(text, originalText = null) {
     if (/\bAIR\s*[#:]?\s*\d{1,9}\b/i.test(t)) return true;
     if (/\brank\s*(?:is|:|=|-)?\s*\d{1,9}\b/i.test(t)) return true;
     if (/\b\d{1,9}\s*rank\b/i.test(t)) return true;
+    if (/\b(?:i\s+got|got|scored|secured)\s+\d{3,9}\b/i.test(t) && !/\b(marks|percentile|percent|score)\b/i.test(t)) {
+      return true;
+    }
     if (hasRankSignal(t) && EXAM_SIGNAL_PATTERN.test(t) && /\d{2,}/.test(t)) return true;
     return false;
   });
@@ -571,20 +575,29 @@ function classifyIntent(text, botState, productLine, originalText = null) {
       intentReason: 'explicit_rank_predictor_entry',
     };
   }
-  if (
-    isCollegePredictorEntryQuery(t, original) ||
-    isRankBranchCollegePredictorQuery(t, original) ||
-    isRankOnlyCollegePredictorQuery(t, original)
-  ) {
+  if (isRankBranchCollegePredictorQuery(t, original) || isRankOnlyCollegePredictorQuery(t, original)) {
     return {
       intent: 'college_predictor',
       confidence: 'high',
       intentReason: isRankBranchCollegePredictorQuery(t, original)
         ? 'rank_branch_college_query'
-        : isRankOnlyCollegePredictorQuery(t, original)
-          ? 'rank_only_college_query'
-          : 'college_predictor_entry',
+        : 'rank_only_college_query',
     };
+  }
+  {
+    const cpEntry = resolveCollegePredictorEntry({
+      englishText: t,
+      originalText: original,
+      botState,
+    });
+    if (cpEntry.enter) {
+      return {
+        intent: 'college_predictor',
+        confidence: cpEntry.confidence === 'medium' ? 'medium' : 'high',
+        intentReason: cpEntry.reason || 'college_predictor_entry',
+        preferredCollege: cpEntry.preferredCollege || null,
+      };
+    }
   }
 
   if (
@@ -762,11 +775,7 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     return { intent: 'rank_predictor', confidence: 'high', intentReason: 'explicit_rank_predictor_entry' };
   }
   // Avoid bare "college" hijacking definition questions (e.g. "new age college means").
-  if (
-    /^4$/.test(t) ||
-    isCollegePredictorEntryQuery(t, original) ||
-    isRankOnlyCollegePredictorQuery(t, original)
-  ) {
+  if (/^4$/.test(t) || isRankOnlyCollegePredictorQuery(t, original)) {
     return {
       intent: 'college_predictor',
       confidence: 'medium',
@@ -774,6 +783,21 @@ function classifyIntent(text, botState, productLine, originalText = null) {
         ? 'rank_only_college_query'
         : 'college_predictor_entry',
     };
+  }
+  {
+    const cpEntry = resolveCollegePredictorEntry({
+      englishText: t,
+      originalText: original,
+      botState,
+    });
+    if (cpEntry.enter && cpEntry.score >= 70) {
+      return {
+        intent: 'college_predictor',
+        confidence: 'medium',
+        intentReason: cpEntry.reason || 'college_predictor_entry',
+        preferredCollege: cpEntry.preferredCollege || null,
+      };
+    }
   }
   if (isExplicitHumanHandoffRequest(t, original)) {
     return { intent: 'human_handoff', confidence: 'high', intentReason: 'explicit_human_handoff_fallback' };
@@ -843,4 +867,6 @@ module.exports = {
   hasRankSignal,
   hasBranchSignal,
   intentTextCandidates,
+  resolveCollegePredictorEntry,
+  isHighConfidenceCollegePredictorEntry,
 };

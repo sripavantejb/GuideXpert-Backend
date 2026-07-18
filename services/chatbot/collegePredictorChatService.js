@@ -55,9 +55,15 @@ const {
   isPredictorFollowUpAction,
   resolveBranchFilter,
   resolveOwnershipFilter,
+  resolveDistrictFilter,
+  resolveGirlsFilter,
+  resolveNamedCollegeFilter,
   filterCollegesLocally,
   slicePage,
 } = require('./whatsappCollegePredictor/collegePredictorSessionService');
+const {
+  extractPreferredCollege,
+} = require('./whatsappCollegePredictor/collegePredictorIntentService');
 
 function isNeutralPredictorEntry(text) {
   const t = String(text || '').trim().toLowerCase();
@@ -126,7 +132,8 @@ function applyExtractedSlots(ctx, extracted, focusSlot = null) {
 
   let next = { ...ctx };
 
-  const canWrite = (slot, currentlyFilled) => !currentlyFilled || focusSlot === slot;
+  const canWrite = (slot, currentlyFilled, explicitEdit = false) =>
+    !currentlyFilled || focusSlot === slot || explicitEdit;
 
   if (extracted.exam) {
     if (next.exam && extracted.exam !== next.exam) {
@@ -136,25 +143,44 @@ function applyExtractedSlots(ctx, extracted, focusSlot = null) {
     }
   }
 
-  // Slot locking: once a validated value is stored, later menu digits must not overwrite it
-  // unless the bot is explicitly re-asking that slot.
-  if (extracted.rank != null && canWrite(SLOT_RANK, next.rank != null)) {
+  // Explicit mid-flow edits (e.g. "my rank is 20000") overwrite filled slots.
+  const explicitRankEdit = extracted.rank != null && focusSlot !== SLOT_RANK;
+  const explicitCategoryEdit = extracted.categoryLabel && focusSlot !== SLOT_CATEGORY;
+  const explicitGenderEdit = extracted.gender && focusSlot !== SLOT_GENDER;
+  const explicitRegionEdit =
+    extracted.admission_category_name_enum && focusSlot !== SLOT_REGION;
+
+  if (extracted.rank != null && canWrite(SLOT_RANK, next.rank != null, explicitRankEdit)) {
+    if (explicitRankEdit && next.rank != null && extracted.rank !== next.rank) {
+      // Rank change invalidates result cache only; category/gender stay.
+      next.resultCache = undefined;
+      next.pageOffset = undefined;
+      next.step = next.step === 'results' ? 'predict' : next.step;
+    }
     next.rank = extracted.rank;
   }
-  if (extracted.percentile != null && canWrite(SLOT_PERCENTILE, next.percentile != null)) {
+  if (
+    extracted.percentile != null &&
+    canWrite(SLOT_PERCENTILE, next.percentile != null, extracted.percentile != null)
+  ) {
     next.percentile = extracted.percentile;
   }
   if (extracted.admissionType && canWrite(SLOT_ADMISSION_TYPE, Boolean(next.admissionType))) {
     next.admissionType = extracted.admissionType;
     next.admission_category_name_enum = extracted.admission_category_name_enum;
   }
-  if (extracted.categoryLabel && canWrite(SLOT_CATEGORY, Boolean(next.categoryLabel))) {
+  if (
+    extracted.categoryLabel &&
+    canWrite(SLOT_CATEGORY, Boolean(next.categoryLabel), explicitCategoryEdit)
+  ) {
     next.categoryLabel = extracted.categoryLabel;
     next.categoryN = extracted.categoryN;
     next.baseCategory = extracted.baseCategory;
+    next.resultCache = undefined;
   }
-  if (extracted.gender && canWrite(SLOT_GENDER, Boolean(next.gender))) {
+  if (extracted.gender && canWrite(SLOT_GENDER, Boolean(next.gender), explicitGenderEdit)) {
     next.gender = extracted.gender;
+    next.resultCache = undefined;
   }
   if (extracted.quota && canWrite(SLOT_QUOTA, Boolean(next.quota))) {
     next.quota = extracted.quota;
@@ -162,9 +188,10 @@ function applyExtractedSlots(ctx, extracted, focusSlot = null) {
   if (
     extracted.admission_category_name_enum &&
     next.exam === EXAM_AP &&
-    canWrite(SLOT_REGION, Boolean(next.admission_category_name_enum))
+    canWrite(SLOT_REGION, Boolean(next.admission_category_name_enum), explicitRegionEdit)
   ) {
     next.admission_category_name_enum = extracted.admission_category_name_enum;
+    next.resultCache = undefined;
   }
 
   if (next.exam && next.exam !== EXAM_MHT) {
@@ -221,6 +248,11 @@ function buildResultsContext(ctx, extras = {}) {
     totalColleges = null,
     predictionHash = null,
     lastRequestBody = null,
+    preferredCollege = undefined,
+    namedCollegeFilter = undefined,
+    districtFilter = undefined,
+    girlsOnly = undefined,
+    pendingBranchFilter = undefined,
   } = extras;
   return {
     ...ctx,
@@ -237,13 +269,24 @@ function buildResultsContext(ctx, extras = {}) {
     totalColleges,
     predictionHash,
     lastRequestBody: lastRequestBody || ctx.lastRequestBody || null,
+    preferredCollege:
+      preferredCollege !== undefined ? preferredCollege : ctx.preferredCollege || null,
+    namedCollegeFilter:
+      namedCollegeFilter !== undefined ? namedCollegeFilter : ctx.namedCollegeFilter || null,
+    districtFilter: districtFilter !== undefined ? districtFilter : ctx.districtFilter || null,
+    girlsOnly: girlsOnly !== undefined ? girlsOnly : Boolean(ctx.girlsOnly),
+    pendingBranchFilter:
+      pendingBranchFilter !== undefined ? pendingBranchFilter : ctx.pendingBranchFilter || null,
   };
 }
 
-function buildFilterLabel(ownershipFilter, branchFilter) {
+function buildFilterLabel(ownershipFilter, branchFilter, extras = {}) {
   const parts = [];
   if (branchFilter) parts.push(branchFilter);
   if (ownershipFilter) parts.push(ownershipFilter === 'government' ? 'Government' : 'Private');
+  if (extras.namedCollege) parts.push(extras.namedCollege);
+  if (extras.districtLabel) parts.push(extras.districtLabel);
+  if (extras.girlsOnly) parts.push('Girls');
   return parts.length ? parts.join(' + ') : null;
 }
 
@@ -289,10 +332,27 @@ async function runPrediction(ctx, opts = {}) {
       durationMs: Date.now() - startedAt,
     });
 
-    const page = slicePage(colleges, 0, PAGE_SIZE);
+    // Apply pending branch / preferred college filters after first fetch (2A).
+    const pendingBranch = ctx.pendingBranchFilter || ctx.branchFilter || null;
+    const preferred = ctx.preferredCollege || null;
+    let working = colleges;
+    let appliedBranch = null;
+    let appliedNamed = null;
+    if (pendingBranch || preferred) {
+      working = filterCollegesLocally(colleges, {
+        branchCode: pendingBranch,
+        namedCollege: preferred,
+      });
+      appliedBranch = pendingBranch;
+      appliedNamed = preferred;
+      if (working.length === 0) working = colleges;
+    }
+
+    const page = slicePage(working, 0, PAGE_SIZE);
     let results;
     try {
-      results = formatPredictionReply(ctx, page, { pageOffset: 0 });
+      const filterLabel = buildFilterLabel(null, appliedBranch, { namedCollege: appliedNamed });
+      results = formatPredictionReply(ctx, page, { pageOffset: 0, filterLabel });
       logPredictorPipeline('predictor_reply_formatted', {
         predictorExam: ctx.exam || null,
         collegeCount: page.length,
@@ -312,11 +372,16 @@ async function runPrediction(ctx, opts = {}) {
     const prefix = ctx.conversational ? `${buildPredictingMessage(ctx)}\n\n` : '';
     const reply = `${prefix}${results}`;
     const stickyCtx = buildResultsContext(ctx, {
-      resultCache: colleges,
+      resultCache: working,
       pageOffset: page.length,
       apiOffset: colleges.length,
       totalColleges: total,
       lastRequestBody: requestBody,
+      branchFilter: appliedBranch,
+      namedCollegeFilter: appliedNamed,
+      preferredCollege: preferred,
+      pendingBranchFilter: null,
+      filterLabel: buildFilterLabel(null, appliedBranch, { namedCollege: appliedNamed }),
     });
 
     let predictionIdempotency = null;
@@ -436,35 +501,47 @@ async function handleResultsFollowUp(text, ctx) {
     if (/^government\s*[.!?]?$/i.test(bare)) ownership = 'government';
     if (/^private\s*[.!?]?$/i.test(bare)) ownership = 'private';
   }
+  const districtFilter = resolveDistrictFilter(text);
+  const girlsOnly = resolveGirlsFilter(text) || Boolean(ctx.girlsOnly);
+  const namedCollege =
+    resolveNamedCollegeFilter(text, ctx.preferredCollege) ||
+    (ctx.preferredCollege && /\b(can i get|will i get|show|filter)\b/i.test(text)
+      ? ctx.preferredCollege
+      : ctx.namedCollegeFilter || null);
   const showMore = isShowMoreRequest(text) || isTopCollegesRequest(text);
-  const isFilterTurn = Boolean(branch || ownership);
+  const isFilterTurn = Boolean(branch || ownership || districtFilter || resolveGirlsFilter(text) || namedCollege);
 
   if (!showMore && !isFilterTurn && !isPredictorFollowUpAction(text, ctx)) {
     return null;
   }
 
   let ownershipFilter = isFilterTurn && ownership ? ownership : ctx.ownershipFilter || null;
-  let branchFilter = isFilterTurn && branch ? branch.code : ctx.branchFilter || null;
+  let branchFilter = isFilterTurn && branch ? branch.code : ctx.branchFilter || ctx.pendingBranchFilter || null;
   if (isFilterTurn) {
-    // Replacing filters on explicit filter utterance
     if (ownership) ownershipFilter = ownership;
     if (branch) branchFilter = branch.code;
-    // Bare "CSE" should clear ownership unless combined
-    if (branch && !ownership && /^(cse|ece|eee|mechanical|civil|ai)\s*[.!?]?$/i.test(bare)) {
-      // keep prior ownership if any — stacking is OK
-    }
   }
 
   let resultCache = Array.isArray(ctx.resultCache) ? [...ctx.resultCache] : [];
   let pageOffset = Number(ctx.pageOffset || 0);
   let apiOffset = Number(ctx.apiOffset || resultCache.length || 0);
   const requestBody = ctx.lastRequestBody || buildCounsellorStyleRequestBody(ctx);
-  const filterLabel = buildFilterLabel(ownershipFilter, branchFilter);
+  const activeDistrict = districtFilter || ctx.districtFilter || null;
+  const activeNamed = namedCollege || ctx.namedCollegeFilter || null;
+  const activeGirls = girlsOnly;
+  const filterLabel = buildFilterLabel(ownershipFilter, branchFilter, {
+    namedCollege: activeNamed,
+    districtLabel: activeDistrict?.label,
+    girlsOnly: activeGirls,
+  });
 
   if (isFilterTurn) {
     let filtered = filterCollegesLocally(resultCache, {
       ownership: ownershipFilter,
       branchCode: branchFilter,
+      namedCollege: activeNamed,
+      districtFilter: activeDistrict,
+      girlsOnly: activeGirls,
     });
     if (filtered.length < PAGE_SIZE) {
       try {
@@ -474,6 +551,9 @@ async function handleResultsFollowUp(text, ctx) {
         filtered = filterCollegesLocally(resultCache, {
           ownership: ownershipFilter,
           branchCode: branchFilter,
+          namedCollege: activeNamed,
+          districtFilter: activeDistrict,
+          girlsOnly: activeGirls,
         });
       } catch (_) {
         /* keep */
@@ -484,6 +564,7 @@ async function handleResultsFollowUp(text, ctx) {
       eventType: 'filter_applied',
       ownershipFilter,
       branchFilter,
+      namedCollege: activeNamed,
       collegeCount: page.length,
     });
     return {
@@ -502,6 +583,11 @@ async function handleResultsFollowUp(text, ctx) {
         totalColleges: filtered.length,
         lastRequestBody: requestBody,
         predictionHash: ctx.predictionHash,
+        preferredCollege: ctx.preferredCollege || activeNamed || null,
+        namedCollegeFilter: activeNamed,
+        districtFilter: activeDistrict,
+        girlsOnly: activeGirls,
+        pendingBranchFilter: null,
       }),
       clearState: false,
     };
@@ -511,6 +597,9 @@ async function handleResultsFollowUp(text, ctx) {
   const working = filterCollegesLocally(resultCache, {
     ownership: ownershipFilter,
     branchCode: branchFilter,
+    namedCollege: activeNamed,
+    districtFilter: activeDistrict,
+    girlsOnly: activeGirls,
   });
   let page = slicePage(working, pageOffset, PAGE_SIZE);
 
@@ -620,6 +709,16 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
 
   let ctx = opts.isNewEntry ? initialContext() : { ...context };
   if (!ctx.flow) ctx = initialContext();
+
+  // Carry preferred college / pending branch from entry (2A post-result filters).
+  if (opts.preferredCollege || context.preferredCollege) {
+    ctx.preferredCollege = opts.preferredCollege || context.preferredCollege;
+  }
+  const namedFromText = extractPreferredCollege(text);
+  if (namedFromText) ctx.preferredCollege = namedFromText;
+  const earlyBranch = resolveBranchFilter(text);
+  if (earlyBranch) ctx.pendingBranchFilter = earlyBranch.code;
+
   // Sticky post-result ownership — never treat results as a fresh entry.
   if (ctx.step === 'results') {
     const followUp = await handleResultsFollowUp(text, ctx);
@@ -731,6 +830,12 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
   }
 
   ctx = merged;
+
+  // Capture branch preference before results without making it mandatory.
+  const branchPref = resolveBranchFilter(text);
+  if (branchPref) ctx.pendingBranchFilter = branchPref.code;
+  const namedPref = extractPreferredCollege(text);
+  if (namedPref) ctx.preferredCollege = namedPref;
 
   if (ctx.exam === EXAM_AP && ctx.gender && isApOcMaleBlocked(ctx.exam, ctx.categoryN, ctx.gender)) {
     return {

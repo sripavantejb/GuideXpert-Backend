@@ -3,6 +3,8 @@ const {
   classifyIntent,
   isCounsellorProgramQuestion,
   shouldBypassScopeFirewall,
+  resolveCollegePredictorEntry,
+  isHighConfidenceCollegePredictorEntry,
 } = require('./intentClassifierService');
 const { tryRouteActiveGuidedFlow, applyGuidedFlowSwitchTurn } = require('./guidedFlows/guidedFlowOrchestrator');
 const { getGuidedFlowByIntent } = require('./guidedFlows/guidedFlowRegistry');
@@ -613,12 +615,18 @@ async function processInboundCore({
   }
 
   // Foundation Conversation Router — BEFORE intent classification and Scope Firewall.
-  // Deterministic everyday conversation. Deferred when sticky/cold IIT/JEE vocabulary owns the turn.
+  // High-confidence College Predictor semantics skip Foundation (1A).
   {
     const foundationText =
       multilingualInbound?.englishMessage || String(inbound.text || '').trim();
     const foundationOriginal = String(inbound.text || '').trim();
+    const deferFoundationForCp = isHighConfidenceCollegePredictorEntry(
+      foundationText,
+      foundationOriginal,
+      botState
+    );
     const deferFoundation =
+      deferFoundationForCp ||
       shouldDeferFoundationForIit(
         foundationText,
         foundationOriginal,

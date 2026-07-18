@@ -294,6 +294,7 @@ async function applyGuidedFlowSwitchTurn({
     intent: intentResult.intent,
     phone: activeConversation.phone,
     conversationId: activeConversation._id,
+    preferredCollege: intentResult.preferredCollege || null,
   });
 
   if (turn.predictionIdempotency && turn.persistIdempotencyBeforeComplete) {

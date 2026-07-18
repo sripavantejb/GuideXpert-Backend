@@ -55,8 +55,8 @@ const { WBJEE_QUOTA_OPTIONS } = require('./wbjee');
 // ---------------------------------------------------------------------------
 
 const EXAM_ALIAS_RULES = [
-  { value: EXAM_AP, patterns: [/\bap\s*eamc?e?t\b/, /\bandhra\s*eamcet\b/, /\beamcet\s*ap\b/, /^ap$/] },
-  { value: EXAM_TS, patterns: [/\bts\s*eamc?e?t\b/, /\bts\s*eams?t\b/, /\bts\s*emcet\b/, /\btseamcet\b/i, /\btsemcet\b/i, /\btelangana\s*eamcet\b/, /\beamcet\s*telangana\b/, /^ts$/] },
+  { value: EXAM_AP, patterns: [/\bap\s*eamc?e?t\b/, /\bandhra\s*eamcet\b/, /\beamcet\s*ap\b/, /\beamset\b/, /\beamct\b/, /^ap$/] },
+  { value: EXAM_TS, patterns: [/\bts\s*eamc?e?t\b/, /\bts\s*eams?t\b/, /\bts\s*emcet\b/, /\btseamcet\b/i, /\btsemcet\b/i, /\btelangana\s*eamcet\b/, /\beamcet\s*telangana\b/, /\beamset\b/, /^ts$/] },
   { value: EXAM_TNEA, patterns: [/\btnea\b/, /\btamil\s*nadu\s*engineering\b/] },
   { value: EXAM_KCET, patterns: [/\bkcet{1,2}\b/, /\bkarnataka\s*cet\b/] },
   { value: EXAM_KEAM, patterns: [/\bkeam\b/, /\bkerala\s*engineering\b/] },
@@ -66,8 +66,22 @@ const EXAM_ALIAS_RULES = [
   { value: EXAM_MHT, patterns: [/\bmht\s*cet{1,2}\b/, /\bmhtcet{1,2}\b/, /\bmaharashtra\s*cet\b/] },
 ];
 
+function normalizeTypos(text) {
+  let t = String(text || '');
+  t = t.replace(/\b(eamset|eamct|eamcetr)\b/gi, 'eamcet');
+  t = t.replace(/\b(colage|collage|clg)\b/gi, 'college');
+  t = t.replace(/\b(predction|prediciton|predicton)\b/gi, 'prediction');
+  t = t.replace(/\b(admisson|admision)\b/gi, 'admission');
+  t = t.replace(/\b(enginering|engeneering)\b/gi, 'engineering');
+  // Romanized Telugu/Hindi cues → English-ish for extractors
+  t = t.replace(/\bna\s+rank\b/gi, 'my rank');
+  t = t.replace(/\beamcet\s+lo\b/gi, 'in eamcet');
+  t = t.replace(/\b(anna|ra)\b/gi, ' ');
+  return t.replace(/\s+/g, ' ').trim();
+}
+
 function normalizeInput(text) {
-  return String(text || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return normalizeTypos(text).toLowerCase().replace(/\s+/g, ' ');
 }
 
 function parseMenuDigit(text) {
@@ -95,7 +109,8 @@ function parsePositiveIntRank(text) {
     normalized.match(/\brank\s*(?:is|:|=|-)?\s*(\d{1,9})\b/i) ||
     normalized.match(/\b(\d{1,9})\s*rank\b/i) ||
     normalized.match(/\bAIR\s*[#:]?\s*(\d{1,9})\b/i) ||
-    normalized.match(/\b(?:got|scored|secured)\s+(\d{1,9})\b/i) ||
+    normalized.match(/\b(?:got|scored|secured|i\s+got)\s+(\d{1,9})\b/i) ||
+    normalized.match(/\bmy\s+rank\s+(?:is\s+)?(\d{1,9})\b/i) ||
     normalized.match(/\b(\d{3,9})\s+in\b/i);
   if (rankMatch) {
     const n = parseInt(rankMatch[1], 10);
@@ -161,6 +176,11 @@ function parseExamFromText(text, focusSlot) {
 // ---------------------------------------------------------------------------
 
 function parseGenderFromText(text) {
+  const raw = String(text || '');
+  const hasMale = /\b(male|boy|man|men|boys)\b/i.test(raw);
+  const hasFemale = /\b(female|girl|woman|women|girls|ladies|femlae|femail|femal)\b/i.test(raw);
+  if (hasMale && hasFemale) return null;
+
   const result = normalizeEntity('gender', text);
   if (!result) return null;
   // Avoid false positives from single "m"/"f" when more context is present
@@ -394,7 +414,8 @@ function matchCategoryOption(text, options, focusSlot) {
 // Main export: extractSlotsFromMessage
 // ---------------------------------------------------------------------------
 
-function extractSlotsFromMessage(text, ctx = {}) {
+function extractSlotsFromMessage(rawText, ctx = {}) {
+  const text = normalizeTypos(rawText);
   const missing = getMissingSlots(ctx);
   const focus = missing[0] || null;
   const updates = {};
@@ -507,4 +528,5 @@ module.exports = {
   parsePercentileValue,
   parseGenderFromText,
   matchCategoryOption,
+  normalizeTypos,
 };
