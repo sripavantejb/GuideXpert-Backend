@@ -9,17 +9,15 @@ const FOUNDATION_REPLIES = Object.freeze({
   greeting: [
     'Hello! Welcome to GuideXpert.',
     '',
-    "I'm your AI admission assistant — here to help with college selection, counselling, JoSAA/JEE guidance, predictors, and more.",
+    "I'm here to help with college selection, counselling, JoSAA/JEE guidance, predictors, and more.",
     '',
     'How can I help you today?',
   ].join('\n'),
 
   identity: [
-    "I'm GuideXpert — an AI admission and counselling assistant.",
+    "I'm GuideXpert — here to help with admissions and counselling.",
     '',
     'I help students and parents with college selection, admissions guidance, JoSAA/JEE questions, scholarships, documents, predictors, and booking counselling.',
-    '',
-    "I'm not a human, and I'm not ChatGPT. I'm GuideXpert's AI assistant.",
   ].join('\n'),
 
   capability: [
