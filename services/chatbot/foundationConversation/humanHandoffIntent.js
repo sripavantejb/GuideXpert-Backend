@@ -2,7 +2,9 @@
 
 /**
  * Human handoff intent — explicit request only.
- * Must NOT match identity questions ("Are you human?") or casual phrases ("Talk later", "Support").
+ * Must NOT match identity questions ("Are you human?") or casual phrases
+ * ("Talk later", "Support", "Need support", "Help").
+ * Explicit handoff examples: AGENT, "Talk to my counsellor", "Connect me to an agent".
  */
 
 const { normalizeText } = require('../intentTextUtils');

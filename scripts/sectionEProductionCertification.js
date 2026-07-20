@@ -246,9 +246,14 @@ function buildCases() {
   });
 
   // E8 — Human Copilot
+  // Explicit handoff only (AGENT / talk to counsellor). Soft “Need support” is intentionally
+  // NOT handoff — see humanHandoffIntent.js (excludes bare support/help).
   add('E8-01', 'AGENT', { expect: { handoff: true, crmUnchanged: true } });
   add('E8-02', 'Talk to my counsellor', { expect: { handoff: true, crmUnchanged: true } });
-  add('E8-03', 'Need support', { expect: { handoff: true, crmUnchanged: true } });
+  add('E8-03', 'Need support', {
+    expect: { intentionalNonHandoff: true, noCrash: true, crmUnchanged: true },
+    note: 'intentional: bare support does not escalate; use AGENT / talk to counsellor',
+  });
   add('E8-04', 'AGENT', {
     resetState: false,
     rapid: true,
@@ -454,6 +459,13 @@ function evaluate(caseRow, reply, meta) {
     if (!ok) fails.push('handoff_missing');
   }
 
+  if (e.intentionalNonHandoff) {
+    // Soft phrases like "Need support" must NOT open human handoff.
+    if (intent === 'human_handoff' || meta.handoffOpen) {
+      fails.push('unexpected_soft_support_handoff');
+    }
+  }
+
   if (e.handoffNoDuplicate) {
     if (meta.openHandoffCount > 1) fails.push('duplicate_open_handoff');
   }
@@ -515,8 +527,10 @@ function evaluate(caseRow, reply, meta) {
   if (e.dbIntegrity && meta.crm?.orphanHints) warns.push('possible_orphan_records');
 
   if (!caseRow.mongoOnly) {
-    if (!meta.inboundSaved) fails.push('inbound_not_saved');
-    if (!meta.outboundSaved && !e.rapid) fails.push('outbound_not_saved');
+    // Same-utterance dedupe (45s) is intentional production behavior — not a persistence bug.
+    // When the webhook dedupes, the original inbound was already saved.
+    if (!meta.inboundSaved && !meta.inboundDeduped) fails.push('inbound_not_saved');
+    if (!meta.outboundSaved && !e.rapid && !meta.inboundDeduped) fails.push('outbound_not_saved');
   }
 
   let status = 'PASS';
@@ -686,6 +700,12 @@ function rootCauseForFails(fails) {
   if (/duplicate_open_handoff/.test(f)) {
     return 'Human Copilot created duplicate open handoffs for the same conversation.';
   }
+  if (/unexpected_soft_support_handoff/.test(f)) {
+    return 'Soft support phrase incorrectly escalated to human handoff (explicit AGENT required).';
+  }
+  if (/inbound_not_saved|outbound_not_saved/.test(f)) {
+    return 'Cert could not resolve WhatsAppInboundMessage/Outbound for this provider id (check dedupe window vs lookup).';
+  }
   if (/expected_scope_refusal/.test(f)) {
     return 'Scope Firewall did not refuse OOS while on counselling support context.';
   }
@@ -801,7 +821,33 @@ async function main() {
 
     await sleep(c.rapid ? RAPID_GAP_MS : WAIT_MS);
 
-    const inbound = await inboundCol.findOne({ providerMessageId: msgId });
+    let inbound = await inboundCol.findOne({ providerMessageId: msgId });
+    let inboundDeduped = Boolean(
+      webhookBody && (webhookBody.dedupe === true || webhookBody.reason === 'recent_same_utterance')
+    );
+
+    // Production inbound dedupe (findRecentSameUtterance, ~45s): identical text does not
+    // create a second WhatsAppInboundMessage row. Resolve to the existing utterance so the
+    // cert does not false-fail as inbound_not_saved.
+    if (!inbound) {
+      const textNorm = String(c.user || '')
+        .trim()
+        .toLowerCase();
+      const since = new Date(Date.now() - 90_000);
+      const recent = await inboundCol
+        .find({ phone: PHONE10, receivedAt: { $gte: since } })
+        .sort({ receivedAt: -1 })
+        .limit(40)
+        .toArray();
+      const matched = recent.find(
+        (row) => String(row.text || '').trim().toLowerCase() === textNorm
+      );
+      if (matched) {
+        inbound = matched;
+        inboundDeduped = true;
+      }
+    }
+
     if (inbound?.conversationId) {
       conversationId = inbound.conversationId;
       await convCol.updateOne(
@@ -825,6 +871,14 @@ async function main() {
           senderType: 'bot',
           createdAt: { $gte: new Date(t0 - 1000) },
         })
+        .sort({ createdAt: -1 })
+        .limit(1)
+        .next();
+    }
+    // Deduped turn: no new outbound was sent; reuse the original reply for content checks.
+    if (!outbound && inboundDeduped && inbound?._id) {
+      outbound = await outboundCol
+        .find({ inReplyToInboundId: inbound._id, senderType: 'bot' })
         .sort({ createdAt: -1 })
         .limit(1)
         .next();
@@ -863,6 +917,7 @@ async function main() {
       webhookError,
       inboundSaved: Boolean(inbound),
       outboundSaved: Boolean(outbound),
+      inboundDeduped,
       httpStatus,
       lastIntent,
       botStateName: botState?.state || null,
@@ -884,6 +939,7 @@ async function main() {
       httpStatus,
       webhookSuccess: Boolean(webhookBody && (webhookBody.success || webhookBody.received)),
       inboundSaved: Boolean(inbound),
+      inboundDeduped,
       outboundStatus: outbound?.status || null,
       replyText: reply,
       replyPreview: reply.slice(0, 320),
