@@ -397,6 +397,7 @@ async function processEvaluationTurn(text, context = {}, opts = {}) {
   if (
     ctx.stage === STAGES.MODERN_COLLEGES ||
     ctx.stage === STAGES.PERSONALIZED_DISCOVERY ||
+    ctx.stage === 'explore_modern_colleges' ||
     ctx.stage === STAGES.PERSONALIZED_SHORTLISTING ||
     ctx.stage === STAGES.AI_SHORTLISTING ||
     ctx.stage === STAGES.SMART_COMPARISON ||
@@ -431,6 +432,7 @@ async function processEvaluationTurn(text, context = {}, opts = {}) {
     (typeof ctx.step === 'string' &&
       (ctx.step.startsWith('modern_') ||
         ctx.step.startsWith('pers_') ||
+        ctx.step.startsWith('explore_') ||
         ctx.step.startsWith('shortlist_') ||
         ctx.step.startsWith('compare_') ||
         ctx.step.startsWith('concern_') ||
@@ -441,6 +443,17 @@ async function processEvaluationTurn(text, context = {}, opts = {}) {
         ctx.step.startsWith('booking_') ||
         ctx.step.startsWith('invite_')))
   ) {
+    if (
+      ctx.stage === 'explore_modern_colleges' ||
+      (typeof ctx.step === 'string' && ctx.step.startsWith('explore_'))
+    ) {
+      const {
+        processExploreModernCollegesTurn,
+      } = require('./careerCounsellingV2ExploreModernCollegesEngine');
+      return processExploreModernCollegesTurn(inbound, ctx, {
+        analytics: analyticsMeta,
+      });
+    }
     const {
       processModernEducationTurn,
     } = require('./careerCounsellingV2ModernEducationEngine');

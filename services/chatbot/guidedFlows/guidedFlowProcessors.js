@@ -61,6 +61,44 @@ async function processCollegePredictorTurn({
     preferredCollege: preferredCollege || collegeCtx.preferredCollege || null,
   });
 
+  // Bridge into Career Counselling V2 compare / concern with seeded colleges
+  if (c.bridgeToCareerCounselling && c.bridgeSeed) {
+    const seed = c.bridgeSeed;
+    const { processSmartComparisonTurn } = require('../careerCounselling/careerCounsellingV2ComparisonEngine');
+    const { processConcernResolutionTurn } = require('../careerCounselling/careerCounsellingV2ConcernResolutionEngine');
+    const { finalizeCounselingResult } = require('../careerCounselling/careerCounsellingJourneyService');
+
+    let bridged;
+    if (seed.stage === 'smart_comparison') {
+      bridged = await processSmartComparisonTurn(inboundText, seed, {
+        startSmartComparison: true,
+        analytics: { source: 'college_predictor_bridge' },
+      });
+    } else {
+      bridged = await processConcernResolutionTurn(inboundText, seed, {
+        startConcernResolution: true,
+        analytics: { source: 'college_predictor_bridge' },
+      });
+    }
+    const finalized = finalizeCounselingResult(bridged, inboundText);
+
+    return {
+      replyText: finalized.reply,
+      replyParts: finalized.replyParts || null,
+      nextState: 'career_counselling_v2',
+      contextPatch: clearAssistantSessionFlags({
+        ...contextPatch,
+        college: {},
+        collegePredictorActive: false,
+        currentJourney: 'CAREER_COUNSELLING',
+        careerCounselling: finalized.context,
+        predictionIdempotency: null,
+      }),
+      intent: 'career_counselling_journey_continue',
+      localizationTier: 'translate',
+    };
+  }
+
   let nextState = flow.botState;
   let nextContext = clearAssistantSessionFlags({ ...contextPatch });
 

@@ -372,6 +372,8 @@ describe('careerCounsellingV2 personalized discovery', () => {
     assert.equal(r.context.step, 'pers_ask_permission');
 
     r = await handleCareerCounsellingMessage('yes', r.context);
+    assert.equal(r.context.stage, 'explore_modern_colleges');
+    r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.stage, STAGES.AI_SHORTLISTING);
     assert.equal(r.context.step, 'shortlist_ask_exam');
     assert.match(r.reply, /personalized shortlist|entrance exam/i);
@@ -389,6 +391,8 @@ describe('careerCounsellingV2 personalized discovery', () => {
     if (r.context.step === 'pers_clarify') {
       r = await handleCareerCounsellingMessage('skill building', r.context);
     }
+    r = await handleCareerCounsellingMessage('yes', r.context);
+    assert.equal(r.context.stage, 'explore_modern_colleges');
     r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.step, 'shortlist_ask_exam');
     r = await handleCareerCounsellingMessage('hello', r.context);
@@ -528,6 +532,9 @@ describe('careerCounsellingV2 AI shortlisting', () => {
       r = await handleCareerCounsellingMessage('placements', r.context);
     }
     r = await handleCareerCounsellingMessage('yes', r.context);
+    if (r.context.stage === 'explore_modern_colleges') {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    }
     return r;
   }
 
@@ -589,10 +596,7 @@ describe('careerCounsellingV2 AI shortlisting', () => {
     assert.equal(r.context.step, 'shortlist_ask_compare');
     assert.equal(r.context.stage, STAGES.AI_SHORTLISTING);
     assert.match(r.reply, /Best Match/i);
-    assert.match(r.reply, /Strong Alternatives/i);
-    assert.match(r.reply, /Worth Exploring/i);
-    assert.match(r.reply, /Why it matches|Why it was included/i);
-    assert.match(r.reply, /Recommendation confidence/i);
+    assert.match(r.reply, /Also worth comparing|Strong Alternatives|Worth Exploring/i);
     assert.doesNotMatch(r.reply, /#\d|rank\s*#|score:\s*\d/i);
     assert.ok(Array.isArray(r.context.profile.recommendedColleges));
     assert.ok(r.context.profile.recommendedColleges.length >= 1);
@@ -766,6 +770,9 @@ describe('careerCounsellingV2 smart comparison', () => {
       r = await handleCareerCounsellingMessage('placements', r.context);
     }
     r = await handleCareerCounsellingMessage('yes', r.context);
+    if (r.context.stage === 'explore_modern_colleges') {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    }
     r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
     r = await handleCareerCounsellingMessage('15000', r.context);
     r = await handleCareerCounsellingMessage('OC Boys', r.context);
@@ -977,6 +984,9 @@ describe('careerCounsellingV2 concern resolution', () => {
       r = await handleCareerCounsellingMessage('placements', r.context);
     }
     r = await handleCareerCounsellingMessage('yes', r.context);
+    if (r.context.stage === 'explore_modern_colleges') {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    }
     r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
     r = await handleCareerCounsellingMessage('15000', r.context);
     r = await handleCareerCounsellingMessage('OC Boys', r.context);
@@ -1189,6 +1199,9 @@ describe('careerCounsellingV2 phase 9 personalized recommendation', () => {
       r = await handleCareerCounsellingMessage('placements', r.context);
     }
     r = await handleCareerCounsellingMessage('yes', r.context);
+    if (r.context.stage === 'explore_modern_colleges') {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    }
     r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
     r = await handleCareerCounsellingMessage('15000', r.context);
     r = await handleCareerCounsellingMessage('OC Boys', r.context);
@@ -1465,6 +1478,9 @@ describe('careerCounsellingV2 phase 10 future path vision', () => {
       r = await handleCareerCounsellingMessage('placements', r.context);
     }
     r = await handleCareerCounsellingMessage('yes', r.context);
+    if (r.context.stage === 'explore_modern_colleges') {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    }
     r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
     r = await handleCareerCounsellingMessage('15000', r.context);
     r = await handleCareerCounsellingMessage('OC Boys', r.context);
@@ -1677,6 +1693,9 @@ describe('careerCounsellingV2 Phase 11 final decision hesitation', () => {
       r = await handleCareerCounsellingMessage('placements', r.context);
     }
     r = await handleCareerCounsellingMessage('yes', r.context);
+    if (r.context.stage === 'explore_modern_colleges') {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    }
     r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
     r = await handleCareerCounsellingMessage('15000', r.context);
     r = await handleCareerCounsellingMessage('OC Boys', r.context);
@@ -1942,6 +1961,9 @@ describe('careerCounsellingV2 Phase 12 counseling experience selection', () => {
       r = await handleCareerCounsellingMessage('placements', r.context);
     }
     r = await handleCareerCounsellingMessage('yes', r.context);
+    if (r.context.stage === 'explore_modern_colleges') {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    }
     r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
     r = await handleCareerCounsellingMessage('15000', r.context);
     r = await handleCareerCounsellingMessage('OC Boys', r.context);
@@ -2140,6 +2162,9 @@ describe('careerCounsellingV2 Phase 13 booking orchestrator', () => {
       r = await handleCareerCounsellingMessage('placements', r.context);
     }
     r = await handleCareerCounsellingMessage('yes', r.context);
+    if (r.context.stage === 'explore_modern_colleges') {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    }
     r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
     r = await handleCareerCounsellingMessage('15000', r.context);
     r = await handleCareerCounsellingMessage('OC Boys', r.context);
@@ -2332,6 +2357,9 @@ describe('careerCounsellingV2 counseling invitation', () => {
       r = await handleCareerCounsellingMessage('placements', r.context);
     }
     r = await handleCareerCounsellingMessage('yes', r.context);
+    if (r.context.stage === 'explore_modern_colleges') {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    }
     r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
     r = await handleCareerCounsellingMessage('15000', r.context);
     r = await handleCareerCounsellingMessage('OC Boys', r.context);

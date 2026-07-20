@@ -370,7 +370,7 @@ async function runPrediction(ctx, opts = {}) {
     }
 
     const prefix = ctx.conversational ? `${buildPredictingMessage(ctx)}\n\n` : '';
-    const reply = `${prefix}${results}`;
+    const reply = appendCounselingAdvance(`${prefix}${results}`);
     const stickyCtx = buildResultsContext(ctx, {
       resultCache: working,
       pageOffset: page.length,
@@ -382,6 +382,7 @@ async function runPrediction(ctx, opts = {}) {
       preferredCollege: preferred,
       pendingBranchFilter: null,
       filterLabel: buildFilterLabel(null, appliedBranch, { namedCollege: appliedNamed }),
+      counselingAdvanceOffered: true,
     });
 
     let predictionIdempotency = null;
@@ -493,7 +494,77 @@ async function runPrediction(ctx, opts = {}) {
   }
 }
 
+function isCounselingBridgeIntent(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (/^(show\s*more|again|menu|top\s*colleges)\b/i.test(t)) return false;
+  if (/^(cse|ece|eee|mech|civil|government|private)\b/i.test(t)) return false;
+  return (
+    /^\s*(y|yes|yeah|yep|ok|okay|sure|ready|continue|next)\s*[.!?]?\s*$/i.test(t) ||
+    /\b(compare|comparison|what matters|placements?|fees?|campus|location|roi|counsel|counselling|counseling)\b/i.test(
+      t
+    )
+  );
+}
+
+function appendCounselingAdvance(reply) {
+  const base = String(reply || '').trim();
+  if (/what matters most/i.test(base)) return base;
+  return `${base}\n\nWant to compare the best options for what matters most to you?`;
+}
+
+function seedCareerContextFromPredictor(ctx = {}) {
+  const cache = Array.isArray(ctx.resultCache) ? ctx.resultCache : [];
+  const recommended = cache.slice(0, 5).map((c, idx) => {
+    const branch = Array.isArray(c.branches) ? c.branches[0] : null;
+    return {
+      collegeName: c.college_name || c.collegeName || `Option ${idx + 1}`,
+      branchName: branch?.branch_name || branch?.branchName || null,
+      branchCode: branch?.branch_code || null,
+      tier: idx === 0 ? 'best_match' : 'strong_alternative',
+      cutoff: branch?.cutoff ?? null,
+      fee: branch?.fee ?? null,
+    };
+  });
+  const preferredColleges = recommended.map((r) => r.collegeName).filter(Boolean);
+  const useComparison = recommended.length >= 2;
+  return {
+    flow: 'career_counselling_v2',
+    version: 2,
+    stage: useComparison ? 'smart_comparison' : 'concern_resolution',
+    step: useComparison ? 'compare_select' : 'concern_pick',
+    profile: {
+      exam: ctx.exam || null,
+      entranceExam: ctx.exam || null,
+      rank: ctx.rank != null ? Number(ctx.rank) : null,
+      category: ctx.categoryLabel || ctx.categoryN || null,
+      gender: ctx.gender || null,
+      recommendedColleges: recommended,
+      preferredColleges,
+      bridgedFromCollegePredictor: true,
+      shortlistCompletedAt: new Date().toISOString(),
+    },
+  };
+}
+
 async function handleResultsFollowUp(text, ctx) {
+  // Counseling bridge takes priority over sticky reminder when user asks to compare / continue
+  if (isCounselingBridgeIntent(text) && !isShowMoreRequest(text) && !isTopCollegesRequest(text)) {
+    const branch = resolveBranchFilter(text);
+    const ownership = resolveOwnershipFilter(text);
+    if (!branch && !ownership && !resolveDistrictFilter(text) && !resolveGirlsFilter(text)) {
+      return {
+        reply: appendCounselingAdvance(
+          'These options fit your rank band — let’s compare what matters most.'
+        ),
+        context: ctx,
+        clearState: false,
+        bridgeToCareerCounselling: true,
+        bridgeSeed: seedCareerContextFromPredictor(ctx),
+      };
+    }
+  }
+
   const branch = resolveBranchFilter(text);
   let ownership = resolveOwnershipFilter(text);
   const bare = normalizeText(text);
@@ -767,11 +838,24 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
       }
     }
 
-    // Unrecognized follow-up: keep ownership and remind actions.
+    // Unrecognized follow-up: keep ownership and remind actions + counseling advance.
+    if (isCounselingBridgeIntent(text)) {
+      return {
+        reply: appendCounselingAdvance(
+          'These colleges fit your rank band — we can compare them next.'
+        ),
+        context: ctx,
+        clearState: false,
+        bridgeToCareerCounselling: true,
+        bridgeSeed: seedCareerContextFromPredictor(ctx),
+      };
+    }
+
     return {
-      reply:
-        'You are still in College Predictor.\n\nReply SHOW MORE for more colleges, or CSE / ECE / Government / Private to filter.\n\nOr AGAIN for a new prediction / MENU to exit.',
-      context: ctx,
+      reply: appendCounselingAdvance(
+        'You are still in College Predictor.\nReply SHOW MORE, or CSE / Government / Private to filter.\nOr AGAIN / MENU to exit.'
+      ),
+      context: { ...ctx, counselingAdvanceOffered: true },
       clearState: false,
     };
   }
@@ -898,4 +982,7 @@ module.exports = {
   runPrediction,
   resolveCompletedPrediction,
   handleResultsFollowUp,
+  isCounselingBridgeIntent,
+  seedCareerContextFromPredictor,
+  appendCounselingAdvance,
 };

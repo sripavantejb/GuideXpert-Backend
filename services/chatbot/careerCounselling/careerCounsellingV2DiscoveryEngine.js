@@ -472,6 +472,7 @@ async function processDiscoveryTurn(text, context = {}, opts = {}) {
     ctx.stage === STAGES.EVALUATION_FRAMEWORK ||
     ctx.stage === STAGES.MODERN_COLLEGES ||
     ctx.stage === STAGES.PERSONALIZED_DISCOVERY ||
+    ctx.stage === STAGES.EXPLORE_MODERN_COLLEGES ||
     ctx.stage === STAGES.PERSONALIZED_SHORTLISTING ||
     ctx.stage === STAGES.AI_SHORTLISTING ||
     ctx.stage === STAGES.SMART_COMPARISON ||
@@ -502,6 +503,7 @@ async function processDiscoveryTurn(text, context = {}, opts = {}) {
       (ctx.step.startsWith('eval_') ||
         ctx.step.startsWith('modern_') ||
         ctx.step.startsWith('pers_') ||
+        ctx.step.startsWith('explore_') ||
         ctx.step.startsWith('shortlist_') ||
         ctx.step.startsWith('compare_') ||
         ctx.step.startsWith('concern_') ||

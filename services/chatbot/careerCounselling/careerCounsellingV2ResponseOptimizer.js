@@ -8,11 +8,13 @@
 const MAX_WORDS_SOFT = 50;
 const MAX_WORDS_HARD = 80;
 const MAX_BULLETS = 4;
+const MAX_LINES_NORMAL = 5;
 
 const FILLER_PATTERNS = [
   /\bbased on your (goals|profile|interests|preferences)\b[,.]?\s*/gi,
   /\bi understand your interests\b[,.]?\s*/gi,
   /\bthank you for (sharing that information|answering)\b[,.]?\s*/gi,
+  /\bWhat would you like to know next\??/gi,
 ];
 
 function wordCount(text) {
@@ -20,6 +22,13 @@ function wordCount(text) {
     .trim()
     .split(/\s+/)
     .filter(Boolean).length;
+}
+
+function nonEmptyLines(text) {
+  return String(text || '')
+    .split(/\n+/)
+    .map((l) => l.trim())
+    .filter(Boolean);
 }
 
 function stripFiller(text) {
@@ -32,13 +41,13 @@ function stripFiller(text) {
 
 function limitBulletsInBlock(block) {
   const lines = String(block || '').split('\n');
-  const bullets = lines.filter((l) => /^\s*[•✅\-]\s+/.test(l));
+  const bullets = lines.filter((l) => /^\s*[•✅\-*\d.]+\s+/.test(l));
   if (bullets.length <= MAX_BULLETS) return block;
 
   let kept = 0;
   const out = [];
   for (const line of lines) {
-    if (/^\s*[•✅\-]\s+/.test(line)) {
+    if (/^\s*[•✅\-*\d.]+\s+/.test(line)) {
       kept += 1;
       if (kept <= MAX_BULLETS) out.push(line);
       continue;
@@ -49,6 +58,21 @@ function limitBulletsInBlock(block) {
 }
 
 /**
+ * Hard-cap non-empty lines for normal counselor replies (keeps last question if present).
+ */
+function capLines(text, maxLines = MAX_LINES_NORMAL) {
+  const lines = nonEmptyLines(text);
+  if (lines.length <= maxLines) return lines.join('\n');
+
+  const questionIdx = [...lines].map((l, i) => (/\?/.test(l) ? i : -1)).filter((i) => i >= 0);
+  const lastQ = questionIdx.length ? lines[questionIdx[questionIdx.length - 1]] : null;
+  const bodyBudget = lastQ ? maxLines - 1 : maxLines;
+  const body = lines.filter((l) => l !== lastQ).slice(0, bodyBudget);
+  if (lastQ && !body.includes(lastQ)) body.push(lastQ);
+  return body.slice(0, maxLines).join('\n');
+}
+
+/**
  * Split a long block into sentence-ish chunks under the soft word target.
  */
 function splitOversizedBlock(block) {
@@ -56,7 +80,6 @@ function splitOversizedBlock(block) {
   if (!text) return [];
   if (wordCount(text) <= MAX_WORDS_HARD) return [text];
 
-  // Prefer existing newlines
   const byLine = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
   if (byLine.length > 1) {
     const parts = [];
@@ -83,7 +106,6 @@ function splitBySentences(text) {
     .map((s) => s.trim())
     .filter(Boolean);
   if (sentences.length <= 1) {
-    // Hard truncate by words only as last resort — keep meaning head
     const words = text.split(/\s+/);
     if (words.length <= MAX_WORDS_HARD) return [text];
     const parts = [];
@@ -110,15 +132,21 @@ function splitBySentences(text) {
 
 /**
  * Optimize a counseling reply for WhatsApp.
+ * @param {string} rawReply
+ * @param {{ allowExtendedPrediction?: boolean, skipLineCap?: boolean }} [opts]
  * @returns {{ reply: string, replyParts: string[] }}
  */
-function optimizeCareerCounsellingReply(rawReply) {
-  const cleaned = limitBulletsInBlock(stripFiller(rawReply));
+function optimizeCareerCounsellingReply(rawReply, opts = {}) {
+  const allowExtended = Boolean(opts.allowExtendedPrediction || opts.skipLineCap);
+  let cleaned = limitBulletsInBlock(stripFiller(rawReply));
   if (!cleaned) {
     return { reply: '', replyParts: [] };
   }
 
-  // Split on blank lines first (natural message boundaries authors already use)
+  if (!allowExtended) {
+    cleaned = capLines(cleaned, MAX_LINES_NORMAL);
+  }
+
   const blocks = cleaned
     .split(/\n\s*\n/)
     .map((b) => b.trim())
@@ -127,22 +155,31 @@ function optimizeCareerCounsellingReply(rawReply) {
 
   const replyParts = [];
   for (const block of blocks) {
+    if (!allowExtended) {
+      const capped = capLines(block, MAX_LINES_NORMAL);
+      if (capped) replyParts.push(capped);
+      continue;
+    }
     for (const part of splitOversizedBlock(block)) {
       const trimmed = String(part || '').trim();
       if (trimmed) replyParts.push(trimmed);
     }
   }
 
-  // Deduplicate consecutive identical parts
   const deduped = [];
   for (const part of replyParts) {
     if (deduped.length && deduped[deduped.length - 1] === part) continue;
     deduped.push(part);
   }
 
+  let reply = deduped.join('\n\n');
+  if (!allowExtended) {
+    reply = capLines(reply, MAX_LINES_NORMAL);
+  }
+
   return {
-    reply: deduped.join('\n\n'),
-    replyParts: deduped,
+    reply,
+    replyParts: allowExtended ? deduped : nonEmptyLines(reply).length ? [reply] : [],
   };
 }
 
@@ -150,7 +187,10 @@ module.exports = {
   MAX_WORDS_SOFT,
   MAX_WORDS_HARD,
   MAX_BULLETS,
+  MAX_LINES_NORMAL,
   optimizeCareerCounsellingReply,
   wordCount,
   stripFiller,
+  capLines,
+  nonEmptyLines,
 };

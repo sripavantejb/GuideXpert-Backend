@@ -12,6 +12,7 @@ const STAGES = Object.freeze({
   EVALUATION_FRAMEWORK: 'evaluation_framework',
   MODERN_COLLEGES: 'modern_colleges',
   PERSONALIZED_DISCOVERY: 'personalized_discovery',
+  EXPLORE_MODERN_COLLEGES: 'explore_modern_colleges',
   PERSONALIZED_SHORTLISTING: 'personalized_shortlisting',
   AI_SHORTLISTING: 'ai_shortlisting',
   SMART_COMPARISON: 'smart_comparison',

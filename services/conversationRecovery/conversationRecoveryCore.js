@@ -26,8 +26,12 @@ function mapStageToPhase(stage) {
   if (s.includes('concern')) return 8;
   if (s.includes('comparison')) return 7;
   if (s.includes('shortlist')) return 6;
-  if (s.includes('personal')) return 5;
-  if (s.includes('modern')) return 4;
+  // Explore modern colleges (roadmap P5) — check before generic "modern" / "personal"
+  if (s.includes('explore_modern')) return 5;
+  if (s.includes('personalized_discovery') || (s.includes('personal') && !s.includes('recommendation'))) {
+    return 6;
+  }
+  if (s === 'modern_colleges' || (s.includes('modern') && !s.includes('explore'))) return 4;
   if (s.includes('evaluation')) return 3;
   if (s.includes('discovery') || !s) return 1;
   return 1;

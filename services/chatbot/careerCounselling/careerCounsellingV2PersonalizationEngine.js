@@ -579,22 +579,45 @@ function handleCaptureStep(inbound, ctx, analyticsMeta) {
 async function handlePermission(inbound, ctx, analyticsMeta = {}) {
   if (isPermissionYes(inbound)) {
     const {
-      processAiShortlistingTurn,
-    } = require('./careerCounsellingV2ShortlistingEngine');
-    return processAiShortlistingTurn(inbound, ctx, {
-      startAiShortlisting: true,
+      processExploreModernCollegesTurn,
+    } = require('./careerCounsellingV2ExploreModernCollegesEngine');
+    return processExploreModernCollegesTurn(inbound, ctx, {
+      startExploreModernColleges: true,
+      fromPersonalization: true,
+      presentImmediately: true,
       analytics: analyticsMeta,
     });
   }
   if (isPermissionNo(inbound)) {
+    // Soft-advance: one decline then continue into explore (roadmap ownership)
+    if (ctx.step === 'pers_permission_declined' || ctx.profile?._persDeclineCount >= 1) {
+      const {
+        processExploreModernCollegesTurn,
+      } = require('./careerCounsellingV2ExploreModernCollegesEngine');
+      const advanced = await processExploreModernCollegesTurn(inbound, ctx, {
+        startExploreModernColleges: true,
+        fromPersonalization: true,
+        presentImmediately: true,
+        analytics: analyticsMeta,
+      });
+      return {
+        ...advanced,
+        skippedPhaseReason: 'user_declined_optional_gate',
+      };
+    }
     return {
       reply: getPersMessage('permission_no'),
       context: {
         ...ctx,
         step: 'pers_permission_declined',
         lastQuestionKey: 'permission_declined',
+        profile: {
+          ...(ctx.profile || {}),
+          _persDeclineCount: 1,
+        },
       },
       clearState: false,
+      parked: true,
       analytics: [{ type: 'personalization_permission_declined' }],
     };
   }
@@ -643,6 +666,18 @@ async function processPersonalizedDiscoveryTurn(text, context = {}, opts = {}) {
       !String(ctx.step || '').startsWith('invite_'))
   ) {
     return startPersonalizedDiscovery(ctx, analyticsMeta);
+  }
+
+  if (
+    ctx.stage === 'explore_modern_colleges' ||
+    (typeof ctx.step === 'string' && ctx.step.startsWith('explore_'))
+  ) {
+    const {
+      processExploreModernCollegesTurn,
+    } = require('./careerCounsellingV2ExploreModernCollegesEngine');
+    return processExploreModernCollegesTurn(inbound, ctx, {
+      analytics: analyticsMeta,
+    });
   }
 
   if (

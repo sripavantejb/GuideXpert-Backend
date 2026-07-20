@@ -374,6 +374,18 @@ async function processModernEducationTurn(text, context = {}, opts = {}) {
   }
 
   if (
+    ctx.stage === 'explore_modern_colleges' ||
+    (typeof ctx.step === 'string' && ctx.step.startsWith('explore_'))
+  ) {
+    const {
+      processExploreModernCollegesTurn,
+    } = require('./careerCounsellingV2ExploreModernCollegesEngine');
+    return processExploreModernCollegesTurn(inbound, ctx, {
+      analytics: analyticsMeta,
+    });
+  }
+
+  if (
     ctx.stage === STAGES.AI_SHORTLISTING ||
     ctx.stage === STAGES.SMART_COMPARISON ||
     ctx.stage === STAGES.CONCERN_RESOLUTION ||

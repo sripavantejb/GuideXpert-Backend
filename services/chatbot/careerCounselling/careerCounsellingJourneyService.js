@@ -75,8 +75,16 @@ const {
   startCounselingInvitation,
 } = require('./careerCounsellingV2CounselingInvitationEngine');
 const {
+  EXPLORE_STEPS,
+  processExploreModernCollegesTurn,
+  startExploreModernColleges,
+} = require('./careerCounsellingV2ExploreModernCollegesEngine');
+const {
   optimizeCareerCounsellingReply,
 } = require('./careerCounsellingV2ResponseOptimizer');
+const {
+  composeCounselorReply,
+} = require('./careerCounsellingV2PhaseOrchestrator');
 const {
   tryNiatInterestTransition,
   processNiatInterestFollowUp,
@@ -85,6 +93,19 @@ const {
   detectNiatInterest,
 } = require('./careerCounsellingV2NiatInterestService');
 
+function finalizeCounselingResult(result, inbound = '') {
+  const composed = composeCounselorReply(result || {}, inbound);
+  const optimized = optimizeCareerCounsellingReply(composed.reply, {
+    allowExtendedPrediction: composed.allowExtendedPrediction,
+    skipLineCap: composed.skipLineCap,
+  });
+  return {
+    ...composed,
+    reply: optimized.reply,
+    replyParts: optimized.replyParts,
+  };
+}
+
 async function handleCareerCounsellingMessage(text, context = {}, opts = {}) {
   const inbound = String(text || '').trim();
   const ctx = { ...context };
@@ -92,23 +113,19 @@ async function handleCareerCounsellingMessage(text, context = {}, opts = {}) {
   // Sticky NIAT One-on-One offer follow-up
   if (ctx.stage === NIAT_INTEREST_STAGE || ctx.step === NIAT_INTEREST_STEP) {
     const sticky = processNiatInterestFollowUp(inbound, ctx);
-    const optimizedSticky = optimizeCareerCounsellingReply(sticky.reply);
-    return {
-      ...sticky,
-      reply: optimizedSticky.reply,
-      replyParts: optimizedSticky.replyParts,
-    };
+    return finalizeCounselingResult(
+      { ...sticky, allowSkipAdvance: true },
+      inbound
+    );
   }
 
   // Admission-guidance transition — immediate, separate from Phase 11 escalation
   const niatTransition = tryNiatInterestTransition(inbound, ctx, opts);
   if (niatTransition) {
-    const optimizedNiat = optimizeCareerCounsellingReply(niatTransition.reply);
-    return {
-      ...niatTransition,
-      reply: optimizedNiat.reply,
-      replyParts: optimizedNiat.replyParts,
-    };
+    return finalizeCounselingResult(
+      { ...niatTransition, allowSkipAdvance: Boolean(niatTransition.allowSkipAdvance) },
+      inbound
+    );
   }
 
   const {
@@ -128,52 +145,46 @@ async function handleCareerCounsellingMessage(text, context = {}, opts = {}) {
     isPhase14Stage(ctx.stage) ||
     ctx.step === 'journey_completed'
   ) {
-    // Allow booking resume after deferred / information_only without replaying 9–12
     const outcome = ctx.profile?.journeyOutcome;
     if (
       (outcome === 'booking_deferred' || outcome === 'information_only') &&
       tryBookingResume
     ) {
-      const resumeAttempt = tryBookingResume(inbound, {
-        ...ctx,
-        profile: {
-          ...ctx.profile,
-          journeyCompleted: false,
+      const resumeAttempt = tryBookingResume(
+        inbound,
+        {
+          ...ctx,
+          profile: {
+            ...ctx.profile,
+            journeyCompleted: false,
+          },
+          stage: 'conversation_complete',
+          step: 'conversation_complete',
         },
-        stage: 'conversation_complete',
-        step: 'conversation_complete',
-      }, { analytics: opts.analytics });
+        { analytics: opts.analytics }
+      );
       if (resumeAttempt && resumeAttempt.context?.stage !== 'journey_completed') {
-        const optimizedResume = optimizeCareerCounsellingReply(resumeAttempt.reply);
-        return {
-          ...resumeAttempt,
-          reply: optimizedResume.reply,
-          replyParts: optimizedResume.replyParts,
-        };
+        return finalizeCounselingResult(resumeAttempt, inbound);
       }
     }
 
     const sticky14 = await processJourneyCompletionTurn(inbound, ctx, {
       analytics: opts.analytics,
     });
-    const optimized14 = optimizeCareerCounsellingReply(sticky14.reply);
-    return {
-      ...sticky14,
-      reply: optimized14.reply,
-      replyParts: optimized14.replyParts,
-    };
+    return finalizeCounselingResult(
+      { ...sticky14, allowSkipAdvance: true },
+      inbound
+    );
   }
 
-  if (isPhase13Stage(ctx.stage) || (typeof ctx.step === 'string' && String(ctx.step).startsWith('booking_'))) {
+  if (
+    isPhase13Stage(ctx.stage) ||
+    (typeof ctx.step === 'string' && String(ctx.step).startsWith('booking_'))
+  ) {
     const bookingTurn = await processBookingOrchestratorTurn(inbound, ctx, {
       analytics: opts.analytics,
     });
-    const optimizedBooking = optimizeCareerCounsellingReply(bookingTurn.reply);
-    return {
-      ...bookingTurn,
-      reply: optimizedBooking.reply,
-      replyParts: optimizedBooking.replyParts,
-    };
+    return finalizeCounselingResult(bookingTurn, inbound);
   }
 
   // Sticky complete after Phase 13 flags — route to Phase 14 if not yet completed
@@ -184,43 +195,39 @@ async function handleCareerCounsellingMessage(text, context = {}, opts = {}) {
       ctx.profile?.phase12ExitTarget === 'phase_13_booking_orchestrator' ||
       ctx.profile?.phase12ExitTarget === 'phase_14_journey_completion')
   ) {
-    if (ctx.profile?.phase13Completed || ctx.profile?.phase13Outcome || ctx.profile?.phase12Outcome === 'declined' || ctx.profile?.phase12Outcome === 'continued_none') {
+    if (
+      ctx.profile?.phase13Completed ||
+      ctx.profile?.phase13Outcome ||
+      ctx.profile?.phase12Outcome === 'declined' ||
+      ctx.profile?.phase12Outcome === 'continued_none'
+    ) {
       const closed = startJourneyCompletion(ctx, opts.analytics || {});
-      const optimizedClosed = optimizeCareerCounsellingReply(closed.reply);
-      return {
-        ...closed,
-        reply: optimizedClosed.reply,
-        replyParts: optimizedClosed.replyParts,
-      };
+      return finalizeCounselingResult({ ...closed, allowSkipAdvance: true }, inbound);
     }
     const sticky = await processBookingOrchestratorTurn(inbound, ctx, {
       analytics: opts.analytics,
     });
-    const optimizedSticky = optimizeCareerCounsellingReply(sticky.reply);
-    return {
-      ...sticky,
-      reply: optimizedSticky.reply,
-      replyParts: optimizedSticky.replyParts,
-    };
+    return finalizeCounselingResult(sticky, inbound);
   }
 
   const resume = tryBookingResume(inbound, ctx, { analytics: opts.analytics });
   if (resume) {
-    const optimizedResume = optimizeCareerCounsellingReply(resume.reply);
-    return {
-      ...resume,
-      reply: optimizedResume.reply,
-      replyParts: optimizedResume.replyParts,
-    };
+    return finalizeCounselingResult(resume, inbound);
+  }
+
+  // Explore modern colleges sticky / continue
+  if (
+    ctx.stage === 'explore_modern_colleges' ||
+    (typeof ctx.step === 'string' && String(ctx.step).startsWith('explore_'))
+  ) {
+    const exploreTurn = await processExploreModernCollegesTurn(inbound, ctx, {
+      analytics: opts.analytics,
+    });
+    return finalizeCounselingResult(exploreTurn, inbound);
   }
 
   const result = await processDiscoveryTurn(text, context, opts);
-  const optimized = optimizeCareerCounsellingReply(result.reply);
-  return {
-    ...result,
-    reply: optimized.reply,
-    replyParts: optimized.replyParts,
-  };
+  return finalizeCounselingResult(result, inbound);
 }
 
 module.exports = {
@@ -240,15 +247,19 @@ module.exports = {
   PHASE13_STEPS,
   PHASE14_STEPS,
   INVITATION_STEPS,
+  EXPLORE_STEPS,
   emptyProfile,
   initialContext,
   handleCareerCounsellingMessage,
+  finalizeCounselingResult,
   processEvaluationTurn,
   startEvaluation,
   processModernEducationTurn,
   startModernEducation,
   processPersonalizedDiscoveryTurn,
   startPersonalizedDiscovery,
+  processExploreModernCollegesTurn,
+  startExploreModernColleges,
   processAiShortlistingTurn,
   startAiShortlisting,
   processSmartComparisonTurn,

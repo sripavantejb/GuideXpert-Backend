@@ -477,14 +477,41 @@ async function processConcernResolutionTurn(text, context = {}, opts = {}) {
       });
     }
     if (isConcernPermissionNo(inbound)) {
+      const declineCount = Number(ctx.profile?._concernDeclineCount || 0) + 1;
+      if (declineCount >= 2) {
+        const {
+          processPhase9PersonalizedRecommendationTurn,
+        } = require('./careerCounsellingV2PersonalizedRecommendationEngine');
+        const readyCtx = {
+          ...ctx,
+          profile: persistReadiness({
+            ...(ctx.profile || {}),
+            skippedPhaseReason: 'user_declined_optional_gate',
+          }),
+        };
+        const advanced = await processPhase9PersonalizedRecommendationTurn(inbound, readyCtx, {
+          startPhase9PersonalizedRecommendation: true,
+          analytics: analyticsMeta,
+        });
+        return {
+          ...advanced,
+          skippedPhaseReason: 'user_declined_optional_gate',
+          reply: `Understood — I’ll share a clear recommendation next.\n\n${advanced.reply || ''}`.trim(),
+        };
+      }
       return {
         reply: buildPickReply(ctx.profile || {}),
         context: {
           ...ctx,
           step: 'concern_pick',
           lastQuestionKey: 'concern_pick',
+          profile: {
+            ...(ctx.profile || {}),
+            _concernDeclineCount: declineCount,
+          },
         },
         clearState: false,
+        parked: true,
         analytics: [],
       };
     }

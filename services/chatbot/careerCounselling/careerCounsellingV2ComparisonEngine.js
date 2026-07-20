@@ -412,14 +412,34 @@ async function processSmartComparisonTurn(text, context = {}, opts = {}) {
       });
     }
     if (isComparePermissionNo(inbound)) {
+      const declineCount = Number(ctx.profile?._compareDeclineCount || 0) + 1;
+      if (declineCount >= 2) {
+        const {
+          processConcernResolutionTurn,
+        } = require('./careerCounsellingV2ConcernResolutionEngine');
+        const advanced = await processConcernResolutionTurn(inbound, ctx, {
+          startConcernResolution: true,
+          analytics: analyticsMeta,
+        });
+        return {
+          ...advanced,
+          skippedPhaseReason: 'user_declined_optional_gate',
+          reply: `Okay — let’s clear any remaining concerns next.\n\n${advanced.reply || ''}`.trim(),
+        };
+      }
       return {
         reply: getCompareMessage('invite_questions'),
         context: {
           ...ctx,
           step: 'compare_invite_questions',
           lastQuestionKey: 'compare_questions',
+          profile: {
+            ...(ctx.profile || {}),
+            _compareDeclineCount: declineCount,
+          },
         },
         clearState: false,
+        parked: true,
         analytics: [],
       };
     }

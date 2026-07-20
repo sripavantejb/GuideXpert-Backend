@@ -55,7 +55,7 @@ const { WBJEE_QUOTA_OPTIONS } = require('./wbjee');
 // ---------------------------------------------------------------------------
 
 const EXAM_ALIAS_RULES = [
-  { value: EXAM_AP, patterns: [/\bap\s*eamc?e?t\b/, /\bandhra\s*eamcet\b/, /\beamcet\s*ap\b/, /\beamset\b/, /\beamct\b/, /^ap$/] },
+  { value: EXAM_AP, patterns: [/\bap\s*eamc?e?t\b/, /\bap\s*eapcet\b/, /\beapcet\b/, /\bandhra\s*eamcet\b/, /\beamcet\s*ap\b/, /\beamset\b/, /\beamct\b/, /^ap$/] },
   { value: EXAM_TS, patterns: [/\bts\s*eamc?e?t\b/, /\bts\s*eams?t\b/, /\bts\s*emcet\b/, /\btseamcet\b/i, /\btsemcet\b/i, /\btelangana\s*eamcet\b/, /\beamcet\s*telangana\b/, /\beamset\b/, /^ts$/] },
   { value: EXAM_TNEA, patterns: [/\btnea\b/, /\btamil\s*nadu\s*engineering\b/] },
   { value: EXAM_KCET, patterns: [/\bkcet{1,2}\b/, /\bkarnataka\s*cet\b/] },

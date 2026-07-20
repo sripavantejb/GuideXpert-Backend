@@ -101,36 +101,34 @@ function formatCollegeBlock(item, tier) {
 }
 
 function formatShortlistReply(tiers, confidence) {
-  const sections = [getShortlistMessage('present_header'), ''];
+  // Compact counselor format: Best Match + one alternative + advance question
+  const sections = [];
+  const best = (tiers.bestMatch || [])[0];
+  const alt = (tiers.strongAlternatives || [])[0] || (tiers.worthExploring || [])[0];
 
-  if (tiers.bestMatch.length > 0) {
-    sections.push(getShortlistMessage('best_match_header'));
-    for (const item of tiers.bestMatch) {
-      sections.push(formatCollegeBlock(item, 'best'));
-      sections.push('');
+  if (!best && !alt) {
+    sections.push(getShortlistMessage('no_eligibility') || 'No eligible colleges yet.');
+  } else {
+    if (best) {
+      sections.push('Best Match:');
+      const label = best.branchName
+        ? `${best.collegeName} — ${best.branchName}`
+        : best.collegeName;
+      const why =
+        (best.reasons && best.reasons.why && best.reasons.why[0]) ||
+        'Matches your stored profile.';
+      sections.push(label);
+      sections.push(why);
+    }
+    if (alt) {
+      sections.push('Also worth comparing:');
+      const label = alt.branchName ? `${alt.collegeName} — ${alt.branchName}` : alt.collegeName;
+      sections.push(label);
     }
   }
 
-  if (tiers.strongAlternatives.length > 0) {
-    sections.push(getShortlistMessage('strong_header'));
-    for (const item of tiers.strongAlternatives) {
-      sections.push(formatCollegeBlock(item, 'strong'));
-      sections.push('');
-    }
-  }
-
-  if (tiers.worthExploring.length > 0) {
-    sections.push(getShortlistMessage('explore_header'));
-    for (const item of tiers.worthExploring) {
-      sections.push(formatCollegeBlock(item, 'explore'));
-      sections.push('');
-    }
-  }
-
-  sections.push(getShortlistMessage('confidence_line', confidence));
-  sections.push('');
   sections.push(getShortlistMessage('ask_compare'));
-  return sections.join('\n').trim();
+  return sections.filter(Boolean).join('\n').trim();
 }
 
 function persistRecommendation(profile, tiers, confidence, eligibleCount) {
@@ -261,6 +259,7 @@ async function generateAndPresent(ctx, analyticsMeta = {}) {
       shortlistCompletedAt: new Date().toISOString(),
     },
     clearState: false,
+    allowExtendedPrediction: true,
     analytics: [
       { type: 'recommendation_generated' },
       { type: 'shortlist_completed' },
@@ -584,8 +583,13 @@ async function processAiShortlistingTurn(text, context = {}, opts = {}) {
           ...ctx,
           step: 'shortlist_permission_declined',
           lastQuestionKey: 'compare_declined',
+          profile: {
+            ...(ctx.profile || {}),
+            _shortlistDeclineCount: Number(ctx.profile?._shortlistDeclineCount || 0) + 1,
+          },
         },
         clearState: false,
+        parked: true,
         analytics: [],
       };
     }
@@ -607,18 +611,26 @@ async function processAiShortlistingTurn(text, context = {}, opts = {}) {
 
   if (ctx.step === 'shortlist_permission_declined') {
     if (isPermissionYes(inbound)) {
-      return {
-        reply: getShortlistMessage('ask_compare'),
-        context: { ...ctx, step: 'shortlist_ask_compare' },
-        clearState: false,
-        analytics: [],
-      };
+      const {
+        processSmartComparisonTurn,
+      } = require('./careerCounsellingV2ComparisonEngine');
+      return processSmartComparisonTurn(inbound, ctx, {
+        startSmartComparison: true,
+        analytics: analyticsMeta,
+      });
     }
+    // Soft-advance after one decline
+    const {
+      processSmartComparisonTurn,
+    } = require('./careerCounsellingV2ComparisonEngine');
+    const advanced = await processSmartComparisonTurn(inbound, ctx, {
+      startSmartComparison: true,
+      analytics: analyticsMeta,
+    });
     return {
-      reply: getShortlistMessage('permission_declined_reengage'),
-      context: ctx,
-      clearState: false,
-      analytics: [],
+      ...advanced,
+      skippedPhaseReason: 'user_declined_optional_gate',
+      reply: `No problem — let’s compare what matters most next.\n\n${advanced.reply || ''}`.trim(),
     };
   }
 
