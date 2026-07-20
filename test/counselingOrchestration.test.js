@@ -59,7 +59,7 @@ describe('counseling orchestration redesign', () => {
     assert.ok(items.length >= 1);
   });
 
-  test('personalization permission yes enters explore', async () => {
+  test('personalization permission yes enters AI shortlisting', async () => {
     const {
       processPersonalizedDiscoveryTurn,
     } = require('../services/chatbot/careerCounselling/careerCounsellingV2PersonalizationEngine');
@@ -74,7 +74,9 @@ describe('counseling orchestration redesign', () => {
       },
       {}
     );
-    assert.equal(r.context.stage, 'explore_modern_colleges');
+    // Explore already happened earlier in the interactive framework; permission yes
+    // advances into eligibility shortlisting (not a second explore pass).
+    assert.equal(r.context.stage, 'ai_shortlisting');
   });
 
   test('journey entry returns orchestration + capped reply', async () => {

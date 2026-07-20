@@ -55,6 +55,15 @@ function isGuidedFlowSlotLikeToken(message) {
     return true;
   }
 
+  // Counseling Stage 3 priority tokens — content answers, not language signals.
+  if (
+    /^(placements?|internships?|hostel|affordable|fees?|campus|research|coding|culture|budget|location|mentoring|faculty|brand|rankings?)$/i.test(
+      text
+    )
+  ) {
+    return true;
+  }
+
   // Short ASCII codes like "AU", "SVU", "OC", "BC-A" (exclude pure acks already handled).
   if (/^[A-Za-z]{1,8}(-[A-Za-z0-9]{1,4})?$/.test(text) && text.length <= 8) {
     return true;
@@ -274,7 +283,13 @@ function resolveSessionAwareLanguage({
 
 function readStoredPreference(conversation, leadContext) {
   const stored = normalizeLanguageCode(conversation?.preferredLanguage);
-  if (conversation?.preferredLanguage && isSupportedLanguage(stored) && stored !== DEFAULT_LANGUAGE) {
+  // Explicit conversation preference — including English — wins over lead memory.
+  // (Previously English was treated as "unset", which let lead Telugu flip mid-journey.)
+  if (
+    conversation?.preferredLanguage != null &&
+    String(conversation.preferredLanguage).trim() !== '' &&
+    isSupportedLanguage(stored)
+  ) {
     return { language: stored, source: 'conversation' };
   }
 
@@ -459,4 +474,21 @@ module.exports = {
   seedPreferredLanguageFromLead,
   recordDetectedLanguage,
   getStreakThreshold,
+  resolveCounselingSessionLanguage,
 };
+
+/**
+ * Sticky counseling journey language from profile / session (ISO code).
+ * Returns null when no counseling language has been chosen yet.
+ */
+function resolveCounselingSessionLanguage(careerCounselling = {}) {
+  const session = careerCounselling?.counselingSessionLanguage;
+  if (session && isSupportedLanguage(normalizeLanguageCode(session))) {
+    return normalizeLanguageCode(session);
+  }
+  const profileLang = careerCounselling?.profile?.preferredLanguage;
+  if (profileLang != null && String(profileLang).trim() !== '') {
+    return normalizeLanguageCode(profileLang);
+  }
+  return null;
+}

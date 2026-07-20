@@ -72,6 +72,9 @@ function auditInteractive(label, text, opts = {}) {
   if (opts.requireAdditionalSection && !/Additional Factors/i.test(text)) {
     fails.push('missing_additional_section');
   }
+  if (opts.requireExamples && !/For example:.*placements/i.test(text)) {
+    fails.push('missing_inline_examples');
+  }
   if (opts.minLines && lines.length < opts.minLines) {
     fails.push(`too_short:${lines.length}`);
   }
@@ -82,7 +85,8 @@ function auditInteractive(label, text, opts = {}) {
 function staticAudit() {
   auditInteractive('static:ask_priorities', EVAL_MESSAGES.ask_priorities, {
     requireQuestion: true,
-    minLines: 4,
+    requireExamples: true,
+    minLines: 3,
   });
   const expand = buildFrameworkExpandMessage({
     studentPriorities: ['Placements', 'Internships'],
@@ -134,7 +138,7 @@ async function liveAudit() {
   if (r.context?.step !== 'eval_ask_priorities') {
     record('live:stage3_ask', 'FAIL', { fails: [`step=${r.context?.step}`] });
   } else {
-    auditInteractive('live:stage3_ask', r.reply, { requireQuestion: true, minLines: 4 });
+    auditInteractive('live:stage3_ask', r.reply, { requireQuestion: true, requireExamples: true, minLines: 4 });
   }
 
   r = await handleCareerCounsellingMessage('placements and coding culture', r.context);

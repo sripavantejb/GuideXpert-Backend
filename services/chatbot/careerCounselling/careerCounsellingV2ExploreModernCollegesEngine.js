@@ -201,6 +201,8 @@ async function presentExploreInstitutions(ctx, analyticsMeta = {}) {
       },
     },
     clearState: false,
+    // Single WhatsApp bubble — skipLineCap alone was splitting Top-N into 6 replyParts.
+    keepIntact: true,
     skipLineCap: true,
     educationalContent: true,
     phaseGateComplete: true,

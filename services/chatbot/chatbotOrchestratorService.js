@@ -9,7 +9,10 @@ const {
 } = require('./intentClassifierService');
 const { isCareerCounsellingJourneyEnabled } = require('../../constants/careerCounsellingJourney');
 const { tryRouteActiveGuidedFlow, applyGuidedFlowSwitchTurn } = require('./guidedFlows/guidedFlowOrchestrator');
-const { getGuidedFlowByIntent } = require('./guidedFlows/guidedFlowRegistry');
+const {
+  getGuidedFlowByIntent,
+  isGuidedFlowEntryOrContinueIntent,
+} = require('./guidedFlows/guidedFlowRegistry');
 const {
   tryFoundationConversation,
 } = require('./foundationConversation/foundationConversationRouter');
@@ -75,6 +78,7 @@ const {
   resolveIitCounsellingSessionAwareLanguage,
   resolveIitCounsellingStrategySessionAwareLanguage,
   updatePreferredLanguage,
+  resolveCounselingSessionLanguage,
 } = require('./conversationLanguageService');
 const { incrementLanguageRequest } = require('../analytics/languageRequestAnalyticsService');
 const { resolveGreetingReply } = require('../../constants/greetingReplies');
@@ -221,6 +225,34 @@ function setChatbotOrchestratorTestHooks(hooks) {
 function hooks() {
   return testHooks || defaultHooks;
 }
+
+function hasActiveCareerCounsellingContext(context = {}) {
+  const cc = context?.careerCounselling;
+  if (!cc || typeof cc !== 'object') return false;
+  if (cc.flow && cc.flow !== 'career_counselling_v2') return false;
+  return Boolean(cc.step || cc.stage);
+}
+
+function rehydrateCareerCounsellingBotState(botState) {
+  if (!botState?.context || !hasActiveCareerCounsellingContext(botState.context)) {
+    return botState;
+  }
+  if (botState.state === 'career_counselling_v2') return botState;
+  return {
+    ...botState,
+    state: 'career_counselling_v2',
+  };
+}
+
+const COUNSELING_JOURNEY_NON_RESCUE_INTENTS = new Set([
+  'main_menu',
+  'opt_out',
+  'human_handoff',
+  'booking_create_check',
+  'booking_reschedule_cancel',
+  'career_counselling_journey',
+  'career_counselling_journey_continue',
+]);
 
 function buildMainMenuText(leadContext) {
   return buildWelcomeMenuText(leadContext);
@@ -593,8 +625,50 @@ async function processInboundCore({
       context: recoveryResume.context,
     };
   } else if (botStateService.isStateExpired(botState)) {
-    await resetToMainMenu(activeConversation._id, activeConversation.phone);
-    botState = { state: 'main_menu', context: emptySubflows() };
+    if (hasActiveCareerCounsellingContext(botState?.context)) {
+      await transitionState(
+        activeConversation._id,
+        activeConversation.phone,
+        'career_counselling_v2',
+        {}
+      );
+      botState = rehydrateCareerCounsellingBotState(botState);
+    } else {
+      await resetToMainMenu(activeConversation._id, activeConversation.phone);
+      botState = { state: 'main_menu', context: emptySubflows() };
+    }
+  }
+
+  botState = rehydrateCareerCounsellingBotState(botState);
+
+  const ccCtx = botState?.context?.careerCounselling;
+  if (
+    ccCtx &&
+    (String(ccCtx.step || '').startsWith('eval_') ||
+      ccCtx.lastQuestionKey === 'evaluation_priorities' ||
+      ccCtx.lastQuestionKey === 'permission')
+  ) {
+    botState = {
+      state: 'career_counselling_v2',
+      context: botState?.context || {},
+    };
+  }
+
+  // Counseling journey language is sticky once the student picks a language —
+  // never auto-flip from detection / lead memory mid-journey.
+  if (botState?.state === 'career_counselling_v2' && multilingualInbound) {
+    const stickyLang = resolveCounselingSessionLanguage(botState.context?.careerCounselling);
+    if (stickyLang) {
+      multilingualInbound.resolvedLanguage = stickyLang;
+      multilingualInbound.language = stickyLang;
+      multilingualInbound.resolutionReason = 'counseling_session_sticky';
+      multilingualInbound.resolutionSource = 'counseling_session';
+      // Keep inbound English text when session is English and message is ASCII slots.
+      if (stickyLang === 'en' && /^[\x00-\x7F]+$/u.test(String(inbound.text || '').trim())) {
+        multilingualInbound.englishMessage = String(inbound.text || '').trim();
+        multilingualInbound.translationApplied = false;
+      }
+    }
   }
 
   const collegeRoutingText =
@@ -964,13 +1038,37 @@ async function processInboundCore({
     botState?.state !== 'career_counselling_v2'
   ) {
     const rescue = scoreCareerCounsellingGuidance(intentText, inbound.text);
-    if (rescue.score >= 60) {
+    const ccStep = botState?.context?.careerCounselling?.step;
+    const ccLastQ = botState?.context?.careerCounselling?.lastQuestionKey;
+    const priorityRescue =
+      ccStep === 'eval_ask_priorities' ||
+      ccLastQ === 'evaluation_priorities' ||
+      (ccStep === 'eval_ask_permission' && /^(yes|no|yeah|yep|sure|ok|okay)\b/i.test(intentText));
+    if (rescue.score >= 60 || priorityRescue) {
       intentResult = {
-        intent: 'career_counselling_journey',
+        intent: priorityRescue ? 'career_counselling_journey_continue' : 'career_counselling_journey',
         confidence: rescue.confidence === 'medium' ? 'medium' : 'high',
-        intentReason: rescue.reason || 'career_counselling_orchestrator_rescue',
+        intentReason: priorityRescue
+          ? 'career_counselling_stage3_priority_rescue'
+          : rescue.reason || 'career_counselling_orchestrator_rescue',
       };
     }
+  }
+
+  if (
+    isCareerCounsellingJourneyEnabled() &&
+    hasActiveCareerCounsellingContext(botState?.context) &&
+    intentResult?.intent &&
+    !COUNSELING_JOURNEY_NON_RESCUE_INTENTS.has(intentResult.intent) &&
+    !isGuidedFlowEntryOrContinueIntent(intentResult.intent) &&
+    botState?.state !== 'college_predictor' &&
+    botState?.state !== 'rank_predictor'
+  ) {
+    intentResult = {
+      intent: 'career_counselling_journey_continue',
+      confidence: 'high',
+      intentReason: 'career_counselling_active_context_rescue',
+    };
   }
 
   await h.updateConversationIntent(activeConversation._id, intentResult.intent);

@@ -5,6 +5,7 @@ const {
   COUNSELOR_SUGGESTED_PRIORITIES,
 } = require('../../../constants/careerCounsellingV2Evaluation');
 const { normalizeText } = require('../intentTextUtils');
+const { isUnclearCounselingInput } = require('./careerCounsellingV2ResponseParser');
 
 const FACTOR_ALIASES = Object.freeze([
   {
@@ -41,6 +42,7 @@ const FACTOR_ALIASES = Object.freeze([
     patterns: [
       /\bcampus life\b/i,
       /\bcampus culture\b/i,
+      /\bcampus\b/i,
       /\bhostel\b/i,
       /\benvironment\b/i,
       /\bculture\b/i,
@@ -131,6 +133,7 @@ function parseEvaluationPriorities(text) {
   }
 
   if (ids.length === 0) {
+    if (isUnclearCounselingInput(raw)) return null;
     if (raw.length >= 3 && raw.length <= 400) {
       return {
         evaluationPriorities: ['custom'],

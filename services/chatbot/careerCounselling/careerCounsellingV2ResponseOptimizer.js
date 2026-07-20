@@ -16,10 +16,11 @@ const FILLER_PATTERNS = [
   /\bbased on your (goals|profile|interests|preferences)\b[,.]?\s*/gi,
   /\bi understand your interests\b[,.]?\s*/gi,
   /\bthank you for (sharing that information|answering)\b[,.]?\s*/gi,
-  /\bWhat would you like to know next\??/gi,
-  /\bAnything else\??/gi,
-  /\bWhat else\??/gi,
-  /\bHow can I help\??/gi,
+  // Whole-line only — never strip mid-sentence phrases like "what else matters".
+  /^What would you like to know next\??\s*$/gim,
+  /^Anything else\??\s*$/gim,
+  /^What else\??\s*$/gim,
+  /^How can I help\??\s*$/gim,
 ];
 
 function wordCount(text) {
@@ -138,13 +139,21 @@ function splitBySentences(text) {
 /**
  * Optimize a counseling reply for WhatsApp.
  * @param {string} rawReply
- * @param {{ allowExtendedPrediction?: boolean, skipLineCap?: boolean, educationalContent?: boolean }} [opts]
+ * @param {{ allowExtendedPrediction?: boolean, skipLineCap?: boolean, educationalContent?: boolean, keepIntact?: boolean }} [opts]
  * @returns {{ reply: string, replyParts: string[] }}
  */
 function optimizeCareerCounsellingReply(rawReply, opts = {}) {
-  const allowExtended = Boolean(opts.allowExtendedPrediction || opts.skipLineCap);
+  const keepIntact = Boolean(opts.keepIntact);
+  const allowExtended = Boolean(opts.allowExtendedPrediction || opts.skipLineCap || keepIntact);
   const educational = Boolean(opts.educationalContent) && !allowExtended;
   const maxLines = educational ? MAX_LINES_EDUCATIONAL : MAX_LINES_NORMAL;
+
+  // Stage 3 framework expand must stay one WhatsApp bubble — no bullet trim, no split.
+  if (keepIntact) {
+    const cleaned = stripFiller(rawReply);
+    if (!cleaned) return { reply: '', replyParts: [] };
+    return { reply: cleaned, replyParts: [cleaned] };
+  }
 
   let cleaned = limitBulletsInBlock(stripFiller(rawReply));
   if (!cleaned) {

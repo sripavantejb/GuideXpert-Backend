@@ -180,6 +180,9 @@ function startSmartComparison(ctx, analyticsMeta = {}) {
       comparisonStartedAt: new Date().toISOString(),
     },
     clearState: false,
+    // College list + select prompt must stay intact — line-cap was dropping numbered choices.
+    keepIntact: true,
+    skipLineCap: true,
     analytics: [{ type: 'comparison_started' }],
   };
 }
@@ -252,6 +255,9 @@ function presentComparison(ctx, selectedColleges, analyticsMeta = {}) {
       comparisonCompletedAt: new Date().toISOString(),
     },
     clearState: false,
+    // Full comparison (Why it fits / Watch-outs / Trade-offs / Verdict) must not be truncated.
+    keepIntact: true,
+    skipLineCap: true,
     analytics: [
       { type: 'comparison_completed' },
       { type: 'preferred_college_identified' },
@@ -358,6 +364,8 @@ async function processSmartComparisonTurn(text, context = {}, opts = {}) {
         reply: `${getCompareMessage('select_clarify')}\n\n${choices}`,
         context: ctx,
         clearState: false,
+        keepIntact: true,
+        skipLineCap: true,
         analytics: [],
       };
     }

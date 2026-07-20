@@ -32,6 +32,7 @@ const STAGES = Object.freeze({
 const EVALUATION_STEPS = Object.freeze([
   'eval_ask_priorities',
   'eval_ask_permission',
+  'eval_offer_personalization',
   'eval_transition',
   'eval_common_mistakes',
   'eval_framework',
@@ -73,17 +74,7 @@ const MESSAGES = Object.freeze({
     "Before I recommend any colleges, I'd like to understand what matters most to you.",
     '',
     "What are the top things you're looking for in a college?",
-    '',
-    'For example:',
-    '• Placements',
-    '• Coding Culture',
-    '• Internships',
-    '• Affordable Fees',
-    '• Campus Life',
-    '• Research',
-    '• Entrepreneurship',
-    '• Higher Studies',
-    '• Location',
+    'For example: placements, coding culture, internships, affordable fees, campus life, research, entrepreneurship, higher studies, or location.',
   ].join('\n'),
 
   priorities_clarify: [
@@ -91,16 +82,48 @@ const MESSAGES = Object.freeze({
     "Or say \"I don't know\" / \"You suggest\" and I'll propose a starting framework.",
   ].join('\n'),
 
+  confusion_clarify_priorities: [
+    "No problem — let me explain differently.",
+    '',
+    "What are the top things you're looking for in a college?",
+    '',
+    'For example: placements, coding culture, internships, affordable fees, or campus life.',
+  ].join('\n'),
+
+  confusion_clarify_permission: [
+    "I didn't quite understand.",
+    '',
+    'Would you like me to shortlist some colleges that best match this framework?',
+    '',
+    'Reply Yes or No.',
+  ].join('\n'),
+
+  repeated_unclear_menu_offer:
+    "I'm having trouble following. If you want to start over, reply MENU — otherwise answer in your own words and we'll continue.",
+
+  confusion_clarify_personalization: [
+    "I didn't quite understand.",
+    '',
+    'Would you like me to ask a few questions to personalize your recommendations?',
+    '',
+    'Reply Yes or No.',
+  ].join('\n'),
+
   permission_clarify:
     'Would you like me to shortlist some colleges that best match this framework?\n\nReply Yes or No.',
 
   permission_no: [
-    'No problem — we can refine your priorities first.',
-    'Tell me what else matters, or say yes when you want college options.',
+    'No problem.',
+    '',
+    "Before recommending colleges, I'd like to understand your preferences a little better so I can personalize the recommendations.",
+    '',
+    'Can I ask you a few questions?',
   ].join('\n'),
 
-  permission_declined_reengage:
-    'Ready for colleges that match your framework? Just say yes.',
+  permission_declined_reengage: [
+    'No problem — we can stay with personalization first.',
+    'Reply yes when you are ready for a few preference questions, or share another priority.',
+  ].join('\n'),
 
   awaiting_ack_nudge: 'Take your time — share what matters most in a college.',
 
@@ -195,6 +218,7 @@ function getEvalContentForStep(step) {
       return getEvalMessage('ask_priorities');
     case 'eval_ask_permission':
       return getEvalMessage('permission_clarify');
+    case 'eval_offer_personalization':
     case 'eval_permission_declined':
       return getEvalMessage('permission_no');
     default:

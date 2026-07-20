@@ -154,6 +154,9 @@ function respondToConcern(ctx, category, objectionText, analyticsMeta = {}) {
       lastQuestionKey: 'concern_check_resolved',
     },
     clearState: false,
+    // Preserve decision-support footer — 5-line cap was dropping it.
+    keepIntact: true,
+    skipLineCap: true,
     analytics: [
       { type: 'concern_identified' },
       { type: 'concern_answered' },

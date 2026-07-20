@@ -99,11 +99,17 @@ function finalizeCounselingResult(result, inbound = '') {
     allowExtendedPrediction: composed.allowExtendedPrediction,
     skipLineCap: composed.skipLineCap,
     educationalContent: composed.educationalContent,
+    keepIntact: composed.keepIntact === true || result?.keepIntact === true,
   });
   return {
     ...composed,
     reply: optimized.reply,
-    replyParts: optimized.replyParts,
+    // Intact Stage 3 bubbles must never multi-send via replyParts.
+    replyParts:
+      composed.keepIntact === true || result?.keepIntact === true
+        ? [optimized.reply].filter(Boolean)
+        : optimized.replyParts,
+    syncConversationLanguage: result?.syncConversationLanguage || null,
   };
 }
 

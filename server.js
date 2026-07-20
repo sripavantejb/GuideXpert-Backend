@@ -267,6 +267,32 @@ app.use(async (req, res, next) => {
 });
 
 // Register specific /api routes before any broad `app.use('/api', router)` mounts.
+const BUILD_TIME = new Date().toISOString();
+const PACKAGE_VERSION = (() => {
+  try {
+    return require('./package.json').version || 'unknown';
+  } catch {
+    return 'unknown';
+  }
+})();
+
+function getBuildMetadata() {
+  const gitCommit =
+    process.env.VERCEL_GIT_COMMIT_SHA ||
+    process.env.GIT_COMMIT ||
+    process.env.COMMIT_SHA ||
+    process.env.RAILWAY_GIT_COMMIT_SHA ||
+    null;
+  return {
+    version: PACKAGE_VERSION,
+    gitCommit: gitCommit ? String(gitCommit).slice(0, 40) : null,
+    gitCommitShort: gitCommit ? String(gitCommit).slice(0, 7) : null,
+    buildTime: BUILD_TIME,
+    vercelEnv: process.env.VERCEL_ENV || null,
+    region: process.env.VERCEL_REGION || null,
+  };
+}
+
 app.get('/api/health', async (req, res) => {
   const whatsapp = getWhatsAppConfigStatus();
   const knowledgeAssistant = getKnowledgeAssistantConfigStatus();
@@ -278,9 +304,16 @@ app.get('/api/health', async (req, res) => {
   const leadScoring = getLeadScoringConfigStatus();
   const scopeFirewall = getScopeFirewallConfigStatus();
   const humanCopilot = await getHumanCopilotHealthStatus();
+  const build = getBuildMetadata();
   res.json({
     status: 'ok',
     message: 'GuideXpert API is running',
+    version: build.version,
+    gitCommit: build.gitCommit,
+    gitCommitShort: build.gitCommitShort,
+    buildTime: build.buildTime,
+    vercelEnv: build.vercelEnv,
+    region: build.region,
     features: { posterDownloadAdmin: true },
     whatsapp,
     knowledgeAssistant: {

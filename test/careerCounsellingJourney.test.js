@@ -13,6 +13,7 @@ const {
 } = require('../services/chatbot/careerCounselling/careerCounsellingJourneyService');
 const {
   isCareerCounsellingJourneyBreakout,
+  isCollegeSelectionConfusionEntry,
 } = require('../services/chatbot/careerCounselling/careerCounsellingIntentService');
 const { isGuidedFlowInterrupt } = require('../services/chatbot/guidedFlows/guidedFlowInterruptPolicy');
 const {
@@ -66,20 +67,47 @@ describe('careerCounsellingIntentService', () => {
   test('breakout during journey for rank predictor phrase', async () => {
     assert.equal(isCareerCounsellingJourneyBreakout('predict my rank for JEE Main 85'), true);
   });
+
+  test('college selection confusion detection for empathetic opening', () => {
+    assert.equal(isCollegeSelectionConfusionEntry("I'm confused to select the right college"), true);
+    assert.equal(isCollegeSelectionConfusionEntry('I am confused to find a college'), true);
+    assert.equal(isCollegeSelectionConfusionEntry("I don't know which college to choose"), true);
+    assert.equal(isCollegeSelectionConfusionEntry('Career guidance'), false);
+    assert.equal(isCollegeSelectionConfusionEntry('I am confused'), false);
+  });
 });
 
 describe('careerCounsellingV2 discovery engine', () => {
   test('new entry starts discovery with greeting, intro, and qualification question', async () => {
     const r = await handleCareerCounsellingMessage('I need counselling', {}, { isNewEntry: true });
-    assert.match(r.reply, /Hello!/i);
-    assert.match(r.reply, /admissions counsellor/i);
+    assert.match(r.reply, /understand|admissions counsellor/i);
     assert.match(r.reply, /current qualification/i);
+    assert.doesNotMatch(r.reply, /Got it —|I understand you said|You mentioned|Thanks for telling me/i);
+    assert.doesNotMatch(r.reply, /"I need counselling"/i);
     assert.equal(r.context.flow, 'career_counselling_v2');
     assert.equal(r.context.version, 2);
     assert.equal(r.context.stage, STAGES.DISCOVERY);
     assert.equal(r.context.step, 'awaiting_qualification');
     assert.equal(r.context.profile.profileCompletionPct, 0);
     assert.equal(r.clearState, false);
+  });
+
+  test('college confusion entry uses empathetic opening without echoing user words', async () => {
+    const userText = "I'm confused to select the right college.";
+    const r = await handleCareerCounsellingMessage(userText, {}, { isNewEntry: true });
+    assert.match(r.reply, /Choosing the right college can feel overwhelming/i);
+    assert.match(r.reply, /career goals and aspirations/i);
+    assert.match(r.reply, /current qualification/i);
+    assert.doesNotMatch(r.reply, /Got it —|I understand you said|You mentioned|Thanks for telling me/i);
+    assert.doesNotMatch(r.reply, /confused to select the right college/i);
+  });
+
+  test('social greeting entry keeps warm hello without quoting', async () => {
+    const r = await handleCareerCounsellingMessage('hello', {}, { isNewEntry: true });
+    assert.match(r.reply, /Hello!/i);
+    assert.match(r.reply, /admissions counsellor/i);
+    assert.match(r.reply, /current qualification/i);
+    assert.doesNotMatch(r.reply, /Got it —|"/i);
   });
 
   test('full discovery flow builds profile and starts evaluation masterclass', async () => {
@@ -107,6 +135,8 @@ describe('careerCounsellingV2 discovery engine', () => {
     assert.equal(r.context.stage, STAGES.EVALUATION_FRAMEWORK);
     assert.equal(r.context.step, 'eval_ask_priorities');
     assert.match(r.reply, /what matters most|top things/i);
+    assert.match(r.reply, /For example:.*placements.*coding culture/i);
+    assert.doesNotMatch(r.reply, /For example:\s*$/m);
     assert.equal(r.context.profile.preferredLanguage, 'Telugu');
     assert.equal(r.context.profile.profileCompletionPct, 100);
     assert.equal(r.context.profile.evaluationCompleted, false);
@@ -191,13 +221,105 @@ describe('careerCounsellingV2 interactive framework (stage 3)', () => {
     assert.match(r.reply, /Your Priorities/i);
   });
 
-  test('permission no holds without entering explore', async () => {
+  test('permission no offers personalization and continues on yes', async () => {
     let r = await completeDiscovery();
     r = await handleCareerCounsellingMessage('placements', r.context);
+    assert.equal((r.replyParts || []).length, 1, 'Stage 3 ack must be one WhatsApp message');
+    assert.match(r.reply, /Your Priorities/i);
+    assert.match(r.reply, /Additional Factors/i);
+    assert.match(r.reply, /Would you like me to shortlist/i);
+
     r = await handleCareerCounsellingMessage('no', r.context);
-    assert.equal(r.context.step, 'eval_permission_declined');
+    assert.equal(r.context.step, 'eval_offer_personalization');
     assert.match(r.reply, /No problem/i);
+    assert.match(r.reply, /Can I ask you a few questions/i);
     assert.notEqual(r.context.stage, 'explore_modern_colleges');
+    assert.notEqual(r.context.stage, 'discovery');
+
+    r = await handleCareerCounsellingMessage('yes', r.context);
+    assert.equal(r.context.stage, 'personalized_discovery');
+  });
+
+  test('single priority "placements" advances to permission with profile persisted', async () => {
+    let r = await completeDiscovery();
+    r = await handleCareerCounsellingMessage('placements', r.context);
+    assert.equal(r.context.step, 'eval_ask_permission');
+    assert.deepEqual(r.context.profile.studentPriorities, ['Placements']);
+    assert.deepEqual(r.context.profile.evaluationPriorities, ['placements']);
+    assert.match(r.reply, /Your Priorities/i);
+    assert.match(r.reply, /Would you like me to shortlist/i);
+    assert.ok((r.reply || '').length > 0);
+  });
+
+  test('placements and internships advances with both priorities stored', async () => {
+    let r = await completeDiscovery();
+    r = await handleCareerCounsellingMessage('placements and internships', r.context);
+    assert.equal(r.context.step, 'eval_ask_permission');
+    assert.ok(r.context.profile.evaluationPriorities.includes('placements'));
+    assert.ok(r.context.profile.evaluationPriorities.includes('industry'));
+    assert.match(r.reply, /Additional Factors/i);
+  });
+
+  test('AI alone advances to permission', async () => {
+    let r = await completeDiscovery();
+    r = await handleCareerCounsellingMessage('AI', r.context);
+    assert.equal(r.context.step, 'eval_ask_permission');
+    assert.ok(r.context.profile.evaluationPriorities.includes('projects'));
+    assert.match(r.reply, /Would you like me to shortlist/i);
+  });
+
+  test('You suggest advances with counselor-suggested priorities', async () => {
+    let r = await completeDiscovery();
+    r = await handleCareerCounsellingMessage('You suggest', r.context);
+    assert.equal(r.context.step, 'eval_ask_permission');
+    assert.equal(r.context.profile.evaluationConfidence, 'suggested');
+    assert.ok(r.context.profile.studentPriorities.length >= 2);
+    assert.match(r.reply, /Would you like me to shortlist/i);
+  });
+
+  test('recovers priority answer when step metadata is missing', async () => {
+    let r = await completeDiscovery();
+    const partialCtx = {
+      ...r.context,
+      step: undefined,
+      lastQuestionKey: 'evaluation_priorities',
+    };
+    r = await handleCareerCounsellingMessage('placements', partialCtx);
+    assert.equal(r.context.step, 'eval_ask_permission');
+    assert.deepEqual(r.context.profile.studentPriorities, ['Placements']);
+    assert.ok((r.reply || '').length > 0);
+  });
+
+  test('unclear priority answers clarify without advancing stage', async () => {
+    let r = await completeDiscovery();
+    const savedProfile = { ...r.context.profile };
+    const cases = ["I didn't understand", 'what?', 'asdfgh', 'random text', 'I am not getting', 'werxzsa'];
+
+    for (const msg of cases) {
+      r = await handleCareerCounsellingMessage(msg, r.context);
+      assert.equal(r.context.step, 'eval_ask_priorities', `must stay on priorities after "${msg}"`);
+      assert.equal(r.context.stage, STAGES.EVALUATION_FRAMEWORK);
+      assert.match(r.reply, /explain differently|didn't quite understand|top things/i);
+      assert.equal(r.context.profile.preferredCourse, savedProfile.preferredCourse);
+      assert.equal(r.context.profile.counselingSessionLanguage, savedProfile.counselingSessionLanguage);
+      assert.notEqual(r.context.step, 'eval_ask_permission');
+      assert.notEqual(r.context.profile.evaluationCompleted, true);
+    }
+  });
+
+  test('three consecutive unclear messages offer menu without auto-reset', async () => {
+    let r = await completeDiscovery();
+    r = await handleCareerCounsellingMessage('what?', r.context);
+    r = await handleCareerCounsellingMessage('asdfgh', r.context);
+    r = await handleCareerCounsellingMessage('werxzsa', r.context);
+    assert.equal(r.context.step, 'eval_ask_priorities');
+    assert.equal(r.context.profile.unclearInputStreak, 3);
+    assert.match(r.reply, /reply MENU/i);
+    assert.notEqual(r.clearState, true);
+
+    r = await handleCareerCounsellingMessage('placements', r.context);
+    assert.equal(r.context.step, 'eval_ask_permission');
+    assert.equal(r.context.profile.unclearInputStreak, 0);
   });
 });
 

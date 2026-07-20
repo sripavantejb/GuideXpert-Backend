@@ -88,6 +88,10 @@ async function executeActiveGuidedFlowTurn({
   );
 
   let replyText = turn.replyText;
+  if (!replyText && (!Array.isArray(turn.replyParts) || turn.replyParts.length === 0)) {
+    replyText =
+      'Share what matters most in a college — placements, coding culture, fees, or say "I don\'t know".';
+  }
   const replyParts =
     flow?.id === 'career_counselling_v2' && Array.isArray(turn.replyParts) && turn.replyParts.length > 1
       ? turn.replyParts

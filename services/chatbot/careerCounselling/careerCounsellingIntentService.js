@@ -99,10 +99,27 @@ const CONFUSION_SIGNAL =
   /\b(confused|confusion|confusing|lost|worried|worry|unsure|doubt|doubts|stress|stressed|anxious|help|guidance|guide|advise|advice|suggest(?:ion|ions|ed|ing)?|recommend(?:ation|ations|ed|ing)?|don'?t know|do not know|no idea|not sure|what should i|which (college|course|branch)|best for me|decide|deciding|decision|choose|choosing|pick|select|find(?:ing)? a college|looking for college|career|admission|admissions|future|after intermediate|after 12th|after inter|counsell?ing|forcing|pressure|dropout|engineering)\b/i;
 
 const DOMAIN_SIGNAL =
-  /\b(college|colleges|course|courses|branch|branches|career|careers|admission|admissions|engineering|b\.?tech|intermediate|inter|mpc|bipc|degree|counsell?ing|counseling|placement|future|exam|eamcet|eapcet|jee|suggestion|suggestions)\b/i;
+  /\b(college|colleges|course|courses|branch|branches|career|careers|admission|admissions|engineering|b\.?tech|intermediate|inter|mpc|bipc|degree|counsell?ing|counseling|placements?|internships?|coding|hostel|campus|affordable|fees|research|future|exam|eamcet|eapcet|jee|suggestion|suggestions)\b/i;
 
 const SOFT_STANDALONE =
   /^(i'?m\s+)?(confused|lost|worried|unsure|help|help me|please help|can you help(?: me)?|guide me|need guidance|need advice|suggest something|recommend something|what should i (do|choose)|i don'?t know|don'?t know|want counsell?ing|start counsell?ing)[.!?]*$/i;
+
+/** Student is uncertain about choosing or finding the right college — drives empathetic opening copy. */
+const COLLEGE_SELECTION_CONFUSION_PATTERNS = [
+  /\bconfused\b.*\b(college|colleges|select|choose|pick|find|decide|decision|right)\b/i,
+  /\b(college|colleges|select|choose|pick|find|decide|decision|right)\b.*\bconfused\b/i,
+  /\bconfused (to|about|in|with|on)?\s*(find|finding|choose|choosing|select|selecting|pick|decide|deciding)/i,
+  /\bdon'?t know which college\b/i,
+  /\bnot sure which college\b/i,
+  /\bhelp me choose (a |my |the )?college\b/i,
+  /\bhelp me (pick|select|find|decide) (a |my |the )?college\b/i,
+  /\bwhich college should i (join|choose|pick|select|take)\b/i,
+  /\bchoose (the )?right college\b/i,
+  /\bselect (the )?right college\b/i,
+  /\bfind (a |the )?right college\b/i,
+  /\bconfused after intermediate\b/i,
+  /\bconfused after (12th|inter|intermediate)\b/i,
+];
 
 const BRANCH_SIGNAL_PATTERN =
   /\b(cse|ece|eee|mech|civil|it|aiml|ai\/?ml|ai|branch|branches)\b/i;
@@ -213,6 +230,13 @@ function isCareerCounsellingJourneyEntryQuery(text, originalText = null) {
   return scored.score >= 60;
 }
 
+function isCollegeSelectionConfusionEntry(text, originalText = null) {
+  return intentTextCandidates(text, originalText).some((t) => {
+    if (!t) return false;
+    return COLLEGE_SELECTION_CONFUSION_PATTERNS.some((pattern) => pattern.test(t));
+  });
+}
+
 function isCareerCounsellingJourneyBreakout(text, originalText = null) {
   return intentTextCandidates(text, originalText).some((t) => {
     if (!t) return false;
@@ -236,8 +260,10 @@ function isPermissionNo(text) {
 
 module.exports = {
   CAREER_COUNSELLING_ENTRY_PATTERNS,
+  COLLEGE_SELECTION_CONFUSION_PATTERNS,
   scoreCareerCounsellingGuidance,
   isCareerCounsellingJourneyEntryQuery,
+  isCollegeSelectionConfusionEntry,
   isCareerCounsellingJourneyBreakout,
   isPermissionYes,
   isPermissionNo,

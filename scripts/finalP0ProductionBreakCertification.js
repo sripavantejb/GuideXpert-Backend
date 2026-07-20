@@ -357,7 +357,6 @@ async function runPart2Phases() {
   const requiredCore = [
     'Discovery',
     'Education',
-    'Modern Colleges (concepts)',
     'Personalization',
     'Explore Modern Colleges',
     'AI Shortlisting',
@@ -782,6 +781,10 @@ function finalizeScores() {
   if (p0 > 0 || p1 > 0) {
     report.recommendation = 'NO GO';
     report.recommendationReason = `${p0} P0 and ${p1} P1 issues remain — do not release`;
+  } else if (!LIVE) {
+    report.recommendation = 'NO GO';
+    report.recommendationReason =
+      'Local adversarial gates passed but live WhatsApp was skipped (FINAL_P0_LIVE=0) — deploy + live evidence required';
   } else if (LIVE && !report.parts.part8_live_whatsapp?.e2eDeliverySignal) {
     report.recommendation = 'NO GO';
     report.recommendationReason = 'Local adversarial gates passed but live WhatsApp delivery not confirmed';

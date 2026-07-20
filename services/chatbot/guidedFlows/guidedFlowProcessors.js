@@ -190,6 +190,31 @@ async function processCareerCounsellingTurn({
     { isNewEntry, analytics, preferredLanguage }
   );
 
+  // Persist counseling language choice onto WhatsApp conversation (sticky).
+  if (result.syncConversationLanguage && conversationId) {
+    try {
+      const {
+        updatePreferredLanguage,
+      } = require('../conversationLanguageService');
+      await updatePreferredLanguage(conversationId, result.syncConversationLanguage);
+    } catch (_) {
+      /* non-blocking */
+    }
+  } else if (
+    result.context?.counselingSessionLanguage &&
+    conversationId &&
+    result.context.counselingSessionLanguage !== contextPatch.careerCounselling?.counselingSessionLanguage
+  ) {
+    try {
+      const {
+        updatePreferredLanguage,
+      } = require('../conversationLanguageService');
+      await updatePreferredLanguage(conversationId, result.context.counselingSessionLanguage);
+    } catch (_) {
+      /* non-blocking */
+    }
+  }
+
   const nextContext = clearAssistantSessionFlags({
     ...contextPatch,
     careerCounselling: result.context,

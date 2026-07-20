@@ -56,9 +56,8 @@ const UX_PHASE = Object.freeze({
 const FULL_COUNSELING_PATH = [
   'Discovery',
   'Education',
-  'Modern Colleges (concepts)',
-  'Personalization',
   'Explore Modern Colleges',
+  'Personalization',
   'AI Shortlisting',
   'Comparison',
   'Concern Handling',
@@ -110,14 +109,25 @@ function stageToUxPhase(stage, step = '') {
 }
 
 function isPredictionExtended(result = {}) {
+  const stage = String(result.context?.stage || '');
+  const step = String(result.context?.step || '');
   return Boolean(
     result.allowExtendedPrediction ||
       result.skipLineCap ||
+      result.keepIntact ||
       result.predictionRunning ||
       /guidexpert\.co\.in/i.test(String(result.reply || '')) ||
-      String(result.context?.step || '') === 'shortlist_ask_compare' ||
-      String(result.context?.stage || '').includes('phase_9') ||
-      String(result.context?.step || '') === 'results'
+      step === 'shortlist_ask_compare' ||
+      stage.includes('phase_9') ||
+      step === 'results' ||
+      // Intact comparison / concern / explore blocks (must not be line-capped)
+      stage.includes('smart_comparison') ||
+      stage.includes('comparison') ||
+      step.startsWith('compare_') ||
+      stage.includes('concern') ||
+      step.startsWith('concern_') ||
+      stage.includes('explore_modern') ||
+      step.startsWith('explore_')
   );
 }
 
@@ -358,11 +368,22 @@ function studentReplyForTurn(persona, ctx, botReply, turnIndex) {
   if (p.languageSwitchAt === turnIndex && p.languageMsg) return p.languageMsg;
   if (p.declineAtSteps && p.declineAtSteps.includes(step)) return p.declineMsg || 'no';
 
+  // Interactive Stage 3 — step must win over bot-reply heuristics (e.g. "Career goal" in summary).
+  if (step === 'eval_ask_priorities') {
+    return p.evalPriorities || 'placements';
+  }
+  if (step === 'eval_ask_permission') {
+    return p.declineGates ? 'no' : 'yes';
+  }
+  if (step === 'eval_offer_personalization' || step === 'eval_permission_declined') {
+    return p.declineGates ? 'no' : 'yes';
+  }
+
   // Predictor slots
   if (step === 'exam' || /which exam|entrance exam/i.test(reply)) {
     return p.exam || 'TS EAMCET';
   }
-  if (step === 'rank' || /rank|percentile/i.test(reply)) return String(p.rank || 12000);
+  if (step === 'rank' || /\brank\b|\bpercentile\b/i.test(reply)) return String(p.rank || 12000);
   if (step === 'category' || /category/i.test(reply)) return p.category || 'OC Boys';
   if (step === 'gender' || /gender/i.test(reply)) return p.gender || 'Male';
   if (step === 'region' || /AU or SVU|region/i.test(reply)) return p.region || 'AU';
@@ -425,11 +446,6 @@ function studentReplyForTurn(persona, ctx, botReply, turnIndex) {
   // Modern learning style
   if (step === 'modern_ask_learning_style') {
     return p.learningStyle || 'hands-on projects with internships';
-  }
-
-  // Evaluation priorities
-  if (step === 'eval_ask_priorities') {
-    return p.evalPriorities || 'projects, internships and mentoring';
   }
 
   // Phase 11

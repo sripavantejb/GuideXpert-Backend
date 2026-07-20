@@ -91,6 +91,33 @@ async function run() {
     record('parser:you_suggest', 'FAIL', { error: String(e.message || e) });
   }
 
+  const priorityInputs = [
+    ['placements', 'placements'],
+    ['AI', 'projects'],
+    ['coding culture', 'projects'],
+    ['internships', 'industry'],
+    ['hostel', 'environment'],
+    ['affordable', 'fees'],
+    ['fees', 'fees'],
+    ['campus', 'environment'],
+    ['research', 'curriculum'],
+    ['higher studies', 'higher_studies'],
+    ['placements and AI', 'placements'],
+    ['good placements', 'placements'],
+    ['I want AI', 'projects'],
+  ];
+  for (const [text, expectedId] of priorityInputs) {
+    try {
+      const parsed = parseEvaluationPriorities(text);
+      assert.ok(parsed.evaluationPriorities.includes(expectedId), `${text} -> ${expectedId}`);
+      record(`parser:priority_${text.replace(/\s+/g, '_').slice(0, 24)}`, 'PASS');
+    } catch (e) {
+      record(`parser:priority_${text.replace(/\s+/g, '_').slice(0, 24)}`, 'FAIL', {
+        error: String(e.message || e),
+      });
+    }
+  }
+
   try {
     const msg = buildFrameworkExpandMessage({
       studentPriorities: ['Placements', 'Coding Culture'],
@@ -172,21 +199,115 @@ async function run() {
     let r = await completeDiscovery();
     r = await handleCareerCounsellingMessage('You suggest', r.context);
     assert.equal(r.context.profile.suggestedByCounselor, true);
+    assert.equal(r.context.step, 'eval_ask_permission');
+    assert.match(r.reply, /Would you like me to shortlist/i);
     record('live:you_suggest', 'PASS');
   } catch (e) {
     record('live:you_suggest', 'FAIL', { error: String(e.message || e) });
   }
 
-  // Decline recommendations
+  // Live: AI priority
+  try {
+    let r = await completeDiscovery();
+    r = await handleCareerCounsellingMessage('AI', r.context);
+    assert.equal(r.context.step, 'eval_ask_permission');
+    assert.ok(r.context.profile.evaluationPriorities.includes('projects'));
+    record('live:ai_priority', 'PASS');
+  } catch (e) {
+    record('live:ai_priority', 'FAIL', { error: String(e.message || e) });
+  }
+
+  // Live: placements and internships
+  try {
+    let r = await completeDiscovery();
+    r = await handleCareerCounsellingMessage('placements and internships', r.context);
+    assert.equal(r.context.step, 'eval_ask_permission');
+    assert.ok(r.context.profile.evaluationPriorities.includes('placements'));
+    assert.ok(r.context.profile.evaluationPriorities.includes('industry'));
+    record('live:placements_internships', 'PASS');
+  } catch (e) {
+    record('live:placements_internships', 'FAIL', { error: String(e.message || e) });
+  }
+
+  // Live: missing step metadata — priority answer still advances
+  try {
+    let r = await completeDiscovery();
+    r = await handleCareerCounsellingMessage('placements', {
+      ...r.context,
+      step: undefined,
+      lastQuestionKey: 'evaluation_priorities',
+    });
+    assert.equal(r.context.step, 'eval_ask_permission');
+    assert.deepEqual(r.context.profile.studentPriorities, ['Placements']);
+    assert.ok(String(r.reply || '').length > 0);
+    record('live:missing_step_priority_recovery', 'PASS');
+  } catch (e) {
+    record('live:missing_step_priority_recovery', 'FAIL', { error: String(e.message || e) });
+  }
+
+  // Decline recommendations → personalization offer (never dead-end)
   try {
     let r = await completeDiscovery();
     r = await handleCareerCounsellingMessage('coding culture', r.context);
+    assert.equal((r.replyParts || []).length, 1);
     r = await handleCareerCounsellingMessage('no', r.context);
-    assert.equal(r.context.step, 'eval_permission_declined');
+    assert.equal(r.context.step, 'eval_offer_personalization');
+    assert.match(r.reply, /Can I ask you a few questions/i);
     assert.notEqual(r.context.stage, 'explore_modern_colleges');
-    record('live:decline_recommendations', 'PASS');
+    r = await handleCareerCounsellingMessage('yes', r.context);
+    assert.equal(r.context.stage, 'personalized_discovery');
+    record('live:decline_to_personalization', 'PASS');
   } catch (e) {
-    record('live:decline_recommendations', 'FAIL', { error: String(e.message || e) });
+    record('live:decline_to_personalization', 'FAIL', { error: String(e.message || e) });
+  }
+
+  // Single intact Stage 3 acknowledgement message
+  try {
+    let r = await completeDiscovery();
+    r = await handleCareerCounsellingMessage('placements', r.context);
+    assert.equal((r.replyParts || []).length, 1);
+    assert.match(r.reply, /Your Priorities[\s\S]*Additional Factors[\s\S]*Would you like me to shortlist/i);
+    record('live:stage3_intact_message', 'PASS');
+  } catch (e) {
+    record('live:stage3_intact_message', 'FAIL', { error: String(e.message || e) });
+  }
+
+  // Language stickiness across Yes / No
+  try {
+    let r = await completeDiscovery();
+    assert.equal(r.context.counselingSessionLanguage, 'en');
+    assert.equal(r.context.profile.preferredLanguage, 'English');
+    r = await handleCareerCounsellingMessage('placements', r.context);
+    assert.equal(r.context.counselingSessionLanguage, 'en');
+    r = await handleCareerCounsellingMessage('yes', r.context);
+    assert.equal(r.context.counselingSessionLanguage, 'en');
+    record('live:language_sticky_english', 'PASS');
+  } catch (e) {
+    record('live:language_sticky_english', 'FAIL', { error: String(e.message || e) });
+  }
+
+  for (const [label, answer, code] of [
+    ['Telugu', 'Telugu', 'te'],
+    ['Hindi', 'Hindi', 'hi'],
+  ]) {
+    try {
+      let r = await handleCareerCounsellingMessage('Career guidance', {}, { isNewEntry: true });
+      r = await handleCareerCounsellingMessage('Class 12', r.context);
+      r = await handleCareerCounsellingMessage('B.Tech', r.context);
+      r = await handleCareerCounsellingMessage('Software engineer', r.context);
+      r = await handleCareerCounsellingMessage('not yet', r.context);
+      r = await handleCareerCounsellingMessage(answer, r.context);
+      assert.equal(r.context.counselingSessionLanguage, code);
+      assert.equal(r.context.profile.preferredLanguage, label);
+      r = await handleCareerCounsellingMessage('placements', r.context);
+      assert.equal(r.context.counselingSessionLanguage, code);
+      r = await handleCareerCounsellingMessage('no', r.context);
+      assert.equal(r.context.counselingSessionLanguage, code);
+      assert.equal(r.context.step, 'eval_offer_personalization');
+      record(`live:language_sticky_${code}`, 'PASS');
+    } catch (e) {
+      record(`live:language_sticky_${code}`, 'FAIL', { error: String(e.message || e) });
+    }
   }
 
   // Accept then proceed Stage 5
@@ -214,6 +335,32 @@ async function run() {
     record('live:no_ai_ai_chain', 'PASS');
   } catch (e) {
     record('live:no_ai_ai_chain', 'FAIL', { error: String(e.message || e) });
+  }
+
+  for (const msg of ["I didn't understand", 'what?', 'asdfgh', 'random text']) {
+    try {
+      let r = await completeDiscovery();
+      r = await handleCareerCounsellingMessage(msg, r.context);
+      assert.equal(r.context.step, 'eval_ask_priorities');
+      assert.match(r.reply, /explain differently|didn't quite understand|top things/i);
+      record(`live:unclear_priority_${msg.replace(/\W+/g, '_')}`, 'PASS');
+    } catch (e) {
+      record(`live:unclear_priority_${msg.replace(/\W+/g, '_')}`, 'FAIL', {
+        error: String(e.message || e),
+      });
+    }
+  }
+
+  try {
+    let r = await completeDiscovery();
+    r = await handleCareerCounsellingMessage('what?', r.context);
+    r = await handleCareerCounsellingMessage('asdfgh', r.context);
+    r = await handleCareerCounsellingMessage('werxzsa', r.context);
+    assert.equal(r.context.step, 'eval_ask_priorities');
+    assert.match(r.reply, /reply MENU/i);
+    record('live:unclear_three_strike_menu_offer', 'PASS');
+  } catch (e) {
+    record('live:unclear_three_strike_menu_offer', 'FAIL', { error: String(e.message || e) });
   }
 
   report.finishedAt = new Date().toISOString();

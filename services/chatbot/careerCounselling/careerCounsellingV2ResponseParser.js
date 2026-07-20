@@ -77,6 +77,37 @@ function isSocialGreetingOnly(text) {
   return SOCIAL_GREETING_ONLY.test(String(text || '').trim());
 }
 
+/**
+ * Confusion / invalid input — must NOT advance slots or be stored as profile data.
+ */
+function isUnclearCounselingInput(text) {
+  const raw = String(text || '').trim();
+  if (!raw || raw.length < 2) return true;
+  const t = normalizeText(raw);
+
+  // Emoji-only / reaction-only — clarify, do not advance or reset
+  if (/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+$/u.test(raw) && !/[a-zA-Z0-9]/u.test(raw)) {
+    return true;
+  }
+
+  if (/^(what|huh|why|how|which|where|when)\??$/i.test(raw)) return true;
+  if (/^[?!.?]+$/.test(raw)) return true;
+  if (/^(ok|okay|k|hm+|um+|umm+)[.!?]*$/i.test(t)) return true;
+  if (/\b(don'?t|didn'?t)\s+(understand|get|follow)\b/i.test(raw)) return true;
+  if (/\bnot getting\b/i.test(raw)) return true;
+  if (/\b(i am|i'm)\s+(confused|lost)\b/i.test(raw)) return true;
+  if (/\bwhat do you mean\b/i.test(raw)) return true;
+  if (/^(asdf|qwerty|zxcv|werxzsa|asdfgh|random text|random)$/i.test(t)) return true;
+  if (/^(explain|explain again|say again|repeat)\??$/i.test(t)) return true;
+
+  // Keyboard mash — consonant-heavy tokens (e.g. werxzsa)
+  if (raw.length >= 5 && raw.length <= 40 && /^[a-z\s]+$/i.test(raw) && !/[aeiouy]/i.test(raw)) {
+    return true;
+  }
+
+  return false;
+}
+
 function matchFirstPattern(text, patterns) {
   const raw = String(text || '').trim();
   if (!raw) return null;
@@ -101,6 +132,8 @@ function parseQualificationAnswer(text) {
     };
   }
 
+  if (isUnclearCounselingInput(raw)) return null;
+
   if (raw.length >= 3 && raw.length <= 300) {
     return {
       currentQualification: raw.slice(0, 200),
@@ -119,6 +152,8 @@ function parseCourseAnswer(text) {
   const structured = matchFirstPattern(raw, COURSE_PATTERNS);
   if (structured) return { preferredCourse: structured, rawAnswer: raw.slice(0, 500) };
 
+  if (isUnclearCounselingInput(raw)) return null;
+
   if (raw.length >= 2 && raw.length <= 300) {
     return { preferredCourse: raw.slice(0, 200), rawAnswer: raw.slice(0, 500) };
   }
@@ -130,6 +165,7 @@ function parseCareerGoalAnswer(text) {
   const raw = String(text || '').trim();
   if (!raw || raw.length < 3) return null;
   if (isSkipResponse(raw)) return { careerGoal: null, skipped: true, rawAnswer: raw };
+  if (isUnclearCounselingInput(raw)) return null;
   return { careerGoal: raw.slice(0, 500), rawAnswer: raw.slice(0, 500) };
 }
 
@@ -140,6 +176,8 @@ function parseShortlistAnswer(text) {
   if (isSkipResponse(raw) || NO_SHORTLIST_PATTERNS.test(raw)) {
     return { preferredColleges: [], skipped: true, rawAnswer: raw };
   }
+
+  if (isUnclearCounselingInput(raw)) return null;
 
   const parts = raw
     .split(/[,;\n]|(?:\band\b)/i)
@@ -162,6 +200,8 @@ function parseLanguageAnswer(text) {
 
   const mapped = matchFirstPattern(raw, LANGUAGE_MAP);
   if (mapped) return { preferredLanguage: mapped, rawAnswer: raw };
+
+  if (isUnclearCounselingInput(raw)) return null;
 
   if (raw.length >= 2 && raw.length <= 64) {
     return { preferredLanguage: raw.slice(0, 64), rawAnswer: raw.slice(0, 500) };
@@ -195,6 +235,7 @@ module.exports = {
   isSkipResponse,
   isCorrectionResponse,
   isSocialGreetingOnly,
+  isUnclearCounselingInput,
   parseQualificationAnswer,
   parseCourseAnswer,
   parseCareerGoalAnswer,

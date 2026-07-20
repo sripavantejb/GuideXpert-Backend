@@ -15,7 +15,7 @@ const {
 } = require('../../../constants/careerCounsellingV2Evaluation');
 const { BREAKOUT_DEFLECTION } = require('../../../constants/careerCounsellingJourney');
 const { isCareerCounsellingJourneyBreakout } = require('./careerCounsellingIntentService');
-const { isSocialGreetingOnly } = require('./careerCounsellingV2ResponseParser');
+const { isSocialGreetingOnly, isUnclearCounselingInput } = require('./careerCounsellingV2ResponseParser');
 const {
   parseEvaluationPriorities,
   isEvaluationAcknowledgment,
@@ -39,6 +39,82 @@ const LEGACY_TEACHING_STEPS = Object.freeze([
   'eval_comparison',
   'eval_knowledge_confirm',
 ]);
+
+function isWaitingForEvaluationPriorities(ctx = {}) {
+  return (
+    ctx.step === 'eval_ask_priorities' || ctx.lastQuestionKey === 'evaluation_priorities'
+  );
+}
+
+function isWaitingForEvaluationPermission(ctx = {}) {
+  return (
+    ctx.step === 'eval_ask_permission' ||
+    ctx.step === 'eval_offer_personalization' ||
+    ctx.step === 'eval_permission_declined' ||
+    ctx.lastQuestionKey === 'permission' ||
+    ctx.lastQuestionKey === 'personalization_offer'
+  );
+}
+
+function normalizeEvaluationContext(ctx = {}) {
+  return {
+    ...ctx,
+    stage: STAGES.EVALUATION_FRAMEWORK,
+    step: ctx.step === 'eval_ask_permission' ? 'eval_ask_permission' : 'eval_ask_priorities',
+  };
+}
+
+function shouldRestartEvaluation(ctx = {}, opts = {}) {
+  return (
+    Boolean(opts.startEvaluation) ||
+    ctx.step === 'evaluation_framework_placeholder' ||
+    (ctx.stage === STAGES.EVALUATION_FRAMEWORK &&
+      !EVALUATION_STEPS.includes(ctx.step) &&
+      ctx.step !== 'eval_permission_declined')
+  );
+}
+
+function withUnclearStreak(ctx, streak) {
+  return {
+    ...ctx,
+    profile: {
+      ...(ctx.profile || {}),
+      unclearInputStreak: streak,
+    },
+  };
+}
+
+function bumpUnclearStreak(ctx) {
+  const streak = Number(ctx.profile?.unclearInputStreak || 0) + 1;
+  return withUnclearStreak(ctx, streak);
+}
+
+function resetUnclearStreak(ctx) {
+  if (!ctx.profile?.unclearInputStreak) return ctx;
+  return withUnclearStreak(ctx, 0);
+}
+
+function buildUnclearClarifyReply(ctx, baseKey) {
+  const base = getEvalMessage(baseKey);
+  const streak = Number(ctx.profile?.unclearInputStreak || 0);
+  if (streak >= 3) {
+    return `${base}\n\n${getEvalMessage('repeated_unclear_menu_offer')}`;
+  }
+  return base;
+}
+
+function unclearInputResponse(ctx, baseKey, analyticsMeta = {}) {
+  const nextCtx = bumpUnclearStreak(ctx);
+  return {
+    reply: buildUnclearClarifyReply(nextCtx, baseKey),
+    context: nextCtx,
+    clearState: false,
+    skipLineCap: true,
+    keepIntact: true,
+    allowSkipAdvance: true,
+    analytics: [{ type: 'evaluation_unclear_input', streak: nextCtx.profile.unclearInputStreak }],
+  };
+}
 
 function answerEvaluationQuestion(text) {
   const t = String(text || '').trim();
@@ -165,7 +241,9 @@ function completeFrameworkAndOfferPermission(ctx, profile, analyticsMeta = {}) {
     },
     clearState: false,
     skipLineCap: true,
+    keepIntact: true,
     educationalContent: true,
+    allowSkipAdvance: true,
     analytics: [
       { type: 'mindset_shift_completed' },
       { type: 'evaluation_completed' },
@@ -187,29 +265,32 @@ async function transitionToExploreModernColleges(ctx, analyticsMeta = {}) {
 }
 
 function handlePrioritiesStep(inbound, ctx, analyticsMeta) {
-  const parsedEarly = parseEvaluationPriorities(inbound);
-  if (isEvaluationQuestion(inbound) && !parsedEarly) {
+  if (isEvaluationAcknowledgment(inbound)) {
+    return unclearInputResponse(ctx, 'confusion_clarify_priorities', analyticsMeta);
+  }
+
+  if (isUnclearCounselingInput(inbound)) {
+    return unclearInputResponse(ctx, 'confusion_clarify_priorities', analyticsMeta);
+  }
+
+  if (isEvaluationQuestion(inbound)) {
     const answer = answerEvaluationQuestion(inbound);
+    const nextCtx = resetUnclearStreak(ctx);
     return {
       reply: `${answer}\n\n${getEvalMessage('ask_priorities')}`,
-      context: ctx,
+      context: nextCtx,
       clearState: false,
       skipLineCap: true,
       analytics: [],
     };
   }
 
-  const parsed = parsedEarly || parseEvaluationPriorities(inbound);
+  const parsed = parseEvaluationPriorities(inbound);
   if (!parsed) {
-    return {
-      reply: getEvalMessage('priorities_clarify'),
-      context: ctx,
-      clearState: false,
-      analytics: [],
-    };
+    return unclearInputResponse(ctx, 'confusion_clarify_priorities', analyticsMeta);
   }
 
-  const profile = patchProfile(ctx.profile, {
+  const profile = patchProfile(resetUnclearStreak(ctx).profile, {
     evaluationPriorities: parsed.evaluationPriorities,
     studentPriorities: parsed.studentPriorities,
     evaluationConfidence: parsed.evaluationConfidence,
@@ -234,30 +315,40 @@ function handlePrioritiesStep(inbound, ctx, analyticsMeta) {
     ...analyticsMeta,
   });
 
-  return completeFrameworkAndOfferPermission(ctx, profile, analyticsMeta);
+  return completeFrameworkAndOfferPermission(resetUnclearStreak(ctx), profile, analyticsMeta);
 }
 
 async function handlePermission(inbound, ctx, analyticsMeta) {
   if (isPermissionYes(inbound)) {
-    return transitionToExploreModernColleges(ctx, analyticsMeta);
+    return transitionToExploreModernColleges(resetUnclearStreak(ctx), analyticsMeta);
   }
 
   if (isPermissionNo(inbound)) {
     return {
       reply: getEvalMessage('permission_no'),
-      context: {
+      context: resetUnclearStreak({
         ...ctx,
-        step: 'eval_permission_declined',
-        lastQuestionKey: 'permission_declined',
-      },
+        step: 'eval_offer_personalization',
+        lastQuestionKey: 'personalization_offer',
+      }),
       clearState: false,
-      parked: true,
+      keepIntact: true,
+      allowSkipAdvance: true,
+      skipLineCap: true,
       analytics: [{ type: 'evaluation_permission_declined' }],
     };
   }
 
+  if (isUnclearCounselingInput(inbound)) {
+    return unclearInputResponse(ctx, 'confusion_clarify_permission', analyticsMeta);
+  }
+
   const refined = parseEvaluationPriorities(inbound);
-  if (refined && !isEvaluationAcknowledgment(inbound)) {
+  if (
+    refined &&
+    !isEvaluationAcknowledgment(inbound) &&
+    !/^\d+$/.test(String(inbound || '').trim())
+  ) {
     const profile = patchProfile(ctx.profile, {
       evaluationPriorities: refined.evaluationPriorities,
       studentPriorities: refined.studentPriorities,
@@ -266,37 +357,57 @@ async function handlePermission(inbound, ctx, analyticsMeta) {
       _rawAnswer: refined.rawAnswer,
       _questionKey: 'evaluation_priorities',
     });
-    return completeFrameworkAndOfferPermission(ctx, profile, analyticsMeta);
+    return completeFrameworkAndOfferPermission(resetUnclearStreak(ctx), profile, analyticsMeta);
   }
 
   if (isEvaluationQuestion(inbound)) {
     const answer = answerEvaluationQuestion(inbound);
+    const nextCtx = resetUnclearStreak(ctx);
     return {
       reply: `${answer}\n\n${getEvalMessage('permission_clarify')}`,
-      context: ctx,
+      context: nextCtx,
       clearState: false,
       analytics: [],
     };
   }
 
+  return unclearInputResponse(ctx, 'confusion_clarify_permission', analyticsMeta);
+}
+
+async function transitionToPersonalization(ctx, analyticsMeta = {}, prefix = '') {
+  const {
+    startPersonalizedDiscovery,
+  } = require('./careerCounsellingV2PersonalizationEngine');
+  const started = startPersonalizedDiscovery(ctx, analyticsMeta);
+  if (!prefix) return started;
   return {
-    reply: getEvalMessage('permission_clarify'),
-    context: ctx,
-    clearState: false,
-    analytics: [],
+    ...started,
+    reply: `${prefix}\n\n${started.reply}`,
+    keepIntact: true,
+    allowSkipAdvance: true,
   };
 }
 
-async function handlePermissionDeclined(inbound, ctx, analyticsMeta) {
+async function handleOfferPersonalization(inbound, ctx, analyticsMeta) {
   if (isPermissionYes(inbound) || isEvaluationAcknowledgment(inbound)) {
-    return transitionToExploreModernColleges(
-      { ...ctx, step: 'eval_ask_permission' },
-      analyticsMeta
-    );
+    return transitionToPersonalization(ctx, analyticsMeta);
+  }
+  if (isPermissionNo(inbound)) {
+    return {
+      reply: getEvalMessage('permission_declined_reengage'),
+      context: resetUnclearStreak(ctx),
+      clearState: false,
+      keepIntact: true,
+      allowSkipAdvance: true,
+      analytics: [],
+    };
+  }
+  if (isUnclearCounselingInput(inbound)) {
+    return unclearInputResponse(ctx, 'confusion_clarify_personalization', analyticsMeta);
   }
   const refined = parseEvaluationPriorities(inbound);
   if (refined) {
-    const profile = patchProfile(ctx.profile, {
+    const profile = patchProfile(resetUnclearStreak(ctx).profile, {
       evaluationPriorities: refined.evaluationPriorities,
       studentPriorities: refined.studentPriorities,
       evaluationConfidence: refined.evaluationConfidence,
@@ -304,14 +415,18 @@ async function handlePermissionDeclined(inbound, ctx, analyticsMeta) {
       _rawAnswer: refined.rawAnswer,
       _questionKey: 'evaluation_priorities',
     });
-    return completeFrameworkAndOfferPermission(ctx, profile, analyticsMeta);
+    return completeFrameworkAndOfferPermission(resetUnclearStreak(ctx), profile, analyticsMeta);
   }
-  return {
-    reply: getEvalMessage('permission_declined_reengage'),
-    context: ctx,
-    clearState: false,
-    analytics: [],
-  };
+  return unclearInputResponse(ctx, 'confusion_clarify_personalization', analyticsMeta);
+}
+
+async function handlePermissionDeclined(inbound, ctx, analyticsMeta) {
+  // Legacy parked step — route into personalization offer continuity.
+  return handleOfferPersonalization(inbound, {
+    ...ctx,
+    step: 'eval_offer_personalization',
+    lastQuestionKey: 'personalization_offer',
+  }, analyticsMeta);
 }
 
 async function processEvaluationTurn(text, context = {}, opts = {}) {
@@ -319,13 +434,16 @@ async function processEvaluationTurn(text, context = {}, opts = {}) {
   const analyticsMeta = opts.analytics || {};
   let ctx = { ...context };
 
-  if (
-    opts.startEvaluation ||
-    ctx.step === 'evaluation_framework_placeholder' ||
-    (ctx.stage === STAGES.EVALUATION_FRAMEWORK &&
-      !EVALUATION_STEPS.includes(ctx.step) &&
-      ctx.step !== 'eval_permission_declined')
-  ) {
+  if (shouldRestartEvaluation(ctx, opts)) {
+    const parsed = parseEvaluationPriorities(inbound);
+    if (
+      parsed &&
+      (isWaitingForEvaluationPriorities(ctx) ||
+        ctx.stage === STAGES.EVALUATION_FRAMEWORK ||
+        ctx.lastQuestionKey === 'evaluation_priorities')
+    ) {
+      return handlePrioritiesStep(inbound, normalizeEvaluationContext(ctx), analyticsMeta);
+    }
     return startEvaluation(ctx, analyticsMeta);
   }
 
@@ -456,6 +574,8 @@ async function processEvaluationTurn(text, context = {}, opts = {}) {
       return handlePrioritiesStep(inbound, ctx, analyticsMeta);
     case 'eval_ask_permission':
       return handlePermission(inbound, ctx, analyticsMeta);
+    case 'eval_offer_personalization':
+      return handleOfferPersonalization(inbound, ctx, analyticsMeta);
     case 'eval_permission_declined':
       return handlePermissionDeclined(inbound, ctx, analyticsMeta);
     default:
@@ -466,6 +586,8 @@ async function processEvaluationTurn(text, context = {}, opts = {}) {
 module.exports = {
   STAGES,
   EVALUATION_STEPS,
+  isWaitingForEvaluationPriorities,
+  isWaitingForEvaluationPermission,
   startEvaluation,
   processEvaluationTurn,
   buildFrameworkExpandMessage,

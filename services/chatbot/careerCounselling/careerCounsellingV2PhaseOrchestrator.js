@@ -192,6 +192,25 @@ function isExtendedPredictionReply(result = {}) {
     return true;
   }
 
+  // Smart comparison select + full comparison block
+  if (
+    stage.includes('smart_comparison') ||
+    stage.includes('comparison') ||
+    step.startsWith('compare_')
+  ) {
+    return true;
+  }
+
+  // Explore Top-N presentation
+  if (stage.includes('explore_modern') || step.startsWith('explore_')) {
+    return true;
+  }
+
+  // Concern answer with decision-support footer
+  if (stage.includes('concern') || step.startsWith('concern_')) {
+    return true;
+  }
+
   return false;
 }
 
@@ -199,6 +218,7 @@ function isExtendedPredictionReply(result = {}) {
 const EDUCATIONAL_TEACHING_STEPS = new Set([
   'eval_ask_priorities',
   'eval_ask_permission',
+  'eval_offer_personalization',
   'explore_intro',
   'explore_present',
   'explore_ask_continue',
@@ -351,6 +371,7 @@ function composeCounselorReply(result = {}, inbound = '') {
     allowExtendedPrediction: extended,
     skipLineCap: extended || result.skipLineCap === true,
     educationalContent: educational || result.educationalContent === true,
+    keepIntact: result.keepIntact === true,
   };
 }
 

@@ -11,7 +11,10 @@ const {
   getAckForStep,
 } = require('../../../constants/careerCounsellingV2Discovery');
 const { BREAKOUT_DEFLECTION } = require('../../../constants/careerCounsellingJourney');
-const { isCareerCounsellingJourneyBreakout } = require('./careerCounsellingIntentService');
+const {
+  isCareerCounsellingJourneyBreakout,
+  isCollegeSelectionConfusionEntry,
+} = require('./careerCounsellingIntentService');
 const {
   isSkipResponse,
   isCorrectionResponse,
@@ -29,7 +32,7 @@ const {
   logProfileUpdated,
   logDiscoveryCompleted,
 } = require('./careerCounsellingV2Analytics');
-const { startEvaluation, processEvaluationTurn } = require('./careerCounsellingV2EvaluationEngine');
+const { startEvaluation, processEvaluationTurn, isWaitingForEvaluationPriorities, isWaitingForEvaluationPermission } = require('./careerCounsellingV2EvaluationEngine');
 const {
   STAGES: EVAL_STAGES,
 } = require('../../../constants/careerCounsellingV2Evaluation');
@@ -154,21 +157,23 @@ function refreshProfile(profile) {
 }
 
 function buildEntryReply(userText) {
-  const lines = [
-    getMessage('greeting'),
-    '',
-    getMessage('professional_intro'),
-    '',
-    getMessage('ask_qualification'),
-  ];
-
   const trimmed = String(userText || '').trim();
-  if (trimmed && !isSocialGreetingOnly(trimmed)) {
-    lines.unshift(`Got it — "${trimmed.slice(0, 120)}${trimmed.length > 120 ? '…' : ''}".`);
-    lines.splice(1, 0, '');
+
+  if (!trimmed || isSocialGreetingOnly(trimmed)) {
+    return [
+      getMessage('greeting'),
+      '',
+      getMessage('professional_intro'),
+      '',
+      getMessage('ask_qualification'),
+    ].join('\n');
   }
 
-  return lines.join('\n');
+  if (isCollegeSelectionConfusionEntry(trimmed)) {
+    return getMessage('entry_opening_college_confusion');
+  }
+
+  return getMessage('entry_opening_general');
 }
 
 function buildProfileSummary(profile) {
@@ -263,6 +268,8 @@ function advanceAfterAnswer(ctx, answeredStep, profilePatch, analyticsMeta) {
     return {
       reply: `${getAckForStep(answeredStep)}\n\n${intro}\n\n${evalStart.reply}`,
       context: evalStart.context,
+      skipLineCap: evalStart.skipLineCap === true,
+      educationalContent: true,
       analytics: [
         { type: 'discovery_completed', profileCompletionPct: profile.profileCompletionPct },
         ...(evalStart.analytics || []),
@@ -450,12 +457,26 @@ function handleStepAnswer(inbound, ctx, analyticsMeta) {
           analytics: [],
         };
       }
-      return advanceAfterAnswer(
+      const { normalizeLanguageCode } = require('../../../constants/languageConstants');
+      const sessionLang = normalizeLanguageCode(parsed.preferredLanguage);
+      const advanced = advanceAfterAnswer(
         ctx,
         ctx.step,
         { preferredLanguage: parsed.preferredLanguage, rawAnswer: parsed.rawAnswer },
         analyticsMeta
       );
+      return {
+        ...advanced,
+        context: {
+          ...advanced.context,
+          counselingSessionLanguage: sessionLang,
+          profile: {
+            ...(advanced.context?.profile || {}),
+            preferredLanguage: parsed.preferredLanguage,
+          },
+        },
+        syncConversationLanguage: sessionLang,
+      };
     }
     default:
       return processEvaluationTurn(inbound, ctx, { analytics: analyticsMeta });
@@ -469,6 +490,8 @@ async function processDiscoveryTurn(text, context = {}, opts = {}) {
   let ctx = { ...context };
 
   const inEvaluation =
+    isWaitingForEvaluationPriorities(ctx) ||
+    isWaitingForEvaluationPermission(ctx) ||
     ctx.stage === STAGES.EVALUATION_FRAMEWORK ||
     ctx.stage === STAGES.MODERN_COLLEGES ||
     ctx.stage === STAGES.PERSONALIZED_DISCOVERY ||

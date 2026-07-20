@@ -41,15 +41,53 @@ describe('conversationLanguageService', () => {
     assert.equal(result.resolutionReason, 'ambiguous_message_memory');
   });
 
-  test('Rule 2: ambiguous thanks uses IIT lead when no stored preference', () => {
+  test('Rule 2: ambiguous thanks keeps explicit English preference over lead Telugu', () => {
     const result = resolveConversationLanguage(
       { preferredLanguage: 'en' },
       { iit: { preferredLanguage: 'Telugu' } },
       { language: 'en', confidence: 0.4 },
       'thanks'
     );
+    assert.equal(result.language, 'en');
+    assert.equal(result.resolutionReason, 'ambiguous_message_memory');
+  });
+
+  test('Rule 2: ambiguous thanks uses IIT lead when conversation has no preferredLanguage', () => {
+    const result = resolveConversationLanguage(
+      {},
+      { iit: { preferredLanguage: 'Telugu' } },
+      { language: 'en', confidence: 0.4 },
+      'thanks'
+    );
     assert.equal(result.language, 'te');
     assert.equal(result.resolutionReason, 'ambiguous_message_memory');
+  });
+
+  test('counseling session language helper maps profile labels', () => {
+    const {
+      resolveCounselingSessionLanguage,
+    } = require('../services/chatbot/conversationLanguageService');
+    assert.equal(
+      resolveCounselingSessionLanguage({
+        counselingSessionLanguage: 'en',
+        profile: { preferredLanguage: 'Telugu' },
+      }),
+      'en'
+    );
+    assert.equal(
+      resolveCounselingSessionLanguage({
+        profile: { preferredLanguage: 'Hindi' },
+      }),
+      'hi'
+    );
+  });
+
+  test('placements token is guided-flow slot-like (not a language flip)', () => {
+    const {
+      isGuidedFlowSlotLikeToken,
+    } = require('../services/chatbot/conversationLanguageService');
+    assert.equal(isGuidedFlowSlotLikeToken('placements'), true);
+    assert.equal(isGuidedFlowSlotLikeToken('internships'), true);
   });
 
   test('uses detection when no stored preference', () => {

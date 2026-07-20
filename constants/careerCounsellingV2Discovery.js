@@ -53,6 +53,25 @@ const MESSAGES = Object.freeze({
   ask_qualification:
     'What is your current qualification? (Class 12, Intermediate, B.Tech year, or Graduation)',
 
+  /** Opening when the student expresses confusion about choosing a college — no echo of their words. */
+  entry_opening_college_confusion: [
+    'I understand. Choosing the right college can feel overwhelming, especially when there are so many options available.',
+    '',
+    'I\'m here to help you find the college that best matches your career goals and aspirations—one step at a time.',
+    '',
+    'To begin, what\'s your current qualification?',
+    '(Class 12, Intermediate, Diploma, B.Tech, Graduation, etc.)',
+  ].join('\n'),
+
+  /** Empathetic opening for other counseling entries — acknowledge, reassure, then discovery. */
+  entry_opening_general: [
+    'I understand — making the right education choice can feel like a lot to figure out on your own.',
+    '',
+    'I\'m your admissions counsellor, and I\'ll help you find what fits your goals — one step at a time, before we look at any college names.',
+    '',
+    'What is your current qualification? (Class 12, Intermediate, B.Tech year, or Graduation)',
+  ].join('\n'),
+
   ask_course: 'Which course or field are you aiming for next?',
 
   ask_career_goal: 'What career are you aiming for?',
