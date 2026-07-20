@@ -98,6 +98,7 @@ function finalizeCounselingResult(result, inbound = '') {
   const optimized = optimizeCareerCounsellingReply(composed.reply, {
     allowExtendedPrediction: composed.allowExtendedPrediction,
     skipLineCap: composed.skipLineCap,
+    educationalContent: composed.educationalContent,
   });
   return {
     ...composed,

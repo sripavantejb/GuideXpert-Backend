@@ -74,13 +74,13 @@ function mapStageToRoadmapPhase(stage, step = '') {
 }
 
 const NEXT_PHASE = Object.freeze({
-  1: 3, // discovery → evaluation (roadmap P3 education); P2 goals continue in discovery+personalization
-  3: 4,
-  4: 6, // modern education → personalized discovery (code order)
-  6: 5, // personalization → explore modern colleges
-  5: 7, // explore → AI shortlisting
+  1: 3, // discovery → evaluation framework (interactive)
+  3: 5, // framework permission → explore modern colleges (top 10)
+  4: 5, // legacy modern → explore (skipped in interactive path)
+  5: 6, // explore → personalized discovery
+  6: 7, // personalization → AI shortlisting
   7: 8,
-  8: 9, // comparison/concern → personalized recommendation
+  8: 9,
   9: 10,
   10: 11,
   11: 12,
@@ -91,10 +91,10 @@ const NEXT_PHASE = Object.freeze({
 
 const ADVANCE_QUESTIONS = Object.freeze({
   1: 'What is your current qualification?',
-  3: 'Ready to learn how we’ll compare colleges?',
-  4: 'Shall we look at how modern learning works?',
+  3: 'What are the top things you’re looking for in a college?',
+  4: 'Want me to show colleges that match your framework?',
+  5: 'Would you like me to narrow this to colleges that best match your personal goals?',
   6: 'Ready for a few quick questions on location, budget, and family?',
-  5: 'Want me to show a few modern institutions worth considering?',
   7: 'Ready to build your personalized shortlist from eligibility?',
   8: 'Want to compare the best options for what matters most to you?',
   9: 'Shall I give you a clear personalized recommendation next?',
@@ -108,7 +108,7 @@ const ADVANCE_QUESTIONS = Object.freeze({
 const REQUIRED_BY_PHASE = Object.freeze({
   1: ['currentQualification', 'preferredCourse', 'careerGoal', 'preferredLanguage'],
   3: ['evaluationPriorities'],
-  4: ['learningStyle'],
+  4: [],
   6: ['careerPriority', 'locationPreference', 'budgetPreference', 'familyPreference'],
   5: [],
   7: ['exam', 'rank'],
@@ -159,8 +159,8 @@ function isTerminalContext(ctx = {}, result = {}) {
 }
 
 /**
- * Extended replies (no 5-line hard cap) are reserved for prediction / shortlist /
- * Phase 9 recommendation / booking URL blocks — not teaching or discovery turns.
+ * Extended replies (no hard line cap) are reserved for prediction / shortlist /
+ * Phase 9 recommendation / booking URL blocks.
  */
 function isExtendedPredictionReply(result = {}) {
   if (result.allowExtendedPrediction === true) return true;
@@ -193,6 +193,34 @@ function isExtendedPredictionReply(result = {}) {
   }
 
   return false;
+}
+
+/** Teaching / interactive framework turns for roadmap Phases 3–5. */
+const EDUCATIONAL_TEACHING_STEPS = new Set([
+  'eval_ask_priorities',
+  'eval_ask_permission',
+  'explore_intro',
+  'explore_present',
+  'explore_ask_continue',
+  // legacy (redirected)
+  'eval_transition',
+  'eval_common_mistakes',
+  'eval_framework',
+  'eval_comparison',
+  'eval_knowledge_confirm',
+  'modern_transition',
+  'modern_what_is',
+  'modern_traditional_vs',
+  'modern_industry_learning',
+  'modern_student_story',
+  'modern_ask_learning_style',
+  'modern_knowledge_summary',
+]);
+
+function isEducationalContentReply(result = {}) {
+  if (result.educationalContent === true) return true;
+  const step = String(result.context?.step || '');
+  return EDUCATIONAL_TEACHING_STEPS.has(step);
 }
 
 function buildPersonalizedValue(ctx = {}) {
@@ -234,9 +262,10 @@ function buildPhaseSnapshot(ctx = {}, result = {}) {
   if (currentPhase === 8 && String(mergedCtx.stage || '').includes('concern')) {
     nextPhase = 9;
   }
-  // Personalization (6) next is explore (5) in product roadmap order after personalization completes
-  if (currentPhase === 6) nextPhase = 5;
-  if (currentPhase === 5) nextPhase = 7;
+  // Interactive framework: Explore (5) → Personalization (6) → Shortlisting (7)
+  if (currentPhase === 5) nextPhase = 6;
+  if (currentPhase === 6) nextPhase = 7;
+  if (currentPhase === 3) nextPhase = 5;
 
   const required = REQUIRED_BY_PHASE[currentPhase] || [];
   const missing = profileMissing(mergedCtx.profile || {}, required);
@@ -266,18 +295,24 @@ function composeCounselorReply(result = {}, inbound = '') {
   const snapshot = buildPhaseSnapshot(ctx, result);
   const terminal = isTerminalContext(ctx, result);
   const extended = isExtendedPredictionReply(result);
+  const educational = !extended && isEducationalContentReply(result);
 
   let reply = String(result.reply || '').trim();
 
   // Strip generic dead-end prompts
-  reply = reply.replace(/\bWhat would you like to know next\??/gi, '').trim();
+  reply = reply
+    .replace(/\bWhat would you like to know next\??/gi, '')
+    .replace(/\bAnything else\??/gi, '')
+    .replace(/\bWhat else\??/gi, '')
+    .replace(/\bHow can I help\??/gi, '')
+    .trim();
 
   if (!terminal) {
-    if (!extended) {
+    if (!extended && !educational) {
       const hasQuestion = Boolean(extractAdvanceQuestion(reply));
       const lines = reply.split(/\n+/).map((l) => l.trim()).filter(Boolean);
 
-      // Ensure personalized value appears once (short)
+      // Ensure personalized value appears once (short) — skip on educational teaching
       const value = buildPersonalizedValue(ctx);
       const hasValueHint =
         /goal|course|budget|profile|learning|fit|align/i.test(reply) && lines.length >= 2;
@@ -315,6 +350,7 @@ function composeCounselorReply(result = {}, inbound = '') {
     orchestration: snapshot,
     allowExtendedPrediction: extended,
     skipLineCap: extended || result.skipLineCap === true,
+    educationalContent: educational || result.educationalContent === true,
   };
 }
 
@@ -328,6 +364,8 @@ module.exports = {
   extractAdvanceQuestion,
   isTerminalContext,
   isExtendedPredictionReply,
+  isEducationalContentReply,
+  EDUCATIONAL_TEACHING_STEPS,
   ADVANCE_QUESTIONS,
   NEXT_PHASE,
 };

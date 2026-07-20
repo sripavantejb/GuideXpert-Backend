@@ -1,8 +1,8 @@
 'use strict';
 
 /**
- * GuideXpert V2 Career Counselling — Phase 2 College Selection Masterclass.
- * Educational evaluation framework (no recommendations).
+ * GuideXpert V2 Career Counselling — Roadmap Phase 3 Interactive Framework.
+ * Discover priorities → validate + counselor expertise → permission (no lecture chain).
  */
 
 const STAGES = Object.freeze({
@@ -28,155 +28,148 @@ const STAGES = Object.freeze({
   COMPARISON_PLACEHOLDER: 'comparison_placeholder',
 });
 
+/** Interactive flow steps (legacy teaching steps kept for resume redirect). */
 const EVALUATION_STEPS = Object.freeze([
+  'eval_ask_priorities',
+  'eval_ask_permission',
   'eval_transition',
   'eval_common_mistakes',
   'eval_framework',
   'eval_comparison',
-  'eval_ask_priorities',
   'eval_knowledge_confirm',
-  'eval_ask_permission',
 ]);
 
 const EVALUATION_FACTORS = Object.freeze([
-  Object.freeze({ id: 'curriculum', label: 'Curriculum relevance' }),
-  Object.freeze({ id: 'projects', label: 'Practical / project-based learning' }),
-  Object.freeze({ id: 'industry', label: 'Industry exposure & internships' }),
-  Object.freeze({ id: 'placements', label: 'Placement preparation (not just claims)' }),
-  Object.freeze({ id: 'mentoring', label: 'Career mentoring & guidance' }),
-  Object.freeze({ id: 'faculty', label: 'Faculty quality & teaching approach' }),
-  Object.freeze({ id: 'environment', label: 'Learning environment' }),
-  Object.freeze({ id: 'brand', label: 'Brand / rankings' }),
-  Object.freeze({ id: 'fees', label: 'Fees / affordability' }),
-  Object.freeze({ id: 'location', label: 'Location / convenience' }),
+  Object.freeze({ id: 'placements', label: 'Placements' }),
+  Object.freeze({ id: 'projects', label: 'Coding Culture' }),
+  Object.freeze({ id: 'industry', label: 'Internships' }),
+  Object.freeze({ id: 'fees', label: 'Affordable Fees' }),
+  Object.freeze({ id: 'environment', label: 'Campus Life' }),
+  Object.freeze({ id: 'curriculum', label: 'Research' }),
+  Object.freeze({ id: 'entrepreneurship', label: 'Entrepreneurship' }),
+  Object.freeze({ id: 'higher_studies', label: 'Higher Studies' }),
+  Object.freeze({ id: 'location', label: 'Location' }),
+  Object.freeze({ id: 'mentoring', label: 'Mentorship' }),
+  Object.freeze({ id: 'faculty', label: 'Faculty' }),
+  Object.freeze({ id: 'brand', label: 'Brand / Rankings' }),
+]);
+
+const COUNSELOR_SUGGESTED_PRIORITIES = Object.freeze([
+  Object.freeze({ id: 'placements', label: 'Placements' }),
+  Object.freeze({ id: 'projects', label: 'Coding Culture' }),
+  Object.freeze({ id: 'industry', label: 'Internships' }),
+]);
+
+const ADDITIONAL_FRAMEWORK_FACTORS = Object.freeze([
+  '📘 Industry-relevant curriculum',
+  '👨‍🏫 Faculty & mentorship',
+  '💼 Live projects & internship exposure',
+  '🤝 Alumni network',
+  '🚀 Startup & innovation ecosystem',
 ]);
 
 const MESSAGES = Object.freeze({
-  personalized_transition: [
-    'Before naming colleges, let’s learn how we’ll compare colleges.',
-    '',
-    'Ready?',
-  ].join('\n'),
-
-  common_mistakes: [
-    'Common shortcuts students regret:',
-    '',
-    '✅ Friends are going there',
-    '✅ Brand / rankings only',
-    '✅ Nearby or cheapest only',
-    '✅ Ads alone',
-    '',
-    'Sound familiar?',
-  ].join('\n'),
-
-  framework: [
-    'How we’ll compare colleges:',
-    '',
-    '✅ Curriculum relevance',
-    '✅ Projects',
-    '✅ Internships',
-    '✅ Placement prep',
-    '',
-    'Brand and fees matter too — just not alone.',
-    '',
-    'Ready for a quick example?',
-  ].join('\n'),
-
-  comparison_example: [
-    'Fictional example (not a recommendation):',
-    '',
-    '*College A* — big brand, weak projects.',
-    '',
-    '*College B* — less famous, strong projects + mentoring.',
-    '',
-    'Fame alone isn’t a plan. Make sense?',
-  ].join('\n'),
-
   ask_priorities: [
-    'Which factors matter most to you?',
+    "Before I recommend any colleges, I'd like to understand what matters most to you.",
     '',
-    'Projects, internships, mentoring, curriculum, placements…',
+    "What are the top things you're looking for in a college?",
+    '',
+    'For example:',
+    '• Placements',
+    '• Coding Culture',
+    '• Internships',
+    '• Affordable Fees',
+    '• Campus Life',
+    '• Research',
+    '• Entrepreneurship',
+    '• Higher Studies',
+    '• Location',
   ].join('\n'),
 
-  knowledge_confirm: [
-    'Clearer on how to evaluate colleges now?',
-    '',
-    'Reply yes — or ask anything.',
+  priorities_clarify: [
+    "Share what matters in your own words — placements, coding culture, fees, location, or anything else.",
+    "Or say \"I don't know\" / \"You suggest\" and I'll propose a starting framework.",
   ].join('\n'),
 
-  ask_permission: [
-    'Awesome.',
-    '',
-    'Would you like to continue?',
-  ].join('\n'),
-
-  permission_clarify: 'Continue to modern learning approaches?\n\nReply Yes or No.',
+  permission_clarify:
+    'Would you like me to shortlist some colleges that best match this framework?\n\nReply Yes or No.',
 
   permission_no: [
-    'No problem.',
-    '',
-    'Say yes whenever you’re ready.',
+    'No problem — we can refine your priorities first.',
+    'Tell me what else matters, or say yes when you want college options.',
   ].join('\n'),
 
-  permission_declined_reengage: 'Ready to continue? Just say yes.',
+  permission_declined_reengage:
+    'Ready for colleges that match your framework? Just say yes.',
 
-  awaiting_ack_nudge: 'Take your time — or ask me anything.',
+  awaiting_ack_nudge: 'Take your time — share what matters most in a college.',
 
   greeting_mid_evaluation: 'Hello again! Let’s continue from where we left off.',
 
   resume_checkpoint_prefix: 'Coming back to where we were —',
 
-  priorities_ack: 'Got it 👍',
+  question_fallback: [
+    'Your priorities guide the shortlist — rankings are only one input.',
+    'Share what matters most, or say yes to see matching colleges.',
+  ].join('\n'),
 
-  priorities_clarify:
-    'What matters most — projects, internships, mentoring, placements, fees, or location?',
-
-  question_fallback:
-    'Look past marketing. Focus on projects, exposure, and mentoring. Rankings and brand are just one input.',
-
-  mindset_shift_ack: 'Perfect — judge fit, not just fame.',
+  // Legacy keys retained so old helpers/certs do not crash
+  personalized_transition: '',
+  common_mistakes: '',
+  framework: '',
+  comparison_example: '',
+  knowledge_confirm: '',
+  ask_permission: '',
+  priorities_ack: 'Great! That’s a strong starting point.',
+  mindset_shift_ack: 'Perfect — we’ll use the framework we built together.',
 });
+
+/**
+ * Build the single acknowledge + expand + permission message.
+ */
+function buildFrameworkExpandMessage(profile = {}) {
+  const priorities = Array.isArray(profile.studentPriorities)
+    ? profile.studentPriorities.filter(Boolean)
+    : [];
+  const shown = priorities.length ? priorities : COUNSELOR_SUGGESTED_PRIORITIES.map((p) => p.label);
+
+  const lines = [
+    'Great! That’s a strong starting point.',
+    '',
+    '*Your Priorities*',
+    '',
+    ...shown.map((p) => `✅ ${p}`),
+    '',
+    '---',
+    '',
+    "*Additional Factors I'll Evaluate*",
+    '',
+    'As your AI Career Counselor, I’ll also consider:',
+    '',
+    ...ADDITIONAL_FRAMEWORK_FACTORS,
+    '',
+    'Together, these give us a complete framework to identify colleges that truly fit your career goals—not just their rankings.',
+    '',
+    'Would you like me to shortlist some colleges that best match this framework?',
+  ];
+  return lines.join('\n');
+}
 
 const EVALUATION_QA = Object.freeze([
   {
     patterns: [/\bplacement(s)?\b/i, /\bjob(s)? after college\b/i],
     answer:
-      'Placements depend on preparation quality — projects, internships, and interview readiness — not brochure numbers alone. Ask how a college trains students, not only the final package list.',
+      'Placements are one strong signal — preparation quality still matters. Want placements in your top priorities?',
   },
   {
-    patterns: [/\branking(s)?\b/i, /\bnirf\b/i, /\bbrand\b/i, /\bfame\b/i],
+    patterns: [/\branking(s)?\b/i, /\bnirf\b/i, /\bbrand\b/i],
     answer:
-      'Rankings and brand can be a starting signal, but they rarely show teaching quality, project depth, or mentoring. Use them as one input — never the only one.',
+      'Brand helps as a clue, not the whole decision. Shall we keep it as one factor beside your other priorities?',
   },
   {
-    patterns: [/\bfees?\b/i, /\bcost\b/i, /\bexpensive\b/i, /\bafford/i],
+    patterns: [/\bfees?\b/i, /\bafford/i],
     answer:
-      'Fees matter for practicality, but a lower fee with weak learning can cost more later. Compare value — what skills and exposure you get for the investment.',
-  },
-  {
-    patterns: [/\blocation\b/i, /\bnearby\b/i, /\bclose to home\b/i],
-    answer:
-      'Location is convenient, but convenience alone should not outweigh career preparation. Many students trade a short commute for long-term readiness.',
-  },
-  {
-    patterns: [/\bcurriculum\b/i, /\bsyllabus\b/i],
-    answer:
-      'A strong curriculum stays updated with industry needs and connects theory to projects — not just exam chapters.',
-  },
-  {
-    patterns: [/\binternship(s)?\b/i, /\bindustry\b/i],
-    answer:
-      'Internships and industry exposure show how workplaces actually function. Colleges that integrate them early usually build more confident graduates.',
-  },
-  {
-    patterns: [/\bmentor(ing|ship)?\b/i, /\bguidance\b/i],
-    answer:
-      'Career mentoring helps you choose paths, prepare for roles, and avoid guessing alone. It is one of the most underrated evaluation factors.',
-  },
-  {
-    patterns: [/\bfriend(s)?\b/i, /\bpeer pressure\b/i],
-    answer:
-      'Friends can influence you, but your career path is personal. What suits someone else may not match your goals or learning style.',
+      'Affordable fees keep options practical for your family. Want that as a top priority?',
   },
 ]);
 
@@ -185,67 +178,45 @@ function getEvalMessage(key) {
 }
 
 function getNextEvalStep(currentStep) {
-  const idx = EVALUATION_STEPS.indexOf(currentStep);
-  if (idx < 0 || idx >= EVALUATION_STEPS.length - 1) return null;
-  return EVALUATION_STEPS[idx + 1];
+  const interactive = ['eval_ask_priorities', 'eval_ask_permission'];
+  const idx = interactive.indexOf(currentStep);
+  if (idx < 0 || idx >= interactive.length - 1) return null;
+  return interactive[idx + 1];
 }
 
 function getEvalContentForStep(step) {
   switch (step) {
-    case 'eval_transition':
-      return getEvalMessage('personalized_transition');
-    case 'eval_common_mistakes':
-      return getEvalMessage('common_mistakes');
-    case 'eval_framework':
-      return getEvalMessage('framework');
-    case 'eval_comparison':
-      return getEvalMessage('comparison_example');
     case 'eval_ask_priorities':
-      return getEvalMessage('ask_priorities');
+    case 'eval_transition':
+    case 'eval_common_mistakes':
+    case 'eval_framework':
+    case 'eval_comparison':
     case 'eval_knowledge_confirm':
-      return getEvalMessage('knowledge_confirm');
+      return getEvalMessage('ask_priorities');
     case 'eval_ask_permission':
-      return getEvalMessage('ask_permission');
+      return getEvalMessage('permission_clarify');
     case 'eval_permission_declined':
       return getEvalMessage('permission_no');
     default:
-      return '';
+      return getEvalMessage('ask_priorities');
   }
 }
 
-function buildPersonalizedTransition(profile = {}) {
-  const bits = [];
-  if (profile.preferredCourse) bits.push(`your interest in ${profile.preferredCourse}`);
-  if (profile.careerGoal) bits.push(`your goal around "${String(profile.careerGoal).slice(0, 80)}"`);
-  if (Array.isArray(profile.preferredColleges) && profile.preferredColleges.length > 0) {
-    bits.push(`the colleges you already mentioned`);
-  }
-
-  if (bits.length === 0) {
-    return getEvalMessage('personalized_transition');
-  }
-
-  const personal = bits.length === 1 ? bits[0] : `${bits.slice(0, -1).join(', ')} and ${bits[bits.length - 1]}`;
-
-  return [
-    `Thanks for sharing your profile — especially ${personal}.`,
-    '',
-    'Before we talk about any specific college, I want to show you how experienced counsellors *evaluate* options.',
-    '',
-    'That way you can judge any college with confidence — not only by brand, fees, or location.',
-    '',
-    'Shall we walk through that framework together? Reply when you are ready.',
-  ].join('\n');
+function buildPersonalizedTransition() {
+  return getEvalMessage('ask_priorities');
 }
 
 module.exports = {
   STAGES,
   EVALUATION_STEPS,
   EVALUATION_FACTORS,
+  COUNSELOR_SUGGESTED_PRIORITIES,
+  ADDITIONAL_FRAMEWORK_FACTORS,
   MESSAGES,
   EVALUATION_QA,
   getEvalMessage,
   getNextEvalStep,
   getEvalContentForStep,
   buildPersonalizedTransition,
+  buildFrameworkExpandMessage,
 };

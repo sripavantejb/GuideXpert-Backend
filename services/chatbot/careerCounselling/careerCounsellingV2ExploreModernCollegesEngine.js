@@ -4,6 +4,7 @@ const {
   STAGES,
   EXPLORE_STEPS,
   EXPLORE_ENGINE_VERSION,
+  EXPLORE_PRESENT_LIMIT,
   CURATED_MODERN_CATALOG,
   getExploreMessage,
   isExplorePermissionYes,
@@ -39,16 +40,32 @@ function scoreCuratedItem(item, hay) {
   return score;
 }
 
-function selectCuratedInstitutions(profile = {}, limit = 3) {
+/**
+ * Equal-representation top-N: priority-ranked first, then fill remaining catalog slots.
+ */
+function selectCuratedInstitutions(profile = {}, limit = EXPLORE_PRESENT_LIMIT) {
   const hay = profileTagHaystack(profile);
   const ranked = CURATED_MODERN_CATALOG.map((item) => ({
     item,
     score: scoreCuratedItem(item, hay),
-  })).sort((a, b) => b.score - a.score);
+  })).sort((a, b) => b.score - a.score || a.item.name.localeCompare(b.item.name));
 
-  const picked = ranked.filter((r) => r.score > 0).slice(0, limit);
-  const base = picked.length ? picked : ranked.slice(0, limit);
-  return base.map(({ item }) => ({
+  const picked = [];
+  const seen = new Set();
+  for (const row of ranked) {
+    if (picked.length >= limit) break;
+    if (seen.has(row.item.id)) continue;
+    seen.add(row.item.id);
+    picked.push(row.item);
+  }
+  for (const item of CURATED_MODERN_CATALOG) {
+    if (picked.length >= limit) break;
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    picked.push(item);
+  }
+
+  return picked.map((item) => ({
     name: item.name,
     why: item.why,
     source: 'curated',
@@ -73,7 +90,7 @@ function modernLeanScore(college, profile = {}) {
   return score;
 }
 
-function mapEligibleToExplore(colleges, profile, limit = 3) {
+function mapEligibleToExplore(colleges, profile, limit = EXPLORE_PRESENT_LIMIT) {
   const scored = (colleges || [])
     .map((c) => ({
       college: c,
@@ -97,12 +114,11 @@ function mapEligibleToExplore(colleges, profile, limit = 3) {
 }
 
 function formatExplorePresent(institutions) {
-  const lines = [getExploreMessage('present_header')];
-  const list = (institutions || []).slice(0, 3);
+  const lines = [getExploreMessage('present_header'), ''];
+  const list = (institutions || []).slice(0, EXPLORE_PRESENT_LIMIT);
   if (!list.length) return getExploreMessage('no_items');
   list.forEach((it, i) => {
-    lines.push(`${i + 1}. ${it.name}`);
-    lines.push(it.why);
+    lines.push(`${i + 1}. ${it.name} — ${it.why}`);
   });
   return lines.join('\n');
 }
@@ -116,11 +132,25 @@ function hasEligibilitySlots(profile = {}) {
 async function resolveExploreInstitutions(profile = {}) {
   if (hasEligibilitySlots(profile)) {
     try {
-      const eligibility = await retrieveEligibleColleges(profile, { limit: 30 });
+      const eligibility = await retrieveEligibleColleges(profile, { limit: 40 });
       if (eligibility.ok && eligibility.colleges.length) {
-        const mapped = mapEligibleToExplore(eligibility.colleges, profile, 3);
+        const mapped = mapEligibleToExplore(
+          eligibility.colleges,
+          profile,
+          EXPLORE_PRESENT_LIMIT
+        );
         if (mapped.length) {
-          return { institutions: mapped, source: 'earlywave' };
+          // Blend curated for equal representation when earlywave returns few
+          if (mapped.length < EXPLORE_PRESENT_LIMIT) {
+            const curated = selectCuratedInstitutions(profile, EXPLORE_PRESENT_LIMIT);
+            const names = new Set(mapped.map((m) => normalize(m.name)));
+            for (const c of curated) {
+              if (mapped.length >= EXPLORE_PRESENT_LIMIT) break;
+              if (names.has(normalize(c.name))) continue;
+              mapped.push(c);
+            }
+          }
+          return { institutions: mapped.slice(0, EXPLORE_PRESENT_LIMIT), source: 'earlywave' };
         }
       }
     } catch (_) {
@@ -128,14 +158,14 @@ async function resolveExploreInstitutions(profile = {}) {
     }
   }
   return {
-    institutions: selectCuratedInstitutions(profile, 3),
+    institutions: selectCuratedInstitutions(profile, EXPLORE_PRESENT_LIMIT),
     source: 'curated',
   };
 }
 
 function startExploreModernColleges(ctx = {}, analyticsMeta = {}) {
   return {
-    reply: `${getExploreMessage('intro')}\n\n${getExploreMessage('ask_continue')}`,
+    reply: getExploreMessage('intro'),
     context: {
       ...ctx,
       flow: ctx.flow || 'career_counselling_v2',
@@ -146,6 +176,7 @@ function startExploreModernColleges(ctx = {}, analyticsMeta = {}) {
       exploreEngineVersion: EXPLORE_ENGINE_VERSION,
     },
     clearState: false,
+    skipLineCap: true,
     phaseGateComplete: false,
     analytics: [{ type: 'explore_modern_started', ...analyticsMeta }],
   };
@@ -154,7 +185,7 @@ function startExploreModernColleges(ctx = {}, analyticsMeta = {}) {
 async function presentExploreInstitutions(ctx, analyticsMeta = {}) {
   const resolved = await resolveExploreInstitutions(ctx.profile || {});
   const body = formatExplorePresent(resolved.institutions);
-  const reply = `${body}\n\n${getExploreMessage('ask_continue')}`;
+  const reply = `${getExploreMessage('intro')}\n\n${body}\n\n${getExploreMessage('ask_continue')}`;
   return {
     reply,
     context: {
@@ -170,7 +201,8 @@ async function presentExploreInstitutions(ctx, analyticsMeta = {}) {
       },
     },
     clearState: false,
-    allowExtendedPrediction: true,
+    skipLineCap: true,
+    educationalContent: true,
     phaseGateComplete: true,
     analytics: [
       {
@@ -183,12 +215,20 @@ async function presentExploreInstitutions(ctx, analyticsMeta = {}) {
   };
 }
 
-async function advanceToShortlisting(inbound, ctx, analyticsMeta = {}) {
-  const { processAiShortlistingTurn } = require('./careerCounsellingV2ShortlistingEngine');
-  return processAiShortlistingTurn(inbound, ctx, {
-    startAiShortlisting: true,
-    analytics: analyticsMeta,
-  });
+async function advanceToPersonalization(inbound, ctx, analyticsMeta = {}) {
+  const {
+    startPersonalizedDiscovery,
+  } = require('./careerCounsellingV2PersonalizationEngine');
+  return startPersonalizedDiscovery(
+    {
+      ...ctx,
+      profile: {
+        ...(ctx.profile || {}),
+        exploreModernCompleted: true,
+      },
+    },
+    analyticsMeta
+  );
 }
 
 async function processExploreModernCollegesTurn(text, context = {}, opts = {}) {
@@ -198,21 +238,38 @@ async function processExploreModernCollegesTurn(text, context = {}, opts = {}) {
 
   if (opts.startExploreModernColleges || ctx.step === 'explore_modern_placeholder') {
     const started = startExploreModernColleges(ctx, analyticsMeta);
-    // Immediately present on same turn after permission from personalization
-    if (opts.presentImmediately || isExplorePermissionYes(inbound) || opts.fromPersonalization) {
+    if (
+      opts.presentImmediately ||
+      isExplorePermissionYes(inbound) ||
+      opts.fromPersonalization ||
+      opts.fromEvaluation
+    ) {
       return presentExploreInstitutions(started.context, analyticsMeta);
     }
     return started;
   }
 
   if (ctx.stage === STAGES.AI_SHORTLISTING || String(ctx.step || '').startsWith('shortlist_')) {
-    return advanceToShortlisting(inbound, ctx, analyticsMeta);
+    const { processAiShortlistingTurn } = require('./careerCounsellingV2ShortlistingEngine');
+    return processAiShortlistingTurn(inbound, ctx, {
+      startAiShortlisting: true,
+      analytics: analyticsMeta,
+    });
+  }
+
+  if (
+    ctx.stage === STAGES.PERSONALIZED_DISCOVERY ||
+    String(ctx.step || '').startsWith('pers_')
+  ) {
+    const {
+      processPersonalizedDiscoveryTurn,
+    } = require('./careerCounsellingV2PersonalizationEngine');
+    return processPersonalizedDiscoveryTurn(inbound, ctx, { analytics: analyticsMeta });
   }
 
   if (ctx.step === 'explore_intro') {
     if (isExplorePermissionNo(inbound)) {
-      // Soft-advance into shortlisting with justification
-      const advanced = await advanceToShortlisting(inbound, ctx, analyticsMeta);
+      const advanced = await advanceToPersonalization(inbound, ctx, analyticsMeta);
       return {
         ...advanced,
         reply: `${getExploreMessage('soft_decline_advance')}\n\n${advanced.reply || ''}`.trim(),
@@ -223,24 +280,20 @@ async function processExploreModernCollegesTurn(text, context = {}, opts = {}) {
   }
 
   if (ctx.step === 'explore_present' || ctx.step === 'explore_ask_continue') {
-    if (isExplorePermissionYes(inbound) || /shortlist|continue|next|ready/i.test(inbound)) {
-      return advanceToShortlisting(inbound, ctx, analyticsMeta);
+    if (
+      isExplorePermissionYes(inbound) ||
+      /shortlist|continue|next|ready|narrow|personalize/i.test(inbound)
+    ) {
+      return advanceToPersonalization(inbound, ctx, analyticsMeta);
     }
     if (isExplorePermissionNo(inbound)) {
-      const advanced = await advanceToShortlisting(inbound, {
-        ...ctx,
-        profile: {
-          ...(ctx.profile || {}),
-          skippedPhaseReason: 'user_declined_optional_gate',
-        },
-      }, analyticsMeta);
+      const advanced = await advanceToPersonalization(inbound, ctx, analyticsMeta);
       return {
         ...advanced,
         reply: `${getExploreMessage('soft_decline_advance')}\n\n${advanced.reply || ''}`.trim(),
         skippedPhaseReason: 'user_declined_optional_gate',
       };
     }
-    // Why questions — short ack then re-ask continue
     if (/\bwhy\b|\bfit\b|\bworth\b/i.test(inbound)) {
       const institutions = ctx.profile?.exploreModernInstitutions || [];
       const first = institutions[0];
@@ -260,7 +313,6 @@ async function processExploreModernCollegesTurn(text, context = {}, opts = {}) {
     };
   }
 
-  // Unknown step under explore stage — present then continue
   if (ctx.stage === STAGES.EXPLORE_MODERN_COLLEGES) {
     return presentExploreInstitutions(ctx, analyticsMeta);
   }
@@ -272,6 +324,7 @@ module.exports = {
   STAGES,
   EXPLORE_STEPS,
   EXPLORE_ENGINE_VERSION,
+  EXPLORE_PRESENT_LIMIT,
   startExploreModernColleges,
   processExploreModernCollegesTurn,
   resolveExploreInstitutions,

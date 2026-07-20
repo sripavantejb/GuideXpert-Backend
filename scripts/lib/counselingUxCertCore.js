@@ -9,11 +9,13 @@ const {
   nonEmptyLines,
   wordCount,
   MAX_LINES_NORMAL,
+  MAX_LINES_EDUCATIONAL,
 } = require('../../services/chatbot/careerCounselling/careerCounsellingV2ResponseOptimizer');
 const {
   extractAdvanceQuestion,
   mapStageToRoadmapPhase,
   isTerminalContext,
+  isEducationalContentReply,
 } = require('../../services/chatbot/careerCounselling/careerCounsellingV2PhaseOrchestrator');
 
 const GENERIC_CHATBOT = [
@@ -129,6 +131,7 @@ function gradeTurn({ user, result, previousReply, turnsInSamePhase, consecutiveR
   const ctx = result?.context || {};
   const terminal = isTerminalContext(ctx, result || {});
   const extended = isPredictionExtended(result);
+  const educational = !extended && isEducationalContentReply(result || {});
   const uxPhase = stageToUxPhase(ctx.stage, ctx.step);
   const roadmapPhase = mapStageToRoadmapPhase(ctx.stage, ctx.step);
   const advanceQ = extractAdvanceQuestion(reply);
@@ -137,11 +140,13 @@ function gradeTurn({ user, result, previousReply, turnsInSamePhase, consecutiveR
     failures.push('empty_reply');
   }
 
-  if (!extended && lineCount > MAX_LINES_NORMAL) {
-    failures.push(`line_cap:${lineCount}>${MAX_LINES_NORMAL}`);
+  const maxLines = educational ? MAX_LINES_EDUCATIONAL : MAX_LINES_NORMAL;
+  if (!extended && lineCount > maxLines) {
+    failures.push(`line_cap:${lineCount}>${maxLines}`);
   }
 
-  if (!extended && words > 110) {
+  const maxWords = educational ? 220 : 110;
+  if (!extended && words > maxWords) {
     failures.push(`essay_word_count:${words}`);
   }
 
@@ -443,13 +448,18 @@ function studentReplyForTurn(persona, ctx, botReply, turnIndex) {
   }
 
   // Permission / continue gates
-  if (/Would you like to continue|Ready to|Want to|Shall we|Reply Yes or No/i.test(reply)) {
+  if (/Would you like to continue|Ready to|Want to|Shall we|Reply Yes or No|Would you like me to shortlist|narrow this down/i.test(reply)) {
     if (p.declineGates) return 'no';
     return 'yes';
   }
 
+  // Priorities discovery
+  if (/top things you.?re looking for|what matters most to you/i.test(reply)) {
+    return 'placements and coding culture';
+  }
+
   // Default continue for teaching slides
-  if (/Sound familiar|Ready for|makes sense|Continue|Go on|resonates/i.test(reply)) {
+  if (/Sound familiar|Ready for|makes sense|Continue|Go on|resonates|shortcut|Shall we|Does this/i.test(reply)) {
     return 'ok';
   }
   if (/\?/.test(reply)) return 'yes';
@@ -462,6 +472,7 @@ module.exports = {
   FULL_COUNSELING_PATH,
   PREDICTOR_BRIDGE_PATH,
   MAX_LINES_NORMAL,
+  MAX_LINES_EDUCATIONAL,
   stageToUxPhase,
   gradeTurn,
   uniqueOrdered,

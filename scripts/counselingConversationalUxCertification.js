@@ -31,6 +31,7 @@ const {
   FULL_COUNSELING_PATH,
   PREDICTOR_BRIDGE_PATH,
   MAX_LINES_NORMAL,
+  MAX_LINES_EDUCATIONAL,
   gradeTurn,
   uniqueOrdered,
   detectSkippedPhases,
@@ -829,7 +830,7 @@ function rootCauseAndFixes(results, stats) {
     });
     fixes.push({
       id: 'line_cap',
-      action: 'Keep allowExtendedPrediction only for shortlist/Phase9/CP results; shorten teaching copy constants',
+      action: 'Keep allowExtendedPrediction for shortlist/Phase9/CP; educationalContent allows ≤10 lines for Phases 3–5 teaching',
     });
   }
   if (reasons.missing_advance_question) {
@@ -887,7 +888,7 @@ function rootCauseAndFixes(results, stats) {
     });
     fixes.push({
       id: 'generic_essay',
-      action: 'Strip generic prompts; keep teaching bubbles ≤5 short lines',
+      action: 'Strip generic prompts; teaching bubbles 6–10 lines; other counselor replies ≤5',
     });
   }
 
@@ -1049,6 +1050,7 @@ async function main() {
     criteria: {
       minJourneys: 100,
       maxNormalLines: MAX_LINES_NORMAL,
+      maxEducationalLines: MAX_LINES_EDUCATIONAL,
       requireAdvanceQuestion: true,
       requireCounselorLed: true,
       predictorMustBridge: true,

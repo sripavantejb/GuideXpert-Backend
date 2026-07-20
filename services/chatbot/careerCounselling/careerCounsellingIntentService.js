@@ -47,6 +47,16 @@ const CAREER_COUNSELLING_ENTRY_PATTERNS = [
   /\bcnfused\b/i,
   /\b(good |best )?college(s)? (kavali|cheppandi|suggest|suggestion)\b/i,
   /\b(college|course|branch) (kavali|cheyali|cheyyali)\b/i,
+  /\bi want (to (do|take|join) )?engineering\b/i,
+  /\bwant engineering\b/i,
+  /\bparents? (are )?(forcing|pressur(?:e|ing)|want|telling)\b/i,
+  /\b(parent|parents) want me\b/i,
+  /\bi got (a |my )?rank\b/i,
+  /\bmy future\b/i,
+  /\bdropout\b/i,
+  /^(cse|ece|eee|it|aiml|ai\/?ml|ai|mech|civil|cs)(?:\s+(?:please|ahora|yaar|bro|urgently|sir|madam|bhai|ji|help|kavali|cheppandi))?[.!?\s🙏]*$/i,
+  /\btopper\b.*\b(confused|college|iit|private)\b/i,
+  /\blow rank\b/i,
   /\bwhich college should i (join|choose|pick|select|take)\b/i,
   /\b(which|what) college (is|would be|should i)\b/i,
   /\bwhich college\b/i,
@@ -86,7 +96,7 @@ const CAREER_COUNSELLING_ENTRY_PATTERNS = [
 
 /** Soft lexical signals — combined for medium confidence. */
 const CONFUSION_SIGNAL =
-  /\b(confused|confusion|confusing|lost|worried|worry|unsure|doubt|doubts|stress|stressed|anxious|help|guidance|guide|advise|advice|suggest(?:ion|ions|ed|ing)?|recommend(?:ation|ations|ed|ing)?|don'?t know|do not know|no idea|not sure|what should i|which (college|course|branch)|best for me|decide|deciding|decision|choose|choosing|pick|select|find(?:ing)? a college|looking for college|career|admission|admissions|future|after intermediate|after 12th|after inter|counsell?ing)\b/i;
+  /\b(confused|confusion|confusing|lost|worried|worry|unsure|doubt|doubts|stress|stressed|anxious|help|guidance|guide|advise|advice|suggest(?:ion|ions|ed|ing)?|recommend(?:ation|ations|ed|ing)?|don'?t know|do not know|no idea|not sure|what should i|which (college|course|branch)|best for me|decide|deciding|decision|choose|choosing|pick|select|find(?:ing)? a college|looking for college|career|admission|admissions|future|after intermediate|after 12th|after inter|counsell?ing|forcing|pressure|dropout|engineering)\b/i;
 
 const DOMAIN_SIGNAL =
   /\b(college|colleges|course|courses|branch|branches|career|careers|admission|admissions|engineering|b\.?tech|intermediate|inter|mpc|bipc|degree|counsell?ing|counseling|placement|future|exam|eamcet|eapcet|jee|suggestion|suggestions)\b/i;
@@ -95,7 +105,7 @@ const SOFT_STANDALONE =
   /^(i'?m\s+)?(confused|lost|worried|unsure|help|help me|please help|can you help(?: me)?|guide me|need guidance|need advice|suggest something|recommend something|what should i (do|choose)|i don'?t know|don'?t know|want counsell?ing|start counsell?ing)[.!?]*$/i;
 
 const BRANCH_SIGNAL_PATTERN =
-  /\b(cse|ece|eee|mech|civil|it|aiml|ai\/?ml|branch|branches)\b/i;
+  /\b(cse|ece|eee|mech|civil|it|aiml|ai\/?ml|ai|branch|branches)\b/i;
 
 const MARKS_SIGNAL_PATTERN =
   /\b(marks?|score|scored|percentile|vachayi|vachindi|aaye|hai|labh|labham|labhamu)\b/i;

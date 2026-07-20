@@ -39,9 +39,9 @@ const PERSONALIZATION_STEPS = Object.freeze([
 
 const MESSAGES = Object.freeze({
   personalized_transition: [
-    'Great progress so far.',
+    'Great — now let’s personalize so the shortlist fits you, not just the framework.',
     '',
-    'Next: career priorities, location, budget, family, and concerns.',
+    'I’ll ask a few quick questions: career focus, city, budget, family view, and concerns.',
     '',
     'Ready?',
   ].join('\n'),

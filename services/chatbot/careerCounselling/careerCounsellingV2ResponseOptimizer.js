@@ -9,12 +9,17 @@ const MAX_WORDS_SOFT = 50;
 const MAX_WORDS_HARD = 80;
 const MAX_BULLETS = 4;
 const MAX_LINES_NORMAL = 5;
+/** Educational teaching turns (Phases 3–5) — idea → why → example → transition. */
+const MAX_LINES_EDUCATIONAL = 10;
 
 const FILLER_PATTERNS = [
   /\bbased on your (goals|profile|interests|preferences)\b[,.]?\s*/gi,
   /\bi understand your interests\b[,.]?\s*/gi,
   /\bthank you for (sharing that information|answering)\b[,.]?\s*/gi,
   /\bWhat would you like to know next\??/gi,
+  /\bAnything else\??/gi,
+  /\bWhat else\??/gi,
+  /\bHow can I help\??/gi,
 ];
 
 function wordCount(text) {
@@ -58,7 +63,7 @@ function limitBulletsInBlock(block) {
 }
 
 /**
- * Hard-cap non-empty lines for normal counselor replies (keeps last question if present).
+ * Hard-cap non-empty lines for counselor replies (keeps last question if present).
  */
 function capLines(text, maxLines = MAX_LINES_NORMAL) {
   const lines = nonEmptyLines(text);
@@ -133,18 +138,21 @@ function splitBySentences(text) {
 /**
  * Optimize a counseling reply for WhatsApp.
  * @param {string} rawReply
- * @param {{ allowExtendedPrediction?: boolean, skipLineCap?: boolean }} [opts]
+ * @param {{ allowExtendedPrediction?: boolean, skipLineCap?: boolean, educationalContent?: boolean }} [opts]
  * @returns {{ reply: string, replyParts: string[] }}
  */
 function optimizeCareerCounsellingReply(rawReply, opts = {}) {
   const allowExtended = Boolean(opts.allowExtendedPrediction || opts.skipLineCap);
+  const educational = Boolean(opts.educationalContent) && !allowExtended;
+  const maxLines = educational ? MAX_LINES_EDUCATIONAL : MAX_LINES_NORMAL;
+
   let cleaned = limitBulletsInBlock(stripFiller(rawReply));
   if (!cleaned) {
     return { reply: '', replyParts: [] };
   }
 
   if (!allowExtended) {
-    cleaned = capLines(cleaned, MAX_LINES_NORMAL);
+    cleaned = capLines(cleaned, maxLines);
   }
 
   const blocks = cleaned
@@ -156,7 +164,7 @@ function optimizeCareerCounsellingReply(rawReply, opts = {}) {
   const replyParts = [];
   for (const block of blocks) {
     if (!allowExtended) {
-      const capped = capLines(block, MAX_LINES_NORMAL);
+      const capped = capLines(block, maxLines);
       if (capped) replyParts.push(capped);
       continue;
     }
@@ -174,7 +182,7 @@ function optimizeCareerCounsellingReply(rawReply, opts = {}) {
 
   let reply = deduped.join('\n\n');
   if (!allowExtended) {
-    reply = capLines(reply, MAX_LINES_NORMAL);
+    reply = capLines(reply, maxLines);
   }
 
   return {
@@ -188,6 +196,7 @@ module.exports = {
   MAX_WORDS_HARD,
   MAX_BULLETS,
   MAX_LINES_NORMAL,
+  MAX_LINES_EDUCATIONAL,
   optimizeCareerCounsellingReply,
   wordCount,
   stripFiller,

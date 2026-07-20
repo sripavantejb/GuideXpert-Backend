@@ -25,6 +25,9 @@ const {
   setChatbotOrchestratorTestHooks,
 } = require('../services/chatbot/chatbotOrchestratorService');
 const { getMessage } = require('../constants/careerCounsellingV2Discovery');
+const {
+  nonEmptyLines,
+} = require('../services/chatbot/careerCounselling/careerCounsellingV2ResponseOptimizer');
 
 const CONVERSATION_ID = new mongoose.Types.ObjectId();
 const PHONE = '9876543210';
@@ -102,10 +105,8 @@ describe('careerCounsellingV2 discovery engine', () => {
 
     r = await handleCareerCounsellingMessage('Telugu', r.context);
     assert.equal(r.context.stage, STAGES.EVALUATION_FRAMEWORK);
-    assert.equal(r.context.step, 'eval_transition');
-    assert.match(r.reply, /solid picture of your profile/i);
-    assert.match(r.reply, /evaluate/i);
-    assert.match(r.reply, /B\.Tech|Software engineer|colleges you already mentioned/i);
+    assert.equal(r.context.step, 'eval_ask_priorities');
+    assert.match(r.reply, /what matters most|top things/i);
     assert.equal(r.context.profile.preferredLanguage, 'Telugu');
     assert.equal(r.context.profile.profileCompletionPct, 100);
     assert.equal(r.context.profile.evaluationCompleted, false);
@@ -121,7 +122,7 @@ describe('careerCounsellingV2 discovery engine', () => {
     assert.equal(r.context.step, 'awaiting_language');
     r = await handleCareerCounsellingMessage('skip', r.context);
     assert.equal(r.context.stage, STAGES.EVALUATION_FRAMEWORK);
-    assert.equal(r.context.step, 'eval_transition');
+    assert.equal(r.context.step, 'eval_ask_priorities');
   });
 
   test('mid-journey greeting repeats current question', async () => {
@@ -152,7 +153,7 @@ describe('careerCounsellingV2 discovery engine', () => {
   });
 });
 
-describe('careerCounsellingV2 evaluation masterclass', () => {
+describe('careerCounsellingV2 interactive framework (stage 3)', () => {
   async function completeDiscovery() {
     let r = await handleCareerCounsellingMessage('Career guidance', {}, { isNewEntry: true });
     r = await handleCareerCounsellingMessage('Class 12', r.context);
@@ -163,77 +164,68 @@ describe('careerCounsellingV2 evaluation masterclass', () => {
     return r;
   }
 
-  test('full evaluation flow persists priorities and starts modern education phase', async () => {
+  test('discovers priorities, expands framework once, then explores colleges', async () => {
     let r = await completeDiscovery();
-    assert.equal(r.context.step, 'eval_transition');
-
-    r = await handleCareerCounsellingMessage('ok', r.context);
-    assert.equal(r.context.step, 'eval_common_mistakes');
-    assert.match(r.reply, /friends are going/i);
-
-    r = await handleCareerCounsellingMessage('yes familiar', r.context);
-    assert.equal(r.context.step, 'eval_framework');
-    assert.match(r.reply, /Curriculum relevance/i);
-
-    r = await handleCareerCounsellingMessage('continue', r.context);
-    assert.equal(r.context.step, 'eval_comparison');
-    assert.match(r.reply, /College A/i);
-    assert.match(r.reply, /College B/i);
-    assert.doesNotMatch(r.reply, /\bNIAT\b|\bScaler\b|\bNewton\b/i);
-
-    r = await handleCareerCounsellingMessage('makes sense', r.context);
     assert.equal(r.context.step, 'eval_ask_priorities');
-    assert.match(r.reply, /matter most/i);
+    assert.match(r.reply, /what matters most|top things/i);
 
     r = await handleCareerCounsellingMessage('projects, internships and mentoring', r.context);
-    assert.equal(r.context.step, 'eval_knowledge_confirm');
-    assert.deepEqual(r.context.profile.evaluationPriorities.sort(), [
-      'industry',
-      'mentoring',
-      'projects',
-    ].sort());
-    assert.equal(r.context.profile.evaluationConfidence, 'high');
-
-    r = await handleCareerCounsellingMessage('yes clearer now', r.context);
     assert.equal(r.context.step, 'eval_ask_permission');
+    assert.match(r.reply, /Your Priorities/i);
+    assert.match(r.reply, /Additional Factors/i);
+    assert.match(r.reply, /Would you like me to shortlist/i);
+    assert.ok(r.context.profile.evaluationPriorities.includes('projects'));
+    assert.ok(r.context.profile.evaluationPriorities.includes('industry'));
     assert.equal(r.context.profile.evaluationCompleted, true);
-    assert.equal(r.context.profile.mindsetShiftCompleted, true);
-    assert.match(r.reply, /Would you like to continue/i);
 
     r = await handleCareerCounsellingMessage('yes', r.context);
-    assert.equal(r.context.stage, STAGES.MODERN_COLLEGES);
-    assert.equal(r.context.step, 'modern_transition');
-    assert.match(r.reply, /learning|modern|evaluate/i);
-    assert.doesNotMatch(r.reply, /\bNIAT\b|\bScaler\b|\bNewton\b/i);
-    assert.equal(r.clearState, false);
+    assert.equal(r.context.stage, 'explore_modern_colleges');
+    assert.ok((r.context.profile.exploreModernInstitutions || []).length >= 8);
+    assert.match(r.reply, /narrow|personal goals/i);
   });
 
-  test('evaluation question does not skip teaching step', async () => {
+  test('accepts I don\'t know and suggests counselor priorities', async () => {
     let r = await completeDiscovery();
-    r = await handleCareerCounsellingMessage('ok', r.context);
-    assert.equal(r.context.step, 'eval_common_mistakes');
-    r = await handleCareerCounsellingMessage('Why do rankings matter?', r.context);
-    assert.match(r.reply, /Rankings and brand/i);
-    assert.match(r.reply, /Coming back to where we were/i);
-    assert.equal(r.context.step, 'eval_common_mistakes');
+    r = await handleCareerCounsellingMessage("I don't know", r.context);
+    assert.equal(r.context.profile.evaluationConfidence, 'suggested');
+    assert.match(r.reply, /Your Priorities/i);
   });
 
-  test('permission no holds without entering phase 3', async () => {
+  test('permission no holds without entering explore', async () => {
     let r = await completeDiscovery();
-    r = await handleCareerCounsellingMessage('ok', r.context);
-    r = await handleCareerCounsellingMessage('ok', r.context);
-    r = await handleCareerCounsellingMessage('ok', r.context);
-    r = await handleCareerCounsellingMessage('ok', r.context);
-    r = await handleCareerCounsellingMessage('projects and curriculum', r.context);
-    r = await handleCareerCounsellingMessage('yes', r.context);
+    r = await handleCareerCounsellingMessage('placements', r.context);
     r = await handleCareerCounsellingMessage('no', r.context);
     assert.equal(r.context.step, 'eval_permission_declined');
     assert.match(r.reply, /No problem/i);
-    assert.notEqual(r.context.stage, STAGES.MODERN_COLLEGES);
+    assert.notEqual(r.context.stage, 'explore_modern_colleges');
   });
 });
 
-describe('careerCounsellingV2 modern education discovery', () => {
+describe('careerCounsellingV2 stage 4 explore → stage 5 personalization', () => {
+  async function reachExplore() {
+    let r = await handleCareerCounsellingMessage('Career guidance', {}, { isNewEntry: true });
+    r = await handleCareerCounsellingMessage('Class 12', r.context);
+    r = await handleCareerCounsellingMessage('B.Tech', r.context);
+    r = await handleCareerCounsellingMessage('Software engineer', r.context);
+    r = await handleCareerCounsellingMessage('not yet', r.context);
+    r = await handleCareerCounsellingMessage('English', r.context);
+    r = await handleCareerCounsellingMessage('coding culture and placements', r.context);
+    r = await handleCareerCounsellingMessage('yes', r.context);
+    return r;
+  }
+
+  test('explore presents top colleges then personalization on yes', async () => {
+    let r = await reachExplore();
+    assert.equal(r.context.stage, 'explore_modern_colleges');
+    assert.ok((r.context.profile.exploreModernInstitutions || []).length >= 8);
+
+    r = await handleCareerCounsellingMessage('yes', r.context);
+    assert.equal(r.context.stage, STAGES.PERSONALIZED_DISCOVERY || 'personalized_discovery');
+    assert.match(r.reply, /personalize|budget|location|Ready/i);
+  });
+});
+
+describe('careerCounsellingV2 modern education discovery (legacy soft-skip)', () => {
   async function completeThroughEvaluationPermissionYes() {
     let r = await handleCareerCounsellingMessage('Career guidance', {}, { isNewEntry: true });
     r = await handleCareerCounsellingMessage('Class 12', r.context);
@@ -241,72 +233,26 @@ describe('careerCounsellingV2 modern education discovery', () => {
     r = await handleCareerCounsellingMessage('Software engineer', r.context);
     r = await handleCareerCounsellingMessage('not yet', r.context);
     r = await handleCareerCounsellingMessage('English', r.context);
-    for (const msg of ['ok', 'ok', 'ok', 'ok', 'projects and mentoring', 'yes', 'yes']) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
+    r = await handleCareerCounsellingMessage('projects and mentoring', r.context);
+    r = await handleCareerCounsellingMessage('yes', r.context);
     return r;
   }
 
-  test('full modern education flow persists learning prefs and starts personalization', async () => {
-    let r = await completeThroughEvaluationPermissionYes();
-    assert.equal(r.context.step, 'modern_transition');
-
-    r = await handleCareerCounsellingMessage('ok', r.context);
-    assert.equal(r.context.step, 'modern_what_is');
-    assert.match(r.reply, /future-ready|modern/i);
-    assert.match(r.reply, /not.*mean traditional/i);
-
-    r = await handleCareerCounsellingMessage('makes sense', r.context);
-    assert.equal(r.context.step, 'modern_traditional_vs');
-    assert.match(r.reply, /traditional focus/i);
-
-    r = await handleCareerCounsellingMessage('continue', r.context);
-    assert.equal(r.context.step, 'modern_industry_learning');
-    assert.match(r.reply, /Internships/i);
-
-    r = await handleCareerCounsellingMessage('go on', r.context);
-    assert.equal(r.context.step, 'modern_student_story');
-    assert.match(r.reply, /fictional/i);
-    assert.doesNotMatch(r.reply, /\bNIAT\b|\bScaler\b|\bNewton\b/i);
-
-    r = await handleCareerCounsellingMessage('yes resonates', r.context);
-    assert.equal(r.context.step, 'modern_ask_learning_style');
-
-    r = await handleCareerCounsellingMessage(
-      'hands-on projects with internships and portfolio building',
-      r.context
-    );
-    assert.equal(r.context.step, 'modern_ask_permission');
-    assert.equal(r.context.profile.preferredLearningStyle, 'hands_on');
-    assert.equal(r.context.profile.projectInterest, true);
-    assert.equal(r.context.profile.internshipInterest, true);
-    assert.equal(r.context.profile.portfolioInterest, true);
-    assert.equal(r.context.profile.modernEducationCompleted, true);
-    assert.match(r.reply, /Would you like to continue/i);
-
-    r = await handleCareerCounsellingMessage('yes', r.context);
-    assert.equal(r.context.stage, STAGES.PERSONALIZED_DISCOVERY);
-    assert.equal(r.context.step, 'pers_transition');
-    assert.match(r.reply, /practical preferences|career priorities|budget|location/i);
-    assert.equal(r.clearState, false);
+  test('interactive path skips modern lecture and lands on explore', async () => {
+    const r = await completeThroughEvaluationPermissionYes();
+    assert.equal(r.context.stage, 'explore_modern_colleges');
+    assert.notEqual(r.context.stage, STAGES.MODERN_COLLEGES);
   });
 
-  test('modern education question does not skip teaching step', async () => {
+  test('legacy modern stage soft-skips into explore', async () => {
     let r = await completeThroughEvaluationPermissionYes();
-    r = await handleCareerCounsellingMessage('ok', r.context);
-    r = await handleCareerCounsellingMessage('Is modern always better?', r.context);
-    assert.match(r.reply, /Not automatically/i);
-    assert.match(r.reply, /Coming back to where we were/i);
-    assert.equal(r.context.step, 'modern_what_is');
-  });
-
-  test('permission no on modern phase holds without phase 4', async () => {
-    let r = await completeThroughEvaluationPermissionYes();
-    for (const msg of ['ok', 'ok', 'ok', 'ok', 'ok', 'mentored learning', 'no']) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
-    assert.equal(r.context.step, 'modern_permission_declined');
-    assert.notEqual(r.context.stage, STAGES.PERSONALIZED_DISCOVERY);
+    // Force legacy modern stage
+    r = await handleCareerCounsellingMessage('ok', {
+      ...r.context,
+      stage: STAGES.MODERN_COLLEGES,
+      step: 'modern_what_is',
+    });
+    assert.equal(r.context.stage, 'explore_modern_colleges');
   });
 });
 
@@ -318,20 +264,11 @@ describe('careerCounsellingV2 personalized discovery', () => {
     r = await handleCareerCounsellingMessage('Software engineer', r.context);
     r = await handleCareerCounsellingMessage('not yet', r.context);
     r = await handleCareerCounsellingMessage('English', r.context);
-    for (const msg of ['ok', 'ok', 'ok', 'ok', 'projects and mentoring', 'yes', 'yes']) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
-    for (const msg of [
-      'ok',
-      'ok',
-      'ok',
-      'ok',
-      'ok',
-      'hands-on projects with internships',
-      'yes',
-    ]) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
+    // Stage 3 interactive
+    r = await handleCareerCounsellingMessage('projects and mentoring', r.context);
+    r = await handleCareerCounsellingMessage('yes', r.context);
+    // Stage 4 explore → Stage 5 personalization
+    r = await handleCareerCounsellingMessage('yes', r.context);
     return r;
   }
 
@@ -372,8 +309,6 @@ describe('careerCounsellingV2 personalized discovery', () => {
     assert.equal(r.context.step, 'pers_ask_permission');
 
     r = await handleCareerCounsellingMessage('yes', r.context);
-    assert.equal(r.context.stage, 'explore_modern_colleges');
-    r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.stage, STAGES.AI_SHORTLISTING);
     assert.equal(r.context.step, 'shortlist_ask_exam');
     assert.match(r.reply, /personalized shortlist|entrance exam/i);
@@ -391,8 +326,6 @@ describe('careerCounsellingV2 personalized discovery', () => {
     if (r.context.step === 'pers_clarify') {
       r = await handleCareerCounsellingMessage('skill building', r.context);
     }
-    r = await handleCareerCounsellingMessage('yes', r.context);
-    assert.equal(r.context.stage, 'explore_modern_colleges');
     r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.step, 'shortlist_ask_exam');
     r = await handleCareerCounsellingMessage('hello', r.context);
@@ -545,20 +478,10 @@ describe('careerCounsellingV2 AI shortlisting', () => {
     r = await handleCareerCounsellingMessage('Software engineer', r.context);
     r = await handleCareerCounsellingMessage('not yet', r.context);
     r = await handleCareerCounsellingMessage('English', r.context);
-    for (const msg of ['ok', 'ok', 'ok', 'ok', 'projects and mentoring', 'yes', 'yes']) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
-    for (const msg of [
-      'ok',
-      'ok',
-      'ok',
-      'ok',
-      'ok',
-      'hands-on projects with internships',
-      'yes',
-    ]) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
+    // Interactive Stage 3 → 4 → 5
+    r = await handleCareerCounsellingMessage('projects and mentoring', r.context);
+    r = await handleCareerCounsellingMessage('yes', r.context); // explore
+    r = await handleCareerCounsellingMessage('yes', r.context); // personalization
     return r;
   }
 
@@ -746,20 +669,10 @@ describe('careerCounsellingV2 smart comparison', () => {
     r = await handleCareerCounsellingMessage('Software engineer', r.context);
     r = await handleCareerCounsellingMessage('not yet', r.context);
     r = await handleCareerCounsellingMessage('English', r.context);
-    for (const msg of ['ok', 'ok', 'ok', 'ok', 'projects and mentoring', 'yes', 'yes']) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
-    for (const msg of [
-      'ok',
-      'ok',
-      'ok',
-      'ok',
-      'ok',
-      'hands-on projects with internships',
-      'yes',
-    ]) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
+    // Interactive Stage 3 → 4 → 5
+    r = await handleCareerCounsellingMessage('projects and mentoring', r.context);
+    r = await handleCareerCounsellingMessage('yes', r.context); // explore
+    r = await handleCareerCounsellingMessage('yes', r.context); // personalization
     r = await handleCareerCounsellingMessage('ok', r.context);
     r = await handleCareerCounsellingMessage('placements and skill building', r.context);
     r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
@@ -960,20 +873,10 @@ describe('careerCounsellingV2 concern resolution', () => {
     r = await handleCareerCounsellingMessage('Software engineer', r.context);
     r = await handleCareerCounsellingMessage('not yet', r.context);
     r = await handleCareerCounsellingMessage('English', r.context);
-    for (const msg of ['ok', 'ok', 'ok', 'ok', 'projects and mentoring', 'yes', 'yes']) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
-    for (const msg of [
-      'ok',
-      'ok',
-      'ok',
-      'ok',
-      'ok',
-      'hands-on projects with internships',
-      'yes',
-    ]) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
+    // Interactive Stage 3 → 4 → 5
+    r = await handleCareerCounsellingMessage('projects and mentoring', r.context);
+    r = await handleCareerCounsellingMessage('yes', r.context); // explore
+    r = await handleCareerCounsellingMessage('yes', r.context); // personalization
     r = await handleCareerCounsellingMessage('ok', r.context);
     r = await handleCareerCounsellingMessage('placements and skill building', r.context);
     r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
@@ -1175,20 +1078,10 @@ describe('careerCounsellingV2 phase 9 personalized recommendation', () => {
     r = await handleCareerCounsellingMessage('Software engineer', r.context);
     r = await handleCareerCounsellingMessage('not yet', r.context);
     r = await handleCareerCounsellingMessage('English', r.context);
-    for (const msg of ['ok', 'ok', 'ok', 'ok', 'projects and mentoring', 'yes', 'yes']) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
-    for (const msg of [
-      'ok',
-      'ok',
-      'ok',
-      'ok',
-      'ok',
-      'hands-on projects with internships',
-      'yes',
-    ]) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
+    // Interactive Stage 3 → 4 → 5
+    r = await handleCareerCounsellingMessage('projects and mentoring', r.context);
+    r = await handleCareerCounsellingMessage('yes', r.context); // explore
+    r = await handleCareerCounsellingMessage('yes', r.context); // personalization
     r = await handleCareerCounsellingMessage('ok', r.context);
     r = await handleCareerCounsellingMessage('placements and skill building', r.context);
     r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
@@ -1454,20 +1347,10 @@ describe('careerCounsellingV2 phase 10 future path vision', () => {
     r = await handleCareerCounsellingMessage('Software engineer', r.context);
     r = await handleCareerCounsellingMessage('not yet', r.context);
     r = await handleCareerCounsellingMessage('English', r.context);
-    for (const msg of ['ok', 'ok', 'ok', 'ok', 'projects and mentoring', 'yes', 'yes']) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
-    for (const msg of [
-      'ok',
-      'ok',
-      'ok',
-      'ok',
-      'ok',
-      'hands-on projects with internships',
-      'yes',
-    ]) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
+    // Interactive Stage 3 → 4 → 5
+    r = await handleCareerCounsellingMessage('projects and mentoring', r.context);
+    r = await handleCareerCounsellingMessage('yes', r.context); // explore
+    r = await handleCareerCounsellingMessage('yes', r.context); // personalization
     r = await handleCareerCounsellingMessage('ok', r.context);
     r = await handleCareerCounsellingMessage('placements and skill building', r.context);
     r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
@@ -1669,20 +1552,10 @@ describe('careerCounsellingV2 Phase 11 final decision hesitation', () => {
     r = await handleCareerCounsellingMessage('Software engineer', r.context);
     r = await handleCareerCounsellingMessage('not yet', r.context);
     r = await handleCareerCounsellingMessage('English', r.context);
-    for (const msg of ['ok', 'ok', 'ok', 'ok', 'projects and mentoring', 'yes', 'yes']) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
-    for (const msg of [
-      'ok',
-      'ok',
-      'ok',
-      'ok',
-      'ok',
-      'hands-on projects with internships',
-      'yes',
-    ]) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
+    // Interactive Stage 3 → 4 → 5
+    r = await handleCareerCounsellingMessage('projects and mentoring', r.context);
+    r = await handleCareerCounsellingMessage('yes', r.context); // explore
+    r = await handleCareerCounsellingMessage('yes', r.context); // personalization
     r = await handleCareerCounsellingMessage('ok', r.context);
     r = await handleCareerCounsellingMessage('placements and skill building', r.context);
     r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
@@ -1937,20 +1810,10 @@ describe('careerCounsellingV2 Phase 12 counseling experience selection', () => {
     r = await handleCareerCounsellingMessage('Software engineer', r.context);
     r = await handleCareerCounsellingMessage('not yet', r.context);
     r = await handleCareerCounsellingMessage('English', r.context);
-    for (const msg of ['ok', 'ok', 'ok', 'ok', 'projects and mentoring', 'yes', 'yes']) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
-    for (const msg of [
-      'ok',
-      'ok',
-      'ok',
-      'ok',
-      'ok',
-      'hands-on projects with internships',
-      'yes',
-    ]) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
+    // Interactive Stage 3 → 4 → 5
+    r = await handleCareerCounsellingMessage('projects and mentoring', r.context);
+    r = await handleCareerCounsellingMessage('yes', r.context); // explore
+    r = await handleCareerCounsellingMessage('yes', r.context); // personalization
     r = await handleCareerCounsellingMessage('ok', r.context);
     r = await handleCareerCounsellingMessage('placements and skill building', r.context);
     r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
@@ -2138,20 +2001,10 @@ describe('careerCounsellingV2 Phase 13 booking orchestrator', () => {
     r = await handleCareerCounsellingMessage('Software engineer', r.context);
     r = await handleCareerCounsellingMessage('not yet', r.context);
     r = await handleCareerCounsellingMessage('English', r.context);
-    for (const msg of ['ok', 'ok', 'ok', 'ok', 'projects and mentoring', 'yes', 'yes']) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
-    for (const msg of [
-      'ok',
-      'ok',
-      'ok',
-      'ok',
-      'ok',
-      'hands-on projects with internships',
-      'yes',
-    ]) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
+    // Interactive Stage 3 → 4 → 5
+    r = await handleCareerCounsellingMessage('projects and mentoring', r.context);
+    r = await handleCareerCounsellingMessage('yes', r.context); // explore
+    r = await handleCareerCounsellingMessage('yes', r.context); // personalization
     r = await handleCareerCounsellingMessage('ok', r.context);
     r = await handleCareerCounsellingMessage('placements and skill building', r.context);
     r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
@@ -2333,20 +2186,10 @@ describe('careerCounsellingV2 counseling invitation', () => {
     r = await handleCareerCounsellingMessage('Software engineer', r.context);
     r = await handleCareerCounsellingMessage('not yet', r.context);
     r = await handleCareerCounsellingMessage('English', r.context);
-    for (const msg of ['ok', 'ok', 'ok', 'ok', 'projects and mentoring', 'yes', 'yes']) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
-    for (const msg of [
-      'ok',
-      'ok',
-      'ok',
-      'ok',
-      'ok',
-      'hands-on projects with internships',
-      'yes',
-    ]) {
-      r = await handleCareerCounsellingMessage(msg, r.context);
-    }
+    // Interactive Stage 3 → 4 → 5
+    r = await handleCareerCounsellingMessage('projects and mentoring', r.context);
+    r = await handleCareerCounsellingMessage('yes', r.context); // explore
+    r = await handleCareerCounsellingMessage('yes', r.context); // personalization
     r = await handleCareerCounsellingMessage('ok', r.context);
     r = await handleCareerCounsellingMessage('placements and skill building', r.context);
     r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);

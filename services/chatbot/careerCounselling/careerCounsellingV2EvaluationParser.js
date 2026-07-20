@@ -1,74 +1,140 @@
 'use strict';
 
-const { EVALUATION_FACTORS } = require('../../../constants/careerCounsellingV2Evaluation');
+const {
+  EVALUATION_FACTORS,
+  COUNSELOR_SUGGESTED_PRIORITIES,
+} = require('../../../constants/careerCounsellingV2Evaluation');
 const { normalizeText } = require('../intentTextUtils');
 
 const FACTOR_ALIASES = Object.freeze([
-  { id: 'curriculum', patterns: [/\bcurriculum\b/i, /\bsyllabus\b/i, /\bcourses?\b/i, /\bsubject(s)?\b/i] },
-  {
-    id: 'projects',
-    patterns: [/\bproject(s)?\b/i, /\bpractical\b/i, /\bhands[- ]?on\b/i, /\bexperiential\b/i],
-  },
-  {
-    id: 'industry',
-    patterns: [/\bindustry\b/i, /\binternship(s)?\b/i, /\bexposure\b/i, /\bindustrial\b/i],
-  },
   {
     id: 'placements',
+    label: 'Placements',
     patterns: [/\bplacement(s)?\b/i, /\bjob(s)?\b/i, /\bpackage(s)?\b/i, /\bcampus hiring\b/i],
   },
   {
-    id: 'mentoring',
-    patterns: [/\bmentor(ing|ship)?\b/i, /\bguidance\b/i, /\bcounsell?ing\b/i],
+    id: 'projects',
+    label: 'Coding Culture',
+    patterns: [
+      /\bcoding\b/i,
+      /\bcoding culture\b/i,
+      /\bproject(s)?\b/i,
+      /\bpractical\b/i,
+      /\bhands[- ]?on\b/i,
+      /\bai\b/i,
+      /\bartificial intelligence\b/i,
+    ],
   },
   {
-    id: 'faculty',
-    patterns: [/\bfaculty\b/i, /\bteacher(s)?\b/i, /\bprofessor(s)?\b/i, /\bteaching\b/i],
-  },
-  {
-    id: 'environment',
-    patterns: [/\benvironment\b/i, /\bcampus culture\b/i, /\blearning environment\b/i, /\bculture\b/i],
-  },
-  {
-    id: 'brand',
-    patterns: [/\bbrand\b/i, /\branking(s)?\b/i, /\bfame\b/i, /\breputation\b/i, /\bnirf\b/i, /\bname\b/i],
+    id: 'industry',
+    label: 'Internships',
+    patterns: [/\binternship(s)?\b/i, /\bindustry\b/i, /\bexposure\b/i],
   },
   {
     id: 'fees',
-    patterns: [/\bfees?\b/i, /\bcost\b/i, /\bafford/i, /\bexpensive\b/i, /\bbudget\b/i],
+    label: 'Affordable Fees',
+    patterns: [/\bfees?\b/i, /\bcost\b/i, /\bafford/i, /\bexpensive\b/i, /\bbudget\b/i, /\bcheap\b/i],
+  },
+  {
+    id: 'environment',
+    label: 'Campus Life',
+    patterns: [
+      /\bcampus life\b/i,
+      /\bcampus culture\b/i,
+      /\bhostel\b/i,
+      /\benvironment\b/i,
+      /\bculture\b/i,
+    ],
+  },
+  {
+    id: 'curriculum',
+    label: 'Research',
+    patterns: [/\bresearch\b/i, /\bcurriculum\b/i, /\bsyllabus\b/i],
+  },
+  {
+    id: 'entrepreneurship',
+    label: 'Entrepreneurship',
+    patterns: [/\bentrepreneur/i, /\bstartup(s)?\b/i, /\bstart[- ]?up\b/i],
+  },
+  {
+    id: 'higher_studies',
+    label: 'Higher Studies',
+    patterns: [/\bhigher stud/i, /\bms\b/i, /\bm\.?tech\b/i, /\bmasters?\b/i, /\babroad\b/i],
   },
   {
     id: 'location',
-    patterns: [/\blocation\b/i, /\bnearby\b/i, /\bclose to home\b/i, /\bdistance\b/i, /\bcity\b/i],
+    label: 'Location',
+    patterns: [/\blocation\b/i, /\bnearby\b/i, /\bclose to home\b/i, /\bcity\b/i, /\bdistance\b/i],
+  },
+  {
+    id: 'mentoring',
+    label: 'Mentorship',
+    patterns: [/\bmentor(ing|ship)?\b/i, /\bguidance\b/i],
+  },
+  {
+    id: 'faculty',
+    label: 'Faculty',
+    patterns: [/\bfaculty\b/i, /\bteacher(s)?\b/i, /\bprofessor(s)?\b/i],
+  },
+  {
+    id: 'brand',
+    label: 'Brand / Rankings',
+    patterns: [/\bbrand\b/i, /\branking(s)?\b/i, /\bfame\b/i, /\breputation\b/i, /\bnirf\b/i],
   },
 ]);
 
 function labelForFactorId(id) {
+  const alias = FACTOR_ALIASES.find((f) => f.id === id);
+  if (alias) return alias.label;
   const found = EVALUATION_FACTORS.find((f) => f.id === id);
   return found ? found.label : id;
 }
 
+function isDontKnowOrSuggest(text) {
+  const t = normalizeText(text);
+  return (
+    /^(i )?don'?t know\b/i.test(t) ||
+    /^(idk|no idea|not sure)\b/i.test(t) ||
+    /\byou suggest\b/i.test(t) ||
+    /\bsuggest (for )?me\b/i.test(t) ||
+    /\byou (decide|choose|tell)\b/i.test(t) ||
+    /^(anything|whatever|your choice)\b/i.test(t)
+  );
+}
+
 /**
  * Parse free-text priority answer into structured evaluation priorities.
- * @returns {{ evaluationPriorities: string[], studentPriorities: string[], evaluationConfidence: string } | null}
  */
 function parseEvaluationPriorities(text) {
   const raw = String(text || '').trim();
   if (!raw || raw.length < 2) return null;
 
+  if (isDontKnowOrSuggest(raw)) {
+    return {
+      evaluationPriorities: COUNSELOR_SUGGESTED_PRIORITIES.map((p) => p.id),
+      studentPriorities: COUNSELOR_SUGGESTED_PRIORITIES.map((p) => p.label),
+      evaluationConfidence: 'suggested',
+      suggestedByCounselor: true,
+      rawAnswer: raw.slice(0, 500),
+    };
+  }
+
   const ids = [];
+  const labels = [];
   for (const entry of FACTOR_ALIASES) {
     if (entry.patterns.some((re) => re.test(raw))) {
-      if (!ids.includes(entry.id)) ids.push(entry.id);
+      if (!ids.includes(entry.id)) {
+        ids.push(entry.id);
+        labels.push(entry.label);
+      }
     }
   }
 
   if (ids.length === 0) {
-    // Accept free-text priorities when student describes what matters
-    if (raw.length >= 8 && raw.length <= 400) {
+    if (raw.length >= 3 && raw.length <= 400) {
       return {
         evaluationPriorities: ['custom'],
-        studentPriorities: [raw.slice(0, 300)],
+        studentPriorities: [raw.slice(0, 120)],
         evaluationConfidence: 'medium',
         rawAnswer: raw.slice(0, 500),
       };
@@ -76,7 +142,6 @@ function parseEvaluationPriorities(text) {
     return null;
   }
 
-  const labels = ids.map(labelForFactorId);
   return {
     evaluationPriorities: ids,
     studentPriorities: labels,
@@ -112,14 +177,14 @@ function isKnowledgeConfirmYes(text) {
 
 function isPermissionYes(text) {
   const t = normalizeText(text);
-  return /^(yes|yeah|yep|yup|sure|ok|okay|please|y|continue|go ahead|absolutely|definitely|let'?s go)\b/i.test(
+  return /^(yes|yeah|yep|yup|sure|ok|okay|please|y|continue|go ahead|absolutely|definitely|let'?s go|shortlist|show)\b/i.test(
     t
   );
 }
 
 function isPermissionNo(text) {
   const t = normalizeText(text);
-  return /^(no|nope|not now|later|nah|n|not yet)\b/i.test(t);
+  return /^(no|nope|not now|later|nah|n|not yet|skip)\b/i.test(t);
 }
 
 module.exports = {
@@ -129,5 +194,6 @@ module.exports = {
   isKnowledgeConfirmYes,
   isPermissionYes,
   isPermissionNo,
+  isDontKnowOrSuggest,
   labelForFactorId,
 };

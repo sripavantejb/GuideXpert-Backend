@@ -1,25 +1,25 @@
 'use strict';
 
+/**
+ * Interactive Stage 3 — Discover priorities → validate + expand → permission → Explore.
+ * Legacy multi-teaching lecture chain is bypassed (redirected to priorities ask).
+ */
+
 const {
   STAGES,
   EVALUATION_STEPS,
   EVALUATION_QA,
   getEvalMessage,
-  getNextEvalStep,
   getEvalContentForStep,
-  buildPersonalizedTransition,
+  buildFrameworkExpandMessage,
 } = require('../../../constants/careerCounsellingV2Evaluation');
 const { BREAKOUT_DEFLECTION } = require('../../../constants/careerCounsellingJourney');
 const { isCareerCounsellingJourneyBreakout } = require('./careerCounsellingIntentService');
-const {
-  isSkipResponse,
-  isSocialGreetingOnly,
-} = require('./careerCounsellingV2ResponseParser');
+const { isSocialGreetingOnly } = require('./careerCounsellingV2ResponseParser');
 const {
   parseEvaluationPriorities,
   isEvaluationAcknowledgment,
   isEvaluationQuestion,
-  isKnowledgeConfirmYes,
   isPermissionYes,
   isPermissionNo,
 } = require('./careerCounsellingV2EvaluationParser');
@@ -31,13 +31,13 @@ const {
   logMindsetShiftCompleted,
   logProfileUpdated,
 } = require('./careerCounsellingV2Analytics');
-const { startModernEducation } = require('./careerCounsellingV2ModernEducationEngine');
 
-const TEACHING_STEPS = Object.freeze([
+const LEGACY_TEACHING_STEPS = Object.freeze([
   'eval_transition',
   'eval_common_mistakes',
   'eval_framework',
   'eval_comparison',
+  'eval_knowledge_confirm',
 ]);
 
 function answerEvaluationQuestion(text) {
@@ -86,75 +86,49 @@ function startEvaluation(ctx, analyticsMeta = {}) {
   const nextCtx = {
     ...ctx,
     stage: STAGES.EVALUATION_FRAMEWORK,
-    step: 'eval_transition',
+    step: 'eval_ask_priorities',
     profile,
-    lastQuestionKey: 'eval_transition',
+    lastQuestionKey: 'evaluation_priorities',
     evaluationStartedAt: new Date().toISOString(),
   };
 
   logEvaluationStarted({
     stage: STAGES.EVALUATION_FRAMEWORK,
-    step: 'eval_transition',
+    step: 'eval_ask_priorities',
     profileCompletionPct: profile.profileCompletionPct ?? null,
     ...analyticsMeta,
   });
 
   logEvaluationTopicViewed({
     stage: STAGES.EVALUATION_FRAMEWORK,
-    step: 'eval_transition',
-    topic: 'personalized_transition',
+    step: 'eval_ask_priorities',
+    topic: 'discover_priorities',
     ...analyticsMeta,
   });
 
   return {
-    reply: buildPersonalizedTransition(profile),
+    reply: getEvalMessage('ask_priorities'),
     context: nextCtx,
     clearState: false,
+    skipLineCap: true,
     analytics: [{ type: 'evaluation_started' }],
   };
 }
 
-function deliverStep(step, ctx, analyticsMeta = {}, prefix = '') {
-  const content = getEvalContentForStep(step);
-  const reply = prefix ? `${prefix}\n\n${content}` : content;
-
-  logEvaluationTopicViewed({
-    stage: ctx.stage,
-    step,
-    topic: step.replace(/^eval_/, ''),
-    ...analyticsMeta,
-  });
-
-  return {
-    reply,
-    context: {
-      ...ctx,
-      step,
-      lastQuestionKey: step.replace(/^eval_/, ''),
-    },
-    clearState: false,
-    analytics: [{ type: 'evaluation_topic_viewed', step }],
-  };
-}
-
-function advanceTeaching(ctx, analyticsMeta = {}) {
-  const nextStep = getNextEvalStep(ctx.step);
-  if (!nextStep) {
-    return deliverStep('eval_ask_priorities', ctx, analyticsMeta);
-  }
-  return deliverStep(nextStep, { ...ctx, step: nextStep }, analyticsMeta);
-}
-
-function completeEvaluationAndOfferPermission(ctx, profile, analyticsMeta = {}) {
+function completeFrameworkAndOfferPermission(ctx, profile, analyticsMeta = {}) {
   const completedProfile = {
     ...profile,
     evaluationCompleted: true,
     mindsetShiftCompleted: true,
+    modernEducationCompleted: true,
+    learningStyle: profile.learningStyle || profile.preferredLearningStyle || 'exploring',
+    preferredLearningStyle:
+      profile.preferredLearningStyle || profile.learningStyle || 'exploring',
   };
 
   logMindsetShiftCompleted({
     stage: STAGES.EVALUATION_FRAMEWORK,
-    step: 'eval_knowledge_confirm',
+    step: 'eval_ask_permission',
     evaluationPriorities: completedProfile.evaluationPriorities,
     ...analyticsMeta,
   });
@@ -181,7 +155,7 @@ function completeEvaluationAndOfferPermission(ctx, profile, analyticsMeta = {}) 
   });
 
   return {
-    reply: `${getEvalMessage('mindset_shift_ack')}\n\n${getEvalMessage('ask_permission')}`,
+    reply: buildFrameworkExpandMessage(completedProfile),
     context: {
       ...ctx,
       step: 'eval_ask_permission',
@@ -190,58 +164,42 @@ function completeEvaluationAndOfferPermission(ctx, profile, analyticsMeta = {}) 
       evaluationCompletedAt: new Date().toISOString(),
     },
     clearState: false,
+    skipLineCap: true,
+    educationalContent: true,
     analytics: [
       { type: 'mindset_shift_completed' },
       { type: 'evaluation_completed' },
+      { type: 'interactive_framework_presented' },
     ],
   };
 }
 
-function transitionToModernEducation(ctx, analyticsMeta = {}) {
-  return startModernEducation(ctx, analyticsMeta);
-}
-
-function handleTeachingStep(inbound, ctx, analyticsMeta) {
-  if (isEvaluationQuestion(inbound)) {
-    const answer = answerEvaluationQuestion(inbound);
-    const resume = getEvalContentForStep(ctx.step);
-    return {
-      reply: `${answer}\n\n${getEvalMessage('resume_checkpoint_prefix')}\n${resume}`,
-      context: ctx,
-      clearState: false,
-      analytics: [{ type: 'evaluation_question', step: ctx.step }],
-    };
-  }
-
-  if (isEvaluationAcknowledgment(inbound) || isSkipResponse(inbound)) {
-    return advanceTeaching(ctx, analyticsMeta);
-  }
-
-  // Soft advance on substantive engagement (student sharing related thoughts)
-  if (inbound.length >= 12) {
-    return advanceTeaching(ctx, analyticsMeta);
-  }
-
-  return {
-    reply: getEvalMessage('awaiting_ack_nudge'),
-    context: ctx,
-    clearState: false,
-    analytics: [],
-  };
+async function transitionToExploreModernColleges(ctx, analyticsMeta = {}) {
+  const {
+    processExploreModernCollegesTurn,
+  } = require('./careerCounsellingV2ExploreModernCollegesEngine');
+  return processExploreModernCollegesTurn('yes', ctx, {
+    startExploreModernColleges: true,
+    fromEvaluation: true,
+    presentImmediately: true,
+    analytics: analyticsMeta,
+  });
 }
 
 function handlePrioritiesStep(inbound, ctx, analyticsMeta) {
-  if (isEvaluationQuestion(inbound)) {
+  const parsedEarly = parseEvaluationPriorities(inbound);
+  if (isEvaluationQuestion(inbound) && !parsedEarly) {
     const answer = answerEvaluationQuestion(inbound);
     return {
       reply: `${answer}\n\n${getEvalMessage('ask_priorities')}`,
       context: ctx,
       clearState: false,
+      skipLineCap: true,
       analytics: [],
     };
   }
 
-  const parsed = parseEvaluationPriorities(inbound);
+  const parsed = parsedEarly || parseEvaluationPriorities(inbound);
   if (!parsed) {
     return {
       reply: getEvalMessage('priorities_clarify'),
@@ -255,6 +213,7 @@ function handlePrioritiesStep(inbound, ctx, analyticsMeta) {
     evaluationPriorities: parsed.evaluationPriorities,
     studentPriorities: parsed.studentPriorities,
     evaluationConfidence: parsed.evaluationConfidence,
+    suggestedByCounselor: Boolean(parsed.suggestedByCounselor),
     _rawAnswer: parsed.rawAnswer,
     _questionKey: 'evaluation_priorities',
   });
@@ -275,55 +234,12 @@ function handlePrioritiesStep(inbound, ctx, analyticsMeta) {
     ...analyticsMeta,
   });
 
-  return {
-    reply: `${getEvalMessage('priorities_ack')}\n\n${getEvalMessage('knowledge_confirm')}`,
-    context: {
-      ...ctx,
-      step: 'eval_knowledge_confirm',
-      profile,
-      lastQuestionKey: 'knowledge_confirm',
-    },
-    clearState: false,
-    analytics: [{ type: 'evaluation_priority_selected' }],
-  };
+  return completeFrameworkAndOfferPermission(ctx, profile, analyticsMeta);
 }
 
-function handleKnowledgeConfirm(inbound, ctx, analyticsMeta) {
-  if (isEvaluationQuestion(inbound)) {
-    const answer = answerEvaluationQuestion(inbound);
-    return {
-      reply: `${answer}\n\n${getEvalMessage('knowledge_confirm')}`,
-      context: ctx,
-      clearState: false,
-      analytics: [],
-    };
-  }
-
-  if (isKnowledgeConfirmYes(inbound) || isEvaluationAcknowledgment(inbound)) {
-    return completeEvaluationAndOfferPermission(ctx, ctx.profile, analyticsMeta);
-  }
-
-  // Student still unclear — reinforce framework briefly then re-ask
-  if (inbound.length >= 3) {
-    return {
-      reply: `${getEvalMessage('question_fallback')}\n\n${getEvalMessage('knowledge_confirm')}`,
-      context: ctx,
-      clearState: false,
-      analytics: [],
-    };
-  }
-
-  return {
-    reply: getEvalMessage('knowledge_confirm'),
-    context: ctx,
-    clearState: false,
-    analytics: [],
-  };
-}
-
-function handlePermission(inbound, ctx, analyticsMeta) {
+async function handlePermission(inbound, ctx, analyticsMeta) {
   if (isPermissionYes(inbound)) {
-    return transitionToModernEducation(ctx, analyticsMeta);
+    return transitionToExploreModernColleges(ctx, analyticsMeta);
   }
 
   if (isPermissionNo(inbound)) {
@@ -335,8 +251,22 @@ function handlePermission(inbound, ctx, analyticsMeta) {
         lastQuestionKey: 'permission_declined',
       },
       clearState: false,
+      parked: true,
       analytics: [{ type: 'evaluation_permission_declined' }],
     };
+  }
+
+  const refined = parseEvaluationPriorities(inbound);
+  if (refined && !isEvaluationAcknowledgment(inbound)) {
+    const profile = patchProfile(ctx.profile, {
+      evaluationPriorities: refined.evaluationPriorities,
+      studentPriorities: refined.studentPriorities,
+      evaluationConfidence: refined.evaluationConfidence,
+      suggestedByCounselor: Boolean(refined.suggestedByCounselor),
+      _rawAnswer: refined.rawAnswer,
+      _questionKey: 'evaluation_priorities',
+    });
+    return completeFrameworkAndOfferPermission(ctx, profile, analyticsMeta);
   }
 
   if (isEvaluationQuestion(inbound)) {
@@ -357,18 +287,24 @@ function handlePermission(inbound, ctx, analyticsMeta) {
   };
 }
 
-function handlePermissionDeclined(inbound, ctx, analyticsMeta) {
-  if (isPermissionYes(inbound)) {
-    return {
-      reply: getEvalMessage('ask_permission'),
-      context: {
-        ...ctx,
-        step: 'eval_ask_permission',
-        lastQuestionKey: 'permission',
-      },
-      clearState: false,
-      analytics: [],
-    };
+async function handlePermissionDeclined(inbound, ctx, analyticsMeta) {
+  if (isPermissionYes(inbound) || isEvaluationAcknowledgment(inbound)) {
+    return transitionToExploreModernColleges(
+      { ...ctx, step: 'eval_ask_permission' },
+      analyticsMeta
+    );
+  }
+  const refined = parseEvaluationPriorities(inbound);
+  if (refined) {
+    const profile = patchProfile(ctx.profile, {
+      evaluationPriorities: refined.evaluationPriorities,
+      studentPriorities: refined.studentPriorities,
+      evaluationConfidence: refined.evaluationConfidence,
+      suggestedByCounselor: Boolean(refined.suggestedByCounselor),
+      _rawAnswer: refined.rawAnswer,
+      _questionKey: 'evaluation_priorities',
+    });
+    return completeFrameworkAndOfferPermission(ctx, profile, analyticsMeta);
   }
   return {
     reply: getEvalMessage('permission_declined_reengage'),
@@ -383,7 +319,6 @@ async function processEvaluationTurn(text, context = {}, opts = {}) {
   const analyticsMeta = opts.analytics || {};
   let ctx = { ...context };
 
-  // Bootstrap: discovery just completed or legacy placeholder step
   if (
     opts.startEvaluation ||
     ctx.step === 'evaluation_framework_placeholder' ||
@@ -454,6 +389,34 @@ async function processEvaluationTurn(text, context = {}, opts = {}) {
         analytics: analyticsMeta,
       });
     }
+    if (
+      ctx.stage === STAGES.PERSONALIZED_DISCOVERY ||
+      (typeof ctx.step === 'string' && ctx.step.startsWith('pers_'))
+    ) {
+      const {
+        processPersonalizedDiscoveryTurn,
+      } = require('./careerCounsellingV2PersonalizationEngine');
+      return processPersonalizedDiscoveryTurn(inbound, ctx, {
+        analytics: analyticsMeta,
+      });
+    }
+    // Legacy modern stage — soft-skip into explore (interactive framework)
+    if (
+      ctx.stage === STAGES.MODERN_COLLEGES ||
+      (typeof ctx.step === 'string' && ctx.step.startsWith('modern_'))
+    ) {
+      return transitionToExploreModernColleges(
+        {
+          ...ctx,
+          profile: {
+            ...(ctx.profile || {}),
+            modernEducationCompleted: true,
+            learningStyle: ctx.profile?.learningStyle || 'exploring',
+          },
+        },
+        analyticsMeta
+      );
+    }
     const {
       processModernEducationTurn,
     } = require('./careerCounsellingV2ModernEducationEngine');
@@ -478,19 +441,19 @@ async function processEvaluationTurn(text, context = {}, opts = {}) {
       reply: `${getEvalMessage('greeting_mid_evaluation')}\n\n${content}`,
       context: ctx,
       clearState: false,
+      skipLineCap: true,
       analytics: [],
     };
   }
 
-  if (TEACHING_STEPS.includes(ctx.step)) {
-    return handleTeachingStep(inbound, ctx, analyticsMeta);
+  // Legacy lecture resume → interactive priorities
+  if (LEGACY_TEACHING_STEPS.includes(ctx.step)) {
+    return startEvaluation(ctx, analyticsMeta);
   }
 
   switch (ctx.step) {
     case 'eval_ask_priorities':
       return handlePrioritiesStep(inbound, ctx, analyticsMeta);
-    case 'eval_knowledge_confirm':
-      return handleKnowledgeConfirm(inbound, ctx, analyticsMeta);
     case 'eval_ask_permission':
       return handlePermission(inbound, ctx, analyticsMeta);
     case 'eval_permission_declined':
@@ -505,4 +468,5 @@ module.exports = {
   EVALUATION_STEPS,
   startEvaluation,
   processEvaluationTurn,
+  buildFrameworkExpandMessage,
 };

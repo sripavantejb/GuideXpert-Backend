@@ -1,8 +1,9 @@
 'use strict';
 
 /**
- * GuideXpert V2 Career Counselling — Phase 3 Modern Education Discovery.
+ * GuideXpert V2 Career Counselling — Roadmap Phase 4 Modern Education Discovery.
  * Educational only — no institution names or recommendations.
+ * Counselor-style explanations: idea → why → example → transition.
  */
 
 const STAGES = Object.freeze({
@@ -49,73 +50,73 @@ const LEARNING_STYLES = Object.freeze([
 
 const MESSAGES = Object.freeze({
   personalized_transition: [
-    'Next — how modern learning works.',
-    '',
-    'Still no college names. Ready?',
+    'Next, let’s understand how education itself is changing.',
+    'This is not about rejecting traditional colleges — many still build strong foundations.',
+    'It is about noticing what employers and workplaces increasingly look for.',
+    'We still will not name colleges here; clarity comes first.',
+    'That clarity usually prevents brand-only decisions later.',
+    'Ready to explore that?',
   ].join('\n'),
 
   what_is_modern: [
-    '“Modern” / future-ready learning usually means:',
-    '',
-    '✅ Projects',
-    '✅ Real skills',
-    '✅ Industry exposure',
-    '',
-    'It does *not* mean traditional is always wrong.',
-    '',
-    'Make sense?',
+    '“Modern” or future-ready learning usually means practice sits beside theory.',
+    'Students build skills they can show — through projects, tools, and real exposure.',
+    'Traditional strengths still matter: discipline, fundamentals, and good teaching.',
+    'Modern does not mean traditional is wrong; it means the mix is shifting.',
+    'Imagine studying a subject and also shipping a small real project in the same semester.',
+    'That combination often builds confidence faster than notes alone.',
+    'Does that definition make sense so far?',
   ].join('\n'),
 
   traditional_vs_modern: [
-    '*Traditional focus*',
-    '✅ Syllabus + exams',
-    '✅ Theory first',
-    '',
-    '*Modern focus*',
-    '✅ Projects + portfolio',
-    '✅ Internships + mentoring',
-    '',
-    'Many good programmes blend both.',
+    'A simple way to see the shift is what each approach optimizes for.',
+    'Traditional focus often centers syllabus coverage and exam performance — foundations that still help.',
+    'Modern focus adds projects, portfolios, internships, and mentoring beside those foundations.',
+    'Many strong programmes blend both instead of choosing one extreme.',
+    'Think of marks as proof you studied; a portfolio as proof you can apply what you studied.',
+    'Neither replaces the other when the mix is healthy.',
+    'Shall we look at how industry learning fits into this?',
   ].join('\n'),
 
   industry_learning: [
-    'Industry learning often includes:',
-    '',
-    '✅ Internships',
-    '✅ Real projects',
-    '✅ Portfolio',
-    '✅ Mentoring',
-    '',
-    'Ready for a short fictional story?',
+    'Industry learning is how campuses connect classrooms to real workplaces.',
+    'Internships, live projects, and mentoring give you deadlines, teamwork, and tools beyond textbooks.',
+    'That matters because employers often ask what you have built or solved — not only what you scored.',
+    'A short internship can clarify whether a career path fits you before you commit years to it.',
+    'Think of it as a rehearsal for work while you are still studying.',
+    'Ready for a short fictional student story?',
   ].join('\n'),
 
   student_story: [
-    'Fictional example:',
-    '',
-    'Same stream. One studied for exams only. The other also built projects + did an internship.',
-    '',
-    'The second found it easier to show what they can *do*.',
-    '',
-    'Does this resonate?',
+    'Imagine two students with the same degree.',
+    'One completed only classroom assignments and exams.',
+    'The other also built real projects and completed an internship.',
+    'Employers usually notice the second student’s experience much earlier.',
+    'Same qualification — different evidence of readiness.',
+    'Does this resonate with how you want to learn?',
   ].join('\n'),
 
   ask_learning_style: [
-    'What learning style fits you?',
-    '',
-    'Hands-on, internships, balanced, theory-first, or still exploring?',
+    'Your learning style shapes which college environment will feel right.',
+    'Some students thrive hands-on; others need strong theory first; many want a balance.',
+    'Internships, mentoring, or still exploring are all honest answers.',
+    'There is no wrong preference — only a clearer fit.',
+    'Naming it now helps us match programmes that support how you learn best.',
+    'What learning style fits you best right now?',
   ].join('\n'),
 
   knowledge_summary: [
-    'Quick recap:',
-    '',
-    '✅ Fit matters more than labels',
-    '✅ Projects + exposure help',
-    '✅ Your learning style is clearer now',
+    'Quick recap of what you have learned.',
+    'Fit matters more than labels like “traditional” or “modern.”',
+    'Projects, exposure, and your learning style help you choose with less regret.',
+    'Traditional foundations and modern practice can work together.',
+    'That balance is what most confident students eventually look for.',
+    'Shall we continue into a few practical preferences next?',
   ].join('\n'),
 
   ask_permission: [
-    'Next: a few practical preferences.',
-    '',
+    'Next: a few practical preferences — career priority, location, budget, and family view.',
+    'That helps us personalize options without guessing.',
     'Would you like to continue?',
   ].join('\n'),
 
@@ -124,59 +125,91 @@ const MESSAGES = Object.freeze({
 
   permission_no: [
     'No problem.',
-    '',
     'Say yes whenever you’re ready.',
   ].join('\n'),
 
   permission_declined_reengage: 'Ready to continue? Just say yes.',
 
-  awaiting_ack_nudge: 'Take your time — or ask me anything.',
+  awaiting_ack_nudge: 'Take your time — or ask me anything about modern vs traditional learning.',
 
   greeting_mid_modern: 'Hello again! Let’s continue from where we left off.',
 
   resume_checkpoint_prefix: 'Coming back to where we were —',
 
-  learning_style_ack: 'Got it 👍',
+  learning_style_ack: 'Got it — that learning preference helps us match the right environment.',
 
   learning_style_clarify:
     'Hands-on, internships, balanced, theory-first, mentored — or still exploring?',
 
-  question_fallback:
-    'Not automatically “modern = better.” Pick the mix that fits you — projects, foundations, or both.',
+  question_fallback: [
+    'Modern is not automatically better.',
+    'Pick the mix that fits you — projects, foundations, or both.',
+    'Want to share which learning style feels closest?',
+  ].join('\n'),
 
-  modern_complete_ack: 'Nice! Learning style is clearer now.',
+  modern_complete_ack: 'Nice — your learning style is clearer now.',
 });
 
 const MODERN_EDUCATION_QA = Object.freeze([
   {
     patterns: [/\bmodern (always|better|best)\b/i, /\bis modern better\b/i],
-    answer:
-      'Not automatically. Modern approaches can help with skills and exposure, but traditional strengths (foundations, discipline, strong faculty) still matter. Fit to your goals is what counts.',
+    answer: [
+      'Not automatically.',
+      'Modern approaches can help with skills and exposure, but traditional strengths still matter.',
+      'Strong foundations and discipline remain valuable for many careers.',
+      'Fit to your goals is what counts — not the label.',
+      'Want to clarify which mix fits you?',
+    ].join('\n'),
   },
   {
     patterns: [/\btraditional\b/i, /\bold (style|way)\b/i],
-    answer:
-      'Traditional approaches often build strong fundamentals and exam discipline. Many students do well with that base — especially when they also add projects or internships on their own.',
+    answer: [
+      'Traditional approaches often build strong fundamentals and exam discipline.',
+      'Many students do well with that base — especially when they also add projects or internships.',
+      'We are not criticizing traditional colleges; we are widening how you evaluate them.',
+      'The best path is often a healthy blend.',
+      'Shall we keep exploring what balance you prefer?',
+    ].join('\n'),
   },
   {
     patterns: [/\bproject(s)?\b/i, /\bportfolio\b/i],
-    answer:
-      'Projects and portfolios help you show what you can build or solve — which employers often look for beyond marks alone.',
+    answer: [
+      'Projects and portfolios help you show what you can build or solve.',
+      'Marks prove you studied; a portfolio proves you can apply learning.',
+      'Employers often look for that evidence beyond marks alone.',
+      'Even one strong project can change how interviews feel.',
+      'Want projects to be part of your learning preference?',
+    ].join('\n'),
   },
   {
     patterns: [/\binternship(s)?\b/i, /\bindustry\b/i],
-    answer:
-      'Internships and industry exposure give a feel for real workplaces. They complement classroom learning; they do not replace a solid academic foundation.',
+    answer: [
+      'Internships and industry exposure give a feel for real workplaces.',
+      'They complement classroom learning; they do not replace a solid academic foundation.',
+      'A short real stint can confirm or change your career direction early.',
+      'That clarity matters because textbooks alone rarely show day-to-day work.',
+      'Shall we keep industry learning in focus?',
+    ].join('\n'),
   },
   {
     patterns: [/\bai\b/i, /\bfuture skill(s)?\b/i, /\bemerging\b/i],
-    answer:
-      'Future skills (including tools like AI) change quickly. Programmes that refresh curriculum and let you practise on real problems help you keep up — whichever label they use.',
+    answer: [
+      'Future skills — including tools like AI — change quickly.',
+      'Programmes that refresh curriculum and let you practise on real problems help you keep up.',
+      'The label on the college matters less than whether you get that practice.',
+      'Curiosity plus applied learning usually ages better than memorizing one tool.',
+      'Want to talk about which learning style supports that for you?',
+    ].join('\n'),
   },
   {
     patterns: [/\bwhich college\b/i, /\brecommend\b/i, /\bsuggest (a |some )?college\b/i],
-    answer:
-      'We are not naming or recommending colleges in this step. First we clarify the learning approach that fits you — shortlisting comes later.',
+    answer: [
+      'We are not naming or recommending colleges in this step.',
+      'First we clarify the learning approach that fits you — shortlisting comes later.',
+      'That order prevents random brand-chasing.',
+      'Clarity now makes recommendations more useful later.',
+      'Ready to share your learning style preference?',
+    ].join('\n'),
   },
 ]);
 
@@ -223,20 +256,22 @@ function buildPersonalizedModernTransition(profile = {}) {
     bits.push('the evaluation factors you chose');
   }
   if (profile.preferredCourse) bits.push(`your interest in ${profile.preferredCourse}`);
-  if (profile.careerGoal) bits.push(`your career direction`);
+  if (profile.careerGoal) bits.push('your career direction');
 
   if (bits.length === 0) {
     return getModernMessage('personalized_transition');
   }
 
-  const personal = bits.length === 1 ? bits[0] : `${bits.slice(0, -1).join(', ')} and ${bits[bits.length - 1]}`;
+  const personal =
+    bits.length === 1 ? bits[0] : `${bits.slice(0, -1).join(', ')} and ${bits[bits.length - 1]}`;
 
   return [
-    `Given ${personal}, the next useful step is understanding *how* learning approaches differ — traditional foundations versus more industry-aligned, project-heavy models.`,
-    '',
-    'We still will not name colleges here. The goal is curiosity and clarity about future-ready education.',
-    '',
-    'Ready to explore that? Reply when you are ready.',
+    `Given ${personal}, the next useful step is understanding how learning approaches differ.`,
+    'We will look at traditional foundations beside more project-heavy, industry-aligned models.',
+    'We still will not name colleges here — curiosity and clarity come first.',
+    'This helps you notice what kind of environment will fit you.',
+    'That clarity usually prevents brand-only decisions later.',
+    'Ready to explore that?',
   ].join('\n');
 }
 

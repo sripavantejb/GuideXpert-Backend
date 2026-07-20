@@ -24,10 +24,12 @@ const {
 const {
   nonEmptyLines,
   MAX_LINES_NORMAL,
+  MAX_LINES_EDUCATIONAL,
 } = require('../services/chatbot/careerCounselling/careerCounsellingV2ResponseOptimizer');
 const {
   mapStageToRoadmapPhase,
   extractAdvanceQuestion,
+  isEducationalContentReply,
 } = require('../services/chatbot/careerCounselling/careerCounsellingV2PhaseOrchestrator');
 const {
   isCounselingBridgeIntent,
@@ -74,9 +76,12 @@ function assertAdvanceOrTerminal(result, label) {
 function assertLineCap(result, label) {
   if (result.allowExtendedPrediction || result.skipLineCap) return;
   const n = countLines(result.reply);
+  const educational =
+    result.educationalContent === true || isEducationalContentReply(result);
+  const max = educational ? MAX_LINES_EDUCATIONAL : MAX_LINES_NORMAL;
   assert.ok(
-    n <= MAX_LINES_NORMAL,
-    `${label}: expected ≤${MAX_LINES_NORMAL} lines, got ${n}: ${result.reply}`
+    n <= max,
+    `${label}: expected ≤${max} lines, got ${n}: ${result.reply}`
   );
 }
 
@@ -178,14 +183,14 @@ async function run() {
       },
       {}
     );
-    assert.equal(
-      r.context.stage,
-      'explore_modern_colleges',
-      `expected explore after personalization, got ${r.context.stage}`
+    assert.ok(
+      r.context.stage === 'ai_shortlisting' ||
+        String(r.context.step || '').startsWith('shortlist_'),
+      `expected shortlisting after personalization, got ${r.context.stage}`
     );
-    pass('personalization → explore handoff');
+    pass('personalization → shortlisting handoff');
   } catch (e) {
-    fail('personalization → explore handoff', e);
+    fail('personalization → shortlisting handoff', e);
   }
 
   // 5) College Predictor bridge seed
@@ -229,11 +234,12 @@ async function run() {
       {}
     );
     assertOrchestration(r, 'explore continue');
-    // Should move toward shortlisting
+    // Interactive framework: explore continue → personalized discovery
     assert.ok(
-      r.context.stage === 'ai_shortlisting' ||
-        String(r.context.step || '').startsWith('shortlist_') ||
-        r.context.stage === 'explore_modern_colleges',
+      r.context.stage === 'personalized_discovery' ||
+        String(r.context.step || '').startsWith('pers_') ||
+        r.context.stage === 'ai_shortlisting' ||
+        String(r.context.step || '').startsWith('shortlist_'),
       `unexpected stage ${r.context.stage}`
     );
     pass('journey service explore continue');

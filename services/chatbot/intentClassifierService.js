@@ -223,6 +223,7 @@ const SOCIAL_GREETING_PATTERNS = [
   /^(how are you|how are u|how r u)\s*[.!?]?$/,
   /^(kaise ho aap|kaise ho)\s*[.!?]?$/,
   /^(ela vunnav|ela vunnaru|ela unnaru|bagunnara|bagunnava)\s*[.!?]?$/,
+  /^(hi|hello|hey|hola|namaste|good\s*morning|good\s*evening|good\s*afternoon)(\s+(please|yaar|bro|urgently|ahora|there|friend))?\s*[.!?🙏]*$/,
 ];
 
 const ROMANIZED_TELUGU_GREETING_PATTERNS = [
@@ -452,6 +453,14 @@ function classifyIntent(text, botState, productLine, originalText = null) {
   }
   if (matchesMainMenuTrigger(t)) {
     return { intent: 'main_menu', confidence: 'high' };
+  }
+  // Soft greetings with trailing words/emoji (not exact MENU "hi"/"start")
+  if (isSocialGreeting(t, original) || isNativeSocialGreeting(original)) {
+    return {
+      intent: 'greeting',
+      confidence: 'high',
+      intentReason: 'soft_social_greeting',
+    };
   }
   if (matchesAny(t, GLOBAL_KEYWORDS.cancel)) {
     return { intent: 'main_menu', confidence: 'high' };

@@ -578,26 +578,18 @@ function handleCaptureStep(inbound, ctx, analyticsMeta) {
 
 async function handlePermission(inbound, ctx, analyticsMeta = {}) {
   if (isPermissionYes(inbound)) {
-    const {
-      processExploreModernCollegesTurn,
-    } = require('./careerCounsellingV2ExploreModernCollegesEngine');
-    return processExploreModernCollegesTurn(inbound, ctx, {
-      startExploreModernColleges: true,
-      fromPersonalization: true,
-      presentImmediately: true,
+    const { processAiShortlistingTurn } = require('./careerCounsellingV2ShortlistingEngine');
+    return processAiShortlistingTurn(inbound, ctx, {
+      startAiShortlisting: true,
       analytics: analyticsMeta,
     });
   }
   if (isPermissionNo(inbound)) {
-    // Soft-advance: one decline then continue into explore (roadmap ownership)
+    // Soft-advance: one decline then continue into shortlisting
     if (ctx.step === 'pers_permission_declined' || ctx.profile?._persDeclineCount >= 1) {
-      const {
-        processExploreModernCollegesTurn,
-      } = require('./careerCounsellingV2ExploreModernCollegesEngine');
-      const advanced = await processExploreModernCollegesTurn(inbound, ctx, {
-        startExploreModernColleges: true,
-        fromPersonalization: true,
-        presentImmediately: true,
+      const { processAiShortlistingTurn } = require('./careerCounsellingV2ShortlistingEngine');
+      const advanced = await processAiShortlistingTurn(inbound, ctx, {
+        startAiShortlisting: true,
         analytics: analyticsMeta,
       });
       return {

@@ -113,6 +113,7 @@ function startModernEducation(ctx, analyticsMeta = {}) {
     reply: buildPersonalizedModernTransition(profile),
     context: nextCtx,
     clearState: false,
+    educationalContent: true,
     analytics: [{ type: 'modern_education_started' }],
   };
 }
@@ -136,6 +137,7 @@ function deliverStep(step, ctx, analyticsMeta = {}, prefix = '') {
       lastQuestionKey: step.replace(/^modern_/, ''),
     },
     clearState: false,
+    educationalContent: true,
     analytics: [{ type: 'modern_topic_viewed', step }],
   };
 }
@@ -188,6 +190,7 @@ function completeModernAndOfferPermission(ctx, profile, analyticsMeta = {}) {
       modernEducationCompletedAt: new Date().toISOString(),
     },
     clearState: false,
+    educationalContent: true,
     analytics: [{ type: 'modern_education_completed' }],
   };
 }
