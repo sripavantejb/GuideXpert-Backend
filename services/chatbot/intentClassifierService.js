@@ -42,6 +42,7 @@ const {
 } = require('./guidedFlows/guidedFlowRegistry');
 const {
   isCareerCounsellingJourneyEntryQuery,
+  scoreCareerCounsellingGuidance,
 } = require('./careerCounselling/careerCounsellingIntentService');
 const { isCareerCounsellingJourneyEnabled } = require('../../constants/careerCounsellingJourney');
 const {
@@ -494,6 +495,19 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     return { intent: 'unknown', confidence: 'low', intentReason: 'commerce_out_of_scope' };
   }
 
+  // P0: Admissions / college / career uncertainty → Career Counselling V2 FIRST.
+  // Prefer counseling over booking-handoff soft matches, knowledge assistant, and unknown→guardrail.
+  if (isCareerCounsellingJourneyEnabled()) {
+    const counselingScore = scoreCareerCounsellingGuidance(t, original);
+    if (counselingScore.score >= 60) {
+      return {
+        intent: 'career_counselling_journey',
+        confidence: counselingScore.confidence === 'medium' ? 'medium' : 'high',
+        intentReason: counselingScore.reason || 'career_counselling_journey_entry',
+      };
+    }
+  }
+
   const bookingSupportIntent = resolveBookingSupportIntent(t, original);
   if (bookingSupportIntent) {
     if (bookingSupportIntent.kind === 'human_handoff') {
@@ -638,26 +652,24 @@ function classifyIntent(text, botState, productLine, originalText = null) {
 
   // Predictor entry already handled above (before ICE process topics).
 
-  if (
-    isCareerCounsellingJourneyEnabled() &&
-    isCareerCounsellingJourneyEntryQuery(t, original)
-  ) {
-    return {
-      intent: 'career_counselling_journey',
-      confidence: 'high',
-      intentReason: 'career_counselling_journey_entry',
-    };
-  }
-
   if (isRomanizedTeluguBranchGuidanceQuery(original) || isRomanizedTeluguBranchGuidanceQuery(t)) {
+    // Prefer counseling when it also looks like decision guidance
+    if (isCareerCounsellingJourneyEnabled()) {
+      const counselingScore = scoreCareerCounsellingGuidance(t, original);
+      if (counselingScore.score >= 60) {
+        return {
+          intent: 'career_counselling_journey',
+          confidence: counselingScore.confidence === 'medium' ? 'medium' : 'high',
+          intentReason: counselingScore.reason || 'career_counselling_romanized',
+        };
+      }
+    }
     return {
       intent: 'knowledge_assistant',
       confidence: 'medium',
       intentReason: 'romanized_telugu_branch_guidance',
     };
   }
-
-  // (sticky / Main-Advanced / process topics already handled above)
 
   if (
     isIitCounsellingStrategyEnabled() &&
@@ -829,6 +841,19 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     return { intent: 'demo_support', confidence: 'medium' };
   }
 
+  // Absolute last resort before unknown → LLM/guardrail: still prefer counseling
+  // when there is any reasonable admissions-guidance confidence.
+  if (isCareerCounsellingJourneyEnabled()) {
+    const lateScore = scoreCareerCounsellingGuidance(t, original);
+    if (lateScore.score >= 50) {
+      return {
+        intent: 'career_counselling_journey',
+        confidence: 'medium',
+        intentReason: lateScore.reason || 'career_counselling_late_rescue',
+      };
+    }
+  }
+
   return { intent: 'unknown', confidence: 'low' };
 }
 
@@ -863,6 +888,7 @@ module.exports = {
   isRankOnlyCollegePredictorQuery,
   isRankBranchRecommendationQuery,
   isCareerCounsellingJourneyEntryQuery,
+  scoreCareerCounsellingGuidance,
   isExplicitHumanHandoffRequest,
   hasRankSignal,
   hasBranchSignal,

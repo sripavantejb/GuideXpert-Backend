@@ -5,7 +5,9 @@ const {
   shouldBypassScopeFirewall,
   resolveCollegePredictorEntry,
   isHighConfidenceCollegePredictorEntry,
+  scoreCareerCounsellingGuidance,
 } = require('./intentClassifierService');
+const { isCareerCounsellingJourneyEnabled } = require('../../constants/careerCounsellingJourney');
 const { tryRouteActiveGuidedFlow, applyGuidedFlowSwitchTurn } = require('./guidedFlows/guidedFlowOrchestrator');
 const { getGuidedFlowByIntent } = require('./guidedFlows/guidedFlowRegistry');
 const {
@@ -938,6 +940,37 @@ async function processInboundCore({
       activeConversation.productLine,
       inbound.text
     );
+  }
+
+  // P0 rescue: never let admissions-guidance uncertainty fall into knowledge/LLM guardrail.
+  if (
+    isCareerCounsellingJourneyEnabled() &&
+    intentResult?.intent &&
+    ![
+      'career_counselling_journey',
+      'career_counselling_journey_continue',
+      'college_predictor',
+      'college_predictor_continue',
+      'rank_predictor',
+      'rank_predictor_continue',
+      'human_handoff',
+      'main_menu',
+      'opt_out',
+      'booking_reschedule_cancel',
+      'booking_create_check',
+    ].includes(intentResult.intent) &&
+    botState?.state !== 'college_predictor' &&
+    botState?.state !== 'rank_predictor' &&
+    botState?.state !== 'career_counselling_v2'
+  ) {
+    const rescue = scoreCareerCounsellingGuidance(intentText, inbound.text);
+    if (rescue.score >= 60) {
+      intentResult = {
+        intent: 'career_counselling_journey',
+        confidence: rescue.confidence === 'medium' ? 'medium' : 'high',
+        intentReason: rescue.reason || 'career_counselling_orchestrator_rescue',
+      };
+    }
   }
 
   await h.updateConversationIntent(activeConversation._id, intentResult.intent);

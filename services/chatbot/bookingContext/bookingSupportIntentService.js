@@ -122,7 +122,9 @@ function isBookingCreateRequest(text, originalText = null) {
 function isBookingSupportHandoffRequest(text, originalText = null) {
   if (isExplicitHumanHandoffRequest(text, originalText)) return true;
   return intentTextCandidates(text, originalText).some((t) =>
-    /\b(talk to my counsellor|connect me|need support|need help)\b/i.test(t)
+    /\b(talk to my counsellor|talk to my counselor|connect me to (a )?(human|agent|counsellor|counselor)|speak to (a )?(human|agent|counsellor|counselor)|need (booking|session) support|need help with (my )?(booking|session|slot|appointment))\b/i.test(
+      t
+    )
   );
 }
 
