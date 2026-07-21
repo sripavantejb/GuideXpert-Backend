@@ -50,7 +50,9 @@ const URL_FORBIDDEN = Object.freeze([
 
 const MESSAGES = Object.freeze({
   soft_prompt_continue: [
-    'If you’d like, we can move to booking next. Reply *Continue*, *Not now*, or ask a question — ready to continue?',
+    'If you’d like, we can move to booking next.',
+    '',
+    'Reply *Continue*, *Ready*, *Proceed*, *Book now* or ask a question.',
   ].join('\n'),
 
   soft_prompt_none: [
@@ -62,7 +64,7 @@ const MESSAGES = Object.freeze({
   ].join('\n'),
 
   continue_clarify:
-    'Reply *Continue* to move toward booking, *Not now* to finish, or ask a short question.',
+    'Reply *Continue*, *Ready*, *Proceed*, or *Book now* to get the booking form, *Not now* to finish, or ask a short question.',
 
   declined:
     'No pressure — this stays optional. You can return anytime if you want personalized counseling later.',

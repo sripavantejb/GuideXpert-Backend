@@ -383,7 +383,48 @@ describe('permission gates advance on ONE inbound', () => {
     });
     assert.equal(r.context.step, 'booking_presented');
     assert.match(r.reply, /https:\/\/www\.guidexpert\.co\.in\/one-on-one-session/);
+    assert.match(r.reply, /ready for the next step|YOUR goals|reply \*Done\*/i);
     assert.doesNotMatch(r.reply, /Wonderful\.|Booking happens on the GuideXpert website|Reply \*Book now\*/i);
+  });
+
+  test('Earlier YES never shares booking URL (shortlist / compare / recommend)', async () => {
+    const earlyStages = [
+      {
+        stage: 'ai_shortlisting',
+        step: 'shortlist_ask_compare',
+        profile: { shortlistPresented: true },
+      },
+      {
+        stage: 'comparison',
+        step: 'compare_ask_recommendation',
+        profile: { comparisonPresented: true },
+      },
+      {
+        stage: 'phase_9_personalized_recommendation',
+        step: 'phase9_followup',
+        profile: {
+          phase9Presented: true,
+          recommendedColleges: [
+            { collegeName: 'NIAT (NxtWave Institute of Advanced Technologies)', tier: 'best_match' },
+          ],
+        },
+      },
+    ];
+    for (const s of earlyStages) {
+      const r = await handleCareerCounsellingMessage('yes', {
+        flow: 'career_counselling_v2',
+        version: 2,
+        stage: s.stage,
+        step: s.step,
+        profile: s.profile,
+      });
+      assert.doesNotMatch(
+        r.reply,
+        /https:\/\/www\.guidexpert\.co\.in\/one-on-one-session/,
+        `YES at ${s.step} must not share booking URL`
+      );
+      assert.notEqual(r.context.step, 'booking_presented');
+    }
   });
 
   test('Phase 13: ONE Book now shares URL', async () => {

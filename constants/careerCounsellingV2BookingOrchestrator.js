@@ -72,26 +72,29 @@ const GUARANTEE_FORBIDDEN = Object.freeze([
 
 const MESSAGES = Object.freeze({
   intro: [
-    '🎉 Great! You\'re just one step away from your personalized *1-on-1 Career Counseling Session*.',
+    '🎉 Great! You\'re ready for the next step.',
     '',
-    'Reply *Book now* to get the official booking form, or *Later* if you want to pause.',
+    'Reply *Book now* for the official booking form, or *Later* if you want to pause.',
   ].join('\n'),
 
   url_share: [
-    '🎉 Great! You\'re just one step away from your personalized *1-on-1 Career Counseling Session*.',
+    '🎉 Great! You\'re ready for the next step.',
     '',
-    'Please complete the booking form here:',
+    'To book your personalized *1-on-1 Career Counseling Session*, please complete the booking form below:',
     '',
     '👉 {url}',
     '',
-    'During your session, an experienced career counselor will help you:',
+    'During this session, your counselor will help you:',
     '',
-    '• Compare the colleges that best match your goals',
+    '• Compare colleges based on YOUR goals',
     '• Build a personalized academic and career roadmap',
     '• Discuss placements, internships and scholarships',
-    '• Answer your questions and help you make a confident decision',
+    '• Answer any remaining questions',
+    '• Help you make a confident final decision',
     '',
-    "Once you've submitted the form, simply reply *Done* here and I'll continue assisting you with any remaining questions before your counseling session.",
+    'After submitting the form, simply reply *Done* here.',
+    '',
+    "I'll continue assisting you until your counseling session begins.",
   ].join('\n'),
 
   deferred: [
@@ -109,19 +112,23 @@ const MESSAGES = Object.freeze({
   clarify: 'Reply *Book now* for the official form, *Later* to pause, or ask a short question.',
 
   confirmed_intent: [
-    'Perfect! Your request has been received.',
+    'Perfect!',
     '',
-    "While you're waiting for your counseling session, I'm still here to help.",
+    'Your booking request has been received.',
     '',
-    'If you have any questions about colleges, careers, admissions, placements or scholarships, just ask.',
+    "Until your counseling session, I'm still here to help.",
+    '',
+    'Feel free to ask me anything about colleges, careers, placements, admissions or scholarships.',
   ].join('\n'),
 
   post_submit_engaged: [
-    'Perfect! Your request has been received.',
+    'Perfect!',
     '',
-    "While you're waiting for your counseling session, I'm still here to help.",
+    'Your booking request has been received.',
     '',
-    'If you have any questions about colleges, careers, admissions, placements or scholarships, just ask.',
+    "Until your counseling session, I'm still here to help.",
+    '',
+    'Feel free to ask me anything about colleges, careers, placements, admissions or scholarships.',
   ].join('\n'),
 
   skipped_none: [

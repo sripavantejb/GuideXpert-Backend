@@ -19,13 +19,14 @@ function isPhase13BookNow(text) {
 }
 
 /**
- * Cross-stage resume only — must NOT match soft continue/yes/ready.
- * Those belong to Phase 12 (last permission gate) and earlier stages.
+ * Cross-stage resume only — must NOT match soft continue/yes/ready/book.
+ * Soft acks belong to earlier permission gates; bare "book" is Phase 12+ only.
+ * Resume phrases after defer / journey pause.
  */
 function isExplicitBookingLinkRequest(text) {
   const t = normalizePermissionText(text);
   if (!t) return false;
-  return /^(book now|book|yes book|lets book|i want to book|schedule now|send booking link|send (the )?link|give me (the )?booking form|booking form)$/i.test(
+  return /^(book now|yes book|lets book|i want to book|schedule now|send booking link|send (the )?link|give me (the )?booking form|booking form)$/i.test(
     t
   ) || /\b(send booking link|give me (the )?booking form|schedule now|book now)\b/i.test(t);
 }

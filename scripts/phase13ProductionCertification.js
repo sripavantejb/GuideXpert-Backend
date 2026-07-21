@@ -320,7 +320,7 @@ async function main() {
       assert.equal(r.context.stage, STAGES.PHASE_13_BOOKING_ORCHESTRATOR);
       assert.equal(r.context.step, 'booking_confirmed');
       assert.notEqual(r.context.profile.journeyCompleted, true);
-      assert.match(r.reply, /Perfect! Your request has been received|still here to help/i);
+      assert.match(r.reply, /Perfect!|booking request has been received|still here to help/i);
       return 'done-stays-engaged';
     })
   );

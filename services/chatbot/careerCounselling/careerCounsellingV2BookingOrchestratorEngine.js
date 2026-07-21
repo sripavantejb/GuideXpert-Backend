@@ -137,7 +137,10 @@ function shareOfficialUrl(ctx, dest, analyticsMeta = {}, extraProfile = {}) {
 function startBookingOrchestrator(ctx, analyticsMeta = {}, opts = {}) {
   const profile = { ...(ctx.profile || {}) };
   const entryMode = opts.entry || 'phase12_continue';
-  const shareImmediately = Boolean(opts.shareUrlImmediately);
+  // After counseling invitation, never ask a second Book-now confirmation.
+  // Explicit false only (tests / rare CTA-first) keeps the intro path.
+  const shareImmediately =
+    opts.shareUrlImmediately == null ? true : Boolean(opts.shareUrlImmediately);
 
   const skip = shouldSkipPhase13(profile);
   if (skip.skip) {
@@ -226,7 +229,6 @@ function tryBookingResume(text, context = {}, opts = {}) {
   const {
     detectBookingResume,
   } = require('./careerCounsellingV2BookingOrchestratorParser');
-  const { getBookableServiceKey } = require('./careerCounsellingV2BookingOrchestratorCore');
   const detected = detectBookingResume(text);
   if (!detected.matched) return null;
 
@@ -256,17 +258,18 @@ function tryBookingResume(text, context = {}, opts = {}) {
     return null;
   }
 
-  const bookable = getBookableServiceKey(profile);
   const isComplete =
     context.stage === STAGES.CONVERSATION_COMPLETE ||
     context.step === 'conversation_complete';
-  const pastCounselingSelection =
-    Boolean(profile.phase12Presented) ||
-    Boolean(profile.phase12Service) ||
-    Boolean(profile.phase13Service);
+  // Booking URL only after counseling invitation completed / deferred — never Stages 1–11.
+  const pastCounselingInvitation =
+    Boolean(profile.phase12Completed) ||
+    Boolean(profile.phase12Outcome) ||
+    Boolean(profile.phase13Service) ||
+    Boolean(profile.phase13CtaPresented) ||
+    Boolean(profile.phase13UrlShared);
 
-  // Do not interrupt Phases 1–11 when no bookable service is stored yet
-  if (!bookable && !isComplete && !pastCounselingSelection) {
+  if (!pastCounselingInvitation && !isComplete) {
     return null;
   }
 

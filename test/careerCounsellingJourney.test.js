@@ -2530,7 +2530,7 @@ describe('careerCounsellingV2 Phase 13 booking orchestrator', () => {
     assert.equal(r.context.step, 'booking_confirmed');
     assert.notEqual(r.context.stage, STAGES.JOURNEY_COMPLETED);
     assert.notEqual(r.context.profile.journeyCompleted, true);
-    assert.match(r.reply, /Perfect! Your request has been received|still here to help/i);
+    assert.match(r.reply, /Perfect!|booking request has been received|still here to help/i);
   });
 
   test('explicit wrap-up after Done exits to journey completion', async () => {
