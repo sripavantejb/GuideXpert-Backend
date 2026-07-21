@@ -114,7 +114,8 @@ function mapEligibleToExplore(colleges, profile, limit = EXPLORE_PRESENT_LIMIT) 
 }
 
 function formatExplorePresent(institutions) {
-  const lines = [getExploreMessage('present_header'), ''];
+  const header = getExploreMessage('present_header');
+  const lines = header ? [header, ''] : [];
   const list = (institutions || []).slice(0, EXPLORE_PRESENT_LIMIT);
   if (!list.length) return getExploreMessage('no_items');
   list.forEach((it, i) => {
@@ -185,7 +186,9 @@ function startExploreModernColleges(ctx = {}, analyticsMeta = {}) {
 async function presentExploreInstitutions(ctx, analyticsMeta = {}) {
   const resolved = await resolveExploreInstitutions(ctx.profile || {});
   const body = formatExplorePresent(resolved.institutions);
-  const reply = `${getExploreMessage('intro')}\n\n${body}\n\n${getExploreMessage('ask_continue')}`;
+  const intro = getExploreMessage('intro');
+  const ask = getExploreMessage('ask_continue');
+  const reply = [intro, body, ask].filter((part) => String(part || '').trim()).join('\n\n');
   return {
     reply,
     context: {

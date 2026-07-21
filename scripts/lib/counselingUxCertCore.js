@@ -443,6 +443,11 @@ function studentReplyForTurn(persona, ctx, botReply, turnIndex) {
   if (step === 'pers_concern') return p.concern || 'worried about fees and wrong branch';
   if (step === 'pers_clarify') return p.priority || 'placements';
 
+  // Condensed Stage 4 modern bridge
+  if (step === 'modern_condensed') {
+    return p.declineGates ? 'no' : 'yes';
+  }
+
   // Modern learning style
   if (step === 'modern_ask_learning_style') {
     return p.learningStyle || 'hands-on projects with internships';
@@ -464,7 +469,7 @@ function studentReplyForTurn(persona, ctx, botReply, turnIndex) {
   }
 
   // Permission / continue gates
-  if (/Would you like to continue|Ready to|Want to|Shall we|Reply Yes or No|Would you like me to shortlist|narrow this down/i.test(reply)) {
+  if (/Would you like to continue|Ready to|Want to|Shall we|Reply Yes or No|Would you like me to shortlist|narrow this down|narrow these down based on your goals/i.test(reply)) {
     if (p.declineGates) return 'no';
     return 'yes';
   }

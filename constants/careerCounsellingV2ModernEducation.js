@@ -39,6 +39,9 @@ const MODERN_EDUCATION_STEPS = Object.freeze([
   'modern_ask_permission',
 ]);
 
+/** Interactive condensed Stage 4 bridge (single bubble + permission). */
+const CONDENSED_MODERN_STEP = 'modern_condensed';
+
 const LEARNING_STYLES = Object.freeze([
   Object.freeze({ id: 'hands_on', label: 'Hands-on / project-based' }),
   Object.freeze({ id: 'industry_aligned', label: 'Industry-aligned with internships' }),
@@ -49,6 +52,24 @@ const LEARNING_STYLES = Object.freeze([
 ]);
 
 const MESSAGES = Object.freeze({
+  condensed_bridge: [
+    'Modern colleges are different from traditional colleges because they emphasize:',
+    '• Industry projects',
+    '• AI tools',
+    '• Mentorship',
+    '• Internships',
+    '',
+    'Would you like to explore some colleges following this modern approach?',
+  ].join('\n'),
+
+  condensed_permission_clarify:
+    'Reply Yes to explore some modern colleges, or No to personalize without that list.',
+
+  condensed_permission_no: [
+    'No problem.',
+    "We'll still personalize with a few quick preferences so matches stay practical.",
+  ].join('\n'),
+
   personalized_transition: [
     'Next, let’s understand how education itself is changing.',
     'This is not about rejecting traditional colleges — many still build strong foundations.',
@@ -225,6 +246,8 @@ function getNextModernStep(currentStep) {
 
 function getModernContentForStep(step) {
   switch (step) {
+    case 'modern_condensed':
+      return getModernMessage('condensed_bridge');
     case 'modern_transition':
       return getModernMessage('personalized_transition');
     case 'modern_what_is':
@@ -278,6 +301,7 @@ function buildPersonalizedModernTransition(profile = {}) {
 module.exports = {
   STAGES,
   MODERN_EDUCATION_STEPS,
+  CONDENSED_MODERN_STEP,
   LEARNING_STYLES,
   MESSAGES,
   MODERN_EDUCATION_QA,

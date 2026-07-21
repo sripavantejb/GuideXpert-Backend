@@ -40,6 +40,17 @@ function nonEmptyLines(text) {
 function stripFiller(text) {
   let out = String(text || '');
   for (const re of FILLER_PATTERNS) {
+    if (String(re.source).includes('based on your')) {
+      out = out.replace(re, (match, _g1, offset, full) => {
+        const lineStart = String(full).lastIndexOf('\n', offset) + 1;
+        const lineEndIdx = String(full).indexOf('\n', offset);
+        const line = String(full).slice(lineStart, lineEndIdx === -1 ? undefined : lineEndIdx);
+        // Keep intentional Stage 5 / advance permission questions intact.
+        if (/would you like|narrow (these|this) down/i.test(line)) return match;
+        return '';
+      });
+      continue;
+    }
     out = out.replace(re, '');
   }
   return out.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();

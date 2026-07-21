@@ -75,8 +75,8 @@ function mapStageToRoadmapPhase(stage, step = '') {
 
 const NEXT_PHASE = Object.freeze({
   1: 3, // discovery → evaluation framework (interactive)
-  3: 5, // framework permission → explore modern colleges (top 10)
-  4: 5, // legacy modern → explore (skipped in interactive path)
+  3: 4, // framework permission → condensed modern bridge
+  4: 5, // condensed modern → explore modern colleges (top 10)
   5: 6, // explore → personalized discovery
   6: 7, // personalization → AI shortlisting
   7: 8,
@@ -282,10 +282,11 @@ function buildPhaseSnapshot(ctx = {}, result = {}) {
   if (currentPhase === 8 && String(mergedCtx.stage || '').includes('concern')) {
     nextPhase = 9;
   }
-  // Interactive framework: Explore (5) → Personalization (6) → Shortlisting (7)
+  // Interactive framework: Evaluation (3) → Condensed modern (4) → Explore (5) → Personalization (6)
+  if (currentPhase === 3) nextPhase = 4;
+  if (currentPhase === 4) nextPhase = 5;
   if (currentPhase === 5) nextPhase = 6;
   if (currentPhase === 6) nextPhase = 7;
-  if (currentPhase === 3) nextPhase = 5;
 
   const required = REQUIRED_BY_PHASE[currentPhase] || [];
   const missing = profileMissing(mergedCtx.profile || {}, required);

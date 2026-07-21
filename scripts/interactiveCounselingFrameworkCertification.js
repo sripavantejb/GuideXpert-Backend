@@ -156,9 +156,14 @@ async function run() {
     assert.deepEqual(r.context.profile.evaluationPriorities, ['placements']);
 
     r = await handleCareerCounsellingMessage('yes', r.context);
+    assert.equal(r.context.stage, 'modern_colleges');
+    assert.equal(r.context.step, 'modern_condensed');
+    assert.match(r.reply, /Industry projects|modern approach/i);
+
+    r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.stage, 'explore_modern_colleges');
     assert.ok((r.context.profile.exploreModernInstitutions || []).length >= 8);
-    assert.match(r.reply, /narrow this down|personal goals/i);
+    assert.match(r.reply, /narrow these down based on your goals|narrow.*goals/i);
     // Equal representation — NIAT present but not alone
     const names = (r.context.profile.exploreModernInstitutions || []).map((i) => i.name).join(' ');
     assert.match(names, /NIAT/i);
@@ -166,9 +171,9 @@ async function run() {
 
     r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.stage, 'personalized_discovery');
-    record('live:one_priority_to_stage5', 'PASS');
+    record('live:one_priority_to_stage6', 'PASS');
   } catch (e) {
-    record('live:one_priority_to_stage5', 'FAIL', { error: String(e.message || e) });
+    record('live:one_priority_to_stage6', 'FAIL', { error: String(e.message || e) });
   }
 
   // Live: multiple priorities
@@ -310,19 +315,20 @@ async function run() {
     }
   }
 
-  // Accept then proceed Stage 5
+  // Accept then proceed Stage 4 → 5 → 6
   try {
     let r = await completeDiscovery();
     r = await handleCareerCounsellingMessage('affordable college with internships', r.context);
     r = await handleCareerCounsellingMessage('yes', r.context);
+    assert.equal(r.context.stage, 'modern_colleges');
+    assert.equal(r.context.step, 'modern_condensed');
+    r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.stage, 'explore_modern_colleges');
     r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.stage, 'personalized_discovery');
-    // No modern lecture stage in between
-    assert.notEqual(r.context.stage, 'modern_colleges');
-    record('live:accept_to_stage5', 'PASS');
+    record('live:accept_to_stage6', 'PASS');
   } catch (e) {
-    record('live:accept_to_stage5', 'FAIL', { error: String(e.message || e) });
+    record('live:accept_to_stage6', 'FAIL', { error: String(e.message || e) });
   }
 
   // No AI→AI chain: after discovery only one bot ask before student priority

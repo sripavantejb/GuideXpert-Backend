@@ -3,6 +3,7 @@
 const {
   STAGES,
   MODERN_EDUCATION_STEPS,
+  CONDENSED_MODERN_STEP,
   MODERN_EDUCATION_QA,
   getModernMessage,
   getNextModernStep,
@@ -80,6 +81,129 @@ function ensureModernProfileFields(profile = {}) {
     portfolioInterest: profile.portfolioInterest ?? false,
     internshipInterest: profile.internshipInterest ?? false,
     modernEducationCompleted: Boolean(profile.modernEducationCompleted),
+  };
+}
+
+function startCondensedModernEducation(ctx, analyticsMeta = {}) {
+  const profile = ensureModernProfileFields(ctx.profile);
+
+  logModernEducationStarted({
+    stage: STAGES.MODERN_COLLEGES,
+    step: CONDENSED_MODERN_STEP,
+    profileCompletionPct: profile.profileCompletionPct ?? null,
+    mode: 'condensed',
+    ...analyticsMeta,
+  });
+
+  logModernTopicViewed({
+    stage: STAGES.MODERN_COLLEGES,
+    step: CONDENSED_MODERN_STEP,
+    topic: 'condensed_bridge',
+    ...analyticsMeta,
+  });
+
+  return {
+    reply: getModernMessage('condensed_bridge'),
+    context: {
+      ...ctx,
+      stage: STAGES.MODERN_COLLEGES,
+      step: CONDENSED_MODERN_STEP,
+      profile,
+      lastQuestionKey: 'condensed_modern_permission',
+      modernEducationStartedAt: new Date().toISOString(),
+    },
+    clearState: false,
+    keepIntact: true,
+    educationalContent: true,
+    skipLineCap: true,
+    allowSkipAdvance: true,
+    analytics: [{ type: 'modern_education_started', mode: 'condensed' }],
+  };
+}
+
+function markCondensedModernComplete(ctx) {
+  return {
+    ...ctx,
+    profile: {
+      ...(ctx.profile || {}),
+      modernEducationCompleted: true,
+      learningStyle: ctx.profile?.learningStyle || ctx.profile?.preferredLearningStyle || 'exploring',
+      preferredLearningStyle:
+        ctx.profile?.preferredLearningStyle || ctx.profile?.learningStyle || 'exploring',
+    },
+    modernEducationCompletedAt: new Date().toISOString(),
+  };
+}
+
+async function transitionCondensedToExplore(ctx, analyticsMeta = {}) {
+  const completed = markCondensedModernComplete(ctx);
+  logModernEducationCompleted({
+    stage: STAGES.MODERN_COLLEGES,
+    step: CONDENSED_MODERN_STEP,
+    mode: 'condensed',
+    ...analyticsMeta,
+  });
+  const {
+    processExploreModernCollegesTurn,
+  } = require('./careerCounsellingV2ExploreModernCollegesEngine');
+  return processExploreModernCollegesTurn('yes', completed, {
+    startExploreModernColleges: true,
+    fromEvaluation: true,
+    presentImmediately: true,
+    analytics: analyticsMeta,
+  });
+}
+
+async function handleCondensedPermission(inbound, ctx, analyticsMeta = {}) {
+  if (isPermissionYes(inbound) || isModernAcknowledgment(inbound)) {
+    return transitionCondensedToExplore(ctx, analyticsMeta);
+  }
+
+  if (isPermissionNo(inbound)) {
+    const completed = markCondensedModernComplete(ctx);
+    logModernEducationCompleted({
+      stage: STAGES.MODERN_COLLEGES,
+      step: CONDENSED_MODERN_STEP,
+      mode: 'condensed',
+      declinedExplore: true,
+      ...analyticsMeta,
+    });
+    const started = startPersonalizedDiscovery(completed, analyticsMeta);
+    return {
+      ...started,
+      reply: `${getModernMessage('condensed_permission_no')}\n\n${started.reply}`,
+      keepIntact: true,
+      allowSkipAdvance: true,
+      educationalContent: true,
+      skipLineCap: true,
+      analytics: [
+        { type: 'modern_education_completed', mode: 'condensed', declinedExplore: true },
+        ...(started.analytics || []),
+      ],
+    };
+  }
+
+  if (isModernQuestion(inbound)) {
+    const answer = answerModernQuestion(inbound);
+    return {
+      reply: `${answer}\n\n${getModernMessage('condensed_permission_clarify')}`,
+      context: ctx,
+      clearState: false,
+      keepIntact: true,
+      educationalContent: true,
+      skipLineCap: true,
+      analytics: [],
+    };
+  }
+
+  return {
+    reply: getModernMessage('condensed_permission_clarify'),
+    context: ctx,
+    clearState: false,
+    keepIntact: true,
+    educationalContent: true,
+    skipLineCap: true,
+    analytics: [],
   };
 }
 
@@ -366,12 +490,21 @@ async function processModernEducationTurn(text, context = {}, opts = {}) {
   const analyticsMeta = opts.analytics || {};
   let ctx = { ...context };
 
+  if (opts.startCondensedModernEducation) {
+    return startCondensedModernEducation(ctx, analyticsMeta);
+  }
+
+  if (ctx.step === CONDENSED_MODERN_STEP || opts.handleCondensedModern) {
+    return handleCondensedPermission(inbound, ctx, analyticsMeta);
+  }
+
   if (
     opts.startModernEducation ||
     ctx.step === 'modern_colleges_placeholder' ||
     (ctx.stage === STAGES.MODERN_COLLEGES &&
       !MODERN_EDUCATION_STEPS.includes(ctx.step) &&
-      ctx.step !== 'modern_permission_declined')
+      ctx.step !== 'modern_permission_declined' &&
+      ctx.step !== CONDENSED_MODERN_STEP)
   ) {
     return startModernEducation(ctx, analyticsMeta);
   }
@@ -478,6 +611,8 @@ async function processModernEducationTurn(text, context = {}, opts = {}) {
   }
 
   switch (ctx.step) {
+    case CONDENSED_MODERN_STEP:
+      return handleCondensedPermission(inbound, ctx, analyticsMeta);
     case 'modern_ask_learning_style':
       return handleLearningStyleStep(inbound, ctx, analyticsMeta);
     case 'modern_knowledge_summary':
@@ -494,6 +629,8 @@ async function processModernEducationTurn(text, context = {}, opts = {}) {
 module.exports = {
   STAGES,
   MODERN_EDUCATION_STEPS,
+  CONDENSED_MODERN_STEP,
   startModernEducation,
+  startCondensedModernEducation,
   processModernEducationTurn,
 };

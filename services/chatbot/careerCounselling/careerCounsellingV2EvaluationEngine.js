@@ -196,7 +196,6 @@ function completeFrameworkAndOfferPermission(ctx, profile, analyticsMeta = {}) {
     ...profile,
     evaluationCompleted: true,
     mindsetShiftCompleted: true,
-    modernEducationCompleted: true,
     learningStyle: profile.learningStyle || profile.preferredLearningStyle || 'exploring',
     preferredLearningStyle:
       profile.preferredLearningStyle || profile.learningStyle || 'exploring',
@@ -250,6 +249,13 @@ function completeFrameworkAndOfferPermission(ctx, profile, analyticsMeta = {}) {
       { type: 'interactive_framework_presented' },
     ],
   };
+}
+
+async function transitionToCondensedModernEducation(ctx, analyticsMeta = {}) {
+  const {
+    startCondensedModernEducation,
+  } = require('./careerCounsellingV2ModernEducationEngine');
+  return startCondensedModernEducation(ctx, analyticsMeta);
 }
 
 async function transitionToExploreModernColleges(ctx, analyticsMeta = {}) {
@@ -320,7 +326,7 @@ function handlePrioritiesStep(inbound, ctx, analyticsMeta) {
 
 async function handlePermission(inbound, ctx, analyticsMeta) {
   if (isPermissionYes(inbound)) {
-    return transitionToExploreModernColleges(resetUnclearStreak(ctx), analyticsMeta);
+    return transitionToCondensedModernEducation(resetUnclearStreak(ctx), analyticsMeta);
   }
 
   if (isPermissionNo(inbound)) {
@@ -518,11 +524,21 @@ async function processEvaluationTurn(text, context = {}, opts = {}) {
         analytics: analyticsMeta,
       });
     }
-    // Legacy modern stage — soft-skip into explore (interactive framework)
+    // Condensed Stage 4 bridge — handle permission; legacy multi-step soft-skips to explore
     if (
       ctx.stage === STAGES.MODERN_COLLEGES ||
       (typeof ctx.step === 'string' && ctx.step.startsWith('modern_'))
     ) {
+      const {
+        CONDENSED_MODERN_STEP,
+        processModernEducationTurn,
+      } = require('./careerCounsellingV2ModernEducationEngine');
+      if (ctx.step === CONDENSED_MODERN_STEP) {
+        return processModernEducationTurn(inbound, ctx, {
+          handleCondensedModern: true,
+          analytics: analyticsMeta,
+        });
+      }
       return transitionToExploreModernColleges(
         {
           ...ctx,

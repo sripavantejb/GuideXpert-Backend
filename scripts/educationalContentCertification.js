@@ -105,10 +105,10 @@ function staticAudit() {
     record('static:sections_separated', 'PASS', {});
   }
 
-  auditInteractive('static:explore_intro', EXPLORE_MESSAGES.intro, {
-    minLines: 3,
+  auditInteractive('static:explore_header', EXPLORE_MESSAGES.present_header, {
+    minLines: 1,
   });
-  if (!/narrow|personal goals|preferences/i.test(EXPLORE_MESSAGES.ask_continue)) {
+  if (!/narrow.*goals|based on your goals/i.test(EXPLORE_MESSAGES.ask_continue)) {
     record('static:explore_ask', 'FAIL', { fails: ['missing_narrow_question'] });
   } else {
     record('static:explore_ask', 'PASS', {});
@@ -149,28 +149,39 @@ async function liveAudit() {
     minLines: 8,
   });
 
-  // Must not be modern lecture
-  if (r.context?.stage === 'modern_colleges') {
-    record('live:skip_modern_lecture', 'FAIL', { fails: ['entered_modern'] });
+  // Condensed Stage 4 bridge (not the old multi-step lecture)
+  r = await handleCareerCounsellingMessage('yes', r.context);
+  if (r.context?.stage !== 'modern_colleges' || r.context?.step !== 'modern_condensed') {
+    record('live:stage4_condensed', 'FAIL', {
+      fails: [`stage=${r.context?.stage},step=${r.context?.step}`],
+    });
   } else {
-    record('live:skip_modern_lecture', 'PASS', {});
+    auditInteractive('live:stage4_condensed', r.reply, {
+      requireQuestion: true,
+      minLines: 5,
+    });
+    if (!/Industry projects|Mentorship|Internships/i.test(r.reply)) {
+      record('live:stage4_bullets', 'FAIL', { fails: ['missing_emphasis_bullets'] });
+    } else {
+      record('live:stage4_bullets', 'PASS', {});
+    }
   }
 
   r = await handleCareerCounsellingMessage('yes', r.context);
   if (r.context?.stage !== 'explore_modern_colleges') {
-    record('live:stage4_explore', 'FAIL', { fails: [`stage=${r.context?.stage}`] });
+    record('live:stage5_explore', 'FAIL', { fails: [`stage=${r.context?.stage}`] });
   } else {
     const count = (r.context.profile?.exploreModernInstitutions || []).length;
-    if (count < 8) record('live:stage4_top10', 'FAIL', { fails: [`count=${count}`] });
-    else record('live:stage4_top10', 'PASS', { count });
-    auditInteractive('live:stage4_ask_narrow', r.reply, { requireQuestion: true, minLines: 5 });
+    if (count < 8) record('live:stage5_top10', 'FAIL', { fails: [`count=${count}`] });
+    else record('live:stage5_top10', 'PASS', { count });
+    auditInteractive('live:stage5_ask_narrow', r.reply, { requireQuestion: true, minLines: 5 });
   }
 
   r = await handleCareerCounsellingMessage('yes', r.context);
   if (r.context?.stage !== 'personalized_discovery') {
-    record('live:stage5_personalization', 'FAIL', { fails: [`stage=${r.context?.stage}`] });
+    record('live:stage6_personalization', 'FAIL', { fails: [`stage=${r.context?.stage}`] });
   } else {
-    record('live:stage5_personalization', 'PASS', {});
+    record('live:stage6_personalization', 'PASS', {});
   }
 }
 
