@@ -168,6 +168,11 @@ async function run() {
     const names = (r.context.profile.exploreModernInstitutions || []).map((i) => i.name).join(' ');
     assert.match(names, /NIAT/i);
     assert.ok((r.context.profile.exploreModernInstitutions || []).length > 1);
+    assert.doesNotMatch(names, /\bCBIT\b|\bVasavi\b|\bJNTUH\b/i);
+    assert.doesNotMatch(
+      String((r.context.profile.exploreModernInstitutions || [])[0]?.name || ''),
+      /\bNIAT\b/i
+    );
 
     r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.stage, 'personalized_discovery');

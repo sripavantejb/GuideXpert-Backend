@@ -10,7 +10,6 @@ const {
   isExplorePermissionYes,
   isExplorePermissionNo,
 } = require('../../../constants/careerCounsellingV2ExploreModernColleges');
-const { retrieveEligibleColleges } = require('./careerCounsellingV2EligibilityService');
 
 function normalize(value) {
   return String(value || '')
@@ -41,76 +40,34 @@ function scoreCuratedItem(item, hay) {
 }
 
 /**
- * Equal-representation top-N: priority-ranked first, then fill remaining catalog slots.
+ * Stage 5 showcase: present catalog in pedagogical order (diverse modern models).
+ * Do not popularity-rank or force NIAT first — light tag affinity only reorders
+ * among equal-score peers while preserving catalog relative order as default.
  */
 function selectCuratedInstitutions(profile = {}, limit = EXPLORE_PRESENT_LIMIT) {
   const hay = profileTagHaystack(profile);
-  const ranked = CURATED_MODERN_CATALOG.map((item) => ({
+  const scored = CURATED_MODERN_CATALOG.map((item, catalogIndex) => ({
     item,
+    catalogIndex,
     score: scoreCuratedItem(item, hay),
-  })).sort((a, b) => b.score - a.score || a.item.name.localeCompare(b.item.name));
+  }));
 
-  const picked = [];
-  const seen = new Set();
-  for (const row of ranked) {
-    if (picked.length >= limit) break;
-    if (seen.has(row.item.id)) continue;
-    seen.add(row.item.id);
-    picked.push(row.item);
-  }
-  for (const item of CURATED_MODERN_CATALOG) {
-    if (picked.length >= limit) break;
-    if (seen.has(item.id)) continue;
-    seen.add(item.id);
-    picked.push(item);
-  }
+  // Soft affinity only: items with any tag hit float above zero-hit items,
+  // but keep catalog order within each band so NIAT is never auto-#1.
+  scored.sort((a, b) => {
+    const aHit = a.score > 0 ? 1 : 0;
+    const bHit = b.score > 0 ? 1 : 0;
+    if (aHit !== bHit) return bHit - aHit;
+    return a.catalogIndex - b.catalogIndex;
+  });
 
-  return picked.map((item) => ({
+  return scored.slice(0, limit).map(({ item }) => ({
     name: item.name,
     why: item.why,
     source: 'curated',
     id: item.id,
+    model: item.model || null,
   }));
-}
-
-function modernLeanScore(college, profile = {}) {
-  const hay = normalize(
-    `${college?.college_name || ''} ${college?.branches?.[0]?.branch_name || ''}`
-  );
-  const style = normalize(profile.learningStyle || '');
-  const priorities = Array.isArray(profile.evaluationPriorities)
-    ? profile.evaluationPriorities.map(normalize)
-    : [];
-  let score = 0.4;
-  if (/computer|cse|it|ai|data|information|software/.test(hay)) score += 0.2;
-  if (/hands|project|industry|mentor/.test(style)) score += 0.15;
-  if (priorities.some((p) => /project|industry|mentor|curriculum|placement/.test(p))) {
-    score += 0.15;
-  }
-  return score;
-}
-
-function mapEligibleToExplore(colleges, profile, limit = EXPLORE_PRESENT_LIMIT) {
-  const scored = (colleges || [])
-    .map((c) => ({
-      college: c,
-      score: modernLeanScore(c, profile),
-    }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
-
-  return scored.map(({ college }) => {
-    const branch = Array.isArray(college.branches) ? college.branches[0] : null;
-    const name = branch?.branch_name
-      ? `${college.college_name} — ${branch.branch_name}`
-      : college.college_name;
-    return {
-      name,
-      why: getExploreMessage('why_fallback'),
-      source: 'earlywave',
-      collegeName: college.college_name,
-    };
-  });
 }
 
 function formatExplorePresent(institutions) {
@@ -124,40 +81,9 @@ function formatExplorePresent(institutions) {
   return lines.join('\n');
 }
 
-function hasEligibilitySlots(profile = {}) {
-  const exam = profile.exam || profile.entranceExam;
-  const rank = profile.rank != null ? Number(profile.rank) : null;
-  return Boolean(exam) && Number.isFinite(rank) && rank > 0;
-}
-
 async function resolveExploreInstitutions(profile = {}) {
-  if (hasEligibilitySlots(profile)) {
-    try {
-      const eligibility = await retrieveEligibleColleges(profile, { limit: 40 });
-      if (eligibility.ok && eligibility.colleges.length) {
-        const mapped = mapEligibleToExplore(
-          eligibility.colleges,
-          profile,
-          EXPLORE_PRESENT_LIMIT
-        );
-        if (mapped.length) {
-          // Blend curated for equal representation when earlywave returns few
-          if (mapped.length < EXPLORE_PRESENT_LIMIT) {
-            const curated = selectCuratedInstitutions(profile, EXPLORE_PRESENT_LIMIT);
-            const names = new Set(mapped.map((m) => normalize(m.name)));
-            for (const c of curated) {
-              if (mapped.length >= EXPLORE_PRESENT_LIMIT) break;
-              if (names.has(normalize(c.name))) continue;
-              mapped.push(c);
-            }
-          }
-          return { institutions: mapped.slice(0, EXPLORE_PRESENT_LIMIT), source: 'earlywave' };
-        }
-      }
-    } catch (_) {
-      /* fall through to curated */
-    }
-  }
+  // Stage 5 is an educational new-age showcase — never replace with Earlywave
+  // cutoff/popularity rankings (those belong in later shortlisting).
   return {
     institutions: selectCuratedInstitutions(profile, EXPLORE_PRESENT_LIMIT),
     source: 'curated',

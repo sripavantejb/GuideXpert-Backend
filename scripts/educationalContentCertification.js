@@ -125,6 +125,28 @@ function staticAudit() {
   const niatOnly = CURATED_MODERN_CATALOG.every((c) => /niat/i.test(c.id));
   if (niatOnly) record('static:equal_representation', 'FAIL', { fails: ['niat_only'] });
   else record('static:equal_representation', 'PASS', {});
+
+  const traditionalPopularity = CURATED_MODERN_CATALOG.some((c) =>
+    /\b(cbit|vasavi|griet|jntuh|mgit|cvr|sreenidhi|vnr)\b/i.test(`${c.id} ${c.name}`)
+  );
+  if (traditionalPopularity) {
+    record('static:new_age_not_popularity', 'FAIL', { fails: ['traditional_popularity_colleges'] });
+  } else {
+    record('static:new_age_not_popularity', 'PASS', {});
+  }
+
+  const niatIndex = CURATED_MODERN_CATALOG.findIndex((c) => /niat/i.test(c.id));
+  if (niatIndex <= 0 || niatIndex === CURATED_MODERN_CATALOG.length - 1) {
+    record('static:niat_mid_list', 'FAIL', { fails: [`niatIndex=${niatIndex}`] });
+  } else {
+    record('static:niat_mid_list', 'PASS', { niatIndex });
+  }
+
+  if (!/new-age|modern learning|learning model/i.test(EXPLORE_MESSAGES.present_header)) {
+    record('static:explore_header_philosophy', 'FAIL', { fails: ['missing_new_age_framing'] });
+  } else {
+    record('static:explore_header_philosophy', 'PASS', {});
+  }
 }
 
 async function liveAudit() {

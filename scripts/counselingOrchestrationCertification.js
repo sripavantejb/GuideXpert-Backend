@@ -109,10 +109,22 @@ async function run() {
   try {
     const curated = selectCuratedInstitutions(
       { preferredCourse: 'B.Tech CSE', learningStyle: 'hands_on', careerGoal: 'software engineer' },
-      3
+      10
     );
-    assert.ok(curated.length >= 1, 'curated empty');
-    assert.ok(curated.some((c) => /NIAT|CSE|project/i.test(c.name)), 'expected modern catalog hit');
+    assert.ok(curated.length >= 8, 'curated empty');
+    assert.ok(
+      curated.some((c) => /NIAT/i.test(c.name)),
+      'NIAT must appear in new-age showcase'
+    );
+    assert.ok(
+      curated.some((c) => /Plaksha|IIIT|Scaler|Shiv Nadar|Krea|Ahmedabad|UPES/i.test(c.name)),
+      'expected diverse modern catalog hit'
+    );
+    assert.doesNotMatch(
+      curated.map((c) => c.name).join(' '),
+      /\bCBIT\b|\bVasavi\b|\bJNTUH\b|\bGRIET\b/i
+    );
+    assert.doesNotMatch(String(curated[0]?.name || ''), /\bNIAT\b/i);
 
     let ctx = {
       flow: 'career_counselling_v2',
