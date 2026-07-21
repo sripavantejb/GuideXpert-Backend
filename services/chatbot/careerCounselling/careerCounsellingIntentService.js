@@ -263,6 +263,9 @@ module.exports = {
   isCareerCounsellingJourneyEntryQuery,
   isCollegeSelectionConfusionEntry,
   isCareerCounsellingJourneyBreakout,
+  isPredictorOwnedQuery,
+  isRankBranchCollegePredictorQuery,
+  isMarksBasedRankPredictorQuery,
   isPermissionYes,
   isPermissionNo,
 };

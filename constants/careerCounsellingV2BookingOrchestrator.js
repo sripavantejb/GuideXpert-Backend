@@ -112,23 +112,19 @@ const MESSAGES = Object.freeze({
   clarify: 'Reply *Book now* for the official form, *Later* to pause, or ask a short question.',
 
   confirmed_intent: [
-    'Perfect!',
-    '',
-    'Your booking request has been received.',
+    'Perfect! Your counseling request has been received.',
     '',
     "Until your counseling session, I'm still here to help.",
     '',
-    'Feel free to ask me anything about colleges, careers, placements, admissions or scholarships.',
+    'Feel free to ask me anything about colleges, careers, admissions, placements or scholarships.',
   ].join('\n'),
 
   post_submit_engaged: [
-    'Perfect!',
-    '',
-    'Your booking request has been received.',
+    'Perfect! Your counseling request has been received.',
     '',
     "Until your counseling session, I'm still here to help.",
     '',
-    'Feel free to ask me anything about colleges, careers, placements, admissions or scholarships.',
+    'Feel free to ask me anything about colleges, careers, admissions, placements or scholarships.',
   ].join('\n'),
 
   skipped_none: [

@@ -252,6 +252,10 @@ const COUNSELING_JOURNEY_NON_RESCUE_INTENTS = new Set([
   'booking_reschedule_cancel',
   'career_counselling_journey',
   'career_counselling_journey_continue',
+  'college_predictor',
+  'college_predictor_continue',
+  'rank_predictor',
+  'rank_predictor_continue',
 ]);
 
 function buildMainMenuText(leadContext) {

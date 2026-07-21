@@ -446,4 +446,31 @@ describe('permission gates advance on ONE inbound', () => {
     assert.equal(r.context.step, 'booking_presented');
     assert.match(r.reply, /one-on-one-session/i);
   });
+
+  test('After Done: fee question unlocks (no booking-complete loop)', async () => {
+    let r = await handleCareerCounsellingMessage('Done', {
+      flow: 'career_counselling_v2',
+      version: 2,
+      stage: 'phase_13_booking_orchestrator',
+      step: 'booking_presented',
+      profile: {
+        phase12Service: 'one_on_one',
+        phase13Service: 'one_on_one',
+        phase13UrlShared: true,
+        phase13BookingUrl: 'https://www.guidexpert.co.in/one-on-one-session',
+        preferredCollege: 'NIAT (NxtWave Institute of Advanced Technologies)',
+        budgetPreference: 'moderate',
+        recommendedColleges: [
+          { collegeName: 'NIAT (NxtWave Institute of Advanced Technologies)', tier: 'best_match' },
+        ],
+      },
+    });
+    assert.equal(r.context.step, 'booking_completed');
+    assert.equal(r.context.profile.bookingCompleted, true);
+
+    r = await handleCareerCounsellingMessage('How is the fee structure at NIAT?', r.context);
+    assert.equal(r.context.step, 'booking_completed');
+    assert.doesNotMatch(r.reply, /I can help with remaining questions|Perfect! Your counseling request has been received/i);
+    assert.match(r.reply, /Fees|Budget|fee/i);
+  });
 });

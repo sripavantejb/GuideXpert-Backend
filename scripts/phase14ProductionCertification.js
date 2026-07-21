@@ -310,11 +310,11 @@ async function main() {
       assert.equal(r.context.step, 'booking_presented');
       r = await handleCareerCounsellingMessage('Done', r.context);
       assert.equal(r.context.stage, STAGES.PHASE_13_BOOKING_ORCHESTRATOR);
-      assert.equal(r.context.step, 'booking_confirmed');
+      assert.equal(r.context.step, 'booking_completed');
       r = await handleCareerCounsellingMessage("That's all", r.context);
       assert.equal(r.context.stage, STAGES.JOURNEY_COMPLETED);
       assert.equal(r.context.profile.journeyOutcome, 'booking_initiated');
-      assert.match(r.reply, /booking request has been received/i);
+      assert.match(r.reply, /booking request has been received|counseling request has been received/i);
       return 'initiated';
     })
   );

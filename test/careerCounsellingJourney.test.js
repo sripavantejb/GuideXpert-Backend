@@ -2522,21 +2522,52 @@ describe('careerCounsellingV2 Phase 13 booking orchestrator', () => {
     assert.doesNotMatch(r.reply, /Wonderful\.|Booking happens on the GuideXpert website/i);
   });
 
-  test('Done after URL share stays engaged (does not complete journey)', async () => {
+  test('Done after URL share unlocks booking_completed (does not complete journey)', async () => {
     let r = await reachPhase13();
     assert.equal(r.context.step, 'booking_presented');
     r = await handleCareerCounsellingMessage('Done', r.context);
     assert.equal(r.context.stage, STAGES.PHASE_13_BOOKING_ORCHESTRATOR);
-    assert.equal(r.context.step, 'booking_confirmed');
+    assert.equal(r.context.step, 'booking_completed');
+    assert.equal(r.context.profile.phase13BookingCompleted, true);
+    assert.equal(r.context.profile.bookingCompleted, true);
     assert.notEqual(r.context.stage, STAGES.JOURNEY_COMPLETED);
     assert.notEqual(r.context.profile.journeyCompleted, true);
-    assert.match(r.reply, /Perfect!|booking request has been received|still here to help/i);
+    assert.match(r.reply, /Perfect!|counseling request has been received|still here to help/i);
+  });
+
+  test('after Done, fee/scholarship/hostel questions unlock (no booking-complete loop)', async () => {
+    let r = await reachPhase13();
+    const shortlist = r.context.profile.recommendedColleges || r.context.profile.shortlist;
+    r = await handleCareerCounsellingMessage('Done', r.context);
+    assert.equal(r.context.step, 'booking_completed');
+
+    r = await handleCareerCounsellingMessage('How is the fee structure at NIAT?', r.context);
+    assert.equal(r.context.step, 'booking_completed');
+    assert.doesNotMatch(r.reply, /I can help with remaining questions|Send booking link/i);
+    assert.doesNotMatch(r.reply, /Perfect! Your counseling request has been received/i);
+    assert.match(r.reply, /Fees|Budget|fee|scholarship/i);
+    assert.deepEqual(
+      r.context.profile.recommendedColleges || r.context.profile.shortlist,
+      shortlist
+    );
+
+    r = await handleCareerCounsellingMessage('Can I get a scholarship?', r.context);
+    assert.doesNotMatch(r.reply, /I can help with remaining questions|Perfect! Your counseling request/i);
+    assert.match(r.reply, /Fees|Budget|scholarship|fee/i);
+
+    r = await handleCareerCounsellingMessage('Tell me about hostel options', r.context);
+    assert.doesNotMatch(r.reply, /I can help with remaining questions|Perfect! Your counseling request/i);
+    assert.match(r.reply, /Location|hostel|relocation/i);
+
+    r = await handleCareerCounsellingMessage('Which college is the better comparison fit?', r.context);
+    assert.doesNotMatch(r.reply, /I can help with remaining questions|Perfect! Your counseling request/i);
+    assert.match(r.reply, /lean|compared|Confusion|variable|profile/i);
   });
 
   test('explicit wrap-up after Done exits to journey completion', async () => {
     let r = await reachPhase13();
     r = await handleCareerCounsellingMessage('Done', r.context);
-    assert.equal(r.context.step, 'booking_confirmed');
+    assert.equal(r.context.step, 'booking_completed');
     r = await handleCareerCounsellingMessage("That's all", r.context);
     assert.equal(r.context.stage, STAGES.JOURNEY_COMPLETED || 'journey_completed');
     assert.equal(r.context.profile.journeyCompleted, true);

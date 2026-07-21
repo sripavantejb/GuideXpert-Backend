@@ -293,7 +293,11 @@ async function main() {
       assert.equal(r.context.step, 'booking_presented');
       r = await handleCareerCounsellingMessage('How does booking work?', r.context);
       assert.equal(r.context.stage, STAGES.PHASE_13_BOOKING_ORCHESTRATOR);
-      assert.ok(r.context.step === 'booking_presented' || r.context.step === 'booking_confirmed');
+      assert.ok(
+        r.context.step === 'booking_presented' ||
+          r.context.step === 'booking_confirmed' ||
+          r.context.step === 'booking_completed'
+      );
       return 'qa-after-url';
     })
   );
@@ -312,16 +316,21 @@ async function main() {
   );
 
   results.push(
-    await caseResultAsync('P13-05b', 'engagement', 'Done after URL stays engaged (not journey_completed)', async () => {
+    await caseResultAsync('P13-05b', 'engagement', 'Done after URL unlocks booking_completed (not journey_completed)', async () => {
       let r = await journeyToPhase13();
       assert.equal(r.context.step, 'booking_presented');
       assert.match(r.reply, /1-on-1 Career Counseling|Done/i);
       r = await handleCareerCounsellingMessage('Done', r.context);
       assert.equal(r.context.stage, STAGES.PHASE_13_BOOKING_ORCHESTRATOR);
-      assert.equal(r.context.step, 'booking_confirmed');
+      assert.equal(r.context.step, 'booking_completed');
+      assert.equal(r.context.profile.bookingCompleted, true);
       assert.notEqual(r.context.profile.journeyCompleted, true);
-      assert.match(r.reply, /Perfect!|booking request has been received|still here to help/i);
-      return 'done-stays-engaged';
+      assert.match(r.reply, /Perfect!|counseling request has been received|still here to help/i);
+      r = await handleCareerCounsellingMessage('How is the fee structure at NIAT?', r.context);
+      assert.equal(r.context.step, 'booking_completed');
+      assert.doesNotMatch(r.reply, /I can help with remaining questions|Perfect! Your counseling request has been received/i);
+      assert.match(r.reply, /Fees|Budget|fee/i);
+      return 'done-unlocks-assist';
     })
   );
 
@@ -399,7 +408,9 @@ async function main() {
       r = await handleCareerCounsellingMessage('Why book on the website?', r.context);
       assert.notEqual(r.context.stage, STAGES.PHASE_12_PERSONALIZED_COUNSELING_RECOMMENDATION);
       assert.ok(
-        r.context.step === 'booking_presented' || r.context.step === 'booking_confirmed'
+        r.context.step === 'booking_presented' ||
+          r.context.step === 'booking_confirmed' ||
+          r.context.step === 'booking_completed'
       );
       return 'no-phase12-restart';
     })

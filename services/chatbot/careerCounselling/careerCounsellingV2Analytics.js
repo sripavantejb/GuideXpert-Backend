@@ -383,7 +383,7 @@ function logBookingAbandoned(fields) {
   logCareerCounsellingV2Event('booking_abandoned', fields);
 }
 
-/** Reserved for future webhook / CRM confirmation — do not emit from chat alone. */
+/** Student form-Done ack — unlocks post-booking assist (P0 release). */
 function logBookingCompleted(fields) {
   logCareerCounsellingV2Event('booking_completed', fields);
 }

@@ -273,6 +273,28 @@ async function tryRouteActiveGuidedFlow(params) {
     return null;
   }
 
+  // After booking Done: yield predictor-owned queries to global intent router.
+  // Preserve careerCounselling memory in context; do not trap in booking sticky.
+  if (flow.id === 'career_counselling_v2') {
+    const cc = botState?.context?.careerCounselling || {};
+    const postBooking =
+      cc.step === 'booking_completed' ||
+      cc.profile?.phase13BookingCompleted === true ||
+      cc.profile?.bookingCompleted === true;
+    if (postBooking) {
+      try {
+        const {
+          isPredictorOwnedQuery,
+        } = require('../careerCounselling/careerCounsellingIntentService');
+        if (isPredictorOwnedQuery(routingText, inbound.text)) {
+          return null;
+        }
+      } catch (_err) {
+        // Yield helper must never block the counseling turn.
+      }
+    }
+  }
+
   // P0 sticky ownership: College Predictor owns soft OOS (sticky reminder / re-prompt).
   // Only hard policy blocks use global scope-firewall copy.
   if (flow.id === 'college_predictor' && isScopeFirewallEnabled()) {

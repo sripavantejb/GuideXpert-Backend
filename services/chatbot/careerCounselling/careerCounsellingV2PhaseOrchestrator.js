@@ -152,7 +152,14 @@ function isTerminalContext(ctx = {}, result = {}) {
   if (stage === 'journey_completed' || step === 'journey_completed') return true;
   if (result.allowSkipAdvance === true) return true;
   if (result.predictionRunning === true) return true;
-  if (profile.phase13UrlShared === true && (step === 'booking_presented' || step === 'booking_confirmed')) {
+  if (profile.phase13UrlShared === true && (
+    step === 'booking_presented' ||
+    step === 'booking_confirmed' ||
+    step === 'booking_completed'
+  )) {
+    return true;
+  }
+  if (profile.phase13BookingCompleted === true || profile.bookingCompleted === true) {
     return true;
   }
   return false;

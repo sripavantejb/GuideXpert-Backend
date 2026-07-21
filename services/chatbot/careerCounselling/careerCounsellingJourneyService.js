@@ -188,6 +188,20 @@ async function handleCareerCounsellingMessage(text, context = {}, opts = {}) {
     isPhase13Stage(ctx.stage) ||
     (typeof ctx.step === 'string' && String(ctx.step).startsWith('booking_'))
   ) {
+    const {
+      isPostBookingUnlocked,
+      isPostBookingControlPhrase,
+      processPostBookingAssistTurn,
+    } = require('./careerCounsellingV2PostBookingAssist');
+
+    // After Done: unlock content Q&A; only booking-control phrases stay in Phase 13.
+    if (isPostBookingUnlocked(ctx) && !isPostBookingControlPhrase(inbound)) {
+      const assist = processPostBookingAssistTurn(inbound, ctx, {
+        analytics: opts.analytics,
+      });
+      return finalizeCounselingResult(assist, inbound);
+    }
+
     const bookingTurn = await processBookingOrchestratorTurn(inbound, ctx, {
       analytics: opts.analytics,
     });
