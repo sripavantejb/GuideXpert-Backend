@@ -168,7 +168,7 @@ async function run() {
     const names = (r.context.profile.exploreModernInstitutions || []).map((i) => i.name).join(' ');
     assert.match(names, /NIAT/i);
     assert.ok((r.context.profile.exploreModernInstitutions || []).length > 1);
-    assert.doesNotMatch(names, /\bCBIT\b|\bVasavi\b|\bJNTUH\b/i);
+    assert.doesNotMatch(names, /\bCBIT\b|\bVasavi\b|\bJNTUH\b|\bIIIT\b|\bIIT\b|\bNIT\b/i);
     assert.doesNotMatch(
       String((r.context.profile.exploreModernInstitutions || [])[0]?.name || ''),
       /\bNIAT\b/i

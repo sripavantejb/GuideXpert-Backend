@@ -3,11 +3,10 @@
 /**
  * GuideXpert V2 — Stage 5 Explore Modern Colleges (Interactive Framework).
  *
- * Curated showcase of new-age / modern learning models that echo Stage 4
- * (industry projects, AI tools, mentorship, internships). This is NOT a
- * popularity ranking of traditional engineering colleges.
+ * Showcase of India's new-age higher education ecosystem (Stage 4 bridge).
+ * NOT traditional engineering colleges, IIITs/IITs/NITs, or popularity rankings.
  *
- * After Stage 4 permission → present showcase → Stage 6 personalization.
+ * Flow: Stage 4 permission → Stage 5 showcase → Stage 6 personalization.
  */
 
 const FLOW_ID = 'career_counselling_v2';
@@ -24,56 +23,55 @@ const EXPLORE_STEPS = Object.freeze([
   'explore_ask_continue',
 ]);
 
-const EXPLORE_ENGINE_VERSION = 'v2.2.0-new-age-showcase';
+const EXPLORE_ENGINE_VERSION = 'v2.3.0-genuine-new-age';
 const EXPLORE_PRESENT_LIMIT = 10;
 
 /**
- * New-age / modern-learning showcase — equal representation.
- * Order is pedagogical (diverse models), not popularity or brand rank.
+ * Genuine new-age institutions only — fixed curated order (not popularity rank).
  * NIAT is included once, mid-list — never the sole option, never forced first.
  */
 const CURATED_MODERN_CATALOG = Object.freeze([
   Object.freeze({
     id: 'plaksha',
     name: 'Plaksha University',
-    why: 'Project studios and interdisciplinary tech learning with real problem briefs',
+    why: 'Interdisciplinary tech education with project studios and real-world problem briefs',
     model: 'project_based',
     tags: ['projects', 'hands_on', 'engineering', 'cse', 'innovation', 'curriculum'],
   }),
   Object.freeze({
-    id: 'iiitd',
-    name: 'IIIT Delhi',
-    why: 'Applied CS and AI learning tied to research labs and industry problems',
-    model: 'ai_first',
-    tags: ['ai', 'projects', 'cse', 'software', 'research', 'industry'],
-  }),
-  Object.freeze({
-    id: 'iiitb',
-    name: 'IIIT Bangalore',
-    why: 'Product-oriented IT education with strong industry and startup exposure',
+    id: 'scaler_sot',
+    name: 'Scaler School of Technology',
+    why: 'Software engineering program with extensive mentorship from industry professionals',
     model: 'industry_integrated',
-    tags: ['industry', 'internships', 'cse', 'software', 'startup', 'placements'],
+    tags: ['industry', 'mentoring', 'projects', 'cse', 'software', 'placements', 'hands_on'],
   }),
   Object.freeze({
-    id: 'snu',
-    name: 'Shiv Nadar University',
-    why: 'Innovation-led campus with research, entrepreneurship, and mentorship pathways',
-    model: 'innovation_driven',
-    tags: ['innovation', 'entrepreneurship', 'startup', 'research', 'mentoring', 'curriculum'],
+    id: 'newton_sot',
+    name: 'Newton School of Technology',
+    why: 'Project-based computer science education focused on employability',
+    model: 'project_based',
+    tags: ['projects', 'cse', 'software', 'placements', 'hands_on', 'internships'],
+  }),
+  Object.freeze({
+    id: 'kalvium',
+    name: 'Kalvium (Partner University Programs)',
+    why: 'Work-integrated CS pathway with continuous projects and industry-ready skills',
+    model: 'industry_integrated',
+    tags: ['industry', 'projects', 'cse', 'software', 'internships', 'hands_on'],
   }),
   Object.freeze({
     id: 'niat',
     name: 'NIAT (NxtWave Institute of Advanced Technologies)',
-    why: 'Industry-integrated curriculum with project-based and mentor-led learning',
-    model: 'industry_integrated',
-    tags: ['industry', 'projects', 'hands_on', 'ai', 'cse', 'software', 'internships', 'mentoring'],
+    why: 'AI-first curriculum with industry-integrated learning and real-world projects',
+    model: 'ai_first',
+    tags: ['ai', 'industry', 'projects', 'hands_on', 'cse', 'software', 'internships', 'mentoring'],
   }),
   Object.freeze({
-    id: 'ahmedabad_univ',
-    name: 'Ahmedabad University',
-    why: 'Project-based interdisciplinary programmes that mix theory with application',
-    model: 'project_based',
-    tags: ['projects', 'curriculum', 'hands_on', 'balanced', 'innovation'],
+    id: 'masters_union',
+    name: "Masters' Union School of Emerging Technologies",
+    why: 'Emerging-tech programs built around mentors, startups, and applied learning',
+    model: 'innovation_driven',
+    tags: ['innovation', 'startup', 'mentoring', 'industry', 'entrepreneurship', 'projects'],
   }),
   Object.freeze({
     id: 'krea',
@@ -83,25 +81,25 @@ const CURATED_MODERN_CATALOG = Object.freeze([
     tags: ['curriculum', 'mentoring', 'projects', 'innovation', 'balanced'],
   }),
   Object.freeze({
-    id: 'iiith',
-    name: 'IIIT Hyderabad',
-    why: 'AI-first coursework with applied labs, research exposure, and builder culture',
-    model: 'ai_first',
-    tags: ['ai', 'projects', 'cse', 'data', 'software', 'research', 'hands_on'],
-  }),
-  Object.freeze({
-    id: 'scaler_sot',
-    name: 'Scaler School of Technology',
-    why: 'Industry-built engineering path focused on projects, tools, and job-ready skills',
-    model: 'industry_integrated',
-    tags: ['industry', 'projects', 'cse', 'software', 'placements', 'hands_on', 'internships'],
+    id: 'ahmedabad_univ',
+    name: 'Ahmedabad University',
+    why: 'Project-based interdisciplinary programmes that blend theory with application',
+    model: 'project_based',
+    tags: ['projects', 'curriculum', 'hands_on', 'balanced', 'innovation'],
   }),
   Object.freeze({
     id: 'upes',
-    name: 'UPES Dehradun',
-    why: 'Specialized industry-aligned tracks with internship and workplace exposure',
+    name: 'UPES',
+    why: 'Specialized industry-aligned tracks with strong internship and workplace exposure',
     model: 'industry_integrated',
     tags: ['industry', 'internships', 'engineering', 'placements', 'curriculum'],
+  }),
+  Object.freeze({
+    id: 'srm_ap',
+    name: 'SRM AP University',
+    why: 'Future-ready programmes with industry partnerships and applied learning pathways',
+    model: 'industry_integrated',
+    tags: ['industry', 'engineering', 'cse', 'internships', 'curriculum', 'placements'],
   }),
 ]);
 
@@ -109,7 +107,7 @@ const MESSAGES = Object.freeze({
   intro: '',
 
   present_header:
-    'Here are 10 modern, new-age colleges worth exploring — each represents a learning model close to what we just discussed.',
+    'Here are some leading new-age institutions in India that are reimagining higher education through industry-integrated, project-based, and future-ready learning.',
 
   ask_continue: 'Would you like me to narrow these down based on your goals?',
 

@@ -370,9 +370,12 @@ describe('careerCounsellingV2 stage 4 condensed → stage 5 explore → stage 6 
     let r = await reachExplore();
     assert.equal(r.context.stage, 'explore_modern_colleges');
     assert.ok((r.context.profile.exploreModernInstitutions || []).length >= 8);
-    assert.match(r.reply, /modern, new-age colleges worth exploring|modern colleges worth exploring/i);
+    assert.match(r.reply, /leading new-age institutions|new-age institutions in India/i);
     assert.match(r.reply, /NIAT/i);
-    assert.doesNotMatch(r.reply, /\bCBIT\b|\bVasavi\b|\bJNTUH\b|\bGRIET\b/i);
+    assert.doesNotMatch(
+      r.reply,
+      /\bCBIT\b|\bVasavi\b|\bJNTUH\b|\bGRIET\b|\bIIIT\b|\bIIT\b|\bNIT\b|\bBITS\b/i
+    );
     // NIAT is in the showcase but not forced first
     const firstLine = String(r.reply || '')
       .split('\n')

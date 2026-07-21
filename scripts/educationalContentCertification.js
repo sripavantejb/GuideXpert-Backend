@@ -127,10 +127,12 @@ function staticAudit() {
   else record('static:equal_representation', 'PASS', {});
 
   const traditionalPopularity = CURATED_MODERN_CATALOG.some((c) =>
-    /\b(cbit|vasavi|griet|jntuh|mgit|cvr|sreenidhi|vnr)\b/i.test(`${c.id} ${c.name}`)
+    /\b(cbit|vasavi|griet|jntuh|jntu|mgit|cvr|sreenidhi|vnr|iiit|iit\b|nit\b|bits)\b/i.test(
+      `${c.id} ${c.name}`
+    )
   );
   if (traditionalPopularity) {
-    record('static:new_age_not_popularity', 'FAIL', { fails: ['traditional_popularity_colleges'] });
+    record('static:new_age_not_popularity', 'FAIL', { fails: ['traditional_or_iit_iiit_nit'] });
   } else {
     record('static:new_age_not_popularity', 'PASS', {});
   }
@@ -142,7 +144,11 @@ function staticAudit() {
     record('static:niat_mid_list', 'PASS', { niatIndex });
   }
 
-  if (!/new-age|modern learning|learning model/i.test(EXPLORE_MESSAGES.present_header)) {
+  if (
+    !/new-age institutions|industry-integrated|project-based|future-ready/i.test(
+      EXPLORE_MESSAGES.present_header
+    )
+  ) {
     record('static:explore_header_philosophy', 'FAIL', { fails: ['missing_new_age_framing'] });
   } else {
     record('static:explore_header_philosophy', 'PASS', {});

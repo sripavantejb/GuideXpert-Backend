@@ -11,57 +11,12 @@ const {
   isExplorePermissionNo,
 } = require('../../../constants/careerCounsellingV2ExploreModernColleges');
 
-function normalize(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function profileTagHaystack(profile = {}) {
-  return normalize(
-    [
-      profile.preferredCourse,
-      profile.careerGoal,
-      profile.careerPriority,
-      profile.learningStyle,
-      Array.isArray(profile.studentPriorities) ? profile.studentPriorities.join(' ') : '',
-      Array.isArray(profile.evaluationPriorities) ? profile.evaluationPriorities.join(' ') : '',
-    ].join(' ')
-  );
-}
-
-function scoreCuratedItem(item, hay) {
-  let score = 0;
-  for (const tag of item.tags || []) {
-    if (hay.includes(tag)) score += 1;
-  }
-  return score;
-}
-
 /**
- * Stage 5 showcase: present catalog in pedagogical order (diverse modern models).
- * Do not popularity-rank or force NIAT first — light tag affinity only reorders
- * among equal-score peers while preserving catalog relative order as default.
+ * Stage 5 showcase: fixed curated order of genuine new-age institutions.
+ * No popularity ranking; NIAT is mid-list by design, never forced first.
  */
-function selectCuratedInstitutions(profile = {}, limit = EXPLORE_PRESENT_LIMIT) {
-  const hay = profileTagHaystack(profile);
-  const scored = CURATED_MODERN_CATALOG.map((item, catalogIndex) => ({
-    item,
-    catalogIndex,
-    score: scoreCuratedItem(item, hay),
-  }));
-
-  // Soft affinity only: items with any tag hit float above zero-hit items,
-  // but keep catalog order within each band so NIAT is never auto-#1.
-  scored.sort((a, b) => {
-    const aHit = a.score > 0 ? 1 : 0;
-    const bHit = b.score > 0 ? 1 : 0;
-    if (aHit !== bHit) return bHit - aHit;
-    return a.catalogIndex - b.catalogIndex;
-  });
-
-  return scored.slice(0, limit).map(({ item }) => ({
+function selectCuratedInstitutions(_profile = {}, limit = EXPLORE_PRESENT_LIMIT) {
+  return CURATED_MODERN_CATALOG.slice(0, limit).map((item) => ({
     name: item.name,
     why: item.why,
     source: 'curated',

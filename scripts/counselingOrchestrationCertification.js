@@ -117,12 +117,12 @@ async function run() {
       'NIAT must appear in new-age showcase'
     );
     assert.ok(
-      curated.some((c) => /Plaksha|IIIT|Scaler|Shiv Nadar|Krea|Ahmedabad|UPES/i.test(c.name)),
+      curated.some((c) => /Plaksha|Scaler|Newton|Kalvium|Krea|Ahmedabad|UPES|SRM|Masters/i.test(c.name)),
       'expected diverse modern catalog hit'
     );
     assert.doesNotMatch(
       curated.map((c) => c.name).join(' '),
-      /\bCBIT\b|\bVasavi\b|\bJNTUH\b|\bGRIET\b/i
+      /\bCBIT\b|\bVasavi\b|\bJNTUH\b|\bGRIET\b|\bIIIT\b|\bIIT\b|\bNIT\b|\bBITS\b/i
     );
     assert.doesNotMatch(String(curated[0]?.name || ''), /\bNIAT\b/i);
 
