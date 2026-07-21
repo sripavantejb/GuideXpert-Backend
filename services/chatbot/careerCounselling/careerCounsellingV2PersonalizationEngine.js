@@ -156,6 +156,101 @@ function startPersonalizedDiscovery(ctx, analyticsMeta = {}) {
   };
 }
 
+/**
+ * Stage 5 YES handoff: Top-3 preview + first real Stage 6 question (budget).
+ * Skips pers_transition Ready? gate. Single keepIntact bubble.
+ */
+function startPersonalizedDiscoveryFromExplore(ctx, analyticsMeta = {}, opts = {}) {
+  const {
+    formatStage5Preview,
+  } = require('./careerCounsellingV2ExploreModernCollegesEngine');
+  const profile = ensurePersProfileFields(ctx.profile);
+  const preview = Array.isArray(profile.stage5PreviewInstitutions)
+    ? profile.stage5PreviewInstitutions
+    : [];
+  const previewBody = formatStage5Preview(preview);
+  const firstStep = 'pers_budget';
+  const firstQ = getPersContentForStep(firstStep);
+  const soft = String(opts.softDeclinePrefix || '').trim();
+  const reply = [soft, previewBody, firstQ].filter(Boolean).join('\n\n');
+
+  const nextCtx = {
+    ...ctx,
+    stage: STAGES.PERSONALIZED_DISCOVERY,
+    step: firstStep,
+    profile,
+    lastQuestionKey: 'budget',
+    clarifyQueue: [],
+    personalizationStartedAt: new Date().toISOString(),
+    fromExplorePreview: true,
+  };
+
+  logPersonalizationStarted({
+    stage: STAGES.PERSONALIZED_DISCOVERY,
+    step: firstStep,
+    profileCompletionPct: profile.profileCompletionPct ?? null,
+    source: 'stage5_preview',
+    ...analyticsMeta,
+  });
+
+  return {
+    reply,
+    context: nextCtx,
+    clearState: false,
+    keepIntact: true,
+    skipLineCap: true,
+    analytics: [
+      { type: 'personalization_started', source: 'stage5_preview' },
+      { type: 'stage5_preview_presented', count: preview.length },
+    ],
+  };
+}
+
+/**
+ * Predictor bridge → Stage 6: skip Evaluation/Modern/Showcase; jump to first real slot.
+ */
+function startPersonalizedDiscoveryFromPredictor(ctx, analyticsMeta = {}) {
+  const profile = ensurePersProfileFields({
+    ...(ctx.profile || {}),
+    bridgedFromCollegePredictor: true,
+  });
+  const firstStep = 'pers_career_priority';
+  const ack = [
+    "I've got your predicted colleges based on your rank.",
+    "To help you choose between them, I'd like to understand a few preferences.",
+  ].join('\n');
+  const firstQ = getPersContentForStep(firstStep);
+  const reply = `${ack}\n\n${firstQ}`;
+
+  const nextCtx = {
+    ...ctx,
+    stage: STAGES.PERSONALIZED_DISCOVERY,
+    step: firstStep,
+    profile,
+    lastQuestionKey: 'career_priority',
+    clarifyQueue: [],
+    personalizationStartedAt: new Date().toISOString(),
+    fromPredictorBridge: true,
+  };
+
+  logPersonalizationStarted({
+    stage: STAGES.PERSONALIZED_DISCOVERY,
+    step: firstStep,
+    profileCompletionPct: profile.profileCompletionPct ?? null,
+    source: 'college_predictor_bridge',
+    ...analyticsMeta,
+  });
+
+  return {
+    reply,
+    context: nextCtx,
+    clearState: false,
+    keepIntact: true,
+    skipLineCap: true,
+    analytics: [{ type: 'personalization_started', source: 'college_predictor_bridge' }],
+  };
+}
+
 function deliverStep(step, ctx, analyticsMeta = {}, prefix = '') {
   const content = getPersContentForStep(step);
   const reply = prefix ? `${prefix}\n\n${content}` : content;
@@ -188,7 +283,7 @@ function afterCapture(ctx, profile, answeredStep, analyticsMeta, ackKey, logFn, 
     ...analyticsMeta,
   });
 
-  const nextStep = getNextPersStep(answeredStep);
+  const nextStep = getNextPersStep(answeredStep, profile);
   if (!nextStep) {
     return runSummaryAndConfidence({ ...ctx, profile }, analyticsMeta);
   }
@@ -799,7 +894,7 @@ async function processPersonalizedDiscoveryTurn(text, context = {}, opts = {}) {
   ) {
     if (isSkipResponse(inbound)) {
       // Soft skip still advances but leaves field empty (hurts confidence)
-      const nextStep = getNextPersStep(ctx.step);
+      const nextStep = getNextPersStep(ctx.step, ctx.profile || {});
       if (!nextStep) {
         return runSummaryAndConfidence(ctx, analyticsMeta);
       }
@@ -820,6 +915,8 @@ module.exports = {
   STAGES,
   PERSONALIZATION_STEPS,
   startPersonalizedDiscovery,
+  startPersonalizedDiscoveryFromExplore,
+  startPersonalizedDiscoveryFromPredictor,
   processPersonalizedDiscoveryTurn,
   calculateCounselingConfidence,
   buildProfileSummary,

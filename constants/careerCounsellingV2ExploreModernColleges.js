@@ -23,8 +23,9 @@ const EXPLORE_STEPS = Object.freeze([
   'explore_ask_continue',
 ]);
 
-const EXPLORE_ENGINE_VERSION = 'v2.3.0-genuine-new-age';
-const EXPLORE_PRESENT_LIMIT = 10;
+const EXPLORE_ENGINE_VERSION = 'v2.4.0-unified-paths';
+const EXPLORE_PRESENT_LIMIT = 5;
+const STAGE5_PREVIEW_LIMIT = 3;
 
 /**
  * Genuine new-age institutions only — fixed curated order (not popularity rank).
@@ -109,13 +110,19 @@ const MESSAGES = Object.freeze({
   present_header:
     'Here are some leading new-age institutions in India that are reimagining higher education through industry-integrated, project-based, and future-ready learning.',
 
-  ask_continue: 'Would you like me to narrow these down based on your goals?',
+  ask_continue: 'Would you like me to shortlist the colleges that best match your goals?',
 
   continue_clarify:
-    'Reply Yes to personalize further (budget, city, preferences), or ask why any option fits.',
+    'Reply Yes to shortlist modern colleges that fit your goals, or ask why any option fits.',
 
   soft_decline_advance:
     "No problem — we'll still personalize with a few quick preferences so matches stay practical.",
+
+  preview_intro:
+    "Based on what you've shared so far, here are three modern institutions that appear to align well with your interests. This isn't your final recommendation yet—I'll personalize it further as I learn more about your preferences.",
+
+  preview_outro:
+    "To narrow these down, I'd like to understand a few more things about your preferences.",
 
   why_fallback:
     'Selected because it reflects the modern learning approach we discussed — projects, industry exposure, or applied skills.',
@@ -131,7 +138,7 @@ function getExploreMessage(key) {
 }
 
 function isExplorePermissionYes(text) {
-  return /^\s*(y|yes|yeah|yep|ok|okay|sure|ready|continue|go ahead|next|narrow|personalize)\s*[.!?]?\s*$/i.test(
+  return /^\s*(y|yes|yeah|yep|ok|okay|sure|ready|continue|go ahead|next|narrow|personalize|shortlist)\s*[.!?]?\s*$/i.test(
     String(text || '').trim()
   );
 }
@@ -146,6 +153,7 @@ module.exports = {
   EXPLORE_STEPS,
   EXPLORE_ENGINE_VERSION,
   EXPLORE_PRESENT_LIMIT,
+  STAGE5_PREVIEW_LIMIT,
   CURATED_MODERN_CATALOG,
   MESSAGES,
   getExploreMessage,

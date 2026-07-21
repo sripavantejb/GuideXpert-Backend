@@ -164,6 +164,8 @@ async function run() {
     const r = await processExploreModernCollegesTurn('no', started.context, {});
     assert.ok(
       r.skippedPhaseReason === 'user_declined_optional_gate' ||
+        r.context?.stage === 'personalized_discovery' ||
+        String(r.context?.step || '').startsWith('pers_') ||
         r.context?.stage === 'ai_shortlisting' ||
         String(r.context?.step || '').startsWith('shortlist_'),
       `expected soft-advance, got stage=${r.context?.stage} step=${r.context?.step}`
@@ -218,11 +220,11 @@ async function run() {
         { college_name: 'College B', branches: [{ branch_name: 'IT' }] },
       ],
     });
-    assert.equal(seed.stage, 'smart_comparison');
+    assert.equal(seed.stage, 'personalized_discovery');
     assert.equal(seed.profile.recommendedColleges.length, 2);
     assert.equal(seed.profile.bridgedFromCollegePredictor, true);
     const advanced = appendCounselingAdvance('Top colleges listed.');
-    assert.match(advanced, /what matters most/i);
+    assert.match(advanced, /factors you should consider/i);
     pass('college predictor bridge seed');
   } catch (e) {
     fail('college predictor bridge seed', e);

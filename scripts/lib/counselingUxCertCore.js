@@ -388,9 +388,9 @@ function studentReplyForTurn(persona, ctx, botReply, turnIndex) {
   if (step === 'gender' || /gender/i.test(reply)) return p.gender || 'Male';
   if (step === 'region' || /AU or SVU|region/i.test(reply)) return p.region || 'AU';
   if (step === 'results') {
-    if (p.afterPrediction === 'bridge') return 'yes, compare what matters most';
+    if (p.afterPrediction === 'bridge') return 'yes, suggest the factors';
     if (p.afterPrediction === 'filter') return 'CSE';
-    return 'compare';
+    return 'yes';
   }
 
   // Discovery
@@ -469,7 +469,7 @@ function studentReplyForTurn(persona, ctx, botReply, turnIndex) {
   }
 
   // Permission / continue gates
-  if (/Would you like to continue|Ready to|Want to|Shall we|Reply Yes or No|Would you like me to shortlist|narrow this down|narrow these down based on your goals/i.test(reply)) {
+  if (/Would you like to continue|Ready to|Want to|Shall we|Reply Yes or No|Would you like me to shortlist|narrow this down|narrow these down based on your goals|shortlist the colleges that best match|factors you should consider/i.test(reply)) {
     if (p.declineGates) return 'no';
     return 'yes';
   }

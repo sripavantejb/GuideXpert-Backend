@@ -501,7 +501,7 @@ function isCounselingBridgeIntent(text) {
   if (/^(cse|ece|eee|mech|civil|government|private)\b/i.test(t)) return false;
   return (
     /^\s*(y|yes|yeah|yep|ok|okay|sure|ready|continue|next)\s*[.!?]?\s*$/i.test(t) ||
-    /\b(compare|comparison|what matters|placements?|fees?|campus|location|roi|counsel|counselling|counseling)\b/i.test(
+    /\b(compare|comparison|what matters|factors|suggest|placements?|fees?|campus|location|roi|counsel|counselling|counseling)\b/i.test(
       t
     )
   );
@@ -509,8 +509,8 @@ function isCounselingBridgeIntent(text) {
 
 function appendCounselingAdvance(reply) {
   const base = String(reply || '').trim();
-  if (/what matters most/i.test(base)) return base;
-  return `${base}\n\nI've shortlisted colleges based on your rank. Want to compare the best options for what matters most to you?`;
+  if (/suggest the factors|factors you should consider/i.test(base)) return base;
+  return `${base}\n\nWould you like me to suggest the factors you should consider while choosing between these colleges?`;
 }
 
 function seedCareerContextFromPredictor(ctx = {}) {
@@ -527,12 +527,11 @@ function seedCareerContextFromPredictor(ctx = {}) {
     };
   });
   const preferredColleges = recommended.map((r) => r.collegeName).filter(Boolean);
-  const useComparison = recommended.length >= 2;
   return {
     flow: 'career_counselling_v2',
     version: 2,
-    stage: useComparison ? 'smart_comparison' : 'concern_resolution',
-    step: useComparison ? 'compare_select' : 'concern_pick',
+    stage: 'personalized_discovery',
+    step: 'pers_career_priority',
     profile: {
       exam: ctx.exam || null,
       entranceExam: ctx.exam || null,
@@ -541,8 +540,8 @@ function seedCareerContextFromPredictor(ctx = {}) {
       gender: ctx.gender || null,
       recommendedColleges: recommended,
       preferredColleges,
+      predictorRecommendedColleges: recommended,
       bridgedFromCollegePredictor: true,
-      shortlistCompletedAt: new Date().toISOString(),
     },
   };
 }
@@ -555,7 +554,7 @@ async function handleResultsFollowUp(text, ctx) {
     if (!branch && !ownership && !resolveDistrictFilter(text) && !resolveGirlsFilter(text)) {
       return {
         reply: appendCounselingAdvance(
-          'These options fit your rank band — let’s compare what matters most.'
+          'These options fit your rank band — next we can look at the factors that matter while choosing.'
         ),
         context: ctx,
         clearState: false,
@@ -842,7 +841,7 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
     if (isCounselingBridgeIntent(text)) {
       return {
         reply: appendCounselingAdvance(
-          'These colleges fit your rank band — we can compare them next.'
+          'These colleges fit your rank band — next we can look at the factors that matter while choosing.'
         ),
         context: ctx,
         clearState: false,

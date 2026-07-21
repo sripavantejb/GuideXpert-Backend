@@ -108,18 +108,18 @@ function staticAudit() {
   auditInteractive('static:explore_header', EXPLORE_MESSAGES.present_header, {
     minLines: 1,
   });
-  if (!/narrow.*goals|based on your goals/i.test(EXPLORE_MESSAGES.ask_continue)) {
-    record('static:explore_ask', 'FAIL', { fails: ['missing_narrow_question'] });
+  if (!/shortlist.*match|best match your goals|based on your goals/i.test(EXPLORE_MESSAGES.ask_continue)) {
+    record('static:explore_ask', 'FAIL', { fails: ['missing_shortlist_question'] });
   } else {
     record('static:explore_ask', 'PASS', {});
   }
 
-  if (CURATED_MODERN_CATALOG.length < 10 || EXPLORE_PRESENT_LIMIT !== 10) {
-    record('static:top10', 'FAIL', {
+  if (CURATED_MODERN_CATALOG.length < 10 || EXPLORE_PRESENT_LIMIT !== 5) {
+    record('static:top5_showcase', 'FAIL', {
       fails: [`catalog=${CURATED_MODERN_CATALOG.length},limit=${EXPLORE_PRESENT_LIMIT}`],
     });
   } else {
-    record('static:top10', 'PASS', {});
+    record('static:top5_showcase', 'PASS', {});
   }
 
   const niatOnly = CURATED_MODERN_CATALOG.every((c) => /niat/i.test(c.id));
@@ -200,14 +200,18 @@ async function liveAudit() {
     record('live:stage5_explore', 'FAIL', { fails: [`stage=${r.context?.stage}`] });
   } else {
     const count = (r.context.profile?.exploreModernInstitutions || []).length;
-    if (count < 8) record('live:stage5_top10', 'FAIL', { fails: [`count=${count}`] });
-    else record('live:stage5_top10', 'PASS', { count });
-    auditInteractive('live:stage5_ask_narrow', r.reply, { requireQuestion: true, minLines: 5 });
+    if (count !== 5) record('live:stage5_showcase', 'FAIL', { fails: [`count=${count}`] });
+    else record('live:stage5_showcase', 'PASS', { count });
+    auditInteractive('live:stage5_ask_shortlist', r.reply, { requireQuestion: true, minLines: 5 });
   }
 
   r = await handleCareerCounsellingMessage('yes', r.context);
   if (r.context?.stage !== 'personalized_discovery') {
     record('live:stage6_personalization', 'FAIL', { fails: [`stage=${r.context?.stage}`] });
+  } else if (r.context?.step !== 'pers_budget') {
+    record('live:stage6_personalization', 'FAIL', { fails: [`step=${r.context?.step}`] });
+  } else if ((r.context.profile?.stage5PreviewInstitutions || []).length !== 3) {
+    record('live:stage6_personalization', 'FAIL', { fails: ['missing_top3_preview'] });
   } else {
     record('live:stage6_personalization', 'PASS', {});
   }

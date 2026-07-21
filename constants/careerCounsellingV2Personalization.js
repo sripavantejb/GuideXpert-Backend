@@ -63,7 +63,7 @@ const MESSAGES = Object.freeze({
   ].join('\n'),
 
   ask_budget: [
-    'Rough fee budget?',
+    "What's your approximate budget?",
     '',
     'A ballpark is fine — loan/scholarship ok too.',
     '',
@@ -175,15 +175,40 @@ function getPersMessage(key) {
   return MESSAGES[key] || '';
 }
 
-function getNextPersStep(currentStep) {
-  const order = [
-    'pers_transition',
-    'pers_career_priority',
-    'pers_location',
-    'pers_budget',
-    'pers_family',
-    'pers_concern',
-  ];
+/** Default Stage 6 order after Ready? gate. */
+const PERS_STEP_ORDER_DEFAULT = Object.freeze([
+  'pers_transition',
+  'pers_career_priority',
+  'pers_location',
+  'pers_budget',
+  'pers_family',
+  'pers_concern',
+]);
+
+/**
+ * Stage 5 preview handoff starts at budget, then backfills remaining slots.
+ * Used when profile.stage5PreviewInstitutions is set (unified normal path).
+ */
+const PERS_STEP_ORDER_FROM_EXPLORE = Object.freeze([
+  'pers_budget',
+  'pers_location',
+  'pers_career_priority',
+  'pers_family',
+  'pers_concern',
+]);
+
+function getPersStepOrder(profile = {}) {
+  if (
+    Array.isArray(profile.stage5PreviewInstitutions) &&
+    profile.stage5PreviewInstitutions.length > 0
+  ) {
+    return PERS_STEP_ORDER_FROM_EXPLORE;
+  }
+  return PERS_STEP_ORDER_DEFAULT;
+}
+
+function getNextPersStep(currentStep, profile = {}) {
+  const order = getPersStepOrder(profile);
   const idx = order.indexOf(currentStep);
   if (idx < 0 || idx >= order.length - 1) return null;
   return order[idx + 1];
@@ -244,6 +269,9 @@ module.exports = {
   PERSONALIZATION_QA,
   getPersMessage,
   getNextPersStep,
+  getPersStepOrder,
   getPersContentForStep,
   buildPersonalizedPersTransition,
+  PERS_STEP_ORDER_DEFAULT,
+  PERS_STEP_ORDER_FROM_EXPLORE,
 };

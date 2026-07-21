@@ -60,9 +60,11 @@ const TIER_LIMITS = Object.freeze({
 
 const MESSAGES = Object.freeze({
   shortlist_intro: [
-    'Your counseling profile looks ready.',
-    '',
-    'Next I’ll build a personalized shortlist — eligibility first, then your preferences.',
+    'Next I’ll build a personalized shortlist from the modern colleges that fit your profile.',
+  ].join('\n'),
+
+  shortlist_intro_predictor: [
+    'Next I’ll refine your shortlist using your exam, rank, and counseling preferences.',
   ].join('\n'),
 
   ask_exam: [
@@ -81,7 +83,9 @@ const MESSAGES = Object.freeze({
 
   ask_region: 'For AP EAPCET — AU or SVU?',
 
-  generating: 'Got it — fetching eligible colleges now…',
+  generating: 'Got it — building your personalized shortlist now…',
+
+  generating_eligibility: 'Got it — fetching eligible colleges now…',
 
   no_eligibility: [
     'I could not retrieve eligible colleges with those details.',

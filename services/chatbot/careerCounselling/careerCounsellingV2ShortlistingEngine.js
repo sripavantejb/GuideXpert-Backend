@@ -51,27 +51,91 @@ function answerShortlistQuestion(text) {
   return getShortlistMessage('question_fallback');
 }
 
+/**
+ * Exam/rank eligibility shortlist only for predictor bridge or when exam+rank already known.
+ * Normal counseling shortlists from curated new-age catalog (no ask_exam / ask_rank).
+ */
+function shouldUseExamEligibility(profile = {}) {
+  if (profile.bridgedFromCollegePredictor) return true;
+  const exam = profile.exam || profile.entranceExam;
+  const rank = profile.rank != null ? Number(profile.rank) : NaN;
+  return Boolean(exam) && Number.isFinite(rank) && rank > 0;
+}
+
 function profileReadyForShortlist(profile = {}) {
   const score = Number(profile.counselingConfidenceScore);
   const hasCore =
     Boolean(profile.preferredCourse || profile.careerGoal) &&
     (Boolean(profile.careerPriority) ||
       Boolean(profile.preferredLearningStyle) ||
-      (Array.isArray(profile.evaluationPriorities) && profile.evaluationPriorities.length > 0));
+      (Array.isArray(profile.evaluationPriorities) && profile.evaluationPriorities.length > 0) ||
+      Boolean(profile.budgetPreference) ||
+      (Array.isArray(profile.stage5PreviewInstitutions) &&
+        profile.stage5PreviewInstitutions.length > 0));
   if (Number.isFinite(score) && score >= 60 && hasCore) return true;
-  return hasCore && Boolean(profile.modernEducationCompleted || profile.evaluationCompleted);
+  return hasCore && Boolean(profile.modernEducationCompleted || profile.evaluationCompleted || profile.exploreModernCompleted);
 }
 
-function nextMissingPrompt(missing = []) {
-  if (missing.includes('exam')) return { step: 'shortlist_ask_exam', message: getShortlistMessage('ask_exam') };
-  if (missing.includes('rank')) return { step: 'shortlist_ask_rank', message: getShortlistMessage('ask_rank') };
-  if (missing.includes('category')) {
+function nextMissingPrompt(missing = [], profile = {}) {
+  const useExam = shouldUseExamEligibility(profile);
+  if (useExam && missing.includes('exam')) {
+    return { step: 'shortlist_ask_exam', message: getShortlistMessage('ask_exam') };
+  }
+  if (useExam && missing.includes('rank')) {
+    return { step: 'shortlist_ask_rank', message: getShortlistMessage('ask_rank') };
+  }
+  if (useExam && missing.includes('category')) {
     return { step: 'shortlist_ask_category', message: getShortlistMessage('ask_category') };
   }
-  if (missing.includes('region')) {
+  if (useExam && missing.includes('region')) {
     return { step: 'shortlist_ask_category', message: getShortlistMessage('ask_region'), focus: 'region' };
   }
   return null;
+}
+
+function curatedCatalogAsColleges(profile = {}) {
+  const {
+    CURATED_MODERN_CATALOG,
+  } = require('../../../constants/careerCounsellingV2ExploreModernColleges');
+  const previewIds = new Set(
+    (Array.isArray(profile.stage5PreviewInstitutions) ? profile.stage5PreviewInstitutions : [])
+      .map((p) => p.id)
+      .filter(Boolean)
+  );
+  const previewNames = new Set(
+    (Array.isArray(profile.stage5PreviewInstitutions) ? profile.stage5PreviewInstitutions : [])
+      .map((p) => String(p.name || '').toLowerCase())
+      .filter(Boolean)
+  );
+
+  return CURATED_MODERN_CATALOG.map((item) => {
+    const inPreview =
+      previewIds.has(item.id) || previewNames.has(String(item.name || '').toLowerCase());
+    return {
+      college_name: item.name,
+      college_address: '',
+      district_enum: '',
+      ownership: 'private',
+      _curatedId: item.id,
+      _curatedTags: item.tags || [],
+      _stage5PreviewBoost: inPreview ? 1 : 0,
+      branches: [
+        {
+          branch_name: 'Computer Science / Emerging Tech',
+          branch_code: 'CSE',
+          fee: null,
+          cutoff: null,
+        },
+      ],
+    };
+  });
+}
+
+function shortlistIntroFor(profile = {}) {
+  if (shouldUseExamEligibility(profile)) {
+    return getShortlistMessage('shortlist_intro_predictor') || getShortlistMessage('shortlist_intro');
+  }
+  return getShortlistMessage('shortlist_intro');
 }
 
 function formatCollegeBlock(item, tier) {
@@ -162,6 +226,11 @@ function persistRecommendation(profile, tiers, confidence, eligibleCount) {
 
 async function generateAndPresent(ctx, analyticsMeta = {}) {
   const profile = { ...(ctx.profile || {}) };
+
+  // Normal counseling path: score curated new-age catalog (no exam/rank gate).
+  if (!shouldUseExamEligibility(profile)) {
+    return generateFromCuratedCatalog(ctx, analyticsMeta);
+  }
 
   const eligibility = await retrieveEligibleColleges(profile, { limit: 40 });
 
@@ -267,10 +336,88 @@ async function generateAndPresent(ctx, analyticsMeta = {}) {
   };
 }
 
+async function generateFromCuratedCatalog(ctx, analyticsMeta = {}) {
+  const profile = { ...(ctx.profile || {}) };
+  const colleges = curatedCatalogAsColleges(profile);
+  const previewNames = new Set(
+    (Array.isArray(profile.stage5PreviewInstitutions) ? profile.stage5PreviewInstitutions : [])
+      .map((p) => String(p.name || '').toLowerCase())
+      .filter(Boolean)
+  );
+  let scored = scoreEligibleColleges(colleges, profile);
+  // Boost Stage 5 preview picks without forcing NIAT (or any school) to #1.
+  scored = scored
+    .map((row) => {
+      const name = String(row.collegeName || '').toLowerCase();
+      const extra = previewNames.has(name) ? 0.08 : 0;
+      return {
+        ...row,
+        matchScore: Math.min(1, Number(row.matchScore || 0) + extra),
+      };
+    })
+    .sort((a, b) => Number(b.matchScore || 0) - Number(a.matchScore || 0));
+
+  const tiers = tierRecommendations(scored);
+  const confidence = calculateRecommendationConfidence(profile, tiers, colleges.length);
+  const nextProfile = persistRecommendation(profile, tiers, confidence, colleges.length);
+  nextProfile.shortlistSource = 'curated_new_age';
+
+  logRecommendationGenerated({
+    stage: STAGES.AI_SHORTLISTING,
+    recommendedCount: nextProfile.recommendedColleges.length,
+    recommendationConfidence: confidence,
+    recommendationMatrixVersion: RECOMMENDATION_MATRIX_VERSION,
+    source: 'curated_new_age',
+    ...analyticsMeta,
+  });
+
+  logRecommendationViewed({
+    stage: STAGES.AI_SHORTLISTING,
+    recommendedCount: nextProfile.recommendedColleges.length,
+    ...analyticsMeta,
+  });
+
+  logRecommendationConfidence({
+    stage: STAGES.AI_SHORTLISTING,
+    recommendationConfidence: confidence,
+    ...analyticsMeta,
+  });
+
+  logShortlistCompleted({
+    stage: STAGES.AI_SHORTLISTING,
+    recommendationConfidence: confidence,
+    source: 'curated_new_age',
+    ...analyticsMeta,
+  });
+
+  return {
+    reply: formatShortlistReply(tiers, confidence),
+    context: {
+      ...ctx,
+      stage: STAGES.AI_SHORTLISTING,
+      step: 'shortlist_ask_compare',
+      profile: nextProfile,
+      lastQuestionKey: 'compare_permission',
+      shortlistCompletedAt: new Date().toISOString(),
+    },
+    clearState: false,
+    allowExtendedPrediction: true,
+    skipLineCap: true,
+    analytics: [
+      { type: 'recommendation_generated', source: 'curated_new_age' },
+      { type: 'shortlist_completed' },
+    ],
+  };
+}
+
 async function continueAfterEligibilityFields(ctx, analyticsMeta) {
+  if (!shouldUseExamEligibility(ctx.profile || {})) {
+    return generateAndPresent(ctx, analyticsMeta);
+  }
+
   const built = buildEligibilityRequest(ctx.profile || {});
   if (!built.ok) {
-    const prompt = nextMissingPrompt(built.missing);
+    const prompt = nextMissingPrompt(built.missing, ctx.profile || {});
     if (!prompt) {
       return {
         reply: getShortlistMessage('no_eligibility'),
@@ -318,7 +465,6 @@ function startAiShortlisting(ctx, analyticsMeta = {}) {
     ...analyticsMeta,
   });
 
-  const built = buildEligibilityRequest(profile);
   const nextCtx = {
     ...ctx,
     stage: STAGES.AI_SHORTLISTING,
@@ -327,10 +473,40 @@ function startAiShortlisting(ctx, analyticsMeta = {}) {
     shortlistStartedAt: new Date().toISOString(),
   };
 
-  if (!built.ok) {
-    const prompt = nextMissingPrompt(built.missing);
+  // Normal path: never ask exam/rank — generate from curated new-age catalog.
+  if (!shouldUseExamEligibility(profile)) {
     return {
-      reply: `${getShortlistMessage('shortlist_intro')}\n\n${prompt.message}`,
+      reply: `${shortlistIntroFor(profile)}\n\n${getShortlistMessage('generating')}`,
+      context: {
+        ...nextCtx,
+        step: 'shortlist_generate',
+        lastQuestionKey: 'generate',
+      },
+      clearState: false,
+      analytics: [{ type: 'shortlist_started', source: 'curated_new_age' }],
+      _generateNow: true,
+    };
+  }
+
+  const built = buildEligibilityRequest(profile);
+  if (!built.ok) {
+    const prompt = nextMissingPrompt(built.missing, profile);
+    if (!prompt) {
+      // Missing only non-exam fields we don't prompt for — try generate anyway.
+      return {
+        reply: `${shortlistIntroFor(profile)}\n\n${getShortlistMessage('generating_eligibility') || getShortlistMessage('generating')}`,
+        context: {
+          ...nextCtx,
+          step: 'shortlist_generate',
+          lastQuestionKey: 'generate',
+        },
+        clearState: false,
+        analytics: [{ type: 'shortlist_started' }],
+        _generateNow: true,
+      };
+    }
+    return {
+      reply: `${shortlistIntroFor(profile)}\n\n${prompt.message}`,
       context: {
         ...nextCtx,
         step: prompt.step,
@@ -344,7 +520,7 @@ function startAiShortlisting(ctx, analyticsMeta = {}) {
 
   // Defer async generation to process turn with generating ack path
   return {
-    reply: `${getShortlistMessage('shortlist_intro')}\n\n${getShortlistMessage('generating')}`,
+    reply: `${shortlistIntroFor(profile)}\n\n${getShortlistMessage('generating_eligibility') || getShortlistMessage('generating')}`,
     context: {
       ...nextCtx,
       step: 'shortlist_generate',
@@ -644,4 +820,6 @@ module.exports = {
   processAiShortlistingTurn,
   formatShortlistReply,
   profileReadyForShortlist,
+  shouldUseExamEligibility,
+  generateAndPresent,
 };

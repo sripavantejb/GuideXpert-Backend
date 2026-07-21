@@ -96,8 +96,10 @@ describe('counseling orchestration redesign', () => {
         { college_name: 'B', branches: [{ branch_name: 'ECE' }] },
       ],
     });
-    assert.equal(seed.stage, 'smart_comparison');
+    assert.equal(seed.stage, 'personalized_discovery');
     assert.equal(seed.profile.bridgedFromCollegePredictor, true);
+    assert.equal(seed.profile.recommendedColleges.length, 2);
+    assert.equal(seed.profile.rank, 1000);
   });
 
   test('explore presentImmediately stores institutions', async () => {
@@ -110,6 +112,7 @@ describe('counseling orchestration redesign', () => {
       },
       { startExploreModernColleges: true, presentImmediately: true, fromPersonalization: true }
     );
-    assert.ok(r.context.profile.exploreModernInstitutions.length >= 1);
+    assert.equal(r.context.profile.exploreModernInstitutions.length, 5);
+    assert.equal(r.keepIntact, true);
   });
 });

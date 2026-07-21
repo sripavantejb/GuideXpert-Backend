@@ -238,8 +238,8 @@ describe('careerCounsellingV2 interactive framework (stage 3)', () => {
 
     r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.stage, 'explore_modern_colleges');
-    assert.ok((r.context.profile.exploreModernInstitutions || []).length >= 8);
-    assert.match(r.reply, /narrow these down based on your goals|narrow.*goals/i);
+    assert.ok((r.context.profile.exploreModernInstitutions || []).length === 5);
+    assert.match(r.reply, /shortlist the colleges that best match|shortlist.*goals/i);
   });
 
   test('accepts I don\'t know and suggests counselor priorities', async () => {
@@ -369,7 +369,7 @@ describe('careerCounsellingV2 stage 4 condensed → stage 5 explore → stage 6 
   test('explore presents top colleges then personalization on yes', async () => {
     let r = await reachExplore();
     assert.equal(r.context.stage, 'explore_modern_colleges');
-    assert.ok((r.context.profile.exploreModernInstitutions || []).length >= 8);
+    assert.ok((r.context.profile.exploreModernInstitutions || []).length === 5);
     assert.match(r.reply, /leading new-age institutions|new-age institutions in India/i);
     assert.match(r.reply, /NIAT/i);
     assert.doesNotMatch(
@@ -382,10 +382,15 @@ describe('careerCounsellingV2 stage 4 condensed → stage 5 explore → stage 6 
       .find((l) => /^\s*1\.\s+/.test(l));
     assert.ok(firstLine);
     assert.doesNotMatch(firstLine, /\bNIAT\b/i);
+    assert.equal((r.replyParts || []).length, 1, 'Stage 5 showcase must be one bubble');
 
     r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.stage, STAGES.PERSONALIZED_DISCOVERY || 'personalized_discovery');
-    assert.match(r.reply, /personalize|budget|location|Ready/i);
+    assert.equal(r.context.step, 'pers_budget');
+    assert.ok((r.context.profile.stage5PreviewInstitutions || []).length === 3);
+    assert.match(r.reply, /three modern institutions|approximate budget/i);
+    assert.doesNotMatch(r.reply, /Ready\?/i);
+    assert.equal((r.replyParts || []).length, 1, 'preview + Stage 6 start must be one bubble');
   });
 });
 
@@ -439,23 +444,22 @@ describe('careerCounsellingV2 personalized discovery', () => {
 
   test('full personalization flow scores confidence and enters AI shortlisting', async () => {
     let r = await completeThroughModernPermissionYes();
-    assert.equal(r.context.step, 'pers_transition');
-
-    r = await handleCareerCounsellingMessage('ready', r.context);
-    assert.equal(r.context.step, 'pers_career_priority');
-    assert.match(r.reply, /Why I ask/i);
-
-    r = await handleCareerCounsellingMessage('strong placements and skill building', r.context);
-    assert.equal(r.context.step, 'pers_location');
-    assert.equal(r.context.profile.careerPriority, 'placements');
-
-    r = await handleCareerCounsellingMessage('Hyderabad, open to relocating, hostel ok', r.context);
+    // Stage 5 YES → Top-3 preview + budget (skips Ready? gate)
     assert.equal(r.context.step, 'pers_budget');
-    assert.match(String(r.context.profile.preferredLocation), /Hyderabad/i);
+    assert.ok((r.context.profile.stage5PreviewInstitutions || []).length === 3);
+    assert.doesNotMatch(r.reply, /profile looks ready/i);
 
     r = await handleCareerCounsellingMessage('around 2-3 lakhs, education loan fine', r.context);
-    assert.equal(r.context.step, 'pers_family');
+    assert.equal(r.context.step, 'pers_location');
     assert.ok(r.context.profile.budgetPreference);
+
+    r = await handleCareerCounsellingMessage('Hyderabad, open to relocating, hostel ok', r.context);
+    assert.equal(r.context.step, 'pers_career_priority');
+    assert.match(String(r.context.profile.preferredLocation), /Hyderabad/i);
+
+    r = await handleCareerCounsellingMessage('strong placements and skill building', r.context);
+    assert.equal(r.context.step, 'pers_family');
+    assert.equal(r.context.profile.careerPriority, 'placements');
 
     r = await handleCareerCounsellingMessage('parents supportive but prefer a good brand nearby', r.context);
     assert.equal(r.context.step, 'pers_concern');
@@ -465,7 +469,6 @@ describe('careerCounsellingV2 personalized discovery', () => {
     assert.ok(r.context.profile.biggestConcerns.includes('fees'));
     assert.ok(r.context.profile.counselingConfidenceScore >= 60);
     assert.match(r.reply, /counseling profile|Counseling confidence/i);
-    assert.doesNotMatch(r.reply, /\bNIAT\b|\bScaler\b|\bNewton\b/i);
 
     // High confidence path offers continue; medium may ask clarify first
     if (r.context.step === 'pers_clarify') {
@@ -475,37 +478,114 @@ describe('careerCounsellingV2 personalized discovery', () => {
 
     r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.stage, STAGES.AI_SHORTLISTING);
-    assert.equal(r.context.step, 'shortlist_ask_exam');
-    assert.match(r.reply, /personalized shortlist|entrance exam/i);
+    // Normal path: no exam/rank — curated shortlist
+    assert.notEqual(r.context.step, 'shortlist_ask_exam');
+    assert.doesNotMatch(r.reply, /Which entrance exam|profile looks ready/i);
+    assert.equal(r.context.step, 'shortlist_ask_compare');
+    assert.match(r.reply, /Best Match|personalized shortlist/i);
+    assert.equal(r.context.profile.shortlistSource, 'curated_new_age');
     assert.equal(r.clearState, false);
   });
 
-  test('phase 5 shortlisting stays sticky while collecting eligibility', async () => {
+  test('phase 5 shortlisting stays sticky after curated generate', async () => {
     let r = await completeThroughModernPermissionYes();
-    r = await handleCareerCounsellingMessage('ok', r.context);
-    r = await handleCareerCounsellingMessage('placements', r.context);
-    r = await handleCareerCounsellingMessage('Bangalore, can relocate', r.context);
     r = await handleCareerCounsellingMessage('3 lakh with scholarship', r.context);
+    r = await handleCareerCounsellingMessage('Bangalore, can relocate', r.context);
+    r = await handleCareerCounsellingMessage('placements', r.context);
     r = await handleCareerCounsellingMessage('family supports my choice', r.context);
     r = await handleCareerCounsellingMessage('confusion about branch', r.context);
     if (r.context.step === 'pers_clarify') {
       r = await handleCareerCounsellingMessage('skill building', r.context);
     }
     r = await handleCareerCounsellingMessage('yes', r.context);
-    assert.equal(r.context.step, 'shortlist_ask_exam');
-    r = await handleCareerCounsellingMessage('hello', r.context);
-    assert.match(r.reply, /continue your personalized shortlist|entrance exam/i);
     assert.equal(r.context.stage, STAGES.AI_SHORTLISTING);
-    assert.equal(r.context.step, 'shortlist_ask_exam');
+    assert.equal(r.context.step, 'shortlist_ask_compare');
+    r = await handleCareerCounsellingMessage('hello', r.context);
+    assert.equal(r.context.stage, STAGES.AI_SHORTLISTING);
+    assert.match(r.reply, /compare|Best Match|continue/i);
   });
 
   test('explains why questions without advancing', async () => {
     let r = await completeThroughModernPermissionYes();
-    r = await handleCareerCounsellingMessage('ok', r.context);
+    assert.equal(r.context.step, 'pers_budget');
     r = await handleCareerCounsellingMessage('Why do you ask this?', r.context);
-    assert.match(r.reply, /counseling profile/i);
-    assert.match(r.reply, /Coming back to where we were/i);
-    assert.equal(r.context.step, 'pers_career_priority');
+    assert.match(r.reply, /counseling profile|Why I ask|budget/i);
+    assert.match(r.reply, /Coming back to where we were|approximate budget/i);
+    assert.equal(r.context.step, 'pers_budget');
+  });
+});
+
+describe('unified counseling + predictor entry paths', () => {
+  test('predictor bridge seed lands on Stage 6 with colleges preserved', () => {
+    const {
+      seedCareerContextFromPredictor,
+      appendCounselingAdvance,
+      isCounselingBridgeIntent,
+    } = require('../services/chatbot/collegePredictorChatService');
+    const {
+      startPersonalizedDiscoveryFromPredictor,
+    } = require('../services/chatbot/careerCounselling/careerCounsellingV2PersonalizationEngine');
+
+    assert.equal(isCounselingBridgeIntent('yes'), true);
+    const advanced = appendCounselingAdvance('Top colleges listed.');
+    assert.match(advanced, /factors you should consider/i);
+
+    const seed = seedCareerContextFromPredictor({
+      exam: 'TS_EAMCET',
+      rank: 6000,
+      resultCache: [
+        { college_name: 'College Alpha', branches: [{ branch_name: 'CSE' }] },
+        { college_name: 'College Beta', branches: [{ branch_name: 'IT' }] },
+      ],
+    });
+    assert.equal(seed.stage, 'personalized_discovery');
+    assert.equal(seed.profile.bridgedFromCollegePredictor, true);
+    assert.equal(seed.profile.rank, 6000);
+    assert.equal(seed.profile.recommendedColleges.length, 2);
+
+    const started = startPersonalizedDiscoveryFromPredictor(seed);
+    assert.equal(started.context.stage, 'personalized_discovery');
+    assert.equal(started.context.step, 'pers_career_priority');
+    assert.equal(started.context.profile.bridgedFromCollegePredictor, true);
+    assert.equal(started.context.profile.recommendedColleges.length, 2);
+    assert.equal(started.keepIntact, true);
+    assert.match(started.reply, /predicted colleges|matters most/i);
+  });
+
+  test('normal path Stage 5 yes never asks entrance exam before Stage 6 complete', async () => {
+    let r = await handleCareerCounsellingMessage('Career guidance', {}, { isNewEntry: true });
+    r = await handleCareerCounsellingMessage('Class 12', r.context);
+    r = await handleCareerCounsellingMessage('B.Tech', r.context);
+    r = await handleCareerCounsellingMessage('Software engineer', r.context);
+    r = await handleCareerCounsellingMessage('not yet', r.context);
+    r = await handleCareerCounsellingMessage('English', r.context);
+    r = await handleCareerCounsellingMessage('projects and mentoring', r.context);
+    r = await handleCareerCounsellingMessage('yes', r.context);
+    r = await handleCareerCounsellingMessage('yes', r.context);
+    assert.equal(r.context.stage, 'explore_modern_colleges');
+    assert.doesNotMatch(r.reply, /Which entrance exam|profile looks ready/i);
+    r = await handleCareerCounsellingMessage('yes', r.context);
+    assert.equal(r.context.step, 'pers_budget');
+    assert.doesNotMatch(r.reply, /Which entrance exam|profile looks ready/i);
+    assert.equal((r.replyParts || []).length, 1);
+  });
+
+  test('explore unclear reply clarifies without dead-end', async () => {
+    let r = await handleCareerCounsellingMessage('Career guidance', {}, { isNewEntry: true });
+    r = await handleCareerCounsellingMessage('Class 12', r.context);
+    r = await handleCareerCounsellingMessage('B.Tech', r.context);
+    r = await handleCareerCounsellingMessage('Software engineer', r.context);
+    r = await handleCareerCounsellingMessage('not yet', r.context);
+    r = await handleCareerCounsellingMessage('English', r.context);
+    r = await handleCareerCounsellingMessage('projects and mentoring', r.context);
+    r = await handleCareerCounsellingMessage('yes', r.context);
+    r = await handleCareerCounsellingMessage('yes', r.context);
+    r = await handleCareerCounsellingMessage('maybe later somehow', r.context);
+    assert.equal(r.context.stage, 'explore_modern_colleges');
+    assert.match(r.reply, /Reply Yes|shortlist/i);
+    r = await handleCareerCounsellingMessage('no', r.context);
+    assert.equal(r.context.stage, 'personalized_discovery');
+    assert.match(r.reply, /No problem|approximate budget/i);
   });
 });
 
@@ -618,12 +698,12 @@ describe('careerCounsellingV2 AI shortlisting', () => {
     },
   ];
 
-  async function reachShortlistExamAsk() {
+  async function reachCuratedShortlist() {
     let r = await completeThroughModernPermissionYesHelper();
-    r = await handleCareerCounsellingMessage('ok', r.context);
-    r = await handleCareerCounsellingMessage('placements and skill building', r.context);
-    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    // From explore: budget → location → career → family → concern
     r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
+    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    r = await handleCareerCounsellingMessage('placements and skill building', r.context);
     r = await handleCareerCounsellingMessage('parents prefer good brand nearby', r.context);
     r = await handleCareerCounsellingMessage('worried about fees and wrong branch', r.context);
     if (r.context.step === 'pers_clarify') {
@@ -646,7 +726,7 @@ describe('careerCounsellingV2 AI shortlisting', () => {
     r = await handleCareerCounsellingMessage('Software engineer', r.context);
     r = await handleCareerCounsellingMessage('not yet', r.context);
     r = await handleCareerCounsellingMessage('English', r.context);
-    // Interactive Stage 3 → 4 → 5
+    // Interactive Stage 3 → 4 → 5 → 6 preview
     r = await handleCareerCounsellingMessage('projects and mentoring', r.context);
     r = await handleCareerCounsellingMessage('yes', r.context); // condensed stage 4
     r = await handleCareerCounsellingMessage('yes', r.context); // explore stage 5
@@ -667,26 +747,12 @@ describe('careerCounsellingV2 AI shortlisting', () => {
     setShortlistingEligibilityDeps({});
   });
 
-  test('generates explainable shortlist tiers without numeric rankings', async () => {
-    let r = await reachShortlistExamAsk();
-    assert.equal(r.context.step, 'shortlist_ask_exam');
-
-    r = await handleCareerCounsellingMessage('AP EAPCET', r.context);
-    assert.equal(r.context.step, 'shortlist_ask_rank');
-    assert.equal(r.context.profile.exam, 'AP_EAMCET');
-
-    r = await handleCareerCounsellingMessage('28000', r.context);
-    assert.equal(r.context.step, 'shortlist_ask_category');
-
-    r = await handleCareerCounsellingMessage('OC Girls', r.context);
-    // AP needs region
-    if (r.context.step === 'shortlist_ask_category' || r.context.eligibilityFocus === 'region') {
-      assert.match(r.reply, /AU or SVU/i);
-      r = await handleCareerCounsellingMessage('AU', r.context);
-    }
-
+  test('generates explainable shortlist from curated new-age catalog (no exam)', async () => {
+    let r = await reachCuratedShortlist();
     assert.equal(r.context.step, 'shortlist_ask_compare');
     assert.equal(r.context.stage, STAGES.AI_SHORTLISTING);
+    assert.equal(r.context.profile.shortlistSource, 'curated_new_age');
+    assert.doesNotMatch(r.reply, /Which entrance exam|profile looks ready/i);
     assert.match(r.reply, /Best Match/i);
     assert.match(r.reply, /Also worth comparing|Strong Alternatives|Worth Exploring/i);
     assert.doesNotMatch(r.reply, /#\d|rank\s*#|score:\s*\d/i);
@@ -696,13 +762,51 @@ describe('careerCounsellingV2 AI shortlisting', () => {
     assert.ok(Number.isFinite(r.context.profile.recommendationConfidence));
     assert.equal(r.context.profile.recommendationMatrixVersion, RECOMMENDATION_MATRIX_VERSION);
     assert.match(r.reply, /compare these options|Want to compare/i);
+    const names = (r.context.profile.recommendedColleges || []).map((c) => c.collegeName).join(' ');
+    assert.doesNotMatch(names, /\bCBIT\b|\bVasavi\b|\bJNTUH\b|\bIIIT\b|\bIIT\b|\bNIT\b/i);
+  });
+
+  test('predictor-bridged path still asks missing exam/rank for eligibility', async () => {
+    const {
+      processAiShortlistingTurn,
+    } = require('../services/chatbot/careerCounselling/careerCounsellingV2ShortlistingEngine');
+    let r = await processAiShortlistingTurn(
+      'yes',
+      {
+        flow: 'career_counselling_v2',
+        version: 2,
+        stage: 'ai_shortlisting',
+        step: 'ai_shortlisting_placeholder',
+        profile: {
+          preferredCourse: 'B.Tech',
+          careerGoal: 'Software engineer',
+          careerPriority: 'placements',
+          counselingConfidenceScore: 85,
+          evaluationCompleted: true,
+          bridgedFromCollegePredictor: true,
+          recommendedColleges: [{ collegeName: 'Seeded College', tier: 'best_match' }],
+        },
+      },
+      { startAiShortlisting: true }
+    );
+    assert.equal(r.context.step, 'shortlist_ask_exam');
+    assert.match(r.reply, /entrance exam/i);
+    assert.doesNotMatch(r.reply, /profile looks ready/i);
+
+    r = await processAiShortlistingTurn('AP EAPCET', r.context);
+    assert.equal(r.context.step, 'shortlist_ask_rank');
+    r = await processAiShortlistingTurn('28000', r.context);
+    assert.equal(r.context.step, 'shortlist_ask_category');
+    r = await processAiShortlistingTurn('OC Girls', r.context);
+    if (r.context.step === 'shortlist_ask_category' || r.context.eligibilityFocus === 'region') {
+      r = await processAiShortlistingTurn('AU', r.context);
+    }
+    assert.equal(r.context.step, 'shortlist_ask_compare');
+    assert.match(r.reply, /Best Match/i);
   });
 
   test('compare permission yes enters smart comparison selection', async () => {
-    let r = await reachShortlistExamAsk();
-    r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
-    r = await handleCareerCounsellingMessage('15000', r.context);
-    r = await handleCareerCounsellingMessage('OC Boys', r.context);
+    let r = await reachCuratedShortlist();
     assert.equal(r.context.step, 'shortlist_ask_compare');
 
     r = await handleCareerCounsellingMessage('yes', r.context);
@@ -710,16 +814,37 @@ describe('careerCounsellingV2 AI shortlisting', () => {
     assert.equal(r.context.step, 'compare_select');
     assert.match(r.reply, /compare|shortlist/i);
     assert.match(r.reply, /1\./);
-    assert.doesNotMatch(r.reply, /\bNIAT\b|\bScaler\b|\bNewton\b/i);
   });
 
-  test('eligibility failure does not invent colleges', async () => {
+  test('eligibility failure does not invent colleges on predictor path', async () => {
     setShortlistingEligibilityDeps({
       fetchCollegeDostColleges: async () => ({ colleges: [], total_no_of_colleges: 0 }),
     });
-    let r = await reachShortlistExamAsk();
-    r = await handleCareerCounsellingMessage('KCET', r.context);
-    r = await handleCareerCounsellingMessage('12000', r.context);
+    const {
+      processAiShortlistingTurn,
+    } = require('../services/chatbot/careerCounselling/careerCounsellingV2ShortlistingEngine');
+    const r = await processAiShortlistingTurn(
+      'yes',
+      {
+        flow: 'career_counselling_v2',
+        version: 2,
+        stage: 'ai_shortlisting',
+        step: 'ai_shortlisting_placeholder',
+        profile: {
+          preferredCourse: 'B.Tech',
+          careerGoal: 'Software engineer',
+          careerPriority: 'placements',
+          counselingConfidenceScore: 85,
+          evaluationCompleted: true,
+          bridgedFromCollegePredictor: true,
+          exam: 'KCET',
+          rank: 12000,
+          category: 'OC',
+          gender: 'female',
+        },
+      },
+      { startAiShortlisting: true }
+    );
     assert.match(r.reply, /could not retrieve eligible colleges/i);
     assert.equal((r.context.profile.recommendedColleges || []).length, 0);
   });
@@ -843,26 +968,48 @@ describe('careerCounsellingV2 smart comparison', () => {
     r = await handleCareerCounsellingMessage('yes', r.context); // condensed stage 4
     r = await handleCareerCounsellingMessage('yes', r.context); // explore stage 5
     r = await handleCareerCounsellingMessage('yes', r.context); // personalization stage 6
-    r = await handleCareerCounsellingMessage('ok', r.context);
-    r = await handleCareerCounsellingMessage('placements and skill building', r.context);
-    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    // Stage 6 from explore: budget → location → career → family → concern
     r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
+    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    r = await handleCareerCounsellingMessage('placements and skill building', r.context);
     r = await handleCareerCounsellingMessage('parents prefer good brand nearby', r.context);
     r = await handleCareerCounsellingMessage('worried about fees and wrong branch', r.context);
     if (r.context.step === 'pers_clarify') {
       r = await handleCareerCounsellingMessage('placements', r.context);
     }
-    r = await handleCareerCounsellingMessage('yes', r.context);
+    // Seed exam+rank so later-phase tests keep eligibility shortlist (mock College Dost).
+    r = await handleCareerCounsellingMessage('yes', {
+      ...r.context,
+      profile: {
+        ...(r.context.profile || {}),
+        exam: 'TS_EAMCET',
+        entranceExam: 'TS_EAMCET',
+        rank: 15000,
+        category: 'OC',
+        gender: 'male',
+      },
+    });
     if (r.context.stage === 'modern_colleges' || r.context.step === 'modern_condensed') {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
     if (r.context.stage === 'explore_modern_colleges') {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
-    r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
-    r = await handleCareerCounsellingMessage('15000', r.context);
-    r = await handleCareerCounsellingMessage('OC Boys', r.context);
-    r = await handleCareerCounsellingMessage('yes', r.context);
+    // Normal path shortlists without exam; advance to compare when ready
+    if (r.context.step === 'shortlist_ask_compare') {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    } else if (
+      r.context.step === 'shortlist_ask_exam' ||
+      r.context.step === 'shortlist_ask_rank' ||
+      r.context.step === 'shortlist_ask_category'
+    ) {
+      r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
+      r = await handleCareerCounsellingMessage('15000', r.context);
+      r = await handleCareerCounsellingMessage('OC Boys', r.context);
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    } else {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    }
     return r;
   }
 
@@ -1051,26 +1198,48 @@ describe('careerCounsellingV2 concern resolution', () => {
     r = await handleCareerCounsellingMessage('yes', r.context); // condensed stage 4
     r = await handleCareerCounsellingMessage('yes', r.context); // explore stage 5
     r = await handleCareerCounsellingMessage('yes', r.context); // personalization stage 6
-    r = await handleCareerCounsellingMessage('ok', r.context);
-    r = await handleCareerCounsellingMessage('placements and skill building', r.context);
-    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    // Stage 6 from explore: budget → location → career → family → concern
     r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
+    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    r = await handleCareerCounsellingMessage('placements and skill building', r.context);
     r = await handleCareerCounsellingMessage('parents prefer good brand nearby', r.context);
     r = await handleCareerCounsellingMessage('worried about fees and wrong branch', r.context);
     if (r.context.step === 'pers_clarify') {
       r = await handleCareerCounsellingMessage('placements', r.context);
     }
-    r = await handleCareerCounsellingMessage('yes', r.context);
+    // Seed exam+rank so later-phase tests keep eligibility shortlist (mock College Dost).
+    r = await handleCareerCounsellingMessage('yes', {
+      ...r.context,
+      profile: {
+        ...(r.context.profile || {}),
+        exam: 'TS_EAMCET',
+        entranceExam: 'TS_EAMCET',
+        rank: 15000,
+        category: 'OC',
+        gender: 'male',
+      },
+    });
     if (r.context.stage === 'modern_colleges' || r.context.step === 'modern_condensed') {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
     if (r.context.stage === 'explore_modern_colleges') {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
-    r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
-    r = await handleCareerCounsellingMessage('15000', r.context);
-    r = await handleCareerCounsellingMessage('OC Boys', r.context);
-    r = await handleCareerCounsellingMessage('yes', r.context);
+    // Normal path shortlists without exam; advance to compare when ready
+    if (r.context.step === 'shortlist_ask_compare') {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    } else if (
+      r.context.step === 'shortlist_ask_exam' ||
+      r.context.step === 'shortlist_ask_rank' ||
+      r.context.step === 'shortlist_ask_category'
+    ) {
+      r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
+      r = await handleCareerCounsellingMessage('15000', r.context);
+      r = await handleCareerCounsellingMessage('OC Boys', r.context);
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    } else {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    }
     r = await handleCareerCounsellingMessage('1 and 2', r.context);
     r = await handleCareerCounsellingMessage('continue', r.context);
     r = await handleCareerCounsellingMessage('yes', r.context);
@@ -1260,26 +1429,48 @@ describe('careerCounsellingV2 phase 9 personalized recommendation', () => {
     r = await handleCareerCounsellingMessage('yes', r.context); // condensed stage 4
     r = await handleCareerCounsellingMessage('yes', r.context); // explore stage 5
     r = await handleCareerCounsellingMessage('yes', r.context); // personalization stage 6
-    r = await handleCareerCounsellingMessage('ok', r.context);
-    r = await handleCareerCounsellingMessage('placements and skill building', r.context);
-    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    // Stage 6 from explore: budget → location → career → family → concern
     r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
+    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    r = await handleCareerCounsellingMessage('placements and skill building', r.context);
     r = await handleCareerCounsellingMessage('parents prefer good brand nearby', r.context);
     r = await handleCareerCounsellingMessage('worried about fees and wrong branch', r.context);
     if (r.context.step === 'pers_clarify') {
       r = await handleCareerCounsellingMessage('placements', r.context);
     }
-    r = await handleCareerCounsellingMessage('yes', r.context);
+    // Seed exam+rank so later-phase tests keep eligibility shortlist (mock College Dost).
+    r = await handleCareerCounsellingMessage('yes', {
+      ...r.context,
+      profile: {
+        ...(r.context.profile || {}),
+        exam: 'TS_EAMCET',
+        entranceExam: 'TS_EAMCET',
+        rank: 15000,
+        category: 'OC',
+        gender: 'male',
+      },
+    });
     if (r.context.stage === 'modern_colleges' || r.context.step === 'modern_condensed') {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
     if (r.context.stage === 'explore_modern_colleges') {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
-    r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
-    r = await handleCareerCounsellingMessage('15000', r.context);
-    r = await handleCareerCounsellingMessage('OC Boys', r.context);
-    r = await handleCareerCounsellingMessage('yes', r.context);
+    // Normal path shortlists without exam; advance to compare when ready
+    if (r.context.step === 'shortlist_ask_compare') {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    } else if (
+      r.context.step === 'shortlist_ask_exam' ||
+      r.context.step === 'shortlist_ask_rank' ||
+      r.context.step === 'shortlist_ask_category'
+    ) {
+      r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
+      r = await handleCareerCounsellingMessage('15000', r.context);
+      r = await handleCareerCounsellingMessage('OC Boys', r.context);
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    } else {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    }
     r = await handleCareerCounsellingMessage('1 and 2', r.context);
     r = await handleCareerCounsellingMessage('continue', r.context);
     r = await handleCareerCounsellingMessage('yes', r.context);
@@ -1533,26 +1724,48 @@ describe('careerCounsellingV2 phase 10 future path vision', () => {
     r = await handleCareerCounsellingMessage('yes', r.context); // condensed stage 4
     r = await handleCareerCounsellingMessage('yes', r.context); // explore stage 5
     r = await handleCareerCounsellingMessage('yes', r.context); // personalization stage 6
-    r = await handleCareerCounsellingMessage('ok', r.context);
-    r = await handleCareerCounsellingMessage('placements and skill building', r.context);
-    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    // Stage 6 from explore: budget → location → career → family → concern
     r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
+    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    r = await handleCareerCounsellingMessage('placements and skill building', r.context);
     r = await handleCareerCounsellingMessage('parents prefer good brand nearby', r.context);
     r = await handleCareerCounsellingMessage('worried about fees and wrong branch', r.context);
     if (r.context.step === 'pers_clarify') {
       r = await handleCareerCounsellingMessage('placements', r.context);
     }
-    r = await handleCareerCounsellingMessage('yes', r.context);
+    // Seed exam+rank so later-phase tests keep eligibility shortlist (mock College Dost).
+    r = await handleCareerCounsellingMessage('yes', {
+      ...r.context,
+      profile: {
+        ...(r.context.profile || {}),
+        exam: 'TS_EAMCET',
+        entranceExam: 'TS_EAMCET',
+        rank: 15000,
+        category: 'OC',
+        gender: 'male',
+      },
+    });
     if (r.context.stage === 'modern_colleges' || r.context.step === 'modern_condensed') {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
     if (r.context.stage === 'explore_modern_colleges') {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
-    r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
-    r = await handleCareerCounsellingMessage('15000', r.context);
-    r = await handleCareerCounsellingMessage('OC Boys', r.context);
-    r = await handleCareerCounsellingMessage('yes', r.context);
+    // Normal path shortlists without exam; advance to compare when ready
+    if (r.context.step === 'shortlist_ask_compare') {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    } else if (
+      r.context.step === 'shortlist_ask_exam' ||
+      r.context.step === 'shortlist_ask_rank' ||
+      r.context.step === 'shortlist_ask_category'
+    ) {
+      r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
+      r = await handleCareerCounsellingMessage('15000', r.context);
+      r = await handleCareerCounsellingMessage('OC Boys', r.context);
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    } else {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    }
     r = await handleCareerCounsellingMessage('1 and 2', r.context);
     r = await handleCareerCounsellingMessage('continue', r.context);
     r = await handleCareerCounsellingMessage('yes', r.context);
@@ -1742,26 +1955,48 @@ describe('careerCounsellingV2 Phase 11 final decision hesitation', () => {
     r = await handleCareerCounsellingMessage('yes', r.context); // condensed stage 4
     r = await handleCareerCounsellingMessage('yes', r.context); // explore stage 5
     r = await handleCareerCounsellingMessage('yes', r.context); // personalization stage 6
-    r = await handleCareerCounsellingMessage('ok', r.context);
-    r = await handleCareerCounsellingMessage('placements and skill building', r.context);
-    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    // Stage 6 from explore: budget → location → career → family → concern
     r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
+    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    r = await handleCareerCounsellingMessage('placements and skill building', r.context);
     r = await handleCareerCounsellingMessage('parents prefer good brand nearby', r.context);
     r = await handleCareerCounsellingMessage('worried about fees and wrong branch', r.context);
     if (r.context.step === 'pers_clarify') {
       r = await handleCareerCounsellingMessage('placements', r.context);
     }
-    r = await handleCareerCounsellingMessage('yes', r.context);
+    // Seed exam+rank so later-phase tests keep eligibility shortlist (mock College Dost).
+    r = await handleCareerCounsellingMessage('yes', {
+      ...r.context,
+      profile: {
+        ...(r.context.profile || {}),
+        exam: 'TS_EAMCET',
+        entranceExam: 'TS_EAMCET',
+        rank: 15000,
+        category: 'OC',
+        gender: 'male',
+      },
+    });
     if (r.context.stage === 'modern_colleges' || r.context.step === 'modern_condensed') {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
     if (r.context.stage === 'explore_modern_colleges') {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
-    r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
-    r = await handleCareerCounsellingMessage('15000', r.context);
-    r = await handleCareerCounsellingMessage('OC Boys', r.context);
-    r = await handleCareerCounsellingMessage('yes', r.context);
+    // Normal path shortlists without exam; advance to compare when ready
+    if (r.context.step === 'shortlist_ask_compare') {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    } else if (
+      r.context.step === 'shortlist_ask_exam' ||
+      r.context.step === 'shortlist_ask_rank' ||
+      r.context.step === 'shortlist_ask_category'
+    ) {
+      r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
+      r = await handleCareerCounsellingMessage('15000', r.context);
+      r = await handleCareerCounsellingMessage('OC Boys', r.context);
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    } else {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    }
     r = await handleCareerCounsellingMessage('1 and 2', r.context);
     r = await handleCareerCounsellingMessage('continue', r.context);
     r = await handleCareerCounsellingMessage('yes', r.context);
@@ -2004,26 +2239,48 @@ describe('careerCounsellingV2 Phase 12 counseling experience selection', () => {
     r = await handleCareerCounsellingMessage('yes', r.context); // condensed stage 4
     r = await handleCareerCounsellingMessage('yes', r.context); // explore stage 5
     r = await handleCareerCounsellingMessage('yes', r.context); // personalization stage 6
-    r = await handleCareerCounsellingMessage('ok', r.context);
-    r = await handleCareerCounsellingMessage('placements and skill building', r.context);
-    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    // Stage 6 from explore: budget → location → career → family → concern
     r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
+    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    r = await handleCareerCounsellingMessage('placements and skill building', r.context);
     r = await handleCareerCounsellingMessage('parents prefer good brand nearby', r.context);
     r = await handleCareerCounsellingMessage('worried about fees and wrong branch', r.context);
     if (r.context.step === 'pers_clarify') {
       r = await handleCareerCounsellingMessage('placements', r.context);
     }
-    r = await handleCareerCounsellingMessage('yes', r.context);
+    // Seed exam+rank so later-phase tests keep eligibility shortlist (mock College Dost).
+    r = await handleCareerCounsellingMessage('yes', {
+      ...r.context,
+      profile: {
+        ...(r.context.profile || {}),
+        exam: 'TS_EAMCET',
+        entranceExam: 'TS_EAMCET',
+        rank: 15000,
+        category: 'OC',
+        gender: 'male',
+      },
+    });
     if (r.context.stage === 'modern_colleges' || r.context.step === 'modern_condensed') {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
     if (r.context.stage === 'explore_modern_colleges') {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
-    r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
-    r = await handleCareerCounsellingMessage('15000', r.context);
-    r = await handleCareerCounsellingMessage('OC Boys', r.context);
-    r = await handleCareerCounsellingMessage('yes', r.context);
+    // Normal path shortlists without exam; advance to compare when ready
+    if (r.context.step === 'shortlist_ask_compare') {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    } else if (
+      r.context.step === 'shortlist_ask_exam' ||
+      r.context.step === 'shortlist_ask_rank' ||
+      r.context.step === 'shortlist_ask_category'
+    ) {
+      r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
+      r = await handleCareerCounsellingMessage('15000', r.context);
+      r = await handleCareerCounsellingMessage('OC Boys', r.context);
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    } else {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    }
     r = await handleCareerCounsellingMessage('1 and 2', r.context);
     r = await handleCareerCounsellingMessage('continue', r.context);
     r = await handleCareerCounsellingMessage('yes', r.context);
@@ -2199,26 +2456,48 @@ describe('careerCounsellingV2 Phase 13 booking orchestrator', () => {
     r = await handleCareerCounsellingMessage('yes', r.context); // condensed stage 4
     r = await handleCareerCounsellingMessage('yes', r.context); // explore stage 5
     r = await handleCareerCounsellingMessage('yes', r.context); // personalization stage 6
-    r = await handleCareerCounsellingMessage('ok', r.context);
-    r = await handleCareerCounsellingMessage('placements and skill building', r.context);
-    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    // Stage 6 from explore: budget → location → career → family → concern
     r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
+    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    r = await handleCareerCounsellingMessage('placements and skill building', r.context);
     r = await handleCareerCounsellingMessage('parents prefer good brand nearby', r.context);
     r = await handleCareerCounsellingMessage('worried about fees and wrong branch', r.context);
     if (r.context.step === 'pers_clarify') {
       r = await handleCareerCounsellingMessage('placements', r.context);
     }
-    r = await handleCareerCounsellingMessage('yes', r.context);
+    // Seed exam+rank so later-phase tests keep eligibility shortlist (mock College Dost).
+    r = await handleCareerCounsellingMessage('yes', {
+      ...r.context,
+      profile: {
+        ...(r.context.profile || {}),
+        exam: 'TS_EAMCET',
+        entranceExam: 'TS_EAMCET',
+        rank: 15000,
+        category: 'OC',
+        gender: 'male',
+      },
+    });
     if (r.context.stage === 'modern_colleges' || r.context.step === 'modern_condensed') {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
     if (r.context.stage === 'explore_modern_colleges') {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
-    r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
-    r = await handleCareerCounsellingMessage('15000', r.context);
-    r = await handleCareerCounsellingMessage('OC Boys', r.context);
-    r = await handleCareerCounsellingMessage('yes', r.context);
+    // Normal path shortlists without exam; advance to compare when ready
+    if (r.context.step === 'shortlist_ask_compare') {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    } else if (
+      r.context.step === 'shortlist_ask_exam' ||
+      r.context.step === 'shortlist_ask_rank' ||
+      r.context.step === 'shortlist_ask_category'
+    ) {
+      r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
+      r = await handleCareerCounsellingMessage('15000', r.context);
+      r = await handleCareerCounsellingMessage('OC Boys', r.context);
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    } else {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    }
     r = await handleCareerCounsellingMessage('1 and 2', r.context);
     r = await handleCareerCounsellingMessage('continue', r.context);
     r = await handleCareerCounsellingMessage('yes', r.context);
@@ -2388,26 +2667,48 @@ describe('careerCounsellingV2 counseling invitation', () => {
     r = await handleCareerCounsellingMessage('yes', r.context); // condensed stage 4
     r = await handleCareerCounsellingMessage('yes', r.context); // explore stage 5
     r = await handleCareerCounsellingMessage('yes', r.context); // personalization stage 6
-    r = await handleCareerCounsellingMessage('ok', r.context);
-    r = await handleCareerCounsellingMessage('placements and skill building', r.context);
-    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    // Stage 6 from explore: budget → location → career → family → concern
     r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
+    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    r = await handleCareerCounsellingMessage('placements and skill building', r.context);
     r = await handleCareerCounsellingMessage('parents prefer good brand nearby', r.context);
     r = await handleCareerCounsellingMessage('worried about fees and wrong branch', r.context);
     if (r.context.step === 'pers_clarify') {
       r = await handleCareerCounsellingMessage('placements', r.context);
     }
-    r = await handleCareerCounsellingMessage('yes', r.context);
+    // Seed exam+rank so later-phase tests keep eligibility shortlist (mock College Dost).
+    r = await handleCareerCounsellingMessage('yes', {
+      ...r.context,
+      profile: {
+        ...(r.context.profile || {}),
+        exam: 'TS_EAMCET',
+        entranceExam: 'TS_EAMCET',
+        rank: 15000,
+        category: 'OC',
+        gender: 'male',
+      },
+    });
     if (r.context.stage === 'modern_colleges' || r.context.step === 'modern_condensed') {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
     if (r.context.stage === 'explore_modern_colleges') {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
-    r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
-    r = await handleCareerCounsellingMessage('15000', r.context);
-    r = await handleCareerCounsellingMessage('OC Boys', r.context);
-    r = await handleCareerCounsellingMessage('yes', r.context);
+    // Normal path shortlists without exam; advance to compare when ready
+    if (r.context.step === 'shortlist_ask_compare') {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    } else if (
+      r.context.step === 'shortlist_ask_exam' ||
+      r.context.step === 'shortlist_ask_rank' ||
+      r.context.step === 'shortlist_ask_category'
+    ) {
+      r = await handleCareerCounsellingMessage('TS EAMCET', r.context);
+      r = await handleCareerCounsellingMessage('15000', r.context);
+      r = await handleCareerCounsellingMessage('OC Boys', r.context);
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    } else {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    }
     r = await handleCareerCounsellingMessage('1 and 2', r.context);
     r = await handleCareerCounsellingMessage('continue', r.context);
     r = await handleCareerCounsellingMessage('yes', r.context);
