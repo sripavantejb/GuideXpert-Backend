@@ -117,18 +117,23 @@ function parseCollegeSelection(text, recommended = []) {
 }
 
 function isCompareContinue(text) {
-  const t = normalizeText(text);
-  return /^(continue|next|done|ready|proceed|go on|move on|yes|yeah|yep|ok|okay)\b/i.test(t);
+  const {
+    isPermissionAffirmative,
+    normalizePermissionText,
+  } = require('../permissionAffirmative');
+  if (isPermissionAffirmative(text)) return true;
+  const t = normalizePermissionText(text);
+  return /^(done|go on|move on)$/i.test(t);
 }
 
 function isComparePermissionYes(text) {
-  const t = normalizeText(text);
-  return /^(yes|yeah|yep|yup|sure|ok|okay|please|y|continue|go ahead)\b/i.test(t);
+  const { isPermissionAffirmative } = require('../permissionAffirmative');
+  return isPermissionAffirmative(text);
 }
 
 function isComparePermissionNo(text) {
-  const t = normalizeText(text);
-  return /^(no|nope|not now|later|nah|n|not yet)\b/i.test(t);
+  const { isPermissionNegative } = require('../permissionAffirmative');
+  return isPermissionNegative(text);
 }
 
 function isCompareQuestion(text) {
@@ -141,8 +146,8 @@ function isCompareQuestion(text) {
 }
 
 function isCompareAcknowledgment(text) {
-  const t = normalizeText(text);
-  return /^(ok|okay|yes|yeah|yep|sure|continue|go on|ready|proceed|let'?s go)$/i.test(t);
+  const { isPermissionAffirmative } = require('../permissionAffirmative');
+  return isPermissionAffirmative(text);
 }
 
 module.exports = {

@@ -4,6 +4,8 @@ const MENU_COMMAND_WORDS = ['menu', 'help', 'start'];
 
 function normalizeText(text) {
   return String(text || '')
+    .replace(/[\u200B-\u200D\uFEFF\u2060\u00A0]/g, '')
+    .normalize('NFKC')
     .trim()
     .toLowerCase()
     .replace(/\s+/g, ' ');

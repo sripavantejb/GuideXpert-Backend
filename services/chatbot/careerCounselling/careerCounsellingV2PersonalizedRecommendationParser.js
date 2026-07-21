@@ -1,19 +1,19 @@
 'use strict';
 
-const { normalizeText } = require('../intentTextUtils');
 const { PHASE9_QA } = require('../../../constants/careerCounsellingV2PersonalizedRecommendation');
+const {
+  isPermissionAffirmative,
+} = require('../permissionAffirmative');
 
 function isPhase9Continue(text) {
-  const t = normalizeText(text);
-  return /^(continue|next|proceed|ready|go ahead|lets go|let us go)$/i.test(
-    t
-  ) || /\b(continue|next step|ready)\b/i.test(t);
+  return isPermissionAffirmative(text);
 }
 
 function isPhase9Question(text) {
   const raw = String(text || '').trim();
   if (!raw) return false;
   if (/\?/.test(raw)) return true;
+  if (isPhase9Continue(raw)) return false;
   return /\b(why|how|what|which|explain|difference|trade|confidence|sure)\b/i.test(raw);
 }
 

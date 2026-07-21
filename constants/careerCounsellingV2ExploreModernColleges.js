@@ -131,14 +131,17 @@ function getExploreMessage(key) {
   return MESSAGES[key] || '';
 }
 
+const {
+  isPermissionAffirmative,
+  isPermissionNegative,
+} = require('../services/chatbot/permissionAffirmative');
+
 function isExplorePermissionYes(text) {
-  return /^\s*(y|yes|yeah|yep|ok|okay|sure|ready|continue|go ahead|next|narrow|personalize|shortlist)\s*[.!?]?\s*$/i.test(
-    String(text || '').trim()
-  );
+  return isPermissionAffirmative(text);
 }
 
 function isExplorePermissionNo(text) {
-  return /^\s*(n|no|nope|not now|later|skip)\s*[.!?]?\s*$/i.test(String(text || '').trim());
+  return isPermissionNegative(text);
 }
 
 module.exports = {

@@ -199,4 +199,32 @@ describe('inbound dual-delivery dedupe', () => {
     assert.equal(inboundCreateCalls, 0);
     assert.equal(webhookCreateCalls, 0);
   });
+
+  test('short permission ack "yes" is NOT cross-turn deduped', async () => {
+    existingRecentInbound = {
+      _id: new mongoose.Types.ObjectId(),
+      text: 'yes',
+      receivedAt: new Date(),
+    };
+
+    const inboundService = require(inboundServicePath);
+    const result = await inboundService.handleInboundWebhook(
+      { headers: {} },
+      {
+        type: 'message',
+        timestamp: Math.floor(Date.now() / 1000),
+        payload: {
+          source: '919876543210',
+          id: 'gupshup-yes-stage5',
+          payload: { type: 'text', text: 'yes' },
+        },
+      },
+      new Date()
+    );
+
+    assert.equal(result.dedupe, undefined);
+    assert.equal(result.reason, undefined);
+    assert.equal(processInboundCalls, 1);
+    assert.equal(inboundCreateCalls, 1);
+  });
 });

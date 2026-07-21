@@ -169,15 +169,13 @@ function isPersQuestion(text) {
 }
 
 function isPermissionYes(text) {
-  const t = normalizeText(text);
-  return /^(yes|yeah|yep|yup|sure|ok|okay|please|y|continue|go ahead|absolutely|definitely|let'?s go)\b/i.test(
-    t
-  );
+  const { isPermissionAffirmative } = require('../permissionAffirmative');
+  return isPermissionAffirmative(text);
 }
 
 function isPermissionNo(text) {
-  const t = normalizeText(text);
-  return /^(no|nope|not now|later|nah|n|not yet)\b/i.test(t);
+  const { isPermissionNegative } = require('../permissionAffirmative');
+  return isPermissionNegative(text);
 }
 
 /**

@@ -12,6 +12,7 @@ const { verifyGupshupWebhookRequest } = require('../../utils/gupshupWebhookAuth'
 const { getOrCreateConversation, touchInbound } = require('./conversationService');
 const { processInbound } = require('./chatbotOrchestratorService');
 const { DEFAULT_TIMEOUT_MS } = require('./knowledgeAssistantService');
+const { isShortPermissionAckUtterance } = require('./permissionAffirmative');
 
 const rateLimitMap = new Map();
 
@@ -24,10 +25,15 @@ function normalizeInboundText(text) {
 /**
  * Catch dual-provider / delayed redelivery when content-hash buckets differ
  * (e.g. Gupshup uses server clock, Meta uses message timestamp).
+ *
+ * CRITICAL: never discard short permission acks ("yes", "ok", "continue").
+ * Students reuse those at every gate; dropping the first Stage-N "yes" because
+ * Stage N-1 also said "yes" causes the double-yes production bug.
  */
 async function findRecentSameUtterance(phone10, text, at = new Date()) {
   const textNorm = normalizeInboundText(text);
   if (!phone10 || !textNorm) return null;
+  if (isShortPermissionAckUtterance(text)) return null;
 
   const windowMs = Math.max(45, inboundDedupeBucketSec()) * 1000;
   const since = new Date(at.getTime() - windowMs);

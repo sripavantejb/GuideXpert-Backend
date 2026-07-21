@@ -7,11 +7,8 @@ const {
 } = require('../../../constants/careerCounsellingV2FuturePathVision');
 
 function isVisionContinue(text) {
-  const t = normalizeText(text);
-  return (
-    /^(yes|y|ok|okay|sure|continue|next|proceed|ready|go ahead|lets go|let us go)$/i.test(t) ||
-    /\b(continue|next step|ready)\b/i.test(t)
-  );
+  const { isPermissionAffirmative } = require('../permissionAffirmative');
+  return isPermissionAffirmative(text);
 }
 
 function isVisionQuestion(text) {

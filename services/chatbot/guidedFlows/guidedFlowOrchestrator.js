@@ -53,13 +53,13 @@ async function executeActiveGuidedFlowTurn({
 }) {
   let contextPatch = botState?.context || {};
   const inboundText = multilingualInbound?.englishMessage || String(inbound.text || '').trim();
+  const priorCc = contextPatch.careerCounselling || {};
+  const priorStep = priorCc.step || null;
+  const priorStage = priorCc.stage || null;
 
-  await transitionState(
-    activeConversation._id,
-    activeConversation.phone,
-    flow.botState,
-    contextPatch
-  );
+  // Do NOT rewrite full context before the turn — that can clobber a concurrent
+  // advanced state with a stale WAITING_PERMISSION snapshot. Persist once after
+  // the engine advances.
 
   const turn = await processGuidedFlowTurn({
     flow,
@@ -86,6 +86,33 @@ async function executeActiveGuidedFlowTurn({
     turn.nextState,
     turn.contextPatch
   );
+
+  try {
+    const {
+      isPermissionAffirmative,
+      isPermissionWaitingStep,
+      logPermissionGateTransition,
+    } = require('../permissionAffirmative');
+    const nextCc = turn.contextPatch?.careerCounselling || {};
+    const nextStep = nextCc.step || null;
+    if (isPermissionWaitingStep(priorStep) || isPermissionWaitingStep(nextStep)) {
+      const matched = isPermissionAffirmative(inboundText);
+      logPermissionGateTransition({
+        conversationId: String(activeConversation._id),
+        currentStage: priorStage,
+        currentStep: priorStep,
+        inboundText,
+        permissionMatched: matched,
+        oldState: `${priorStage || ''}:${priorStep || ''}`,
+        newState: `${nextCc.stage || ''}:${nextStep || ''}`,
+        replyGenerated: Boolean(turn.replyText || (turn.replyParts && turn.replyParts.length)),
+        statePersisted: true,
+        advanced: Boolean(nextStep && nextStep !== priorStep),
+      });
+    }
+  } catch (_err) {
+    // Instrumentation must never block the turn.
+  }
 
   let replyText = turn.replyText;
   if (!replyText && (!Array.isArray(turn.replyParts) || turn.replyParts.length === 0)) {
@@ -280,13 +307,7 @@ async function applyGuidedFlowSwitchTurn({
   transitionState,
   resolvedLanguageFrom,
 }) {
-  await transitionState(
-    activeConversation._id,
-    activeConversation.phone,
-    flow.botState,
-    contextPatch
-  );
-
+  // Persist once after the turn — avoid pre-turn full-context rewrite races.
   const turn = await processGuidedFlowTurn({
     flow,
     inboundText: routingInboundText,

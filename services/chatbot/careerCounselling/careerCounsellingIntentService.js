@@ -247,15 +247,13 @@ function isCareerCounsellingJourneyBreakout(text, originalText = null) {
 }
 
 function isPermissionYes(text) {
-  const t = normalizeText(text);
-  return /^(yes|yeah|yep|yup|sure|ok|okay|please|y|show me|suggest|go ahead|absolutely|definitely)\b/i.test(
-    t
-  );
+  const { isPermissionAffirmative } = require('../permissionAffirmative');
+  return isPermissionAffirmative(text);
 }
 
 function isPermissionNo(text) {
-  const t = normalizeText(text);
-  return /^(no|nope|not now|later|nah|n)\b/i.test(t);
+  const { isPermissionNegative } = require('../permissionAffirmative');
+  return isPermissionNegative(text);
 }
 
 module.exports = {

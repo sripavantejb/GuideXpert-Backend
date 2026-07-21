@@ -72,18 +72,18 @@ function parseRegionAnswer(text) {
 }
 
 function isShortlistAcknowledgment(text) {
-  const t = normalizeText(text);
-  return /^(ok|okay|yes|yeah|yep|sure|continue|go on|ready|proceed|let'?s go)$/i.test(t);
+  const { isPermissionAffirmative } = require('../permissionAffirmative');
+  return isPermissionAffirmative(text);
 }
 
 function isPermissionYes(text) {
-  const t = normalizeText(text);
-  return /^(yes|yeah|yep|yup|sure|ok|okay|please|y|continue|go ahead|compare)\b/i.test(t);
+  const { isPermissionAffirmative } = require('../permissionAffirmative');
+  return isPermissionAffirmative(text);
 }
 
 function isPermissionNo(text) {
-  const t = normalizeText(text);
-  return /^(no|nope|not now|later|nah|n|not yet)\b/i.test(t);
+  const { isPermissionNegative } = require('../permissionAffirmative');
+  return isPermissionNegative(text);
 }
 
 function isShortlistQuestion(text) {

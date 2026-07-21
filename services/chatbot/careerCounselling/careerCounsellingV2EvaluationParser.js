@@ -172,22 +172,20 @@ function isEvaluationQuestion(text) {
 }
 
 function isKnowledgeConfirmYes(text) {
-  const t = normalizeText(text);
-  return /^(yes|yeah|yep|yup|sure|ok|okay|absolutely|definitely|clear|clearer|got it|makes sense|i understand)\b/i.test(
-    t
-  );
+  const { isPermissionAffirmative, normalizePermissionText } = require('../permissionAffirmative');
+  if (isPermissionAffirmative(text)) return true;
+  const t = normalizePermissionText(text);
+  return /^(clear|clearer|got it|makes sense|i understand)\b/i.test(t);
 }
 
 function isPermissionYes(text) {
-  const t = normalizeText(text);
-  return /^(yes|yeah|yep|yup|sure|ok|okay|please|y|continue|go ahead|absolutely|definitely|let'?s go|shortlist|show)\b/i.test(
-    t
-  );
+  const { isPermissionAffirmative } = require('../permissionAffirmative');
+  return isPermissionAffirmative(text);
 }
 
 function isPermissionNo(text) {
-  const t = normalizeText(text);
-  return /^(no|nope|not now|later|nah|n|not yet|skip)\b/i.test(t);
+  const { isPermissionNegative } = require('../permissionAffirmative');
+  return isPermissionNegative(text);
 }
 
 module.exports = {
