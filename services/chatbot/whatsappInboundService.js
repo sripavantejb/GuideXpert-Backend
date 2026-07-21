@@ -4,6 +4,7 @@ const WhatsAppWebhookEvent = require('../../models/WhatsAppWebhookEvent');
 const {
   parseInboundWebhook,
   buildInboundDedupeKey,
+  inboundDedupeBucketSec,
   sanitizeInboundSnippet,
 } = require('../../utils/gupshupInboundPayload');
 const { maskPhoneTail } = require('../../utils/chatbotPhone');
@@ -15,6 +16,32 @@ const { DEFAULT_TIMEOUT_MS } = require('./knowledgeAssistantService');
 const rateLimitMap = new Map();
 
 const SUCCESSFUL_OUTBOUND_STATUSES = ['queued', 'submitted', 'sent', 'delivered', 'read'];
+
+function normalizeInboundText(text) {
+  return String(text || '').trim().toLowerCase();
+}
+
+/**
+ * Catch dual-provider / delayed redelivery when content-hash buckets differ
+ * (e.g. Gupshup uses server clock, Meta uses message timestamp).
+ */
+async function findRecentSameUtterance(phone10, text, at = new Date()) {
+  const textNorm = normalizeInboundText(text);
+  if (!phone10 || !textNorm) return null;
+
+  const windowMs = Math.max(45, inboundDedupeBucketSec()) * 1000;
+  const since = new Date(at.getTime() - windowMs);
+  const recent = await WhatsAppInboundMessage.find({
+    phone: phone10,
+    receivedAt: { $gte: since },
+  })
+    .select('_id text receivedAt')
+    .sort({ receivedAt: -1 })
+    .limit(25)
+    .lean();
+
+  return recent.find((row) => normalizeInboundText(row.text) === textNorm) || null;
+}
 
 function inboundProcessingStaleMs() {
   const configured = Number(process.env.CHATBOT_INBOUND_PROCESSING_STALE_MS);
@@ -248,7 +275,18 @@ async function handleInboundWebhook(req, body, receivedAt = new Date()) {
     return { handled: true, rateLimited: true };
   }
 
-  const dedupeKey = buildInboundDedupeKey(parsed, body);
+  // Prefer webhook arrival time for bucket stability across providers.
+  const parsedForDedupe = { ...parsed, receivedAt };
+  let dedupeKey = buildInboundDedupeKey(parsedForDedupe, body);
+
+  const recentSame = await findRecentSameUtterance(parsed.phone10, parsed.text, receivedAt);
+  if (recentSame) {
+    console.warn('[chatbot] inbound_dedupe_recent_same_utterance', {
+      phone: maskPhoneTail(parsed.phone10),
+      existingInboundId: String(recentSame._id),
+    });
+    return { handled: true, dedupe: true, reason: 'recent_same_utterance' };
+  }
 
   const { conversation, leadLinks } = await getOrCreateConversation(parsed.phone10);
 
@@ -266,6 +304,8 @@ async function handleInboundWebhook(req, body, receivedAt = new Date()) {
     });
   } catch (e) {
     if (e && (e.code === 11000 || String(e.message).includes('E11000'))) {
+      // Content-hash collision: Gupshup + Meta dual delivery of the same utterance.
+      // Never create a second inbound/provider-scoped key — that caused duplicate bot replies.
       return { handled: true, dedupe: true };
     }
     throw e;
@@ -283,16 +323,17 @@ async function handleInboundWebhook(req, body, receivedAt = new Date()) {
         webhookEventId: webhookEvent._id,
       })
     );
-    await WhatsAppWebhookEvent.updateOne(
-      { _id: webhookEvent._id },
-      { $set: { inboundMessageId: inboundDoc._id } }
-    );
   } catch (e) {
     if (e && (e.code === 11000 || String(e.message).includes('E11000'))) {
-      return { handled: true, dedupe: true };
+      return { handled: true, dedupe: true, webhookEventId: webhookEvent?._id };
     }
     throw e;
   }
+
+  await WhatsAppWebhookEvent.updateOne(
+    { _id: webhookEvent._id },
+    { $set: { inboundMessageId: inboundDoc._id } }
+  );
 
   await touchInbound(conversation._id, receivedAt);
 

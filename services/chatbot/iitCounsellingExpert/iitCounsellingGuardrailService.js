@@ -33,6 +33,8 @@ function validateIitCounsellingResponse({
   knowledgeResults = [],
   userMessage = '',
   englishUserMessage = '',
+  leadContext = null,
+  resolvedLanguage = 'en',
 } = {}) {
   const text = String(response || '').trim();
 
@@ -53,6 +55,8 @@ function validateIitCounsellingResponse({
     knowledgeResults,
     userMessage,
     englishUserMessage,
+    leadContext,
+    resolvedLanguage,
   });
 
   if (containsRankPrediction(validated.text)) {

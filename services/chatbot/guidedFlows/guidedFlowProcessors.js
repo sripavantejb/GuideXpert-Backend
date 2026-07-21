@@ -6,7 +6,7 @@ const { handleRankPredictorMessage } = require('../rankPredictorChatService');
 const {
   handleCareerCounsellingMessage,
 } = require('../careerCounselling/careerCounsellingJourneyService');
-const { isCareerCounsellingJourneyEnabled } = require('../../../constants/careerCounsellingJourney');
+const { isCareerCounsellingV2Enabled } = require('../../../constants/careerCounsellingV2Discovery');
 const faqService = require('../faqService');
 const { resolveSystemReply } = require('../../../constants/localizedSystemReplies');
 const {
@@ -17,6 +17,12 @@ const {
   isRankBranchCollegePredictorQuery,
 } = require('../intentClassifierService');
 const { normalizeText } = require('../intentTextUtils');
+const {
+  upsertFromTurn,
+} = require('../../conversationRecovery/conversationRecoverySnapshotService');
+const {
+  markPostRecoveryOutcomesFromSnapshot,
+} = require('../../conversationRecovery/conversationRecoveryResumeService');
 
 /** Clears sticky assistant session flags while preserving guided subflow context. */
 function clearAssistantSessionFlags(contextPatch) {
@@ -42,12 +48,56 @@ async function processCollegePredictorTurn({
   inbound,
   contextPatch,
   isNewEntry = false,
+  preferredCollege = null,
 }) {
-  const c = await handleCollegePredictorMessage(inboundText, contextPatch.college || {}, {
+  let collegeCtx = contextPatch.college || {};
+  if (preferredCollege) {
+    collegeCtx = { ...collegeCtx, preferredCollege };
+  }
+  const c = await handleCollegePredictorMessage(inboundText, collegeCtx, {
     isNewEntry,
     inboundId: inbound._id,
     predictionIdempotency: contextPatch.predictionIdempotency || null,
+    preferredCollege: preferredCollege || collegeCtx.preferredCollege || null,
   });
+
+  // Bridge into Career Counselling V2 compare / concern with seeded colleges
+  if (c.bridgeToCareerCounselling && c.bridgeSeed) {
+    const seed = c.bridgeSeed;
+    const { processSmartComparisonTurn } = require('../careerCounselling/careerCounsellingV2ComparisonEngine');
+    const { processConcernResolutionTurn } = require('../careerCounselling/careerCounsellingV2ConcernResolutionEngine');
+    const { finalizeCounselingResult } = require('../careerCounselling/careerCounsellingJourneyService');
+
+    let bridged;
+    if (seed.stage === 'smart_comparison') {
+      bridged = await processSmartComparisonTurn(inboundText, seed, {
+        startSmartComparison: true,
+        analytics: { source: 'college_predictor_bridge' },
+      });
+    } else {
+      bridged = await processConcernResolutionTurn(inboundText, seed, {
+        startConcernResolution: true,
+        analytics: { source: 'college_predictor_bridge' },
+      });
+    }
+    const finalized = finalizeCounselingResult(bridged, inboundText);
+
+    return {
+      replyText: finalized.reply,
+      replyParts: finalized.replyParts || null,
+      nextState: 'career_counselling_v2',
+      contextPatch: clearAssistantSessionFlags({
+        ...contextPatch,
+        college: {},
+        collegePredictorActive: false,
+        currentJourney: 'CAREER_COUNSELLING',
+        careerCounselling: finalized.context,
+        predictionIdempotency: null,
+      }),
+      intent: 'career_counselling_journey_continue',
+      localizationTier: 'translate',
+    };
+  }
 
   let nextState = flow.botState;
   let nextContext = clearAssistantSessionFlags({ ...contextPatch });
@@ -63,12 +113,21 @@ async function processCollegePredictorTurn({
     nextContext = clearAssistantSessionFlags({
       college: {},
       predictionIdempotency: null,
+      collegePredictorActive: false,
+      currentJourney: null,
     });
     nextState = flow.completeBotState;
   } else {
+    // Full replace each turn (mergeContext treats college atomically) so AGAIN/restart
+    // cannot leave stale admission_category / resultCache from a prior prediction.
     nextContext.college = c.context;
+    nextContext.collegePredictorActive = true;
+    nextContext.currentJourney = 'COLLEGE_PREDICTOR';
     if (c.predictionIdempotency) {
       nextContext.predictionIdempotency = c.predictionIdempotency;
+    }
+    if (c.restart || isNewEntry) {
+      nextContext.predictionIdempotency = null;
     }
   }
 
@@ -103,14 +162,17 @@ function processRankPredictorTurn({ flow, inboundText, contextPatch }) {
   };
 }
 
-function processCareerCounsellingTurn({
+async function processCareerCounsellingTurn({
   flow,
   inboundText,
   contextPatch,
   isNewEntry = false,
   analytics = {},
+  preferredLanguage = null,
+  phone = null,
+  conversationId = null,
 }) {
-  if (!isCareerCounsellingJourneyEnabled()) {
+  if (!isCareerCounsellingV2Enabled()) {
     return {
       replyText:
         'Career counselling guidance is temporarily unavailable. Please try again later or type MENU.',
@@ -122,19 +184,66 @@ function processCareerCounsellingTurn({
     };
   }
 
-  const result = handleCareerCounsellingMessage(
+  const result = await handleCareerCounsellingMessage(
     inboundText,
     contextPatch.careerCounselling || {},
-    { isNewEntry, analytics }
+    { isNewEntry, analytics, preferredLanguage }
   );
+
+  // Persist counseling language choice onto WhatsApp conversation (sticky).
+  if (result.syncConversationLanguage && conversationId) {
+    try {
+      const {
+        updatePreferredLanguage,
+      } = require('../conversationLanguageService');
+      await updatePreferredLanguage(conversationId, result.syncConversationLanguage);
+    } catch (_) {
+      /* non-blocking */
+    }
+  } else if (
+    result.context?.counselingSessionLanguage &&
+    conversationId &&
+    result.context.counselingSessionLanguage !== contextPatch.careerCounselling?.counselingSessionLanguage
+  ) {
+    try {
+      const {
+        updatePreferredLanguage,
+      } = require('../conversationLanguageService');
+      await updatePreferredLanguage(conversationId, result.context.counselingSessionLanguage);
+    } catch (_) {
+      /* non-blocking */
+    }
+  }
 
   const nextContext = clearAssistantSessionFlags({
     ...contextPatch,
     careerCounselling: result.context,
   });
 
+  const resolvedPhone = phone || analytics.phone || null;
+  const resolvedConversationId =
+    conversationId || analytics.conversationId || null;
+  if (resolvedPhone && resolvedConversationId && result.context) {
+    try {
+      const snapshot = await upsertFromTurn({
+        phone: resolvedPhone,
+        conversationId: resolvedConversationId,
+        context: result.context,
+      });
+      if (snapshot) {
+        await markPostRecoveryOutcomesFromSnapshot(snapshot).catch(() => {});
+      }
+    } catch (err) {
+      console.warn(
+        '[conversationRecovery] snapshot upsert failed:',
+        err?.message || err
+      );
+    }
+  }
+
   return {
     replyText: result.reply,
+    replyParts: Array.isArray(result.replyParts) ? result.replyParts : null,
     nextState: flow.botState,
     contextPatch: nextContext,
     intent: isNewEntry ? 'career_counselling_journey' : flow.continueIntent,
@@ -182,6 +291,9 @@ async function processGuidedFlowTurn({
   isNewEntry = false,
   resolvedLanguage = 'en',
   intent = null,
+  phone = null,
+  conversationId = null,
+  preferredCollege = null,
 }) {
   switch (flow.id) {
     case 'college_predictor':
@@ -198,17 +310,28 @@ async function processGuidedFlowTurn({
           localizationTier: 'static',
         };
       }
-      return processCollegePredictorTurn({ flow, inboundText, inbound, contextPatch, isNewEntry });
+      return processCollegePredictorTurn({
+        flow,
+        inboundText,
+        inbound,
+        contextPatch,
+        isNewEntry,
+        preferredCollege,
+      });
     case 'rank_predictor':
       return processRankPredictorTurn({ flow, inboundText, contextPatch });
-    case 'career_counselling_journey':
-      return processCareerCounsellingTurn({
+    case 'career_counselling_v2':
+      return await processCareerCounsellingTurn({
         flow,
         inboundText,
         contextPatch,
         isNewEntry,
+        preferredLanguage: resolvedLanguage,
+        phone,
+        conversationId: conversationId || inbound?.conversationId || null,
         analytics: {
-          conversationId: inbound?.conversationId || null,
+          conversationId: conversationId || inbound?.conversationId || null,
+          phone: phone || null,
         },
       });
     case 'faq':

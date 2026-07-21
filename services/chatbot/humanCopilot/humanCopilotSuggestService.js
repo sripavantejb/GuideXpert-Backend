@@ -2,7 +2,7 @@
 
 const { buildSystemPrompt } = require('../../ai/prompts/humanCopilot.system');
 const { OpenAiCompatibleProvider } = require('../../ai/providers/OpenAiCompatibleProvider');
-const { buildLeadContext } = require('../leadContextService');
+const { buildLeadContextWithBooking } = require('../bookingContext/bookingContextResolver');
 const { getConversationTranscript } = require('../chatbotAdminService');
 const { getLeadDetails } = require('../leadInsights/leadInsightsService');
 const {
@@ -82,11 +82,16 @@ async function generateSuggestedReplies({ handoff, inboundText = null }) {
     '';
 
   const [leadContext, leadDetails] = await Promise.all([
-    buildLeadContext({
+    buildLeadContextWithBooking({
       phone10: handoff.phone,
       productLine: handoff.productLine,
       formSubmissionId: handoff.formSubmissionId,
       iitCounsellingSubmissionId: handoff.iitCounsellingSubmissionId,
+    }, handoff.conversationId, {
+      _id: handoff.conversationId,
+      currentHandoffId: handoff._id,
+      status: 'handoff',
+      botPaused: true,
     }),
     getLeadDetails(handoff.phone),
   ]);
