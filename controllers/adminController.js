@@ -330,15 +330,6 @@ function mapLeadToDTO(sub) {
           predictedAt: sub.rankPredictorLead.predictedAt || null,
         }
       : null,
-    collegePredictorLead: sub.collegePredictorLead && typeof sub.collegePredictorLead === 'object'
-      ? {
-          exam: sub.collegePredictorLead.exam || null,
-          filterSnapshot: sub.collegePredictorLead.filterSnapshot || null,
-          capturedAt: sub.collegePredictorLead.capturedAt || null,
-          matchCount: sub.collegePredictorLead.matchCount != null ? sub.collegePredictorLead.matchCount : null,
-          predictedAt: sub.collegePredictorLead.predictedAt || null,
-        }
-      : null,
   };
 }
 
@@ -1459,15 +1450,6 @@ exports.exportLeads = async (req, res) => {
               dto.rankPredictorLead.metricLabel || '',
             ].filter(Boolean).join(' | ')
           : '',
-        dto.collegePredictorLead
-          ? [
-              dto.collegePredictorLead.exam || '',
-              dto.collegePredictorLead.matchCount != null ? `matches:${dto.collegePredictorLead.matchCount}` : '',
-              dto.collegePredictorLead.filterSnapshot
-                ? String(dto.collegePredictorLead.filterSnapshot).slice(0, 200)
-                : '',
-            ].filter(Boolean).join(' | ')
-          : '',
         dto.createdAt ? dto.createdAt.toISOString() : '',
         dto.updatedAt ? dto.updatedAt.toISOString() : ''
       ];
@@ -1478,7 +1460,6 @@ exports.exportLeads = async (req, res) => {
       'Selected Slot', 'Slot Date', 'Status', 'Step', 'Email', 'Interest',
       'UTM Source', 'UTM Medium', 'UTM Campaign', 'UTM Content (Influencer)',
       'Admin Notes', 'Lead Status', 'Lead Description', 'Rank predictor',
-      'College predictor',
       'Created', 'Updated'
     ];
     const csvLines = [header.map(escapeCsvCell).join(','), ...rows.map((r) => r.map(escapeCsvCell).join(','))];

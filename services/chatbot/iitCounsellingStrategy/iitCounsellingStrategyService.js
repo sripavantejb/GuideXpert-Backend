@@ -200,8 +200,6 @@ async function answer({
       knowledgeResults,
       userMessage: languageMetadata?.originalMessage || text,
       englishUserMessage: languageMetadata?.translatedQuery || text,
-      leadContext,
-      resolvedLanguage: languageMetadata?.resolvedLanguage || 'en',
     });
 
     if (

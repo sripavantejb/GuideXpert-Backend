@@ -46,7 +46,6 @@
     "verify:iit-messaging:ping": "node scripts/verifyIitMessagingAutomations.js --ping-cron",
     "check:whatsapp:production": "node scripts/check-whatsapp-production.js",
     "smoke:iit-section2-jobs": "node scripts/smokeIitSection2Jobs.js",
-    "smoke:production-conversation": "node scripts/productionConversationSmokeRunner.js",
     "requeue:iit-reminder-jobs": "node scripts/requeueIitReminderJobs.js",
     "requeue:iit-reminder-jobs:dispatch": "node scripts/requeueIitReminderJobs.js --dispatch",
     "repair:iit-retry-funnel": "node scripts/repairIitRetryFunnel.js",

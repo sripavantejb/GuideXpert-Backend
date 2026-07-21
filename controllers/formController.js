@@ -60,35 +60,6 @@ function parseRankPredictorLeadFromBody(body) {
   };
 }
 
-const COLLEGE_PREDICTOR_EXAM_VALUES = new Set([
-  'KCET',
-  'MHT_CET',
-  'KEAM',
-  'AP_EAMCET',
-  'TS_EAMCET',
-  'TNEA',
-  'JEE',
-  'WBJEE',
-]);
-
-/** Optional body.collegePredictorLead — validated snapshot for admin follow-up. */
-function parseCollegePredictorLeadFromBody(body) {
-  const raw = body?.collegePredictorLead;
-  if (!raw || typeof raw !== 'object') return null;
-  const exam = typeof raw.exam === 'string' ? raw.exam.trim() : '';
-  if (!exam || !COLLEGE_PREDICTOR_EXAM_VALUES.has(exam)) return null;
-  let filterSnapshot;
-  if (raw.filterSnapshot != null && typeof raw.filterSnapshot === 'string') {
-    const s = raw.filterSnapshot.trim();
-    if (s) filterSnapshot = s.slice(0, 4000);
-  }
-  return {
-    exam,
-    ...(filterSnapshot ? { filterSnapshot } : {}),
-    capturedAt: new Date(),
-  };
-}
-
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const GOOGLE_SHEET_RANGE = process.env.GOOGLE_SHEET_RANGE || 'Sheet1';
 
@@ -649,10 +620,6 @@ exports.saveStep1 = async (req, res) => {
     const rankPredictorLead = parseRankPredictorLeadFromBody(req.body);
     if (rankPredictorLead) {
       setPayload.rankPredictorLead = rankPredictorLead;
-    }
-    const collegePredictorLead = parseCollegePredictorLeadFromBody(req.body);
-    if (collegePredictorLead) {
-      setPayload.collegePredictorLead = collegePredictorLead;
     }
 
     console.log('[saveStep1] Attempting to save:', { phone: p, fullName: fullName.trim(), occupation: occupation.trim() });
@@ -1847,69 +1814,6 @@ exports.saveRankPredictorPrediction = async (req, res) => {
     return res.status(200).json({ success: true, message: 'Prediction saved' });
   } catch (err) {
     console.error('[saveRankPredictorPrediction]', err);
-    return res.status(500).json({ success: false, message: 'Something went wrong.' });
-  }
-};
-
-/**
- * POST body: { phone, exam, matchCount? }
- * Merges prediction output into collegePredictorLead for organic student college predictor leads only.
- */
-exports.saveCollegePredictorPrediction = async (req, res) => {
-  try {
-    const phoneRaw = req.body?.phone || req.body?.whatsappNumber;
-    const { exam, matchCount } = req.body || {};
-    if (!phoneRaw || typeof phoneRaw !== 'string') {
-      return res.status(400).json({ success: false, message: 'phone is required' });
-    }
-    const p = normalizePhone(phoneRaw);
-    if (!/^\d{10}$/.test(p)) {
-      return res.status(400).json({ success: false, message: 'Valid 10-digit Indian phone required' });
-    }
-    const examStr = typeof exam === 'string' ? exam.trim() : '';
-    if (!examStr || !COLLEGE_PREDICTOR_EXAM_VALUES.has(examStr)) {
-      return res.status(400).json({ success: false, message: 'Invalid exam' });
-    }
-
-    const sub = await FormSubmission.findOne({ phone: p }).lean();
-    if (!sub) {
-      return res.status(404).json({ success: false, message: 'Submission not found' });
-    }
-
-    const utm = sub.utm_content || '';
-    const occ = sub.occupation || '';
-    const isOrganicCollege =
-      utm === 'organic_college_predictor' ||
-      (typeof occ === 'string' && occ.includes('College predictor'));
-    if (!isOrganicCollege) {
-      return res.status(403).json({ success: false, message: 'Not an organic college predictor lead' });
-    }
-
-    const existing =
-      sub.collegePredictorLead && typeof sub.collegePredictorLead === 'object'
-        ? { ...sub.collegePredictorLead }
-        : {};
-    if (existing.exam && String(existing.exam) !== examStr) {
-      return res.status(400).json({ success: false, message: 'exam does not match stored lead' });
-    }
-
-    const next = {
-      ...existing,
-      exam: examStr,
-      predictedAt: new Date(),
-    };
-    const countNum = Number(matchCount);
-    if (Number.isFinite(countNum) && countNum >= 0) {
-      next.matchCount = countNum;
-    }
-
-    await FormSubmission.updateOne(
-      { phone: p },
-      { $set: { collegePredictorLead: next, updatedAt: new Date() } }
-    );
-    return res.status(200).json({ success: true, message: 'Prediction saved' });
-  } catch (err) {
-    console.error('[saveCollegePredictorPrediction]', err);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };

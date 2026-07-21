@@ -1,11 +1,19 @@
 'use strict';
 
-const { isExplicitHumanHandoffRequest } = require('../foundationConversation/humanHandoffIntent');
 const { GLOBAL_KEYWORDS } = require('../../../constants/chatbotStates');
 const { normalizeText, matchesAny, matchesMenuCommands } = require('../intentTextUtils');
 
 const EXPLICIT_EXIT_RE =
-  /^(home|exit|main menu|main_menu|stop|unsubscribe|opt out|optout|cancel|restart|start over|start again|reset|new prediction)$/i;
+  /^(home|exit|main menu|main_menu|stop|unsubscribe|opt out|optout|cancel)$/i;
+
+function isCounsellorProgramAgentPhrase(text, originalText = null) {
+  const t = normalizeText(text);
+  const original = String(originalText || text || '').trim();
+  if (!matchesAny(t, GLOBAL_KEYWORDS.agent)) return false;
+  return /\b(program|course|training|certification|fee|fees|price|pricing)\b/i.test(
+    `${t} ${original}`
+  );
+}
 
 /**
  * Returns true when the user explicitly intends to leave the active guided workflow.
@@ -19,7 +27,10 @@ function isGuidedFlowInterrupt(text, originalText = null) {
   if (matchesMenuCommands(t)) return true;
   if (matchesAny(t, GLOBAL_KEYWORDS.cancel)) return true;
   if (matchesAny(t, GLOBAL_KEYWORDS.stop)) return true;
-  if (isExplicitHumanHandoffRequest(t, originalText)) return true;
+
+  if (matchesAny(t, GLOBAL_KEYWORDS.agent) && !isCounsellorProgramAgentPhrase(t, originalText)) {
+    return true;
+  }
 
   return false;
 }

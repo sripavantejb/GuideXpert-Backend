@@ -72,8 +72,7 @@ const EXAM_FLOWS = {
   JEE_ADVANCED: ['8', '5000', '1', '2'],
   WBJEE: ['6', '7000', '1', '1'],
   KCET: ['4', '9500', '2', '3'],
-  // "5" is main-menu College Predictor digit — must use exam name on new entry
-  KEAM: ['KEAM', '8000', '2'],
+  KEAM: ['5', '8000', '2'],
   TNEA: ['3', '12000', '2'],
   MHT_CET: ['9', '94.3', '1', '2'],
 };
@@ -256,24 +255,12 @@ async function main() {
 
   // 7. Long conversation before predictor
   await record('40 messages then college predictor', 'long_conversation', async () => {
-    setCollegePredictorDeps({
-      getPredictedColleges: async () => ({
-        colleges: [
-          {
-            college_name: 'LongCtx',
-            branches: [{ branch_name: 'CSE', reservation_categories: [{ cutoff_rank: 1, category_name: 'OC' }] }],
-          },
-        ],
-        total_no_of_colleges: 1,
-      }),
-    });
     let ctx = { knowledgeAssistantActive: true, iitCounsellingExpertActive: true };
     for (let i = 0; i < 40; i++) {
       ctx = { ...ctx, step: 'faq', faqTurn: i };
     }
     const r = await handleCollegePredictorMessage('TS EAMCET rank 18453 BC-B male', {}, { isNewEntry: true });
-    assert(r.clearState === false || r.context?.step === 'results', 'predictor completes after long prior context');
-    setCollegePredictorDeps({});
+    assert(r.clearState, 'predictor completes after long prior context');
     return { clearState: r.clearState };
   })();
 
@@ -371,7 +358,7 @@ async function main() {
         last = await handleCollegePredictorMessage(steps[i], ctx, { isNewEntry: i === 0 });
         ctx = last.context;
       }
-      assert(last.clearState === false || last.context?.step === 'results', 'cleared');
+      assert(last.clearState, 'cleared');
       assert.equal(calls.length, 1, 'single API');
       assert(/MENU -> Main Menu/.test(last.reply));
       setCollegePredictorDeps({});
@@ -381,17 +368,12 @@ async function main() {
 
   // Optimistic locking — slot merge integrity (no Mongo required)
   await record('optimistic lock college slot merge', 'optimistic_lock', async () => {
-    // college is ATOMIC_REPLACE (not deep-merge) — patches replace the whole college object
-    const replaced = mergeContext({ college: { exam: 'TS_EAMCET' } }, { college: { rank: 18453 } });
-    assert.equal(replaced.college.exam, undefined);
-    assert.equal(replaced.college.rank, 18453);
-    const cleared = mergeContext(replaced, { college: {} });
+    const merged = mergeContext({ college: { exam: 'TS_EAMCET' } }, { college: { rank: 18453 } });
+    assert.equal(merged.college.exam, 'TS_EAMCET');
+    assert.equal(merged.college.rank, 18453);
+    const cleared = mergeContext(merged, { college: {} });
     assert.equal(Object.keys(cleared.college).length, 0, 'college reset');
-    // rank remains deep-merge
-    const rankMerged = mergeContext({ rank: { marks: 90 } }, { rank: { exam: 'JEE' } });
-    assert.equal(rankMerged.rank.marks, 90);
-    assert.equal(rankMerged.rank.exam, 'JEE');
-    return { atomicCollegeReplace: true, deepMergeRank: true };
+    return { deepMerge: true };
   })();
 
   // Blockers assessment

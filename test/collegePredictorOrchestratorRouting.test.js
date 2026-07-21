@@ -179,7 +179,7 @@ describe('collegePredictor orchestrator routing', () => {
 
     assert.equal(outboundCalls.length, 1);
     const text = outboundCalls[0].text || '';
-    assert.match(text, /Male or Female|gender/i);
+    assert.match(text, /gender/i);
     assert.doesNotMatch(text, /I'm here to help only with GuideXpert services/i);
   });
 
@@ -190,6 +190,6 @@ describe('collegePredictor orchestrator routing', () => {
     r = await handleCollegePredictorMessage('20000', r.context);
     assert.match(r.reply, /category|reservation/i);
     r = await handleCollegePredictorMessage('BC-B', r.context);
-    assert.match(r.reply, /Male or Female|gender/i);
+    assert.match(r.reply, /gender/i);
   });
 });

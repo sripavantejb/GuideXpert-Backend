@@ -135,7 +135,7 @@ const EXAM_FLOWS = {
   [EXAM_TS]: { menu: ['2', '18453', '2', '1'], nl: 'TS EAMCET rank 18453 BC-B male' },
   [EXAM_TNEA]: { menu: ['3', '12000', '2'], nl: 'TNEA rank 12000 BC' },
   [EXAM_KCET]: { menu: ['4', '9500', '2', '3'], nl: 'KCET rank 9500 HK 2BG' },
-  [EXAM_KEAM]: { menu: ['KEAM', '8000', '2'], nl: 'KEAM rank 8000 SC' },
+  [EXAM_KEAM]: { menu: ['5', '8000', '2'], nl: 'KEAM rank 8000 SC' },
   [EXAM_WBJEE]: { menu: ['6', '7000', '1', '1'], nl: 'WBJEE rank 12000 OBC-A All India' },
   [EXAM_JEE_MAIN]: { menu: ['7', '24000', '2', '3'], nl: 'JEE Main AIR 24000 female OBC' },
   [EXAM_JEE_ADV]: { menu: ['8', '5000', '1', '2'], nl: 'JEE Advanced rank 5000 male OPEN' },
@@ -159,7 +159,7 @@ async function phase2SlotFilling() {
     await runTest(`${exam} menu digit happy path`, phase, async () => {
       callLog.items = [];
       const { last } = await sendFlow(flow.menu);
-      assert.equal(last.clearState, false, 'should complete prediction');
+      assert.equal(last.clearState, true, 'should complete prediction');
       assert.equal(callLog.items.length, 1, 'single API call');
       assert.equal(callLog.items[0].exam, exam);
     });
@@ -167,10 +167,8 @@ async function phase2SlotFilling() {
     await runTest(`${exam} natural language completes or advances`, phase, async () => {
       callLog.items = [];
       const r = await handleCollegePredictorMessage(flow.nl, {}, { isNewEntry: true });
-      if (r.context?.step === 'results' || callLog.items.length === 1) {
-        assert.equal(callLog.items.length, 1, 'completed NL should call API once');
-        assert.equal(r.context.step, 'results');
-        assert.equal(r.clearState, false, 'sticky results');
+      if (r.clearState) {
+        assert.equal(callLog.items.length, 1);
       } else {
         assert.ok(r.context.exam, 'exam should be extracted');
         assert.equal(callLog.items.length, 0, 'no premature API call');
@@ -189,7 +187,7 @@ async function phase2SlotFilling() {
         let r = await handleCollegePredictorMessage(examDigit, {}, { isNewEntry: true });
         r = await handleCollegePredictorMessage('abc', r.context);
         assert.equal(r.context.step, 'rank');
-        assert.match(r.reply, /rank/i);
+        assert.match(r.reply, /valid positive number/i);
       });
     }
 
@@ -241,7 +239,7 @@ async function phase2SlotFilling() {
     await runTest(`${exam} AGAIN restarts`, phase, async () => {
       let r = await handleCollegePredictorMessage(flow.menu[0], {}, { isNewEntry: true });
       r = await handleCollegePredictorMessage('again', r.context);
-      assert.match(r.reply, /Sure!|Which entrance exam/i);
+      assert.match(r.reply, /Sure! I can help/);
       assert.equal(r.context.step, 'exam');
     });
   }
@@ -446,7 +444,7 @@ async function phase4Conversations() {
       if (sc.expect.gender) assert.equal(r.context.gender, sc.expect.gender);
       if (sc.expect.categoryLabel) assert.match(r.context.categoryLabel, sc.expect.categoryLabel);
       if (sc.expect.completes) {
-        assert.equal(r.clearState, false);
+        assert.equal(r.clearState, true);
         assert.equal(callLog.items.length, 1);
       } else {
         assert.equal(callLog.items.length, 0, 'should not call API until ready');
@@ -489,15 +487,15 @@ async function phase5StateMachine() {
     assert.equal(r.last.context.rank, 15000);
     setCollegePredictorDeps({ getPredictedColleges: mockSuccess(callLog) });
     r = await handleCollegePredictorMessage('retry', r.last.context);
-    assert.equal(r.clearState, false);
+    assert.equal(r.clearState, true);
     setCollegePredictorDeps({});
   });
 
   await runTest('state cleanup after success', phase, async () => {
     setCollegePredictorDeps({ getPredictedColleges: mockSuccess(callLog) });
     const { last } = await sendFlow(['2', '15000', '1', '2']);
-    assert.equal(last.clearState, false);
-    assert.equal(last.context.step, 'results');
+    assert.equal(last.clearState, true);
+    assert.equal(last.context.step, 'done');
     setCollegePredictorDeps({});
   });
 

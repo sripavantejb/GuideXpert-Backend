@@ -17,7 +17,6 @@ const assessment4Routes = require('./routes/assessment4Routes');
 const assessment5Routes = require('./routes/assessment5Routes');
 const adminRoutes = require('./routes/adminRoutes');
 const whatsappOpsAdminRoutes = require('./routes/whatsappOpsAdminRoutes');
-const conversationRecoveryAdminRoutes = require('./routes/conversationRecoveryAdminRoutes');
 const leadInsightsRoutes = require('./routes/leadInsightsRoutes');
 const analyticsExecutiveRoutes = require('./routes/analyticsExecutiveRoutes');
 const influencerRoutes = require('./routes/influencerRoutes');
@@ -37,10 +36,6 @@ const guidanceBookingRoutes = require('./routes/guidanceBookingRoutes');
 const oneOnOneCounselorRoutes = require('./routes/oneOnOneCounselorRoutes');
 const referralRoutes = require('./routes/referralRoutes');
 const cronRoutes = require('./routes/cronRoutes');
-const {
-  createInternalSmokeRouter,
-  isInternalSmokeEndpointEnabled,
-} = require('./routes/internalSmokeRoutes');
 const counsellorAuthRoutes = require('./routes/counsellorAuthRoutes');
 const counsellorWebinarProgressRoutes = require('./routes/counsellorWebinarProgressRoutes');
 const posterRoutes = require('./routes/posterRoutes');
@@ -225,19 +220,6 @@ mongoose.connection.on('error', (err) => {
   resetDbConnectPromise();
 });
 
-mongoose.connection.on('connected', () => {
-  try {
-    const {
-      loadConversationRecoveryConfigFromStore,
-    } = require('./utils/conversationRecoverySettings');
-    loadConversationRecoveryConfigFromStore().catch((err) => {
-      console.warn('[conversationRecovery] config hydrate failed:', err?.message || err);
-    });
-  } catch (_) {
-    // optional platform feature
-  }
-});
-
 async function ensureDbConnected() {
   if (mongoose.connection.readyState === 1) return;
   if (!dbConnectPromise) {
@@ -267,32 +249,6 @@ app.use(async (req, res, next) => {
 });
 
 // Register specific /api routes before any broad `app.use('/api', router)` mounts.
-const BUILD_TIME = new Date().toISOString();
-const PACKAGE_VERSION = (() => {
-  try {
-    return require('./package.json').version || 'unknown';
-  } catch {
-    return 'unknown';
-  }
-})();
-
-function getBuildMetadata() {
-  const gitCommit =
-    process.env.VERCEL_GIT_COMMIT_SHA ||
-    process.env.GIT_COMMIT ||
-    process.env.COMMIT_SHA ||
-    process.env.RAILWAY_GIT_COMMIT_SHA ||
-    null;
-  return {
-    version: PACKAGE_VERSION,
-    gitCommit: gitCommit ? String(gitCommit).slice(0, 40) : null,
-    gitCommitShort: gitCommit ? String(gitCommit).slice(0, 7) : null,
-    buildTime: BUILD_TIME,
-    vercelEnv: process.env.VERCEL_ENV || null,
-    region: process.env.VERCEL_REGION || null,
-  };
-}
-
 app.get('/api/health', async (req, res) => {
   const whatsapp = getWhatsAppConfigStatus();
   const knowledgeAssistant = getKnowledgeAssistantConfigStatus();
@@ -304,16 +260,9 @@ app.get('/api/health', async (req, res) => {
   const leadScoring = getLeadScoringConfigStatus();
   const scopeFirewall = getScopeFirewallConfigStatus();
   const humanCopilot = await getHumanCopilotHealthStatus();
-  const build = getBuildMetadata();
   res.json({
     status: 'ok',
     message: 'GuideXpert API is running',
-    version: build.version,
-    gitCommit: build.gitCommit,
-    gitCommitShort: build.gitCommitShort,
-    buildTime: build.buildTime,
-    vercelEnv: build.vercelEnv,
-    region: build.region,
     features: { posterDownloadAdmin: true },
     whatsapp,
     knowledgeAssistant: {
@@ -409,7 +358,6 @@ app.use('/api/api/blogs', blogRoutes);
 app.use('/api/posters', posterTemplatePublicRoutes);
 // WhatsApp Messaging Ops console — explicit mount before generic /api/admin (same middleware stack elsewhere).
 app.use('/api/admin/whatsapp-ops', requireAdmin, whatsappOpsAdminRoutes);
-app.use('/api/admin/conversation-recovery', requireAdmin, conversationRecoveryAdminRoutes);
 app.use('/api/admin/whatsapp-chat', requireAdmin, whatsappChatAdminRoutes);
 app.use('/api/admin/human-copilot', requireAdmin, humanCopilotRoutes);
 app.use('/api/admin/ai-calls', requireAdmin, aiCallsAdminRoutes);
@@ -434,11 +382,6 @@ app.use('/api/guidance-booking', guidanceBookingRoutes);
 app.use('/api/one-on-one-counselor', oneOnOneCounselorRoutes);
 app.use('/api/referral', referralRoutes);
 app.use('/api/cron', cronRoutes);
-// Production-only conversation smoke (disabled unless NODE_ENV=production + INTERNAL_SMOKE_TEST_SECRET).
-if (isInternalSmokeEndpointEnabled()) {
-  app.use('/api/internal/smoke', createInternalSmokeRouter());
-  console.log('[internal-smoke] POST /api/internal/smoke/send enabled');
-}
 app.use('/api/certificate', certificateRoutes);
 app.use('/api/webinar-assessment', webinarAssessmentRoutes);
 app.use('/api/webinar-progress', webinarProgressRoutes);
@@ -463,14 +406,6 @@ const PORT = process.env.PORT || 5000;
 const startServer = async () => {
   try {
     await connectDB();
-    try {
-      const {
-        loadConversationRecoveryConfigFromStore,
-      } = require('./utils/conversationRecoverySettings');
-      await loadConversationRecoveryConfigFromStore();
-    } catch (err) {
-      console.warn('[conversationRecovery] config hydrate skipped:', err?.message || err);
-    }
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
       console.log(`MongoDB connection established. Server ready to accept requests.`);

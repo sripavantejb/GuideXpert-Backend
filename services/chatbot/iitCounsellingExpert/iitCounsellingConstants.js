@@ -29,24 +29,11 @@ const SHORT_IIT_QUERY_EXPANSIONS = {
   'what is crl rank': 'What is CRL common rank list JEE Main rank',
   'what is obc ncl rank': 'What is OBC-NCL rank category reserved seat allocation JoSAA',
   'what is obc-ncl rank': 'What is OBC-NCL rank category reserved seat allocation JoSAA',
-  'tell me about josaa': 'What is JoSAA joint seat allocation authority IIT NIT IIIT counselling',
-  'tell me about josaa counselling':
-    'What is JoSAA joint seat allocation authority IIT NIT IIIT counselling',
-  'about josaa': 'What is JoSAA joint seat allocation authority IIT NIT IIIT',
-  'about josaa counselling': 'What is JoSAA joint seat allocation authority IIT NIT IIIT counselling',
-  'josaa counselling': 'What is JoSAA joint seat allocation authority counselling rounds',
-  'i want to know about josaa': 'What is JoSAA joint seat allocation authority IIT NIT IIIT',
-  'tell me about csab': 'What is CSAB special round counselling NIT IIIT CFTI',
-  'about csab': 'What is CSAB special round counselling NIT IIIT CFTI',
 };
 
 const TOPIC_FALLBACK_PATTERNS = [
   { pattern: /\bwhat is jos+a+a?\b/i, questionPrefix: 'What is JoSAA' },
-  { pattern: /\b(tell me about|know about|about)\b.{0,40}\bjos+a+a?\b/i, questionPrefix: 'What is JoSAA' },
-  { pattern: /\bjos+a+a?\b.{0,40}\b(counsell?ing|means?|kya hai)\b/i, questionPrefix: 'What is JoSAA' },
-  { pattern: /\bjos+a+a?\b/i, questionPrefix: 'What is JoSAA' },
   { pattern: /\bwhat is csab\b/i, questionPrefix: 'What is CSAB' },
-  { pattern: /\b(tell me about|know about|about)\b.{0,40}\bcsab\b/i, questionPrefix: 'What is CSAB' },
   { pattern: /\bwhat is crl rank\b/i, questionPrefix: 'What is CRL rank' },
   { pattern: /\bobc[\s-]?ncl\b/i, questionPrefix: 'What is OBC-NCL rank' },
   { pattern: /\bcrl\b/i, questionPrefix: 'What is CRL rank' },

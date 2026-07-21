@@ -75,38 +75,13 @@ class PredictorSession {
 
 function apiRecorder() {
   const log = [];
-  const { getPredictorAccessToken } = require('../services/collegeDostService');
-  const hasLiveToken = Boolean(getPredictorAccessToken && getPredictorAccessToken());
-  if (!hasLiveToken) {
-    report.mode = 'production_handler_simulation_mocked_upstream';
-    report.note +=
-      ' Upstream mocked locally (no NW_PREDICTORS_ACCESS_TOKEN); conversation/routing paths still exercise production handlers.';
-  }
   setCollegePredictorDeps({
     getPredictedColleges: async (exam, offset, limit, body) => {
       const t0 = performance.now();
       let data;
       let error;
       try {
-        if (!hasLiveToken) {
-          data = {
-            colleges: [
-              {
-                college_name: `Mock ${exam}`,
-                district: 'Hyderabad',
-                branches: [
-                  {
-                    branch_name: 'COMPUTER SCIENCE AND ENGINEERING',
-                    reservation_categories: [{ cutoff_rank: 5000, category_name: 'OC' }],
-                  },
-                ],
-              },
-            ],
-            total_no_of_colleges: 1,
-          };
-        } else {
-          data = await fetchCollegeDostColleges(exam, offset, limit, body);
-        }
+        data = await fetchCollegeDostColleges(exam, offset, limit, body);
       } catch (e) {
         error = { message: e.message, status: e.http_status_code, res_status: e.res_status };
         throw e;
@@ -117,15 +92,8 @@ function apiRecorder() {
           durationMs: Math.round(performance.now() - t0),
           error: error || null,
           collegeCount: data?.colleges?.length,
-          mocked: !hasLiveToken,
         });
-        report.apiCalls.push({
-          exam,
-          body,
-          error,
-          collegeCount: data?.colleges?.length,
-          mocked: !hasLiveToken,
-        });
+        report.apiCalls.push({ exam, body, error, collegeCount: data?.colleges?.length });
       }
       return data;
     },
@@ -163,7 +131,7 @@ const EXAM_MENU_FLOWS = {
   JEE_ADVANCED: ['8', '5000', '1', '2'],
   WBJEE: ['6', '7000', '1', '1'],
   KCET: ['4', '9500', '2', '3'],
-  KEAM: ['KEAM', '8000', '2'],
+  KEAM: ['5', '8000', '2'],
   TNEA: ['3', '12000', '2'],
   MHT_CET: ['9', '94.3', '1', '2'],
 };
@@ -172,7 +140,7 @@ const ONE_SHOT = {
   TS_EAMCET: 'I got 18453 rank in TS EAMCET BC-B Male.',
   AP_EAMCET: 'My AP EAMCET rank is 10234 BC-A Female AU',
   JEE_MAIN: 'JEE Main AIR 24000 female OBC',
-  MHT_CET: 'MHT CET 94.3 percentile SL GOPENS',
+  MHT_CET: 'MHT CET 94.3 percentile GOPENS',
 };
 
 async function runAll() {
@@ -184,7 +152,7 @@ async function runAll() {
       const s = new PredictorSession(exam);
       for (const step of steps) await s.say(step);
       const last = s.transcript.at(-1);
-      assert(last.clearState === false || last.step === 'results', 'should complete');
+      assert(last.clearState, 'should complete');
       assert(apiLog.length >= 1, 'API should be called');
       const call = apiLog.at(-1);
       assert(call.body.exam, 'payload has exam');
@@ -199,7 +167,7 @@ async function runAll() {
       const s = new PredictorSession(exam);
       await s.say(msg, { isNewEntry: true });
       const last = s.transcript.at(-1);
-      assert(last.clearState === false || last.step === 'results', 'one-shot should complete');
+      assert(last.clearState, 'one-shot should complete');
       return { transcript: s.transcript };
     })();
   }
@@ -272,7 +240,7 @@ async function runAll() {
     await s.say('15000', { continue: true });
     await s.say('4', { continue: true });
     await s.say('Femlae', { continue: true });
-    assert(s.ctx.gender === 'female' || s.ctx.step === 'results', 'female resolved');
+    assert(s.ctx.gender === 'female' || s.transcript.at(-1).clearState, 'female resolved');
     return { transcript: s.transcript };
   })();
 

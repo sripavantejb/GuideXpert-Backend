@@ -3,29 +3,9 @@ const {
   classifyIntent,
   isCounsellorProgramQuestion,
   shouldBypassScopeFirewall,
-  resolveCollegePredictorEntry,
-  isHighConfidenceCollegePredictorEntry,
-  scoreCareerCounsellingGuidance,
 } = require('./intentClassifierService');
-const { isCareerCounsellingJourneyEnabled } = require('../../constants/careerCounsellingJourney');
 const { tryRouteActiveGuidedFlow, applyGuidedFlowSwitchTurn } = require('./guidedFlows/guidedFlowOrchestrator');
-const {
-  getGuidedFlowByIntent,
-  isGuidedFlowEntryOrContinueIntent,
-} = require('./guidedFlows/guidedFlowRegistry');
-const {
-  tryFoundationConversation,
-} = require('./foundationConversation/foundationConversationRouter');
-const {
-  resolveIitSessionTurn,
-  shouldDeferFoundationForIit,
-} = require('./iitCounsellingExpert/iitCounsellingSessionService');
-const {
-  resolveJeeSessionTurn,
-  shouldDeferFoundationForJee,
-  resolveJeeExamTrack,
-  JEE_EXAM_CLARIFY_REPLY,
-} = require('./jeeCounselling/jeeCounsellingSessionService');
+const { getGuidedFlowByIntent } = require('./guidedFlows/guidedFlowRegistry');
 const { isSupportedLanguage, normalizeLanguageCode } = require('../../constants/languageConstants');
 const botStateService = require('./botStateService');
 const { OptimisticLockFailedError } = botStateService;
@@ -63,6 +43,7 @@ const { isIitCounsellingStrategyQuestion } = require('./iitCounsellingStrategy/i
 const { isLeadEventExtractionEnabled } = require('./leadEventExtraction/leadEventExtractionFlags');
 const { extractAndPersist } = require('./leadEventExtraction/leadEventExtractionService');
 const { buildWelcomeMenuText } = require('./welcomeMessageService');
+const { getDemoMeetingLink } = require('../../utils/slotNotificationFormatters');
 const { emptySubflows } = require('./botSubflowContext');
 const { maskPhoneTail } = require('../../utils/chatbotPhone');
 const { logChatbotEvent, extractPredictorExam } = require('./chatbotStructuredLog');
@@ -78,20 +59,11 @@ const {
   resolveIitCounsellingSessionAwareLanguage,
   resolveIitCounsellingStrategySessionAwareLanguage,
   updatePreferredLanguage,
-  resolveCounselingSessionLanguage,
 } = require('./conversationLanguageService');
 const { incrementLanguageRequest } = require('../analytics/languageRequestAnalyticsService');
 const { resolveGreetingReply } = require('../../constants/greetingReplies');
 const { buildLocalizedWelcomeMenu } = require('../../constants/localizedMenuReplies');
-const {
-  buildLeadContextWithBooking,
-} = require('./bookingContext/bookingContextResolver');
-const {
-  tryBookingSupportRouter,
-  buildBookingSupportReply,
-  bookingCreateCheckReply,
-  rescheduleCancelReply,
-} = require('./bookingContext/bookingSupportRouter');
+const { buildLocalizedCounsellingSupportReply } = require('../../constants/localizedCounsellingReplies');
 const {
   resolveSystemReply,
   resolveKnowledgeAssistantFallback,
@@ -122,8 +94,6 @@ function localizationTierForIntent(intent) {
     case 'counselling_support':
     case 'college_predictor':
     case 'career_counselling_journey':
-    case 'career_counselling_journey_continue':
-      return 'translate';
     case 'faq':
       return 'static';
     default:
@@ -225,34 +195,6 @@ function setChatbotOrchestratorTestHooks(hooks) {
 function hooks() {
   return testHooks || defaultHooks;
 }
-
-function hasActiveCareerCounsellingContext(context = {}) {
-  const cc = context?.careerCounselling;
-  if (!cc || typeof cc !== 'object') return false;
-  if (cc.flow && cc.flow !== 'career_counselling_v2') return false;
-  return Boolean(cc.step || cc.stage);
-}
-
-function rehydrateCareerCounsellingBotState(botState) {
-  if (!botState?.context || !hasActiveCareerCounsellingContext(botState.context)) {
-    return botState;
-  }
-  if (botState.state === 'career_counselling_v2') return botState;
-  return {
-    ...botState,
-    state: 'career_counselling_v2',
-  };
-}
-
-const COUNSELING_JOURNEY_NON_RESCUE_INTENTS = new Set([
-  'main_menu',
-  'opt_out',
-  'human_handoff',
-  'booking_create_check',
-  'booking_reschedule_cancel',
-  'career_counselling_journey',
-  'career_counselling_journey_continue',
-]);
 
 function buildMainMenuText(leadContext) {
   return buildWelcomeMenuText(leadContext);
@@ -361,18 +303,7 @@ async function sendMainMenu(conversation, leadContext, inReplyToInboundId, multi
 
 async function buildLeadLookupReply(leadContext) {
   const lines = [];
-  if (leadContext.booking?.exists || leadContext.bookingContext?.exists) {
-    const b = leadContext.booking;
-    lines.push('📋 Counselling booking (website):');
-    lines.push(`Name: ${b.fullName || '—'}`);
-    lines.push(`Booking ID: ${b.bookingId || '—'}`);
-    lines.push(`Status: ${b.bookingStatus || '—'}`);
-    lines.push(`Session: ${b.sessionSlotLabel || '—'}`);
-    lines.push(`When: ${b.sessionInstantLabel || b.sessionDate || '—'}`);
-    lines.push(`Counsellor: ${b.assignedCounsellor || '—'}`);
-    lines.push(`College preference: ${b.preferredCollege || '—'}`);
-    lines.push(`Meeting link: ${b.meetingLink || leadContext.meetingLink || '—'}`);
-  } else if (leadContext.hasIit && leadContext.iit) {
+  if (leadContext.hasIit && leadContext.iit) {
     lines.push('📋 IIT Counselling profile:');
     lines.push(`Name: ${leadContext.iit.fullName || '—'}`);
     lines.push(`Slot: ${leadContext.iit.slotBooking || '—'}`);
@@ -534,11 +465,7 @@ async function processInboundCore({
       retryAttempt: optimisticRetryAttempt,
     });
   let activeConversation = conversation;
-  const leadContext = await buildLeadContextWithBooking(
-    leadLinks,
-    activeConversation._id,
-    activeConversation
-  );
+  const leadContext = await h.buildLeadContext(leadLinks);
   await seedPreferredLanguageFromLead(activeConversation._id, leadContext);
 
   let multilingualInbound = null;
@@ -601,74 +528,9 @@ async function processInboundCore({
 
   const facts = await h.retrieveFacts(leadLinks, leadContext);
   let botState = await h.getBotState(activeConversation._id);
-
-  const inboundTextForRecovery =
-    multilingualInbound?.englishMessage || String(inbound.text || '').trim();
-  let recoveryResume = { restored: false };
-  try {
-    const {
-      tryResumeFromRecovery,
-    } = require('../conversationRecovery/conversationRecoveryResumeService');
-    recoveryResume = await tryResumeFromRecovery({
-      phone: activeConversation.phone,
-      conversationId: activeConversation._id,
-      inboundText: inboundTextForRecovery,
-      botState,
-    });
-  } catch (err) {
-    console.warn('[conversationRecovery] resume intercept failed:', err?.message || err);
-  }
-
-  if (recoveryResume.restored && recoveryResume.context) {
-    botState = {
-      state: 'career_counselling_v2',
-      context: recoveryResume.context,
-    };
-  } else if (botStateService.isStateExpired(botState)) {
-    if (hasActiveCareerCounsellingContext(botState?.context)) {
-      await transitionState(
-        activeConversation._id,
-        activeConversation.phone,
-        'career_counselling_v2',
-        {}
-      );
-      botState = rehydrateCareerCounsellingBotState(botState);
-    } else {
-      await resetToMainMenu(activeConversation._id, activeConversation.phone);
-      botState = { state: 'main_menu', context: emptySubflows() };
-    }
-  }
-
-  botState = rehydrateCareerCounsellingBotState(botState);
-
-  const ccCtx = botState?.context?.careerCounselling;
-  if (
-    ccCtx &&
-    (String(ccCtx.step || '').startsWith('eval_') ||
-      ccCtx.lastQuestionKey === 'evaluation_priorities' ||
-      ccCtx.lastQuestionKey === 'permission')
-  ) {
-    botState = {
-      state: 'career_counselling_v2',
-      context: botState?.context || {},
-    };
-  }
-
-  // Counseling journey language is sticky once the student picks a language —
-  // never auto-flip from detection / lead memory mid-journey.
-  if (botState?.state === 'career_counselling_v2' && multilingualInbound) {
-    const stickyLang = resolveCounselingSessionLanguage(botState.context?.careerCounselling);
-    if (stickyLang) {
-      multilingualInbound.resolvedLanguage = stickyLang;
-      multilingualInbound.language = stickyLang;
-      multilingualInbound.resolutionReason = 'counseling_session_sticky';
-      multilingualInbound.resolutionSource = 'counseling_session';
-      // Keep inbound English text when session is English and message is ASCII slots.
-      if (stickyLang === 'en' && /^[\x00-\x7F]+$/u.test(String(inbound.text || '').trim())) {
-        multilingualInbound.englishMessage = String(inbound.text || '').trim();
-        multilingualInbound.translationApplied = false;
-      }
-    }
+  if (botStateService.isStateExpired(botState)) {
+    await resetToMainMenu(activeConversation._id, activeConversation.phone);
+    botState = { state: 'main_menu', context: emptySubflows() };
   }
 
   const collegeRoutingText =
@@ -688,195 +550,6 @@ async function processInboundCore({
   });
   if (guidedResult) {
     return guidedResult;
-  }
-
-  // Foundation Conversation Router — BEFORE intent classification and Scope Firewall.
-  // High-confidence College Predictor semantics skip Foundation (1A).
-  {
-    const foundationText =
-      multilingualInbound?.englishMessage || String(inbound.text || '').trim();
-    const foundationOriginal = String(inbound.text || '').trim();
-    const deferFoundationForCp = isHighConfidenceCollegePredictorEntry(
-      foundationText,
-      foundationOriginal,
-      botState
-    );
-    const deferFoundation =
-      deferFoundationForCp ||
-      shouldDeferFoundationForIit(
-        foundationText,
-        foundationOriginal,
-        botState,
-        activeConversation.productLine
-      ) ||
-      shouldDeferFoundationForJee(
-        foundationText,
-        foundationOriginal,
-        botState,
-        activeConversation.productLine
-      );
-
-    if (!deferFoundation) {
-    const menuText = buildMainMenuText(leadContext);
-    const foundation = tryFoundationConversation({
-      text: foundationText,
-      originalText: foundationOriginal,
-      menuText,
-    });
-
-    if (foundation?.handled) {
-      logChatbotEvent('foundation_conversation_handled', {
-        conversationId: activeConversation._id,
-        phoneTail: maskPhoneTail(activeConversation.phone),
-        intent: foundation.intent,
-        botState: botState?.state || null,
-        productLine: activeConversation.productLine || null,
-        foundationCategory: foundation.category,
-        durationMs: foundation.durationMs ?? null,
-      });
-
-      if (foundation.preferredLanguage) {
-        try {
-          await updatePreferredLanguage(activeConversation._id, foundation.preferredLanguage);
-          if (multilingualInbound) {
-            multilingualInbound.resolvedLanguage = foundation.preferredLanguage;
-            multilingualInbound.language = foundation.preferredLanguage;
-            multilingualInbound.resolutionReason = 'foundation_language_switch';
-          }
-        } catch (e) {
-          console.warn('[chatbot] foundation language update failed', e.message);
-        }
-      }
-
-      let contextPatch = botState?.context || {};
-      if (foundation.clearSubflows) {
-        contextPatch = emptySubflows();
-      }
-
-      if (foundation.nextState) {
-        await transitionState(
-          activeConversation._id,
-          activeConversation.phone,
-          foundation.nextState,
-          contextPatch
-        );
-      }
-
-      await h.updateConversationIntent(
-        activeConversation._id,
-        foundation.intent || 'foundation'
-      );
-
-      const outboundText = await deliverOutboundReply({
-        replyText: foundation.replyText,
-        multilingualInbound,
-        intent: foundation.intent || 'foundation',
-        localizationTier: 'translate',
-        preLocalized: false,
-      });
-
-      const result = await h.outbound.sendBotTextReply({
-        conversationId: activeConversation._id,
-        phone10: activeConversation.phone,
-        text: outboundText,
-        inReplyToInboundId: inbound._id,
-      });
-
-      logInboundResult({
-        event: 'inbound_processed',
-        conversation: activeConversation,
-        botState,
-        intent: foundation.intent || 'foundation',
-        contextPatch,
-        durationMs: Date.now() - startedAt,
-        multilingual: multilingualInbound
-          ? {
-              originalMessage: multilingualInbound.originalMessage,
-              detectedLanguage: multilingualInbound.detectedLanguage,
-              confidence: multilingualInbound.confidence,
-              preferredLanguage: multilingualInbound.preferredLanguage,
-              resolvedLanguage: multilingualInbound.resolvedLanguage,
-              englishMessage: multilingualInbound.englishMessage,
-              finalResponse: outboundText,
-            }
-          : null,
-      });
-      return result;
-    }
-    }
-  }
-
-  // Booking Support Router — deterministic CRM-backed replies (no LLM / RAG / ICE / CPA / ICS).
-  {
-    const bookingText =
-      multilingualInbound?.englishMessage || String(inbound.text || '').trim();
-    const bookingOriginal = String(inbound.text || '').trim();
-    const bookingRoute = tryBookingSupportRouter({
-      text: bookingText,
-      originalText: bookingOriginal,
-      leadContext,
-      resolvedLanguage: resolvedLanguageFrom(multilingualInbound),
-    });
-
-    if (bookingRoute?.handled) {
-      logChatbotEvent('booking_support_router_handled', {
-        conversationId: activeConversation._id,
-        phoneTail: maskPhoneTail(activeConversation.phone),
-        intent: bookingRoute.intent,
-        queryId: bookingRoute.queryId,
-        deterministic: true,
-        bookingContextLoaded: bookingRoute.bookingContextLoaded,
-        mongoQueries: bookingRoute.mongoQueries,
-        resolveMs: bookingRoute.resolveMs,
-        reason: bookingRoute.reason,
-      });
-
-      await transitionState(
-        activeConversation._id,
-        activeConversation.phone,
-        bookingRoute.nextState || 'counselling_support',
-        botState?.context || {}
-      );
-      await h.updateConversationIntent(activeConversation._id, bookingRoute.intent);
-
-      const outboundText = await deliverOutboundReply({
-        replyText: bookingRoute.replyText,
-        multilingualInbound,
-        intent: bookingRoute.intent,
-        localizationTier: 'static',
-        preLocalized: true,
-      });
-
-      const result = await h.outbound.sendBotTextReply({
-        conversationId: activeConversation._id,
-        phone10: activeConversation.phone,
-        text: outboundText,
-        inReplyToInboundId: inbound._id,
-      });
-
-      logInboundResult({
-        event: 'inbound_processed',
-        conversation: activeConversation,
-        botState,
-        intent: bookingRoute.intent,
-        contextPatch: botState?.context || {},
-        durationMs: Date.now() - startedAt,
-        bookingSupport: {
-          deterministic: true,
-          queryId: bookingRoute.queryId,
-          mongoQueries: bookingRoute.mongoQueries,
-          resolveMs: bookingRoute.resolveMs,
-        },
-        multilingual: multilingualInbound
-          ? {
-              originalMessage: multilingualInbound.originalMessage,
-              detectedLanguage: multilingualInbound.detectedLanguage,
-              resolvedLanguage: multilingualInbound.resolvedLanguage,
-            }
-          : null,
-      });
-      return result;
-    }
   }
 
   if (multilingualInbound && botState?.context?.iitCounsellingExpertActive) {
@@ -1016,61 +689,6 @@ async function processInboundCore({
     );
   }
 
-  // P0 rescue: never let admissions-guidance uncertainty fall into knowledge/LLM guardrail.
-  if (
-    isCareerCounsellingJourneyEnabled() &&
-    intentResult?.intent &&
-    ![
-      'career_counselling_journey',
-      'career_counselling_journey_continue',
-      'college_predictor',
-      'college_predictor_continue',
-      'rank_predictor',
-      'rank_predictor_continue',
-      'human_handoff',
-      'main_menu',
-      'opt_out',
-      'booking_reschedule_cancel',
-      'booking_create_check',
-    ].includes(intentResult.intent) &&
-    botState?.state !== 'college_predictor' &&
-    botState?.state !== 'rank_predictor' &&
-    botState?.state !== 'career_counselling_v2'
-  ) {
-    const rescue = scoreCareerCounsellingGuidance(intentText, inbound.text);
-    const ccStep = botState?.context?.careerCounselling?.step;
-    const ccLastQ = botState?.context?.careerCounselling?.lastQuestionKey;
-    const priorityRescue =
-      ccStep === 'eval_ask_priorities' ||
-      ccLastQ === 'evaluation_priorities' ||
-      (ccStep === 'eval_ask_permission' && /^(yes|no|yeah|yep|sure|ok|okay)\b/i.test(intentText));
-    if (rescue.score >= 60 || priorityRescue) {
-      intentResult = {
-        intent: priorityRescue ? 'career_counselling_journey_continue' : 'career_counselling_journey',
-        confidence: rescue.confidence === 'medium' ? 'medium' : 'high',
-        intentReason: priorityRescue
-          ? 'career_counselling_stage3_priority_rescue'
-          : rescue.reason || 'career_counselling_orchestrator_rescue',
-      };
-    }
-  }
-
-  if (
-    isCareerCounsellingJourneyEnabled() &&
-    hasActiveCareerCounsellingContext(botState?.context) &&
-    intentResult?.intent &&
-    !COUNSELING_JOURNEY_NON_RESCUE_INTENTS.has(intentResult.intent) &&
-    !isGuidedFlowEntryOrContinueIntent(intentResult.intent) &&
-    botState?.state !== 'college_predictor' &&
-    botState?.state !== 'rank_predictor'
-  ) {
-    intentResult = {
-      intent: 'career_counselling_journey_continue',
-      confidence: 'high',
-      intentReason: 'career_counselling_active_context_rescue',
-    };
-  }
-
   await h.updateConversationIntent(activeConversation._id, intentResult.intent);
 
   if (String(process.env.CHATBOT_INTENT_DEBUG || '').trim() === '1') {
@@ -1148,97 +766,18 @@ async function processInboundCore({
     return result;
   }
 
-  // JEE / IIT Context Resolver + Scope Firewall.
-  // Sticky / ICE-owned turns expand short forms (routing only) and bypass firewall
-  // for JEE/IIT context only — true OOS (Python/IPL/shopping) still hits the firewall.
+  // Scope Firewall: runs after control-intent early returns and before assistant
+  // routing. Every message (including sticky KA sessions) is re-checked so
+  // out-of-domain topics never reach any LLM path.
   let scopePartialContext = null;
   let routingInboundText =
     multilingualInbound?.englishMessage || String(inbound.text || '').trim();
-  const scopeOriginalText = String(inbound.text || '').trim();
 
-  {
-    const jeeTurn = resolveJeeSessionTurn({
-      text: routingInboundText,
-      originalText: scopeOriginalText,
-      botState,
-      intent: intentResult.intent,
-      productLine: activeConversation.productLine,
-    });
-    const iitTurn = resolveIitSessionTurn({
-      text: routingInboundText,
-      originalText: scopeOriginalText,
-      botState,
-      intent: intentResult.intent,
-    });
-    const expandedText = jeeTurn.expandedText || iitTurn.expandedText;
-    const expansionReason = jeeTurn.expansionReason || iitTurn.expansionReason;
-    if (expandedText) {
-      routingInboundText = expandedText;
-      if (multilingualInbound) {
-        multilingualInbound.englishMessage = expandedText;
-      }
-      logChatbotEvent('iit_context_resolved', {
-        conversationId: activeConversation._id,
-        phoneTail: maskPhoneTail(activeConversation.phone),
-        intent: intentResult.intent,
-        botState: botState?.state || null,
-        expansionReason,
-        originalPreview: scopeOriginalText.slice(0, 80),
-        expandedPreview: expandedText.slice(0, 120),
-      });
-    }
-  }
-
-  // Ambiguous JEE Main vs Advanced — clarify before ICE / firewall.
-  if (intentResult.intent === 'jee_exam_clarify') {
-    const track = resolveJeeExamTrack(routingInboundText, scopeOriginalText);
-    await transitionState(activeConversation._id, activeConversation.phone, 'idle', {
-      ...(botState?.context || {}),
-      jeeCounsellingActive: true,
-      iitCounsellingExpertActive: true,
-      currentJourney: 'JEE_COUNSELLING',
-      jeeExamTrack: track || 'clarify',
-      knowledgeAssistantActive: false,
-      counsellorProgramAssistantActive: false,
-      iitCounsellingStrategyActive: false,
-    });
-    await h.updateConversationIntent(activeConversation._id, 'jee_exam_clarify');
-    const outboundText = await deliverOutboundReply({
-      replyText: JEE_EXAM_CLARIFY_REPLY,
-      multilingualInbound,
-      intent: 'jee_exam_clarify',
-      localizationTier: 'static',
-      preLocalized: false,
-    });
-    const result = await h.outbound.sendBotTextReply({
-      conversationId: activeConversation._id,
-      phone10: activeConversation.phone,
-      text: outboundText,
-      inReplyToInboundId: inbound._id,
-    });
-    logInboundResult({
-      event: 'inbound_processed',
-      conversation: activeConversation,
-      botState,
-      intent: intentResult.intent,
-      durationMs: Date.now() - startedAt,
-    });
-    return result;
-  }
-
-  const bypassScope =
-    shouldBypassScopeFirewall(
-      botState,
-      intentResult.intent,
-      routingInboundText,
-      scopeOriginalText
-    );
-
-  if (isScopeFirewallEnabled() && !bypassScope) {
+  if (isScopeFirewallEnabled() && !shouldBypassScopeFirewall(botState, intentResult.intent)) {
     const inboundText = String(inbound.text || '');
     const scope = await evaluateInboundScope({
       originalText: inbound.text,
-      englishMessage: routingInboundText || multilingualInbound?.englishMessage || inbound.text,
+      englishMessage: multilingualInbound?.englishMessage || inbound.text,
       intent: intentResult.intent,
       botState,
     });
@@ -1416,41 +955,13 @@ async function processInboundCore({
       replyText = applied.replyText;
       nextState = applied.nextState;
       contextPatch = applied.contextPatch;
-      if (flow.id === 'career_counselling_v2' && Array.isArray(applied.replyParts)) {
-        contextPatch = {
-          ...contextPatch,
-          _careerCounsellingReplyParts: applied.replyParts,
-        };
-      }
       break;
     }
     case 'counselling_support':
-      replyText = buildBookingSupportReply({
-        resolvedLanguage: resolvedLanguageFrom(multilingualInbound),
-        bookingContext: leadContext.bookingContext || leadContext.booking,
-        userText: inbound.text,
-        queryId: intentResult.queryId || null,
-      });
-      nextState = 'counselling_support';
-      break;
-    case 'booking_create_check':
-      replyText = bookingCreateCheckReply(
+      replyText = buildLocalizedCounsellingSupportReply(
         resolvedLanguageFrom(multilingualInbound),
-        leadContext.bookingContext || leadContext.booking
-      );
-      nextState = 'counselling_support';
-      break;
-    case 'booking_website_redirect':
-      replyText = bookingCreateCheckReply(
-        resolvedLanguageFrom(multilingualInbound),
-        leadContext.bookingContext || leadContext.booking
-      );
-      nextState = 'counselling_support';
-      break;
-    case 'booking_reschedule_cancel':
-      replyText = rescheduleCancelReply(
-        resolvedLanguageFrom(multilingualInbound),
-        leadContext.bookingContext || leadContext.booking
+        leadContext,
+        { meetingLink: getDemoMeetingLink() }
       );
       nextState = 'counselling_support';
       break;
@@ -1481,9 +992,6 @@ async function processInboundCore({
         iitCounsellingExpertSessionLanguage: null,
         iitCounsellingStrategyActive: false,
         iitCounsellingStrategySessionLanguage: null,
-        jeeCounsellingActive: false,
-        jeeExamTrack: null,
-        currentJourney: null,
       };
       break;
     }
@@ -1695,22 +1203,9 @@ async function processInboundCore({
       !isIitCounsellingExpertEnabled() &&
       Boolean(knowledgeAssistantResult?.model && knowledgeAssistantResult?.text);
     const iceReplyOk = Boolean(iitCounsellingResult?.model && iitCounsellingResult?.text);
-    const hadIceSession = Boolean(
-      botState?.context?.iitCounsellingExpertActive || botState?.context?.jeeCounsellingActive
-    );
-    // Activate sticky JEE/IIT journey on successful reply OR entry (even if model empty).
-    const entrySticky =
-      intentResult.intentReason === 'jee_main_entry' ||
-      intentResult.intentReason === 'jee_advanced_entry' ||
-      intentResult.intentReason === 'iit_counselling_entry' ||
-      intentResult.intentReason === 'iit_counselling_process_topic' ||
-      intentResult.intentReason === 'jee_counselling_session_active';
+    const hadIceSession = Boolean(botState?.context?.iitCounsellingExpertActive);
     const iceActive =
-      isIitCounsellingExpertEnabled() && (iceReplyOk || hadIceSession || entrySticky);
-    const examTrack =
-      resolveJeeExamTrack(routingInboundText, inbound.text) ||
-      botState?.context?.jeeExamTrack ||
-      null;
+      isIitCounsellingExpertEnabled() && (iceReplyOk || hadIceSession);
     const sessionLanguage = resolvedLanguageFrom(multilingualInbound);
     const persistedSessionLanguage =
       sessionLanguage ||
@@ -1726,9 +1221,6 @@ async function processInboundCore({
       ...contextPatch,
       iitCounsellingExpertActive: iceActive,
       iitCounsellingExpertSessionLanguage: iceActive ? persistedSessionLanguage : null,
-      jeeCounsellingActive: iceActive,
-      currentJourney: iceActive ? 'JEE_COUNSELLING' : null,
-      jeeExamTrack: iceActive ? examTrack : null,
       iitCounsellingStrategyActive: false,
       iitCounsellingStrategySessionLanguage: null,
       knowledgeAssistantActive: kaFallbackActive,
@@ -1866,75 +1358,40 @@ async function processInboundCore({
     });
   }
 
-  const careerReplyParts = Array.isArray(contextPatch?._careerCounsellingReplyParts)
-    ? contextPatch._careerCounsellingReplyParts.filter(Boolean)
-    : null;
-  if (contextPatch && Object.prototype.hasOwnProperty.call(contextPatch, '_careerCounsellingReplyParts')) {
-    const { _careerCounsellingReplyParts, ...rest } = contextPatch;
-    contextPatch = rest;
-  }
-
-  let result = null;
-  if (careerReplyParts && careerReplyParts.length > 1) {
-    const localizedParts = [];
-    for (const part of careerReplyParts) {
-      let partText = part;
-      if (partText) {
-        partText = await deliverOutboundReply({
-          replyText: partText,
-          multilingualInbound,
-          intent: intentResult.intent,
-          localizationTier: tier,
-          preLocalized,
-          guardrailModified: Boolean(assistantResult?.guardrailModified),
-          outboundTrace,
-        });
-      }
-      localizedParts.push(partText);
-      result = await h.outbound.sendBotTextReply({
-        conversationId: activeConversation._id,
-        phone10: activeConversation.phone,
-        text: partText,
-        inReplyToInboundId: inbound._id,
-      });
-    }
-    replyText = localizedParts.join('\n\n');
-  } else {
-    if (replyText) {
-      replyText = await deliverOutboundReply({
-        replyText,
-        multilingualInbound,
-        intent: intentResult.intent,
-        localizationTier: tier,
-        preLocalized,
-        guardrailModified: Boolean(assistantResult?.guardrailModified),
-        outboundTrace,
-      });
-
-      if (iitCounsellingStrategyResult?.languageLog) {
-        iitCounsellingStrategyResult.languageLog.finalResponse = replyText;
-      }
-      if (iitCounsellingResult?.languageLog) {
-        iitCounsellingResult.languageLog.finalResponse = replyText;
-      }
-      if (counsellorProgramResult?.languageLog) {
-        counsellorProgramResult.languageLog.finalResponse = replyText;
-      }
-      if (knowledgeAssistantResult?.languageLog) {
-        knowledgeAssistantResult.languageLog.finalResponse = replyText;
-      }
-      if (unknownLlmResult?.languageLog) {
-        unknownLlmResult.languageLog.finalResponse = replyText;
-      }
-    }
-
-    result = await h.outbound.sendBotTextReply({
-      conversationId: activeConversation._id,
-      phone10: activeConversation.phone,
-      text: replyText,
-      inReplyToInboundId: inbound._id,
+  if (replyText) {
+    replyText = await deliverOutboundReply({
+      replyText,
+      multilingualInbound,
+      intent: intentResult.intent,
+      localizationTier: tier,
+      preLocalized,
+      guardrailModified: Boolean(assistantResult?.guardrailModified),
+      outboundTrace,
     });
+
+    if (iitCounsellingStrategyResult?.languageLog) {
+      iitCounsellingStrategyResult.languageLog.finalResponse = replyText;
+    }
+    if (iitCounsellingResult?.languageLog) {
+      iitCounsellingResult.languageLog.finalResponse = replyText;
+    }
+    if (counsellorProgramResult?.languageLog) {
+      counsellorProgramResult.languageLog.finalResponse = replyText;
+    }
+    if (knowledgeAssistantResult?.languageLog) {
+      knowledgeAssistantResult.languageLog.finalResponse = replyText;
+    }
+    if (unknownLlmResult?.languageLog) {
+      unknownLlmResult.languageLog.finalResponse = replyText;
+    }
   }
+
+  const result = await h.outbound.sendBotTextReply({
+    conversationId: activeConversation._id,
+    phone10: activeConversation.phone,
+    text: replyText,
+    inReplyToInboundId: inbound._id,
+  });
 
   logInboundResult({
     event: 'inbound_processed',

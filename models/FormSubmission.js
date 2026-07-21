@@ -219,14 +219,6 @@ const formSubmissionSchema = new mongoose.Schema({
     predictionMessage: { type: String, trim: true, maxlength: 500 },
     predictedAt: { type: Date },
   },
-  // Organic lead from college predictor (optional)
-  collegePredictorLead: {
-    exam: { type: String, trim: true, maxlength: 64 },
-    filterSnapshot: { type: String, trim: true, maxlength: 4000 },
-    capturedAt: { type: Date },
-    matchCount: { type: Number },
-    predictedAt: { type: Date },
-  },
   // Admin-only notes (internal follow-up, not shown to applicant)
   adminNotes: { type: String, trim: true, maxlength: 2000 },
   adminNotesUpdatedAt: { type: Date },

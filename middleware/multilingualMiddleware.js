@@ -18,7 +18,6 @@ const {
   resolveConversationLanguage,
   recordDetectedLanguage,
   updatePreferredLanguage,
-  isGuidedFlowSlotLikeToken,
 } = require('../services/chatbot/conversationLanguageService');
 const { normalizeLanguageCode } = require('../constants/languageConstants');
 
@@ -58,8 +57,7 @@ async function prepareMultilingualInbound({ message, conversation, leadContext }
   let englishMessage = originalMessage;
   let translationApplied = false;
 
-  // Slot answers like AU/SVU must not be rewritten by inbound translation.
-  if (resolved.language !== 'en' && !isGuidedFlowSlotLikeToken(originalMessage)) {
+  if (resolved.language !== 'en') {
     try {
       englishMessage = await translateToEnglish(originalMessage, resolved.language);
       translationApplied = englishMessage !== originalMessage;

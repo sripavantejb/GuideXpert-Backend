@@ -1,20 +1,10 @@
-/** Clears rank/college predictor and assistant session flags. */
+/** Clears rank/college predictor and knowledge-assistant session flags. */
 function emptySubflows() {
   return {
     college: {},
     rank: {},
     careerCounselling: {},
     knowledgeAssistantActive: false,
-    counsellorProgramAssistantActive: false,
-    counsellorProgramSessionLanguage: null,
-    iitCounsellingExpertActive: false,
-    iitCounsellingExpertSessionLanguage: null,
-    iitCounsellingStrategyActive: false,
-    iitCounsellingStrategySessionLanguage: null,
-    jeeCounsellingActive: false,
-    jeeExamTrack: null,
-    collegePredictorActive: false,
-    currentJourney: null,
   };
 }
 

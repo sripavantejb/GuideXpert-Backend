@@ -4,21 +4,14 @@ const { resolveActiveGuidedFlow, getGuidedFlowByIntent } = require('./guidedFlow
 const {
   logCareerDropoff,
   logCareerInterruption,
-} = require('../careerCounselling/careerCounsellingV2Analytics');
+} = require('../careerCounselling/careerCounsellingAnalytics');
 const { GLOBAL_KEYWORDS } = require('../../../constants/chatbotStates');
 const { matchesAny, matchesMenuCommands } = require('../intentTextUtils');
 const { isGuidedFlowInterrupt } = require('./guidedFlowInterruptPolicy');
 const { processGuidedFlowTurn } = require('./guidedFlowProcessors');
-const { isScopeFirewallEnabled } = require('../scopeFirewall/scopeFirewallFlags');
-const { evaluateInboundScope, buildScopeLogFields } = require('../scopeFirewall/scopeIntentGate');
-const {
-  resolveScopeFirewallReply,
-  resolvePolicyRefusal,
-} = require('../../../constants/scopeFirewallReplies');
-const { logChatbotEvent } = require('../chatbotStructuredLog');
 
 function logCareerJourneyInterrupt(flow, botState, routingText) {
-  if (flow?.id !== 'career_counselling_v2') return;
+  if (flow?.id !== 'career_counselling_journey') return;
   const cc = botState?.context?.careerCounselling || {};
   const t = String(routingText || '').trim().toLowerCase();
   const isAgent = matchesAny(t, GLOBAL_KEYWORDS.agent);
@@ -26,11 +19,11 @@ function logCareerJourneyInterrupt(flow, botState, routingText) {
   const isCancel = matchesAny(t, GLOBAL_KEYWORDS.cancel) || matchesAny(t, GLOBAL_KEYWORDS.stop);
 
   if (isAgent) {
-    logCareerInterruption({ stage: cc.stage, step: cc.step, kind: 'agent' });
+    logCareerInterruption({ phase: cc.phase, step: cc.step, kind: 'agent' });
   }
   if (isMenu || isCancel) {
-    logCareerInterruption({ stage: cc.stage, step: cc.step, kind: isMenu ? 'menu' : 'cancel' });
-    logCareerDropoff({ stage: cc.stage, step: cc.step, reason: isMenu ? 'menu' : 'cancel' });
+    logCareerInterruption({ phase: cc.phase, step: cc.step, kind: isMenu ? 'menu' : 'cancel' });
+    logCareerDropoff({ phase: cc.phase, step: cc.step, reason: isMenu ? 'menu' : 'cancel' });
   }
 }
 
@@ -69,8 +62,6 @@ async function executeActiveGuidedFlowTurn({
     isNewEntry: false,
     resolvedLanguage: resolvedLanguageFrom(multilingualInbound),
     intent: flow.continueIntent,
-    phone: activeConversation.phone,
-    conversationId: activeConversation._id,
   });
 
   if (turn.predictionIdempotency && turn.persistIdempotencyBeforeComplete) {
@@ -88,54 +79,22 @@ async function executeActiveGuidedFlowTurn({
   );
 
   let replyText = turn.replyText;
-  if (!replyText && (!Array.isArray(turn.replyParts) || turn.replyParts.length === 0)) {
-    replyText =
-      'Share what matters most in a college — placements, coding culture, fees, or say "I don\'t know".';
-  }
-  const replyParts =
-    flow?.id === 'career_counselling_v2' && Array.isArray(turn.replyParts) && turn.replyParts.length > 1
-      ? turn.replyParts
-      : null;
-
-  let result = null;
-  if (replyParts) {
-    for (const part of replyParts) {
-      let partText = part;
-      if (partText) {
-        partText = await deliverOutboundReply({
-          replyText: partText,
-          multilingualInbound,
-          intent: turn.intent,
-          localizationTier: turn.localizationTier || flow.localizationTier || 'translate',
-          preLocalized: Boolean(turn.preLocalized),
-        });
-      }
-      result = await h.outbound.sendBotTextReply({
-        conversationId: activeConversation._id,
-        phone10: activeConversation.phone,
-        text: partText,
-        inReplyToInboundId: inbound._id,
-      });
-    }
-    replyText = replyParts.join('\n\n');
-  } else {
-    if (replyText) {
-      replyText = await deliverOutboundReply({
-        replyText,
-        multilingualInbound,
-        intent: turn.intent,
-        localizationTier: turn.localizationTier || flow.localizationTier || 'translate',
-        preLocalized: Boolean(turn.preLocalized),
-      });
-    }
-
-    result = await h.outbound.sendBotTextReply({
-      conversationId: activeConversation._id,
-      phone10: activeConversation.phone,
-      text: replyText,
-      inReplyToInboundId: inbound._id,
+  if (replyText) {
+    replyText = await deliverOutboundReply({
+      replyText,
+      multilingualInbound,
+      intent: turn.intent,
+      localizationTier: turn.localizationTier || flow.localizationTier || 'translate',
+      preLocalized: Boolean(turn.preLocalized),
     });
   }
+
+  const result = await h.outbound.sendBotTextReply({
+    conversationId: activeConversation._id,
+    phone10: activeConversation.phone,
+    text: replyText,
+    inReplyToInboundId: inbound._id,
+  });
 
   logInboundResult({
     event: 'inbound_processed',
@@ -167,71 +126,6 @@ async function executeActiveGuidedFlowTurn({
 }
 
 /**
- * Scope Firewall while College Predictor owns conversation.
- * Refuse OOS without clearing college slots / sticky results.
- */
-async function refuseOutOfScopeInPredictor({
-  activeConversation,
-  inbound,
-  botState,
-  multilingualInbound,
-  startedAt,
-  deliverOutboundReply,
-  logInboundResult,
-  h,
-  resolvedLanguageFrom,
-  routingText,
-}) {
-  const scope = await evaluateInboundScope({
-    originalText: inbound.text,
-    englishMessage: routingText || inbound.text,
-    intent: 'college_predictor_continue',
-    botState,
-  });
-
-  const scopeLogFields = buildScopeLogFields(scope, {
-    conversationId: activeConversation._id,
-    intent: 'college_predictor_continue',
-    botState: botState?.state || null,
-    inboundMessageLength: String(inbound.text || '').length,
-    scopeBlockedSegmentCount: scope.blockedSegments?.length || 0,
-  });
-
-  const refusalText = scope.policyBlock
-    ? resolvePolicyRefusal(scope.category, resolvedLanguageFrom(multilingualInbound))
-    : resolveScopeFirewallReply(resolvedLanguageFrom(multilingualInbound));
-
-  logChatbotEvent('scope_blocked', {
-    ...scopeLogFields,
-    scopeReason: scope.reason || 'predictor_session_oos',
-    predictorStatePreserved: true,
-  });
-
-  const outboundText = await deliverOutboundReply({
-    replyText: refusalText,
-    multilingualInbound,
-    intent: 'college_predictor_continue',
-    localizationTier: 'static',
-    preLocalized: false,
-  });
-  const result = await h.outbound.sendBotTextReply({
-    conversationId: activeConversation._id,
-    phone10: activeConversation.phone,
-    text: outboundText,
-    inReplyToInboundId: inbound._id,
-  });
-  logInboundResult({
-    event: 'inbound_processed',
-    conversation: activeConversation,
-    botState,
-    intent: 'college_predictor_continue',
-    contextPatch: botState?.context || {},
-    durationMs: Date.now() - startedAt,
-  });
-  return result;
-}
-
-/**
  * Returns guided flow result when an active flow should handle this inbound, or null to continue
  * normal orchestrator routing (interrupts, idle states, etc.).
  */
@@ -246,28 +140,11 @@ async function tryRouteActiveGuidedFlow(params) {
     return null;
   }
 
-  // P0 sticky ownership: College Predictor owns soft OOS (sticky reminder / re-prompt).
-  // Only hard policy blocks use global scope-firewall copy.
-  if (flow.id === 'college_predictor' && isScopeFirewallEnabled()) {
-    const scope = await evaluateInboundScope({
-      originalText: inbound.text,
-      englishMessage: routingText || inbound.text,
-      intent: 'college_predictor_continue',
-      botState,
-    });
-    if (scope.policyBlock) {
-      return refuseOutOfScopeInPredictor({
-        ...params,
-        routingText,
-      });
-    }
-  }
-
   return executeActiveGuidedFlowTurn({ ...params, flow });
 }
 
 /**
- * Run a guided flow turn from intent-classifier switch routing (new entry or after interrupt).
+ * Run a guided flow turn from intent-classifier switch routing (new entry or continue after interrupt).
  */
 async function applyGuidedFlowSwitchTurn({
   flow,
@@ -295,9 +172,6 @@ async function applyGuidedFlowSwitchTurn({
     isNewEntry: flow.entryIntents.includes(intentResult.intent),
     resolvedLanguage: resolvedLanguageFrom(multilingualInbound),
     intent: intentResult.intent,
-    phone: activeConversation.phone,
-    conversationId: activeConversation._id,
-    preferredCollege: intentResult.preferredCollege || null,
   });
 
   if (turn.predictionIdempotency && turn.persistIdempotencyBeforeComplete) {
@@ -309,7 +183,6 @@ async function applyGuidedFlowSwitchTurn({
 
   return {
     replyText: turn.replyText,
-    replyParts: turn.replyParts || null,
     nextState: turn.nextState,
     contextPatch: turn.contextPatch,
     intent: turn.intent || intentResult.intent,
