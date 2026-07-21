@@ -143,6 +143,29 @@ describe('careerCounsellingV2 discovery engine', () => {
     assert.equal(r.clearState, false);
   });
 
+  test('English language selection continues into Stage 3 in one WhatsApp message', async () => {
+    let r = await handleCareerCounsellingMessage('Career guidance', {}, { isNewEntry: true });
+    r = await handleCareerCounsellingMessage('Class 12', r.context);
+    r = await handleCareerCounsellingMessage('B.Tech', r.context);
+    r = await handleCareerCounsellingMessage('Software engineer', r.context);
+    r = await handleCareerCounsellingMessage('not yet', r.context);
+    assert.equal(r.context.step, 'awaiting_language');
+
+    r = await handleCareerCounsellingMessage('English', r.context);
+    assert.equal(r.context.stage, STAGES.EVALUATION_FRAMEWORK);
+    assert.equal(r.context.step, 'eval_ask_priorities');
+    assert.match(r.reply, /Perfect/i);
+    assert.match(r.reply, /what matters most|top things/i);
+    assert.equal(
+      (r.replyParts || []).length,
+      1,
+      'language→Stage3 must be one outbound (not Perfect. alone then silence)'
+    );
+    assert.match(r.replyParts[0], /Perfect/i);
+    assert.match(r.replyParts[0], /top things|what matters most/i);
+    assert.notEqual(String(r.replyParts[0] || '').trim(), 'Perfect.');
+  });
+
   test('skip shortlist and language still completes discovery', async () => {
     let r = await handleCareerCounsellingMessage('Help me choose a college', {}, { isNewEntry: true });
     r = await handleCareerCounsellingMessage('12th standard', r.context);

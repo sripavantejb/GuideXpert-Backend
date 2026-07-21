@@ -265,10 +265,26 @@ function advanceAfterAnswer(ctx, answeredStep, profilePatch, analyticsMeta) {
 
     const evalStart = startEvaluation(discoveryDoneCtx, analyticsMeta);
     const intro = buildDiscoveryCompleteIntro(profile);
+    if (String(process.env.CHATBOT_CC_DEBUG || '').trim() === '1') {
+      console.info(
+        '[chatbot:cc_debug]',
+        JSON.stringify({
+          event: 'discovery_to_stage3',
+          previousStep: answeredStep,
+          languageSaved: profile.preferredLanguage || null,
+          nextStage: evalStart.context?.stage || null,
+          nextStep: evalStart.context?.step || null,
+          replyPreview: `${getAckForStep(answeredStep)}\n\n${intro}\n\n${evalStart.reply}`.slice(0, 180),
+        })
+      );
+    }
     return {
       reply: `${getAckForStep(answeredStep)}\n\n${intro}\n\n${evalStart.reply}`,
       context: evalStart.context,
-      skipLineCap: evalStart.skipLineCap === true,
+      // Must be one WhatsApp bubble. skipLineCap alone splits "Perfect." into its own
+      // outbound; later parts often fail/delay and production looks like the journey stopped.
+      skipLineCap: true,
+      keepIntact: true,
       educationalContent: true,
       analytics: [
         { type: 'discovery_completed', profileCompletionPct: profile.profileCompletionPct },
