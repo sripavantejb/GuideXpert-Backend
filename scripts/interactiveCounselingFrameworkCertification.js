@@ -132,11 +132,11 @@ async function run() {
   }
 
   try {
-    assert.equal(EXPLORE_PRESENT_LIMIT, 5);
+    assert.equal(EXPLORE_PRESENT_LIMIT, 10);
     assert.ok(CURATED_MODERN_CATALOG.length >= 10);
-    record('static:top5_showcase_catalog', 'PASS');
+    record('static:top10_showcase_catalog', 'PASS');
   } catch (e) {
-    record('static:top5_showcase_catalog', 'FAIL', { error: String(e.message || e) });
+    record('static:top10_showcase_catalog', 'FAIL', { error: String(e.message || e) });
   }
 
   // Live: one priority → framework → explore → personalization
@@ -162,7 +162,7 @@ async function run() {
 
     r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.stage, 'explore_modern_colleges');
-    assert.ok((r.context.profile.exploreModernInstitutions || []).length === 5);
+    assert.ok((r.context.profile.exploreModernInstitutions || []).length === 10);
     assert.match(r.reply, /shortlist the colleges that best match|shortlist.*goals/i);
     // Equal representation — NIAT present but not alone
     const names = (r.context.profile.exploreModernInstitutions || []).map((i) => i.name).join(' ');
@@ -176,10 +176,10 @@ async function run() {
 
     r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.stage, 'personalized_discovery');
-    assert.equal(r.context.step, 'pers_budget');
-    assert.ok((r.context.profile.stage5PreviewInstitutions || []).length === 3);
-    assert.match(r.reply, /three modern institutions|approximate budget/i);
-    assert.equal((r.replyParts || []).length, 1, 'Stage 5 preview + Stage 6 start must be one bubble');
+    assert.equal(r.context.step, 'pers_career_priority');
+    assert.equal((r.context.profile.stage5PreviewInstitutions || []).length, 0);
+    assert.doesNotMatch(r.reply, /three modern institutions|Based on what you've shared so far, here are three/i);
+    assert.equal((r.replyParts || []).length, 1, 'Stage 6 start must be one bubble');
     record('live:one_priority_to_stage6', 'PASS');
   } catch (e) {
     record('live:one_priority_to_stage6', 'FAIL', { error: String(e.message || e) });

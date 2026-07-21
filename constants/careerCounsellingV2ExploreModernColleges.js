@@ -23,9 +23,9 @@ const EXPLORE_STEPS = Object.freeze([
   'explore_ask_continue',
 ]);
 
-const EXPLORE_ENGINE_VERSION = 'v2.4.0-unified-paths';
-const EXPLORE_PRESENT_LIMIT = 5;
-const STAGE5_PREVIEW_LIMIT = 3;
+const EXPLORE_ENGINE_VERSION = 'v2.5.0-architecture-freeze';
+/** Stage 5 always presents the full curated showcase (all 10). */
+const EXPLORE_PRESENT_LIMIT = 10;
 
 /**
  * Genuine new-age institutions only — fixed curated order (not popularity rank).
@@ -118,12 +118,6 @@ const MESSAGES = Object.freeze({
   soft_decline_advance:
     "No problem — we'll still personalize with a few quick preferences so matches stay practical.",
 
-  preview_intro:
-    "Based on what you've shared so far, here are three modern institutions that appear to align well with your interests. This isn't your final recommendation yet—I'll personalize it further as I learn more about your preferences.",
-
-  preview_outro:
-    "To narrow these down, I'd like to understand a few more things about your preferences.",
-
   why_fallback:
     'Selected because it reflects the modern learning approach we discussed — projects, industry exposure, or applied skills.',
 
@@ -153,7 +147,6 @@ module.exports = {
   EXPLORE_STEPS,
   EXPLORE_ENGINE_VERSION,
   EXPLORE_PRESENT_LIMIT,
-  STAGE5_PREVIEW_LIMIT,
   CURATED_MODERN_CATALOG,
   MESSAGES,
   getExploreMessage,

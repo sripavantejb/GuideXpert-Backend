@@ -58,13 +58,16 @@ const TIER_LIMITS = Object.freeze({
   worthExploring: 3,
 });
 
+/** Stage 7 presents exactly five personalized shortlist options. */
+const SHORTLIST_PRESENT_LIMIT = 5;
+
 const MESSAGES = Object.freeze({
   shortlist_intro: [
-    'Next I’ll build a personalized shortlist from the modern colleges that fit your profile.',
+    "Based on everything you've shared, I've shortlisted five colleges that align well with your goals.",
   ].join('\n'),
 
   shortlist_intro_predictor: [
-    'Next I’ll refine your shortlist using your exam, rank, and counseling preferences.',
+    "Based on your rank and preferences, I've shortlisted five colleges that align well with your goals.",
   ].join('\n'),
 
   ask_exam: [
@@ -99,19 +102,16 @@ const MESSAGES = Object.freeze({
     'Finish earlier steps, then we continue.',
   ].join('\n'),
 
-  present_header: 'Your personalized shortlist:',
+  present_header:
+    "Based on everything you've shared, I've shortlisted five colleges that align well with your goals.",
 
   best_match_header: '*Best Match*',
   strong_header: '*Strong Alternatives*',
   explore_header: '*Worth Exploring*',
 
-  ask_compare: [
-    'Want to compare these options next?',
-    '',
-    'Reply Yes or No.',
-  ].join('\n'),
+  ask_compare: 'Would you like to compare them side by side?',
 
-  permission_clarify: 'Compare these shortlisted options?\n\nReply Yes or No.',
+  permission_clarify: 'Would you like to compare them side by side?\n\nReply Yes or No.',
 
   permission_no: [
     'No problem.',
@@ -164,6 +164,7 @@ module.exports = {
   RECOMMENDATION_MATRIX_VERSION,
   RECOMMENDATION_WEIGHTS,
   TIER_LIMITS,
+  SHORTLIST_PRESENT_LIMIT,
   MESSAGES,
   SHORTLIST_QA,
   getShortlistMessage,

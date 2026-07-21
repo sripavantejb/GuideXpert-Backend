@@ -175,7 +175,7 @@ function getPersMessage(key) {
   return MESSAGES[key] || '';
 }
 
-/** Default Stage 6 order after Ready? gate. */
+/** Default Stage 6 question order. */
 const PERS_STEP_ORDER_DEFAULT = Object.freeze([
   'pers_transition',
   'pers_career_priority',
@@ -185,25 +185,7 @@ const PERS_STEP_ORDER_DEFAULT = Object.freeze([
   'pers_concern',
 ]);
 
-/**
- * Stage 5 preview handoff starts at budget, then backfills remaining slots.
- * Used when profile.stage5PreviewInstitutions is set (unified normal path).
- */
-const PERS_STEP_ORDER_FROM_EXPLORE = Object.freeze([
-  'pers_budget',
-  'pers_location',
-  'pers_career_priority',
-  'pers_family',
-  'pers_concern',
-]);
-
-function getPersStepOrder(profile = {}) {
-  if (
-    Array.isArray(profile.stage5PreviewInstitutions) &&
-    profile.stage5PreviewInstitutions.length > 0
-  ) {
-    return PERS_STEP_ORDER_FROM_EXPLORE;
-  }
+function getPersStepOrder(_profile = {}) {
   return PERS_STEP_ORDER_DEFAULT;
 }
 
@@ -273,5 +255,4 @@ module.exports = {
   getPersContentForStep,
   buildPersonalizedPersTransition,
   PERS_STEP_ORDER_DEFAULT,
-  PERS_STEP_ORDER_FROM_EXPLORE,
 };

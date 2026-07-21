@@ -388,7 +388,7 @@ function studentReplyForTurn(persona, ctx, botReply, turnIndex) {
   if (step === 'gender' || /gender/i.test(reply)) return p.gender || 'Male';
   if (step === 'region' || /AU or SVU|region/i.test(reply)) return p.region || 'AU';
   if (step === 'results') {
-    if (p.afterPrediction === 'bridge') return 'yes, suggest the factors';
+    if (p.afterPrediction === 'bridge') return 'yes';
     if (p.afterPrediction === 'filter') return 'CSE';
     return 'yes';
   }

@@ -224,7 +224,7 @@ async function run() {
     assert.equal(seed.profile.recommendedColleges.length, 2);
     assert.equal(seed.profile.bridgedFromCollegePredictor, true);
     const advanced = appendCounselingAdvance('Top colleges listed.');
-    assert.match(advanced, /factors you should consider/i);
+    assert.match(advanced, /placements, curriculum and future opportunities/i);
     pass('college predictor bridge seed');
   } catch (e) {
     fail('college predictor bridge seed', e);

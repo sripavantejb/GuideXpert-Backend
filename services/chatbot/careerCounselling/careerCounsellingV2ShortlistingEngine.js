@@ -4,6 +4,7 @@ const {
   STAGES,
   SHORTLISTING_STEPS,
   RECOMMENDATION_MATRIX_VERSION,
+  SHORTLIST_PRESENT_LIMIT,
   SHORTLIST_QA,
   getShortlistMessage,
 } = require('../../../constants/careerCounsellingV2Shortlisting');
@@ -69,9 +70,7 @@ function profileReadyForShortlist(profile = {}) {
     (Boolean(profile.careerPriority) ||
       Boolean(profile.preferredLearningStyle) ||
       (Array.isArray(profile.evaluationPriorities) && profile.evaluationPriorities.length > 0) ||
-      Boolean(profile.budgetPreference) ||
-      (Array.isArray(profile.stage5PreviewInstitutions) &&
-        profile.stage5PreviewInstitutions.length > 0));
+      Boolean(profile.budgetPreference));
   if (Number.isFinite(score) && score >= 60 && hasCore) return true;
   return hasCore && Boolean(profile.modernEducationCompleted || profile.evaluationCompleted || profile.exploreModernCompleted);
 }
@@ -93,42 +92,29 @@ function nextMissingPrompt(missing = [], profile = {}) {
   return null;
 }
 
-function curatedCatalogAsColleges(profile = {}) {
+function curatedCatalogAsColleges(_profile = {}) {
   const {
     CURATED_MODERN_CATALOG,
   } = require('../../../constants/careerCounsellingV2ExploreModernColleges');
-  const previewIds = new Set(
-    (Array.isArray(profile.stage5PreviewInstitutions) ? profile.stage5PreviewInstitutions : [])
-      .map((p) => p.id)
-      .filter(Boolean)
-  );
-  const previewNames = new Set(
-    (Array.isArray(profile.stage5PreviewInstitutions) ? profile.stage5PreviewInstitutions : [])
-      .map((p) => String(p.name || '').toLowerCase())
-      .filter(Boolean)
-  );
 
-  return CURATED_MODERN_CATALOG.map((item) => {
-    const inPreview =
-      previewIds.has(item.id) || previewNames.has(String(item.name || '').toLowerCase());
-    return {
-      college_name: item.name,
-      college_address: '',
-      district_enum: '',
-      ownership: 'private',
-      _curatedId: item.id,
-      _curatedTags: item.tags || [],
-      _stage5PreviewBoost: inPreview ? 1 : 0,
-      branches: [
-        {
-          branch_name: 'Computer Science / Emerging Tech',
-          branch_code: 'CSE',
-          fee: null,
-          cutoff: null,
-        },
-      ],
-    };
-  });
+  return CURATED_MODERN_CATALOG.map((item) => ({
+    college_name: item.name,
+    college_address: '',
+    district_enum: '',
+    ownership: 'private',
+    _curatedId: item.id,
+    _curatedTags: item.tags || [],
+    _curatedWhy: item.why || '',
+    _curatedModel: item.model || null,
+    branches: [
+      {
+        branch_name: 'Computer Science / Emerging Tech',
+        branch_code: 'CSE',
+        fee: null,
+        cutoff: null,
+      },
+    ],
+  }));
 }
 
 function shortlistIntroFor(profile = {}) {
@@ -138,61 +124,74 @@ function shortlistIntroFor(profile = {}) {
   return getShortlistMessage('shortlist_intro');
 }
 
-function formatCollegeBlock(item, tier) {
-  const lines = [];
-  const title = item.branchName
-    ? `${item.collegeName} — ${item.branchName}`
-    : item.collegeName;
-  lines.push(`• ${title}`);
-  if (tier === 'best' || tier === 'strong') {
-    lines.push('  Why it matches:');
-    for (const why of item.reasons.why.slice(0, 2)) {
-      lines.push(`  ✅ ${why}`);
-    }
-    if (item.reasons.consider.length > 0) {
-      lines.push(`  Note: ${item.reasons.consider[0]}`);
-    }
-  } else {
-    lines.push('  Why it was included:');
-    for (const why of item.reasons.why.slice(0, 2)) {
-      lines.push(`  - ${why}`);
-    }
-    if (item.reasons.consider[0]) {
-      lines.push(`  Trade-off: ${item.reasons.consider[0]}`);
-    }
+function idealStudentLine(item, profile = {}) {
+  const priority = String(profile.careerPriority || '').toLowerCase();
+  const goal = String(profile.careerGoal || profile.preferredCourse || '').toLowerCase();
+  if (/niat/i.test(item.collegeName || '')) {
+    return 'Ideal for students who want AI-first learning with projects, mentors, and industry exposure.';
   }
-  return lines.join('\n');
+  if (/placement/.test(priority)) {
+    return 'Ideal for students focused on employability and structured career outcomes.';
+  }
+  if (/project|skill|hands/.test(priority) || /project/.test(goal)) {
+    return 'Ideal for students who learn best through projects and applied work.';
+  }
+  if (/startup|entrepreneur/.test(priority) || /startup|entrepreneur/.test(goal)) {
+    return 'Ideal for students exploring innovation, startups, or applied venture paths.';
+  }
+  return 'Ideal for students seeking a modern, industry-aligned learning path.';
 }
 
-function formatShortlistReply(tiers, confidence) {
-  // Compact counselor format: Best Match + one alternative + advance question
-  const sections = [];
-  const best = (tiers.bestMatch || [])[0];
-  const alt = (tiers.strongAlternatives || [])[0] || (tiers.worthExploring || [])[0];
+function notableFeatureLine(item) {
+  const why = (item.reasons && item.reasons.why && item.reasons.why[0]) || item._curatedWhy || '';
+  if (why) return why;
+  return 'Notable for future-ready curriculum and practical learning.';
+}
 
-  if (!best && !alt) {
+function flattenTopShortlist(tiers, limit = SHORTLIST_PRESENT_LIMIT) {
+  const flat = [
+    ...(tiers.bestMatch || []),
+    ...(tiers.strongAlternatives || []),
+    ...(tiers.worthExploring || []),
+  ];
+  const seen = new Set();
+  const out = [];
+  for (const item of flat) {
+    const key = String(item.collegeName || '').toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function formatShortlistReply(tiers, confidence, profile = {}) {
+  const colleges = flattenTopShortlist(tiers, SHORTLIST_PRESENT_LIMIT);
+  const sections = [];
+
+  if (!colleges.length) {
     sections.push(getShortlistMessage('no_eligibility') || 'No eligible colleges yet.');
   } else {
-    if (best) {
-      sections.push('Best Match:');
-      const label = best.branchName
-        ? `${best.collegeName} — ${best.branchName}`
-        : best.collegeName;
-      const why =
-        (best.reasons && best.reasons.why && best.reasons.why[0]) ||
-        'Matches your stored profile.';
-      sections.push(label);
-      sections.push(why);
-    }
-    if (alt) {
-      sections.push('Also worth comparing:');
-      const label = alt.branchName ? `${alt.collegeName} — ${alt.branchName}` : alt.collegeName;
-      sections.push(label);
-    }
+    sections.push(getShortlistMessage('present_header') || shortlistIntroFor(profile));
+    sections.push('');
+    colleges.forEach((item, idx) => {
+      const strengths =
+        (item.reasons && Array.isArray(item.reasons.why) && item.reasons.why.slice(0, 2)) || [];
+      const strengthText =
+        strengths.length > 0
+          ? strengths.join('; ')
+          : notableFeatureLine(item);
+      sections.push(`${idx + 1}. ${item.collegeName}`);
+      sections.push(`Strengths: ${strengthText}`);
+      sections.push(`Ideal for: ${idealStudentLine(item, profile)}`);
+      sections.push(`Notable: ${notableFeatureLine(item)}`);
+      sections.push('');
+    });
   }
 
   sections.push(getShortlistMessage('ask_compare'));
-  return sections.filter(Boolean).join('\n').trim();
+  return sections.filter((line, i, arr) => !(line === '' && arr[i - 1] === '')).join('\n').trim();
 }
 
 function persistRecommendation(profile, tiers, confidence, eligibleCount) {
@@ -318,7 +317,7 @@ async function generateAndPresent(ctx, analyticsMeta = {}) {
   });
 
   return {
-    reply: formatShortlistReply(tiers, confidence),
+    reply: formatShortlistReply(tiers, confidence, profile),
     context: {
       ...ctx,
       stage: STAGES.AI_SHORTLISTING,
@@ -329,6 +328,8 @@ async function generateAndPresent(ctx, analyticsMeta = {}) {
     },
     clearState: false,
     allowExtendedPrediction: true,
+    keepIntact: true,
+    skipLineCap: true,
     analytics: [
       { type: 'recommendation_generated' },
       { type: 'shortlist_completed' },
@@ -336,28 +337,65 @@ async function generateAndPresent(ctx, analyticsMeta = {}) {
   };
 }
 
+function profileSignalBlob(profile = {}) {
+  return [
+    profile.careerGoal,
+    profile.preferredCourse,
+    profile.preferredLearningStyle,
+    profile.careerPriority,
+    profile.budgetPreference,
+    ...(Array.isArray(profile.evaluationPriorities) ? profile.evaluationPriorities : []),
+    ...(Array.isArray(profile.studentPriorities) ? profile.studentPriorities : []),
+    ...(Array.isArray(profile.biggestConcerns) ? profile.biggestConcerns : []),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+}
+
+function justifiedCuratedBoost(college, profile = {}) {
+  const blob = profileSignalBlob(profile);
+  const tags = Array.isArray(college._curatedTags) ? college._curatedTags : [];
+  let boost = 0;
+  for (const tag of tags) {
+    if (blob.includes(String(tag).replace(/_/g, ' ')) || blob.includes(String(tag))) {
+      boost += 0.03;
+    }
+  }
+  const id = String(college._curatedId || '');
+  const name = String(college.college_name || college.collegeName || '');
+  // NIAT earns a seat when AI / projects / industry signals are present — never forced #1.
+  if (id === 'niat' || /\bniat\b/i.test(name)) {
+    if (/\bai\b|artificial intelligence|machine learning|projects?|industry|mentor|internship|hands.?on/.test(blob)) {
+      boost += 0.1;
+    }
+  }
+  return Math.min(0.2, boost);
+}
+
 async function generateFromCuratedCatalog(ctx, analyticsMeta = {}) {
   const profile = { ...(ctx.profile || {}) };
   const colleges = curatedCatalogAsColleges(profile);
-  const previewNames = new Set(
-    (Array.isArray(profile.stage5PreviewInstitutions) ? profile.stage5PreviewInstitutions : [])
-      .map((p) => String(p.name || '').toLowerCase())
-      .filter(Boolean)
-  );
   let scored = scoreEligibleColleges(colleges, profile);
-  // Boost Stage 5 preview picks without forcing NIAT (or any school) to #1.
   scored = scored
     .map((row) => {
-      const name = String(row.collegeName || '').toLowerCase();
-      const extra = previewNames.has(name) ? 0.08 : 0;
+      const source = colleges.find((c) => c.college_name === row.collegeName) || {};
+      const extra = justifiedCuratedBoost(source, profile);
       return {
         ...row,
         matchScore: Math.min(1, Number(row.matchScore || 0) + extra),
+        _curatedWhy: source._curatedWhy || null,
       };
     })
     .sort((a, b) => Number(b.matchScore || 0) - Number(a.matchScore || 0));
 
-  const tiers = tierRecommendations(scored);
+  // Keep top SHORTLIST_PRESENT_LIMIT for presentation tiers
+  const top = scored.slice(0, SHORTLIST_PRESENT_LIMIT);
+  const tiers = {
+    bestMatch: top.slice(0, 1),
+    strongAlternatives: top.slice(1, 4),
+    worthExploring: top.slice(4, SHORTLIST_PRESENT_LIMIT),
+  };
   const confidence = calculateRecommendationConfidence(profile, tiers, colleges.length);
   const nextProfile = persistRecommendation(profile, tiers, confidence, colleges.length);
   nextProfile.shortlistSource = 'curated_new_age';
@@ -391,7 +429,7 @@ async function generateFromCuratedCatalog(ctx, analyticsMeta = {}) {
   });
 
   return {
-    reply: formatShortlistReply(tiers, confidence),
+    reply: formatShortlistReply(tiers, confidence, profile),
     context: {
       ...ctx,
       stage: STAGES.AI_SHORTLISTING,
@@ -402,6 +440,7 @@ async function generateFromCuratedCatalog(ctx, analyticsMeta = {}) {
     },
     clearState: false,
     allowExtendedPrediction: true,
+    keepIntact: true,
     skipLineCap: true,
     analytics: [
       { type: 'recommendation_generated', source: 'curated_new_age' },
@@ -562,10 +601,14 @@ async function processAiShortlistingTurn(text, context = {}, opts = {}) {
     const started = startAiShortlisting(ctx, analyticsMeta);
     if (started._generateNow) {
       const presented = await generateAndPresent(started.context, analyticsMeta);
+      // Stage 7 = one WhatsApp bubble (shortlist + compare ask). No intro/generating split.
       return {
-        reply: `${started.reply}\n\n${presented.reply}`,
+        reply: presented.reply,
         context: presented.context,
         clearState: false,
+        keepIntact: true,
+        skipLineCap: true,
+        allowExtendedPrediction: true,
         analytics: [...(started.analytics || []), ...(presented.analytics || [])],
       };
     }

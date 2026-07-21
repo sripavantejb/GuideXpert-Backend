@@ -509,8 +509,10 @@ function isCounselingBridgeIntent(text) {
 
 function appendCounselingAdvance(reply) {
   const base = String(reply || '').trim();
-  if (/suggest the factors|factors you should consider/i.test(base)) return base;
-  return `${base}\n\nWould you like me to suggest the factors you should consider while choosing between these colleges?`;
+  if (/compare these colleges based on placements|placements, curriculum and future/i.test(base)) {
+    return base;
+  }
+  return `${base}\n\nWould you like me to help you compare these colleges based on placements, curriculum and future opportunities?`;
 }
 
 function seedCareerContextFromPredictor(ctx = {}) {

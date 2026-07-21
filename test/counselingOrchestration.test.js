@@ -112,7 +112,7 @@ describe('counseling orchestration redesign', () => {
       },
       { startExploreModernColleges: true, presentImmediately: true, fromPersonalization: true }
     );
-    assert.equal(r.context.profile.exploreModernInstitutions.length, 5);
+    assert.equal(r.context.profile.exploreModernInstitutions.length, 10);
     assert.equal(r.keepIntact, true);
   });
 });

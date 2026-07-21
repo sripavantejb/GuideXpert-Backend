@@ -238,7 +238,7 @@ describe('careerCounsellingV2 interactive framework (stage 3)', () => {
 
     r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.stage, 'explore_modern_colleges');
-    assert.ok((r.context.profile.exploreModernInstitutions || []).length === 5);
+    assert.ok((r.context.profile.exploreModernInstitutions || []).length === 10);
     assert.match(r.reply, /shortlist the colleges that best match|shortlist.*goals/i);
   });
 
@@ -369,7 +369,7 @@ describe('careerCounsellingV2 stage 4 condensed → stage 5 explore → stage 6 
   test('explore presents top colleges then personalization on yes', async () => {
     let r = await reachExplore();
     assert.equal(r.context.stage, 'explore_modern_colleges');
-    assert.ok((r.context.profile.exploreModernInstitutions || []).length === 5);
+    assert.ok((r.context.profile.exploreModernInstitutions || []).length === 10);
     assert.match(r.reply, /leading new-age institutions|new-age institutions in India/i);
     assert.match(r.reply, /NIAT/i);
     assert.doesNotMatch(
@@ -386,11 +386,11 @@ describe('careerCounsellingV2 stage 4 condensed → stage 5 explore → stage 6 
 
     r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.stage, STAGES.PERSONALIZED_DISCOVERY || 'personalized_discovery');
-    assert.equal(r.context.step, 'pers_budget');
-    assert.ok((r.context.profile.stage5PreviewInstitutions || []).length === 3);
-    assert.match(r.reply, /three modern institutions|approximate budget/i);
-    assert.doesNotMatch(r.reply, /Ready\?/i);
-    assert.equal((r.replyParts || []).length, 1, 'preview + Stage 6 start must be one bubble');
+    assert.equal(r.context.step, 'pers_career_priority');
+    assert.equal((r.context.profile.stage5PreviewInstitutions || []).length, 0);
+    assert.doesNotMatch(r.reply, /three modern institutions|here are three/i);
+    assert.match(r.reply, /preferences|matters most|career/i);
+    assert.equal((r.replyParts || []).length, 1, 'Stage 6 start must be one bubble');
   });
 });
 
@@ -444,22 +444,22 @@ describe('careerCounsellingV2 personalized discovery', () => {
 
   test('full personalization flow scores confidence and enters AI shortlisting', async () => {
     let r = await completeThroughModernPermissionYes();
-    // Stage 5 YES → Top-3 preview + budget (skips Ready? gate)
-    assert.equal(r.context.step, 'pers_budget');
-    assert.ok((r.context.profile.stage5PreviewInstitutions || []).length === 3);
-    assert.doesNotMatch(r.reply, /profile looks ready/i);
-
-    r = await handleCareerCounsellingMessage('around 2-3 lakhs, education loan fine', r.context);
-    assert.equal(r.context.step, 'pers_location');
-    assert.ok(r.context.profile.budgetPreference);
-
-    r = await handleCareerCounsellingMessage('Hyderabad, open to relocating, hostel ok', r.context);
+    // Stage 5 YES → Stage 6 discovery only (no Top-3 recommendations)
     assert.equal(r.context.step, 'pers_career_priority');
-    assert.match(String(r.context.profile.preferredLocation), /Hyderabad/i);
+    assert.equal((r.context.profile.stage5PreviewInstitutions || []).length, 0);
+    assert.doesNotMatch(r.reply, /profile looks ready|three modern institutions/i);
 
     r = await handleCareerCounsellingMessage('strong placements and skill building', r.context);
-    assert.equal(r.context.step, 'pers_family');
+    assert.equal(r.context.step, 'pers_location');
     assert.equal(r.context.profile.careerPriority, 'placements');
+
+    r = await handleCareerCounsellingMessage('Hyderabad, open to relocating, hostel ok', r.context);
+    assert.equal(r.context.step, 'pers_budget');
+    assert.match(String(r.context.profile.preferredLocation), /Hyderabad/i);
+
+    r = await handleCareerCounsellingMessage('around 2-3 lakhs, education loan fine', r.context);
+    assert.equal(r.context.step, 'pers_family');
+    assert.ok(r.context.profile.budgetPreference);
 
     r = await handleCareerCounsellingMessage('parents supportive but prefer a good brand nearby', r.context);
     assert.equal(r.context.step, 'pers_concern');
@@ -478,20 +478,24 @@ describe('careerCounsellingV2 personalized discovery', () => {
 
     r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.stage, STAGES.AI_SHORTLISTING);
-    // Normal path: no exam/rank — curated shortlist
+    // Stage 7: first personalized shortlist of 5 — no exam on normal path
     assert.notEqual(r.context.step, 'shortlist_ask_exam');
     assert.doesNotMatch(r.reply, /Which entrance exam|profile looks ready/i);
     assert.equal(r.context.step, 'shortlist_ask_compare');
-    assert.match(r.reply, /Best Match|personalized shortlist/i);
+    assert.match(r.reply, /shortlisted five colleges|align well with your goals/i);
+    assert.match(r.reply, /Would you like to compare them side by side/i);
     assert.equal(r.context.profile.shortlistSource, 'curated_new_age');
+    assert.ok((r.context.profile.recommendedColleges || []).length >= 1);
+    assert.ok((r.context.profile.recommendedColleges || []).length <= 5);
+    assert.equal((r.replyParts || []).length, 1, 'Stage 7 must be one bubble');
     assert.equal(r.clearState, false);
   });
 
   test('phase 5 shortlisting stays sticky after curated generate', async () => {
     let r = await completeThroughModernPermissionYes();
-    r = await handleCareerCounsellingMessage('3 lakh with scholarship', r.context);
-    r = await handleCareerCounsellingMessage('Bangalore, can relocate', r.context);
     r = await handleCareerCounsellingMessage('placements', r.context);
+    r = await handleCareerCounsellingMessage('Bangalore, can relocate', r.context);
+    r = await handleCareerCounsellingMessage('3 lakh with scholarship', r.context);
     r = await handleCareerCounsellingMessage('family supports my choice', r.context);
     r = await handleCareerCounsellingMessage('confusion about branch', r.context);
     if (r.context.step === 'pers_clarify') {
@@ -502,16 +506,16 @@ describe('careerCounsellingV2 personalized discovery', () => {
     assert.equal(r.context.step, 'shortlist_ask_compare');
     r = await handleCareerCounsellingMessage('hello', r.context);
     assert.equal(r.context.stage, STAGES.AI_SHORTLISTING);
-    assert.match(r.reply, /compare|Best Match|continue/i);
+    assert.match(r.reply, /compare|shortlist|continue/i);
   });
 
   test('explains why questions without advancing', async () => {
     let r = await completeThroughModernPermissionYes();
-    assert.equal(r.context.step, 'pers_budget');
+    assert.equal(r.context.step, 'pers_career_priority');
     r = await handleCareerCounsellingMessage('Why do you ask this?', r.context);
-    assert.match(r.reply, /counseling profile|Why I ask|budget/i);
-    assert.match(r.reply, /Coming back to where we were|approximate budget/i);
-    assert.equal(r.context.step, 'pers_budget');
+    assert.match(r.reply, /counseling profile|Why I ask|matters most/i);
+    assert.match(r.reply, /Coming back to where we were|matters most/i);
+    assert.equal(r.context.step, 'pers_career_priority');
   });
 });
 
@@ -528,7 +532,7 @@ describe('unified counseling + predictor entry paths', () => {
 
     assert.equal(isCounselingBridgeIntent('yes'), true);
     const advanced = appendCounselingAdvance('Top colleges listed.');
-    assert.match(advanced, /factors you should consider/i);
+    assert.match(advanced, /placements, curriculum and future opportunities/i);
 
     const seed = seedCareerContextFromPredictor({
       exam: 'TS_EAMCET',
@@ -563,10 +567,11 @@ describe('unified counseling + predictor entry paths', () => {
     r = await handleCareerCounsellingMessage('yes', r.context);
     r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.stage, 'explore_modern_colleges');
+    assert.equal((r.context.profile.exploreModernInstitutions || []).length, 10);
     assert.doesNotMatch(r.reply, /Which entrance exam|profile looks ready/i);
     r = await handleCareerCounsellingMessage('yes', r.context);
-    assert.equal(r.context.step, 'pers_budget');
-    assert.doesNotMatch(r.reply, /Which entrance exam|profile looks ready/i);
+    assert.equal(r.context.step, 'pers_career_priority');
+    assert.doesNotMatch(r.reply, /Which entrance exam|profile looks ready|three modern institutions/i);
     assert.equal((r.replyParts || []).length, 1);
   });
 
@@ -585,7 +590,7 @@ describe('unified counseling + predictor entry paths', () => {
     assert.match(r.reply, /Reply Yes|shortlist/i);
     r = await handleCareerCounsellingMessage('no', r.context);
     assert.equal(r.context.stage, 'personalized_discovery');
-    assert.match(r.reply, /No problem|approximate budget/i);
+    assert.match(r.reply, /No problem|preferences|matters most/i);
   });
 });
 
@@ -700,10 +705,10 @@ describe('careerCounsellingV2 AI shortlisting', () => {
 
   async function reachCuratedShortlist() {
     let r = await completeThroughModernPermissionYesHelper();
-    // From explore: budget → location → career → family → concern
-    r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
-    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    // Stage 6: career → location → budget → family → concern
     r = await handleCareerCounsellingMessage('placements and skill building', r.context);
+    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
     r = await handleCareerCounsellingMessage('parents prefer good brand nearby', r.context);
     r = await handleCareerCounsellingMessage('worried about fees and wrong branch', r.context);
     if (r.context.step === 'pers_clarify') {
@@ -753,15 +758,16 @@ describe('careerCounsellingV2 AI shortlisting', () => {
     assert.equal(r.context.stage, STAGES.AI_SHORTLISTING);
     assert.equal(r.context.profile.shortlistSource, 'curated_new_age');
     assert.doesNotMatch(r.reply, /Which entrance exam|profile looks ready/i);
-    assert.match(r.reply, /Best Match/i);
-    assert.match(r.reply, /Also worth comparing|Strong Alternatives|Worth Exploring/i);
+    assert.match(r.reply, /shortlisted five colleges|align well with your goals/i);
+    assert.match(r.reply, /Strengths:|Ideal for:|Notable:/i);
+    assert.match(r.reply, /Would you like to compare them side by side/i);
     assert.doesNotMatch(r.reply, /#\d|rank\s*#|score:\s*\d/i);
     assert.ok(Array.isArray(r.context.profile.recommendedColleges));
     assert.ok(r.context.profile.recommendedColleges.length >= 1);
+    assert.ok(r.context.profile.recommendedColleges.length <= 5);
     assert.ok(r.context.profile.recommendationReasons);
     assert.ok(Number.isFinite(r.context.profile.recommendationConfidence));
     assert.equal(r.context.profile.recommendationMatrixVersion, RECOMMENDATION_MATRIX_VERSION);
-    assert.match(r.reply, /compare these options|Want to compare/i);
     const names = (r.context.profile.recommendedColleges || []).map((c) => c.collegeName).join(' ');
     assert.doesNotMatch(names, /\bCBIT\b|\bVasavi\b|\bJNTUH\b|\bIIIT\b|\bIIT\b|\bNIT\b/i);
   });
@@ -802,7 +808,7 @@ describe('careerCounsellingV2 AI shortlisting', () => {
       r = await processAiShortlistingTurn('AU', r.context);
     }
     assert.equal(r.context.step, 'shortlist_ask_compare');
-    assert.match(r.reply, /Best Match/i);
+    assert.match(r.reply, /shortlisted five|align well|Best Match|1\./i);
   });
 
   test('compare permission yes enters smart comparison selection', async () => {
@@ -968,10 +974,10 @@ describe('careerCounsellingV2 smart comparison', () => {
     r = await handleCareerCounsellingMessage('yes', r.context); // condensed stage 4
     r = await handleCareerCounsellingMessage('yes', r.context); // explore stage 5
     r = await handleCareerCounsellingMessage('yes', r.context); // personalization stage 6
-    // Stage 6 from explore: budget → location → career → family → concern
-    r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
-    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    // Stage 6 from explore: career → location → budget → family → concern
     r = await handleCareerCounsellingMessage('placements and skill building', r.context);
+    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
     r = await handleCareerCounsellingMessage('parents prefer good brand nearby', r.context);
     r = await handleCareerCounsellingMessage('worried about fees and wrong branch', r.context);
     if (r.context.step === 'pers_clarify') {
@@ -1198,10 +1204,10 @@ describe('careerCounsellingV2 concern resolution', () => {
     r = await handleCareerCounsellingMessage('yes', r.context); // condensed stage 4
     r = await handleCareerCounsellingMessage('yes', r.context); // explore stage 5
     r = await handleCareerCounsellingMessage('yes', r.context); // personalization stage 6
-    // Stage 6 from explore: budget → location → career → family → concern
-    r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
-    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    // Stage 6 from explore: career → location → budget → family → concern
     r = await handleCareerCounsellingMessage('placements and skill building', r.context);
+    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
     r = await handleCareerCounsellingMessage('parents prefer good brand nearby', r.context);
     r = await handleCareerCounsellingMessage('worried about fees and wrong branch', r.context);
     if (r.context.step === 'pers_clarify') {
@@ -1429,10 +1435,10 @@ describe('careerCounsellingV2 phase 9 personalized recommendation', () => {
     r = await handleCareerCounsellingMessage('yes', r.context); // condensed stage 4
     r = await handleCareerCounsellingMessage('yes', r.context); // explore stage 5
     r = await handleCareerCounsellingMessage('yes', r.context); // personalization stage 6
-    // Stage 6 from explore: budget → location → career → family → concern
-    r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
-    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    // Stage 6 from explore: career → location → budget → family → concern
     r = await handleCareerCounsellingMessage('placements and skill building', r.context);
+    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
     r = await handleCareerCounsellingMessage('parents prefer good brand nearby', r.context);
     r = await handleCareerCounsellingMessage('worried about fees and wrong branch', r.context);
     if (r.context.step === 'pers_clarify') {
@@ -1724,10 +1730,10 @@ describe('careerCounsellingV2 phase 10 future path vision', () => {
     r = await handleCareerCounsellingMessage('yes', r.context); // condensed stage 4
     r = await handleCareerCounsellingMessage('yes', r.context); // explore stage 5
     r = await handleCareerCounsellingMessage('yes', r.context); // personalization stage 6
-    // Stage 6 from explore: budget → location → career → family → concern
-    r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
-    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    // Stage 6 from explore: career → location → budget → family → concern
     r = await handleCareerCounsellingMessage('placements and skill building', r.context);
+    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
     r = await handleCareerCounsellingMessage('parents prefer good brand nearby', r.context);
     r = await handleCareerCounsellingMessage('worried about fees and wrong branch', r.context);
     if (r.context.step === 'pers_clarify') {
@@ -1955,10 +1961,10 @@ describe('careerCounsellingV2 Phase 11 final decision hesitation', () => {
     r = await handleCareerCounsellingMessage('yes', r.context); // condensed stage 4
     r = await handleCareerCounsellingMessage('yes', r.context); // explore stage 5
     r = await handleCareerCounsellingMessage('yes', r.context); // personalization stage 6
-    // Stage 6 from explore: budget → location → career → family → concern
-    r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
-    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    // Stage 6 from explore: career → location → budget → family → concern
     r = await handleCareerCounsellingMessage('placements and skill building', r.context);
+    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
     r = await handleCareerCounsellingMessage('parents prefer good brand nearby', r.context);
     r = await handleCareerCounsellingMessage('worried about fees and wrong branch', r.context);
     if (r.context.step === 'pers_clarify') {
@@ -2239,10 +2245,10 @@ describe('careerCounsellingV2 Phase 12 counseling experience selection', () => {
     r = await handleCareerCounsellingMessage('yes', r.context); // condensed stage 4
     r = await handleCareerCounsellingMessage('yes', r.context); // explore stage 5
     r = await handleCareerCounsellingMessage('yes', r.context); // personalization stage 6
-    // Stage 6 from explore: budget → location → career → family → concern
-    r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
-    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    // Stage 6 from explore: career → location → budget → family → concern
     r = await handleCareerCounsellingMessage('placements and skill building', r.context);
+    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
     r = await handleCareerCounsellingMessage('parents prefer good brand nearby', r.context);
     r = await handleCareerCounsellingMessage('worried about fees and wrong branch', r.context);
     if (r.context.step === 'pers_clarify') {
@@ -2456,10 +2462,10 @@ describe('careerCounsellingV2 Phase 13 booking orchestrator', () => {
     r = await handleCareerCounsellingMessage('yes', r.context); // condensed stage 4
     r = await handleCareerCounsellingMessage('yes', r.context); // explore stage 5
     r = await handleCareerCounsellingMessage('yes', r.context); // personalization stage 6
-    // Stage 6 from explore: budget → location → career → family → concern
-    r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
-    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    // Stage 6 from explore: career → location → budget → family → concern
     r = await handleCareerCounsellingMessage('placements and skill building', r.context);
+    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
     r = await handleCareerCounsellingMessage('parents prefer good brand nearby', r.context);
     r = await handleCareerCounsellingMessage('worried about fees and wrong branch', r.context);
     if (r.context.step === 'pers_clarify') {
@@ -2667,10 +2673,10 @@ describe('careerCounsellingV2 counseling invitation', () => {
     r = await handleCareerCounsellingMessage('yes', r.context); // condensed stage 4
     r = await handleCareerCounsellingMessage('yes', r.context); // explore stage 5
     r = await handleCareerCounsellingMessage('yes', r.context); // personalization stage 6
-    // Stage 6 from explore: budget → location → career → family → concern
-    r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
-    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    // Stage 6 from explore: career → location → budget → family → concern
     r = await handleCareerCounsellingMessage('placements and skill building', r.context);
+    r = await handleCareerCounsellingMessage('Hyderabad, open to relocate, hostel ok', r.context);
+    r = await handleCareerCounsellingMessage('around 2-3 lakhs', r.context);
     r = await handleCareerCounsellingMessage('parents prefer good brand nearby', r.context);
     r = await handleCareerCounsellingMessage('worried about fees and wrong branch', r.context);
     if (r.context.step === 'pers_clarify') {

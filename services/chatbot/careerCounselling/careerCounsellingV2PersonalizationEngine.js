@@ -157,39 +157,39 @@ function startPersonalizedDiscovery(ctx, analyticsMeta = {}) {
 }
 
 /**
- * Stage 5 YES handoff: Top-3 preview + first real Stage 6 question (budget).
+ * Stage 5 YES handoff → Stage 6 only.
+ * Collect preferences one question at a time. No college recommendations.
  * Skips pers_transition Ready? gate. Single keepIntact bubble.
  */
 function startPersonalizedDiscoveryFromExplore(ctx, analyticsMeta = {}, opts = {}) {
-  const {
-    formatStage5Preview,
-  } = require('./careerCounsellingV2ExploreModernCollegesEngine');
   const profile = ensurePersProfileFields(ctx.profile);
-  const preview = Array.isArray(profile.stage5PreviewInstitutions)
-    ? profile.stage5PreviewInstitutions
-    : [];
-  const previewBody = formatStage5Preview(preview);
-  const firstStep = 'pers_budget';
+  if (profile.stage5PreviewInstitutions) delete profile.stage5PreviewInstitutions;
+
+  const firstStep = 'pers_career_priority';
+  const lead = [
+    'Great — to shortlist accurately, I need a few preferences.',
+    "I'll ask one question at a time.",
+  ].join('\n');
   const firstQ = getPersContentForStep(firstStep);
   const soft = String(opts.softDeclinePrefix || '').trim();
-  const reply = [soft, previewBody, firstQ].filter(Boolean).join('\n\n');
+  const reply = [soft, lead, firstQ].filter(Boolean).join('\n\n');
 
   const nextCtx = {
     ...ctx,
     stage: STAGES.PERSONALIZED_DISCOVERY,
     step: firstStep,
     profile,
-    lastQuestionKey: 'budget',
+    lastQuestionKey: 'career_priority',
     clarifyQueue: [],
     personalizationStartedAt: new Date().toISOString(),
-    fromExplorePreview: true,
+    fromExploreHandoff: true,
   };
 
   logPersonalizationStarted({
     stage: STAGES.PERSONALIZED_DISCOVERY,
     step: firstStep,
     profileCompletionPct: profile.profileCompletionPct ?? null,
-    source: 'stage5_preview',
+    source: 'stage5_explore',
     ...analyticsMeta,
   });
 
@@ -199,10 +199,7 @@ function startPersonalizedDiscoveryFromExplore(ctx, analyticsMeta = {}, opts = {
     clearState: false,
     keepIntact: true,
     skipLineCap: true,
-    analytics: [
-      { type: 'personalization_started', source: 'stage5_preview' },
-      { type: 'stage5_preview_presented', count: preview.length },
-    ],
+    analytics: [{ type: 'personalization_started', source: 'stage5_explore' }],
   };
 }
 

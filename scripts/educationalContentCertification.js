@@ -114,12 +114,12 @@ function staticAudit() {
     record('static:explore_ask', 'PASS', {});
   }
 
-  if (CURATED_MODERN_CATALOG.length < 10 || EXPLORE_PRESENT_LIMIT !== 5) {
-    record('static:top5_showcase', 'FAIL', {
+  if (CURATED_MODERN_CATALOG.length < 10 || EXPLORE_PRESENT_LIMIT !== 10) {
+    record('static:top10_showcase', 'FAIL', {
       fails: [`catalog=${CURATED_MODERN_CATALOG.length},limit=${EXPLORE_PRESENT_LIMIT}`],
     });
   } else {
-    record('static:top5_showcase', 'PASS', {});
+    record('static:top10_showcase', 'PASS', {});
   }
 
   const niatOnly = CURATED_MODERN_CATALOG.every((c) => /niat/i.test(c.id));
@@ -200,7 +200,7 @@ async function liveAudit() {
     record('live:stage5_explore', 'FAIL', { fails: [`stage=${r.context?.stage}`] });
   } else {
     const count = (r.context.profile?.exploreModernInstitutions || []).length;
-    if (count !== 5) record('live:stage5_showcase', 'FAIL', { fails: [`count=${count}`] });
+    if (count !== 10) record('live:stage5_showcase', 'FAIL', { fails: [`count=${count}`] });
     else record('live:stage5_showcase', 'PASS', { count });
     auditInteractive('live:stage5_ask_shortlist', r.reply, { requireQuestion: true, minLines: 5 });
   }
@@ -208,10 +208,10 @@ async function liveAudit() {
   r = await handleCareerCounsellingMessage('yes', r.context);
   if (r.context?.stage !== 'personalized_discovery') {
     record('live:stage6_personalization', 'FAIL', { fails: [`stage=${r.context?.stage}`] });
-  } else if (r.context?.step !== 'pers_budget') {
-    record('live:stage6_personalization', 'FAIL', { fails: [`step=${r.context?.step}`] });
-  } else if ((r.context.profile?.stage5PreviewInstitutions || []).length !== 3) {
-    record('live:stage6_personalization', 'FAIL', { fails: ['missing_top3_preview'] });
+  } else if ((r.context.profile?.stage5PreviewInstitutions || []).length > 0) {
+    record('live:stage6_personalization', 'FAIL', { fails: ['unexpected_top3_preview'] });
+  } else if (/three modern institutions|1\.\s+.*\n2\.\s+.*\n3\.\s+/i.test(r.reply || '')) {
+    record('live:stage6_personalization', 'FAIL', { fails: ['stage6_recommended_colleges'] });
   } else {
     record('live:stage6_personalization', 'PASS', {});
   }
