@@ -9,9 +9,29 @@ function isPhase13BookNow(text) {
   );
 }
 
+/** Soft defer / not-now — does not include form Done or wrap-up. */
 function isPhase13Defer(text) {
   const t = normalizeText(text);
-  return /^(later|not now|no|n|nope|skip|done|finish|finished|thanks|thank you)$/i.test(t);
+  return /^(later|not now|no|n|nope|skip)$/i.test(t);
+}
+
+/**
+ * Form-submit ack after URL share — stay engaged (do not close journey).
+ * Distinct from wrap-up ("that's all", "bye", "done for now").
+ */
+function isPhase13FormDone(text) {
+  const t = normalizeText(text);
+  return /^(done|finish|finished|submitted|form (is )?done|i'?ve (submitted|done|finished)|i have (submitted|done|finished)|completed|form submitted)$/i.test(
+    t
+  );
+}
+
+/** Explicit conversation wrap-up → Phase 14 only. */
+function isPhase13WrapUp(text) {
+  const t = normalizeText(text);
+  return /^(thanks|thank you|bye|goodbye|that'?s all|that is all|all done|done for now|nothing else|no more questions|i'?m done for now|i am done for now|wrap up|that'?s it|that is it)$/i.test(
+    t
+  );
 }
 
 function isPhase13Question(text) {
@@ -45,6 +65,8 @@ function detectBookingResume(text) {
 module.exports = {
   isPhase13BookNow,
   isPhase13Defer,
+  isPhase13FormDone,
+  isPhase13WrapUp,
   isPhase13Question,
   detectBookingResume,
 };

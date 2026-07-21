@@ -59,7 +59,7 @@ function buildNiatOneOnOneReply() {
   return [
     "I'm glad to hear that you're interested in NIAT.",
     '',
-    "Since every student's academic background, career goals, and eligibility are different, the best next step is to have a personalized One-on-One Counseling Session with one of our experienced IIT alumni and admissions experts.",
+    "Since every student's academic background, career goals, and eligibility are different, the best next step is to have a personalized One-on-One Counseling Session with one of our experienced career counselors, including IIT alumni where applicable.",
     '',
     'During the session, they can:',
     '',

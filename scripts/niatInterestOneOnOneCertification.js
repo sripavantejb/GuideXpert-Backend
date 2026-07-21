@@ -22,7 +22,6 @@ const {
   assertNiatTransitionGuardrails,
   buildNiatInterestOneOnOneResult,
 } = require('../services/chatbot/careerCounselling/careerCounsellingV2NiatInterestService');
-const { bookingPageUrl } = require('../services/chatbot/bookingContext/bookingContextResolver');
 const {
   buildNiatOneOnOneReply,
 } = require('../constants/careerCounsellingV2NiatInterest');
@@ -30,7 +29,7 @@ const {
 const OUT_DIR = path.join(__dirname, '..', 'smoke-results', 'sectionF');
 const PASS_GATE = Number(process.env.NIAT_INTEREST_PASS_GATE || 1);
 const oooRe = new RegExp(ONE_ON_ONE_SESSION_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-const bookingRe = new RegExp(bookingPageUrl().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+const bookingRe = /iit-counselling/i;
 
 function caseResult(id, group, title, fn) {
   const started = Date.now();

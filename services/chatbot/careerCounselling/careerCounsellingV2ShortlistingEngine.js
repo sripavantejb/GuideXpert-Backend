@@ -252,6 +252,9 @@ function persistRecommendation(profile, tiers, confidence, eligibleCount) {
       tier: c.tier,
       cutoff: c.cutoff,
       fee: c.fee,
+      _curatedId: c._curatedId || null,
+      _curatedTags: Array.isArray(c._curatedTags) ? c._curatedTags : [],
+      _curatedWhy: c._curatedWhy || null,
     })),
     recommendationReasons: reasons,
     shortlistNarrative: buildShortlistNarrative(flatten.slice(0, SHORTLIST_PRESENT_LIMIT), profile),
@@ -422,6 +425,8 @@ async function generateFromCuratedCatalog(ctx, analyticsMeta = {}) {
       return {
         ...row,
         matchScore: Math.min(1, Number(row.matchScore || 0) + extra),
+        _curatedId: source._curatedId || null,
+        _curatedTags: Array.isArray(source._curatedTags) ? source._curatedTags : [],
         _curatedWhy: source._curatedWhy || null,
       };
     })

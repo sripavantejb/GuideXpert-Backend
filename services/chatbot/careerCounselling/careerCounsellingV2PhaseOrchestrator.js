@@ -192,6 +192,24 @@ function isExtendedPredictionReply(result = {}) {
     return true;
   }
 
+  // Phase 12 counseling value presentation (bullets + soft CTA)
+  if (
+    stage.includes('phase_12') ||
+    step.startsWith('counsel_rec_') ||
+    /Together you can:/i.test(reply)
+  ) {
+    return true;
+  }
+
+  // Phase 13 booking URL / post-submit engagement
+  if (
+    stage.includes('phase_13') ||
+    step.startsWith('booking_') ||
+    /personalized 1-on-1 counseling session/i.test(reply)
+  ) {
+    return true;
+  }
+
   // Smart comparison select + full comparison block
   if (
     stage.includes('smart_comparison') ||

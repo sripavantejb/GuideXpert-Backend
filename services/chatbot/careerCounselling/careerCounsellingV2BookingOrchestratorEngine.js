@@ -14,6 +14,8 @@ const { isSocialGreetingOnly } = require('./careerCounsellingV2ResponseParser');
 const {
   isPhase13BookNow,
   isPhase13Defer,
+  isPhase13FormDone,
+  isPhase13WrapUp,
   isPhase13Question,
 } = require('./careerCounsellingV2BookingOrchestratorParser');
 const {
@@ -358,7 +360,7 @@ async function processBookingOrchestratorTurn(text, context = {}, opts = {}) {
   }
 
   if (ctx.step === 'booking_intro') {
-    if (isPhase13Defer(inbound)) {
+    if (isPhase13Defer(inbound) || isPhase13WrapUp(inbound) || isPhase13FormDone(inbound)) {
       logBookingDeferred({
         stage: STAGES.PHASE_13_BOOKING_ORCHESTRATOR,
         service: ctx.profile?.phase13Service || null,
@@ -402,12 +404,44 @@ async function processBookingOrchestratorTurn(text, context = {}, opts = {}) {
   }
 
   if (ctx.step === 'booking_presented' || ctx.step === 'booking_confirmed') {
-    if (isPhase13Defer(inbound)) {
+    if (isPhase13WrapUp(inbound)) {
       return exitToPhase14(
         {
           ...ctx,
           profile: withTracking(ctx.profile || {}, {
             phase13Outcome: 'confirmed_intent',
+            phase13Completed: true,
+          }),
+        },
+        analyticsMeta
+      );
+    }
+
+    if (isPhase13FormDone(inbound)) {
+      return {
+        reply: getPhase13Message('post_submit_engaged'),
+        context: {
+          ...ctx,
+          stage: STAGES.PHASE_13_BOOKING_ORCHESTRATOR,
+          step: 'booking_confirmed',
+          lastQuestionKey: 'booking_confirmed',
+          profile: withTracking(ctx.profile || {}, {
+            phase13Outcome: 'confirmed_intent',
+            phase13FormDoneAck: true,
+            phase13Completed: false,
+          }),
+        },
+        clearState: false,
+        analytics: [{ type: 'booking_form_done_ack' }],
+      };
+    }
+
+    if (isPhase13Defer(inbound)) {
+      return exitToPhase14(
+        {
+          ...ctx,
+          profile: withTracking(ctx.profile || {}, {
+            phase13Outcome: 'deferred',
             phase13Completed: true,
           }),
         },
@@ -423,24 +457,32 @@ async function processBookingOrchestratorTurn(text, context = {}, opts = {}) {
     if (isPhase13Question(inbound) || inbound.length >= 4) {
       return {
         reply: getPhase13Message('question_fallback'),
-        context: ctx,
+        context: {
+          ...ctx,
+          step: 'booking_confirmed',
+          profile: withTracking(ctx.profile || {}, {
+            phase13Outcome: ctx.profile?.phase13Outcome || 'confirmed_intent',
+          }),
+        },
         clearState: false,
         analytics: [],
       };
     }
 
-    // Soft ack after URL share → booking_initiated via Phase 14
-    return exitToPhase14(
-      {
+    // Soft ack after URL share — stay engaged (Phase 14 only on explicit wrap-up)
+    return {
+      reply: getPhase13Message('post_submit_engaged'),
+      context: {
         ...ctx,
         step: 'booking_confirmed',
         profile: withTracking(ctx.profile || {}, {
           phase13Outcome: 'confirmed_intent',
-          phase13Completed: true,
+          phase13Completed: false,
         }),
       },
-      analyticsMeta
-    );
+      clearState: false,
+      analytics: [],
+    };
   }
 
   return startBookingOrchestrator(ctx, analyticsMeta, {

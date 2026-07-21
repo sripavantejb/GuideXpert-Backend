@@ -117,7 +117,7 @@ const MESSAGES = Object.freeze({
     'You can share it in a sentence, or reply *No* / *Ready* if you feel clear.',
   ].join('\n'),
 
-  fast_path_ack: 'Got it — sounds like you’re ready to move forward 👍',
+  fast_path_ack: 'Understood — we can move to the next step when you’re ready.',
 
   confirm: 'Does that help you feel more confident about your decision? Reply *Yes* or *No*.',
 
@@ -146,7 +146,7 @@ const MESSAGES = Object.freeze({
     'We’ve explored the options together, but since your concerns are specific to your situation, a personalized discussion with one of our expert counselors may help you make a more confident decision.',
 
   escalation_value: [
-    'During the session, experienced IIT alumni and admissions experts can understand your profile in detail, answer your questions, explain different college options, discuss career pathways, and help you choose the path that best fits your goals.',
+    'During the session, experienced career counselors — including IIT alumni where applicable — can understand your profile in detail, answer your questions, explain different college options, discuss career pathways, and help you choose the path that best fits your goals.',
     'They can also help with parent-related concerns, course selection, and comparing suitable colleges for your situation — without promising admissions, placements, or other outcomes.',
   ].join(' '),
 

@@ -92,6 +92,17 @@ function selectRankedRecommendations(profile = {}) {
       rankKey: display.rankKey,
       rankLabel: display.rankLabel,
       confidenceLabel: labelForConfidence(profile.recommendationConfidence, tier),
+      _curatedId: c._curatedId || null,
+      _curatedTags: Array.isArray(c._curatedTags) ? c._curatedTags : [],
+      _curatedWhy: c._curatedWhy || null,
+      shortlistMatchLine: (() => {
+        const narrative = Array.isArray(profile.shortlistNarrative)
+          ? profile.shortlistNarrative.find(
+              (n) => collegeKey(n.collegeName || n) === name
+            )
+          : null;
+        return narrative?.matchLine || null;
+      })(),
     });
   }
 
@@ -218,6 +229,107 @@ function selectBestFitCollege(profile = {}) {
   return items[0];
 }
 
+function resolveBestFitCatalogSignals(bestFit = {}) {
+  let tags = Array.isArray(bestFit._curatedTags) ? bestFit._curatedTags : [];
+  let why = bestFit._curatedWhy || '';
+  if (tags.length || why) return { tags, why };
+
+  try {
+    const {
+      CURATED_MODERN_CATALOG,
+    } = require('../../../constants/careerCounsellingV2ExploreModernColleges');
+    const name = String(bestFit.collegeName || '').toLowerCase();
+    const hit = CURATED_MODERN_CATALOG.find(
+      (item) =>
+        String(item.name || '').toLowerCase() === name ||
+        name.includes(String(item.id || '').toLowerCase()) ||
+        /\bniat\b/i.test(name)
+    );
+    if (hit) {
+      tags = Array.isArray(hit.tags) ? hit.tags : [];
+      why = hit.why || '';
+    }
+  } catch (_err) {
+    // Catalog optional for eligibility-only shortlists.
+  }
+  return { tags, why };
+}
+
+function buildCounselorWhyBullets(bestFit, profile = {}) {
+  const { tags, why } = resolveBestFitCatalogSignals(bestFit);
+  const has = (t) => tags.includes(t);
+  const isNiat = /\bniat\b/i.test(bestFit.collegeName || '');
+  const bullets = [];
+
+  if (isNiat && niatProfileFit(profile)) {
+    if (has('ai') || why) {
+      bullets.push(
+        'Its AI-focused curriculum aligns with the direction you’ve been exploring.'
+      );
+    }
+    if (has('projects') || has('industry')) {
+      bullets.push(
+        'Industry-integrated projects can help you build practical experience alongside academics.'
+      );
+    }
+    if (has('mentoring')) {
+      bullets.push(
+        'Mentorship support can help you stay guided as you shape skills for real-world roles.'
+      );
+    }
+    if (has('internships') || has('hands_on')) {
+      bullets.push(
+        'Hands-on learning and internship readiness can strengthen your portfolio over time.'
+      );
+    }
+    if (why && bullets.length < 4) {
+      bullets.push(`${why.replace(/\.$/, '')}.`);
+    }
+  } else {
+    if (why) bullets.push(`${String(why).replace(/\.$/, '')}.`);
+    if (bestFit.shortlistMatchLine) bullets.push(bestFit.shortlistMatchLine);
+    const reasonWhy = Array.isArray(bestFit.reasons?.why)
+      ? bestFit.reasons.why.filter(Boolean)
+      : [];
+    for (const w of reasonWhy) {
+      if (bullets.length >= 5) break;
+      const cleaned = String(w).replace(/\.$/, '');
+      if (!bullets.some((b) => b.toLowerCase().includes(cleaned.toLowerCase().slice(0, 40)))) {
+        bullets.push(`${cleaned}.`);
+      }
+    }
+    if (has('projects') || has('hands_on')) {
+      bullets.push('Project-oriented learning can help you build a stronger applied portfolio.');
+    }
+    if (has('mentoring')) {
+      bullets.push('Mentorship pathways can support clearer skill and career decisions.');
+    }
+    if (has('internships') || has('placements')) {
+      bullets.push('Career-preparation signals on this path align with practical readiness goals.');
+    }
+    if (has('ai') || has('innovation')) {
+      bullets.push('The learning approach leans toward modern, future-ready skill building.');
+    }
+  }
+
+  return uniq(bullets).slice(0, 5);
+}
+
+function buildGoalConnectionLine(profile = {}, collegeName) {
+  const goal = profile.careerGoal || profile.careerPriority || null;
+  const course = profile.preferredCourse || null;
+  if (goal && course) {
+    return `For someone focused on ${String(course).slice(0, 50)} with goals around ${String(goal).slice(0, 60)}, ${collegeName} can be a strong next step to explore.`;
+  }
+  if (goal) {
+    return `Given your focus on ${String(goal).slice(0, 70)}, ${collegeName} appears well aligned with the path you’ve been shaping.`;
+  }
+  if (course) {
+    return `Given your interest in ${String(course).slice(0, 50)}, ${collegeName} appears well aligned with what you’ve shared so far.`;
+  }
+  return `Based on everything you’ve shared, ${collegeName} appears well aligned with the direction you’ve been shaping.`;
+}
+
 function formatBestFitRecommendation(profile, bestFit, items = []) {
   const lines = [];
 
@@ -225,26 +337,28 @@ function formatBestFitRecommendation(profile, bestFit, items = []) {
     return getPhase9Message('empty');
   }
 
-  lines.push(getPhase9Message('header'));
+  const college = bestFit.collegeName;
+  lines.push(
+    getPhase9Message('header').replace('{{college}}', college)
+  );
   lines.push('');
   lines.push(
-    getPhase9Message('recommendation_prefix').replace('{{college}}', bestFit.collegeName)
+    getPhase9Message('recommendation_prefix').replace('{{college}}', college)
   );
-  const reasons = buildReasoningLines(bestFit, profile).slice(0, 3);
-  for (const reason of reasons) lines.push(`• ${reason}`);
+  const bullets = buildCounselorWhyBullets(bestFit, profile);
+  const fallbackReasons = bullets.length
+    ? bullets
+    : buildReasoningLines(bestFit, profile).slice(0, 4);
+  for (const reason of fallbackReasons.slice(0, 5)) {
+    lines.push(`• ${reason}`);
+  }
   lines.push('');
-  const alternatives = items
-    .filter((i) => i.collegeName !== bestFit.collegeName)
-    .slice(0, 2)
-    .map((i) => i.collegeName);
-  if (alternatives.length) {
-    lines.push(
-      `This conclusion also considers close alternatives like ${alternatives.join(' and ')} from your shortlist.`
-    );
+  lines.push(buildGoalConnectionLine(profile, college));
+  lines.push('');
+  if (isWeakConfidence(profile, items)) {
+    lines.push(getPhase9Message('weak_confidence_note'));
     lines.push('');
   }
-  if (isWeakConfidence(profile, items)) lines.push(getPhase9Message('weak_confidence_note'));
-  if (isWeakConfidence(profile, items)) lines.push('');
   lines.push(getPhase9Message('soft_transition'));
   lines.push('');
   lines.push(getPhase9Message('ask_continue'));

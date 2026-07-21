@@ -150,7 +150,7 @@ const MESSAGES = Object.freeze({
     'Finish shortlisting first — or type MENU.',
   ].join('\n'),
 
-  comparison_header: 'Your personalized comparison:',
+  comparison_header: "Here's a side-by-side look at what matters for your goals:",
 
   dimensions_header: '*What we’re comparing:*',
 
@@ -169,6 +169,9 @@ const MESSAGES = Object.freeze({
     '',
     'Ask about fit/fees/location — or say Continue.',
   ].join('\n'),
+
+  comparison_summary: (lead) =>
+    `Looking at your interests and priorities, ${lead} appears to align most closely with your goals, while the others remain strong alternatives for different learning preferences.`,
 
   ask_recommendation:
     "Would you like me to suggest which college appears to be the best fit based on everything you've shared?",

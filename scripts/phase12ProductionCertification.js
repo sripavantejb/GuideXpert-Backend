@@ -314,7 +314,7 @@ async function main() {
       assert.doesNotMatch(r.reply, bookingRe);
       assert.doesNotMatch(r.reply, /https?:\/\//i);
       assert.doesNotMatch(r.reply, /guaranteed|mandatory|must book/i);
-      assert.match(r.reply, /counseling experience|optional|Continue|Not now/i);
+      assert.match(r.reply, /counseling session|Together you can:|Continue|Not now|ready to continue/i);
       return 'no-url';
     })
   );
@@ -401,6 +401,7 @@ async function main() {
       );
       assert.doesNotMatch(built.reply, /https?:\/\//i);
       assert.doesNotMatch(built.reply, /guaranteed|mandatory/i);
+      assert.match(built.reply, /Together you can:|right\* college|IIT alumni where applicable/i);
       return 'guardrails';
     })
   );

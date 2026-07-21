@@ -148,6 +148,8 @@ function startCounselingExperienceSelection(ctx, analyticsMeta = {}) {
 
   return {
     reply: built.reply,
+    keepIntact: true,
+    skipLineCap: true,
     context: {
       ...ctx,
       stage: STAGES.PHASE_12_PERSONALIZED_COUNSELING_RECOMMENDATION,

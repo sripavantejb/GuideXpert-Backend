@@ -23,7 +23,6 @@ const {
 const {
   setShortlistingEligibilityDeps,
 } = require('../services/chatbot/careerCounselling/careerCounsellingV2EligibilityService');
-const { bookingPageUrl } = require('../services/chatbot/bookingContext/bookingContextResolver');
 const {
   GUARANTEE_FORBIDDEN,
 } = require('../constants/careerCounsellingV2FinalDecisionHesitation');
@@ -264,7 +263,8 @@ async function main() {
   });
 
   const results = [];
-  const bookingRe = new RegExp(bookingPageUrl().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  // Forbid legacy invitation path only — official OOO URL is expected on escalation.
+  const bookingRe = /iit-counselling/i;
 
   results.push(
     await caseResultAsync('P11-01', 'entry', 'Enters from Phase 10 continue', async () => {

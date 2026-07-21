@@ -42,10 +42,10 @@ const CONFIDENCE_LABELS = Object.freeze({
 });
 
 const MESSAGES = Object.freeze({
-  header: 'Here is the best-fit recommendation based on everything you shared.',
+  header: 'Why {{college}} appears to be a strong fit for you',
 
   empty: [
-    'I don’t have enough shortlist context yet to rank colleges confidently.',
+    'I don’t have enough shortlist context yet to recommend confidently.',
     '',
     'We can still continue — a counsellor can help fill the gaps.',
   ].join('\n'),
@@ -53,7 +53,7 @@ const MESSAGES = Object.freeze({
   tradeoffs_header: '*How they differ*',
 
   recommendation_prefix:
-    'Based on your goals, interests, and preferences, {{college}} appears to be the strongest fit because:',
+    "Based on everything you've shared, {{college}} aligns well with your goals because:",
 
   soft_transition: [
     'If you are ready, we can now explore what your future path could look like from this choice.',
@@ -66,7 +66,7 @@ const MESSAGES = Object.freeze({
   greeting_mid: 'Still here. Let’s finish your best-fit recommendation.',
 
   weak_confidence_note:
-    'Confidence is lower because some profile or shortlist signals are still thin — treat this as decision support, not certainty.',
+    'Some profile signals are still thin — treat this as decision support, not certainty.',
 
   resume_prefix: 'Back to your recommendation:',
 });

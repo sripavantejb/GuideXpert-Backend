@@ -20,7 +20,8 @@ const {
 
 function bookingPageUrl() {
   return (
-    process.env.IIT_COUNSELLING_PAGE_URL || 'https://www.guidexpert.co.in/iit-counselling'
+    process.env.IIT_COUNSELLING_PAGE_URL ||
+    'https://www.guidexpert.co.in/one-on-one-session'
   );
 }
 

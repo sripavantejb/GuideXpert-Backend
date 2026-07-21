@@ -299,7 +299,7 @@ async function main() {
       assert.equal(syn.items[1].collegeName, 'B');
       assert.equal(syn.items[1].rankLabel, 'Strong Alternative');
       assert.equal(syn.items[2].rankLabel, 'Good Backup');
-      assert.match(syn.reply, /\bB\b.*strongest fit|strongest fit.*\bB\b/i);
+      assert.match(syn.reply, /\bB\b.*strong fit|aligns well.*\bB\b|Why B appears to be a strong fit/i);
       return syn.summary;
     })
   );
@@ -318,7 +318,7 @@ async function main() {
       assert.equal(syn.items[0].rankLabel, 'Best Match');
       assert.equal(syn.items[1].collegeName, 'College B');
       assert.doesNotMatch(syn.reply, /\*Best Match: College B\*/);
-      assert.match(syn.reply, /College B appears to be the strongest fit|College B/i);
+      assert.match(syn.reply, /College B appears to be a strong fit|College B aligns well|College B/i);
       return 'rank-preserved';
     })
   );
@@ -332,7 +332,7 @@ async function main() {
       assert.equal(syn.items.length, 1);
       assert.equal(syn.items[0].collegeName, 'Only Shortlisted');
       assert.ok(!syn.items.some((i) => i.collegeName === 'Ghost College'));
-      assert.doesNotMatch(syn.reply, /Ghost College appears to be the strongest fit/i);
+      assert.doesNotMatch(syn.reply, /Ghost College appears to be a strong fit|Ghost College aligns well/i);
       return 'no-injection';
     })
   );
@@ -356,8 +356,9 @@ async function main() {
         },
         recommendationConfidence: 80,
       });
-      assert.match(syn.reply, /B\.Tech CSE|Software engineer|2-3 lakhs/i);
-      assert.match(syn.reply, /Aligns with your preferred course/);
+      assert.match(syn.reply, /B\.Tech CSE|Software engineer/i);
+      assert.match(syn.reply, /Aligns with your preferred course|strong fit|aligns well/i);
+      assert.doesNotMatch(syn.reply, /Course focus:/i);
       return 'profile-anchored';
     })
   );
@@ -386,7 +387,7 @@ async function main() {
           Beta: { why: ['Lower location friction'], strengths: [], consider: ['Higher fee'] },
         },
       });
-      assert.match(syn.reply, /strongest fit|best-fit recommendation/i);
+      assert.match(syn.reply, /strong fit|aligns well with your goals/i);
       assert.ok(syn.tradeoffs.length >= 1);
       return `${syn.tradeoffs.length} tradeoff lines`;
     })

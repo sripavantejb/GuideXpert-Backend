@@ -72,7 +72,9 @@ const GUARANTEE_FORBIDDEN = Object.freeze([
 
 const MESSAGES = Object.freeze({
   intro: [
-    'Optional next step: book your selected *{ctaLabel}* session on the GuideXpert website.',
+    'Wonderful.',
+    '',
+    'Optional next step: book your personalized *{ctaLabel}* session on the GuideXpert website.',
     '',
     'I won’t create a booking inside WhatsApp.',
     '',
@@ -80,13 +82,13 @@ const MESSAGES = Object.freeze({
   ].join('\n'),
 
   url_share: [
-    'Here’s the official booking form for your *{ctaLabel}* session:',
+    'Wonderful.',
+    '',
+    'You can book your personalized 1-on-1 counseling session here:',
     '',
     '{url}',
     '',
-    'Complete it on the website when you’re ready. I can’t create the booking inside WhatsApp.',
-    '',
-    'Reply *Done* when finished, or ask a short booking question.',
+    "Once you've submitted the form, simply reply *Done* and I'll continue helping you.",
   ].join('\n'),
 
   deferred: [
@@ -98,21 +100,33 @@ const MESSAGES = Object.freeze({
   question_fallback: [
     'Booking happens on the GuideXpert website form — not inside WhatsApp.',
     '',
-    'Reply *Book now* for the official link, *Later* to stop, or ask another short booking question.',
+    'I can still help with remaining questions about fit, fees, or next steps.',
+    '',
+    'Reply *Book now* for the official link, *Send booking link* if you need it again, or ask another short question.',
   ].join('\n'),
 
   clarify: 'Reply *Book now*, *Later*, or ask a short booking question.',
 
   confirmed_intent: [
-    'Great — finish on the website form when you can.',
+    "Thanks — I'll assume you've submitted the form.",
     '',
-    'Reply *Done* anytime. Say *Send booking link* if you need the form again.',
+    'I can keep helping with any remaining questions about colleges, fit, fees, or next steps.',
+    '',
+    'Ask anytime, say *Send booking link* if you need the form again, or reply *That’s all* when you’re ready to wrap up.',
+  ].join('\n'),
+
+  post_submit_engaged: [
+    "Thanks — I'll assume you've submitted the form.",
+    '',
+    'I can keep helping with any remaining questions about colleges, fit, fees, or next steps.',
+    '',
+    'Ask anytime, say *Send booking link* if you need the form again, or reply *That’s all* when you’re ready to wrap up.',
   ].join('\n'),
 
   skipped_none: [
     'No booking step is needed from your counseling selection.',
     '',
-    'Reply *Done* when you’re finished.',
+    'Reply *That’s all* when you’re finished, or ask if anything else is on your mind.',
   ].join('\n'),
 
   skipped_already_offered: [
@@ -120,7 +134,7 @@ const MESSAGES = Object.freeze({
     '',
     'We won’t send another booking link here.',
     '',
-    'Reply *Done* when you’re finished.',
+    'Reply *That’s all* when you’re finished, or ask if anything else is on your mind.',
   ].join('\n'),
 
   resume_no_service: [

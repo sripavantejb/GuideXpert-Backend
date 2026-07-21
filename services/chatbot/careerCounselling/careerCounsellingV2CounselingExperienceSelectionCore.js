@@ -172,6 +172,11 @@ function buildPersonalizedServiceReply(profile = {}, selection = {}) {
     : profile.careerPriority
       ? String(profile.careerPriority).slice(0, 60)
       : null;
+  const budget = profile.budgetPreference
+    ? String(profile.budgetPreference).slice(0, 40)
+    : profile.financialPreference
+      ? String(profile.financialPreference).slice(0, 40)
+      : null;
 
   const pathBit = bestMatch
     ? `the path toward *${bestMatch}*`
@@ -179,35 +184,73 @@ function buildPersonalizedServiceReply(profile = {}, selection = {}) {
       ? `your ${course} direction`
       : 'the direction you built in counseling';
   const goalBit = goal ? ` toward ${goal}` : '';
-  const examBit =
-    profile.examName || profile.entranceExam
-      ? ` with ${profile.examName || profile.entranceExam}`
-      : '';
+  const personalBits = [
+    goal ? `goals around ${goal}` : null,
+    course ? `interest in ${course}` : null,
+    budget ? `budget context (${budget})` : null,
+  ].filter(Boolean);
+  const personalLine = personalBits.length
+    ? `In the session, discussion can be tailored to your ${personalBits.join(', ')}, and career plans — including ${pathBit}.`
+    : `In the session, discussion can be tailored to your goals, interests, and career plans — including ${pathBit}${goalBit}.`;
+
+  const valueBullets = [
+    '• Compare colleges in the context of *your* priorities',
+    '• Build a clearer academic and career roadmap',
+    '• Understand placements and internship pathways more realistically',
+    '• Discuss scholarships and financing options',
+    '• Gain career clarity so you can decide with more confidence',
+  ];
+
+  const credibility =
+    "You'll have the opportunity to speak with one of our experienced career counselors, including IIT alumni where applicable.";
+  const mission =
+    'The goal is helping you choose the *right* college for you — not pushing one college.';
 
   let body;
   switch (service) {
     case COUNSELING_SERVICES.ADMISSION:
       body = [
-        `Based on your counseling journey, an *admission-focused* counseling experience fits best.`,
-        `You’ve already clarified ${pathBit}${goalBit}${examBit}.`,
-        `A counselor can help unpack eligibility and process details for your situation — without promising outcomes.`,
-      ].join(' ');
+        'A personalized *admission-focused* counseling session can help you move forward with more clarity.',
+        '',
+        personalLine,
+        '',
+        'Together you can:',
+        ...valueBullets,
+        '',
+        mission,
+        '',
+        credibility,
+      ].join('\n');
       break;
     case COUNSELING_SERVICES.CAREER:
       body = [
-        `Based on what you shared, a *career-pathway* counseling experience fits best.`,
-        `Your goals around ${goal || 'your career direction'} and ${pathBit} are a strong base.`,
-        `A counselor can help connect learning pathways to practical next steps — optionally, and without pressure.`,
-      ].join(' ');
+        'A personalized *career-pathway* counseling session can help you connect learning choices to practical next steps.',
+        '',
+        personalLine,
+        '',
+        'Together you can:',
+        ...valueBullets,
+        '',
+        mission,
+        '',
+        credibility,
+      ].join('\n');
       break;
     case COUNSELING_SERVICES.ONE_ON_ONE:
       body = [
-        `Based on your situation, a *One-on-One* counseling experience fits best.`,
         reasons.includes('parent_alignment')
-          ? `Family alignment came up in your journey — a personalized session can help discuss ${pathBit} together.`
-          : `Your counseling context around ${pathBit}${goalBit} is specific enough that a personalized session can go deeper.`,
-        `This stays optional — only if you want that kind of guidance.`,
-      ].join(' ');
+          ? 'A personalized *One-on-One* counseling session can help you and your family discuss options with more clarity.'
+          : 'A personalized *One-on-One* counseling session can help you decide with more clarity.',
+        '',
+        personalLine,
+        '',
+        'Together you can:',
+        ...valueBullets,
+        '',
+        mission,
+        '',
+        credibility,
+      ].join('\n');
       break;
     case COUNSELING_SERVICES.NONE:
     default:

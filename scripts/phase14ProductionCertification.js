@@ -305,11 +305,14 @@ async function main() {
   );
 
   results.push(
-    await caseResultAsync('P14-04', 'initiated', 'Book Now + Done → booking_initiated', async () => {
+    await caseResultAsync('P14-04', 'initiated', 'Book Now + Done + wrap-up → booking_initiated', async () => {
       let r = await journeyToPhase13Intro();
       r = await handleCareerCounsellingMessage('Book now', r.context);
       assert.equal(r.context.step, 'booking_presented');
       r = await handleCareerCounsellingMessage('Done', r.context);
+      assert.equal(r.context.stage, STAGES.PHASE_13_BOOKING_ORCHESTRATOR);
+      assert.equal(r.context.step, 'booking_confirmed');
+      r = await handleCareerCounsellingMessage("That's all", r.context);
       assert.equal(r.context.stage, STAGES.JOURNEY_COMPLETED);
       assert.equal(r.context.profile.journeyOutcome, 'booking_initiated');
       assert.match(r.reply, /booking request has been received/i);

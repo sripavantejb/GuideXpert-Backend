@@ -818,12 +818,15 @@ describe('careerCounsellingV2 AI shortlisting', () => {
     r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.stage, STAGES.SMART_COMPARISON);
     assert.equal(r.context.step, 'compare_ask_recommendation');
-    assert.match(r.reply, /personalized comparison/i);
-    assert.match(r.reply, /College \\| Curr \\| AI \\| Proj/i);
+    assert.match(r.reply, /side-by-side look|matters for your goals/i);
+    assert.match(r.reply, /\*AI-focused curriculum\*/i);
+    assert.match(r.reply, /⭐/u);
+    assert.match(r.reply, /align most closely with your goals|strong alternatives/i);
     assert.match(
       r.reply,
-      /Would you like me to suggest which college appears to be the best fit based on everything you've shared\\?/i
+      /Would you like me to suggest which college appears to be the best fit based on everything you've shared\?/i
     );
+    assert.doesNotMatch(r.reply, /College \| Curr \| AI \| Proj/i);
   });
 
   test('eligibility failure does not invent colleges on predictor path', async () => {
@@ -1040,9 +1043,11 @@ describe('careerCounsellingV2 smart comparison', () => {
     let r = await reachCompareSelect();
     assert.equal(r.context.step, 'compare_ask_recommendation');
     assert.equal(r.context.stage, STAGES.SMART_COMPARISON);
-    assert.match(r.reply, /personalized comparison/i);
-    assert.match(r.reply, /College \| Curr \| AI \| Proj/i);
-    assert.match(r.reply, /Would you like me to suggest which college appears to be the best fit/i);
+    assert.match(r.reply, /side-by-side look|matters for your goals/i);
+    assert.match(r.reply, /\*AI-focused curriculum\*|\*Industry projects\*/i);
+    assert.match(r.reply, /⭐/u);
+    assert.match(r.reply, /align most closely with your goals|Would you like me to suggest which college appears to be the best fit/i);
+    assert.doesNotMatch(r.reply, /College \| Curr \| AI \| Proj/i);
     assert.doesNotMatch(r.reply, /Decision Confidence:\s*\d/i);
     assert.ok(Array.isArray(r.context.profile.comparedColleges));
     assert.ok(r.context.profile.comparedColleges.length >= 2);
@@ -1294,7 +1299,7 @@ describe('careerCounsellingV2 concern resolution', () => {
     r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.stage, STAGES.PHASE_9_PERSONALIZED_RECOMMENDATION);
     assert.equal(r.context.step, 'phase9_followup');
-    assert.match(r.reply, /strongest fit|best-fit recommendation/i);
+    assert.match(r.reply, /strong fit|aligns well with your goals/i);
     assert.equal(r.context.profile.phase9Presented, true);
   });
 
@@ -1492,8 +1497,10 @@ describe('careerCounsellingV2 phase 9 personalized recommendation', () => {
     const r = await reachPhase9();
     assert.equal(r.context.stage, STAGES.PHASE_9_PERSONALIZED_RECOMMENDATION);
     assert.equal(r.context.step, 'phase9_followup');
-    assert.match(r.reply, /appears to be the strongest fit because/i);
-    assert.match(r.reply, /interests, and preferences, .*appears to be the strongest fit because/i);
+    assert.match(r.reply, /Why .+ appears to be a strong fit for you/i);
+    assert.match(r.reply, /aligns well with your goals because/i);
+    assert.doesNotMatch(r.reply, /Course focus:/i);
+    assert.doesNotMatch(r.reply, /\d{2,}\s*(internships?|partners?|placements?)/i);
     assert.ok(Array.isArray(r.context.profile.phase9Recommendations));
     assert.ok(r.context.profile.phase9Recommendations.length >= 1);
     assert.ok(r.context.profile.phase9Recommendations.length <= 1);
@@ -1553,9 +1560,11 @@ describe('careerCounsellingV2 phase 9 personalized recommendation', () => {
     assert.equal(syn.items[0].rankLabel, 'Best Match');
     assert.equal(syn.items[1].collegeName, 'College B');
     assert.equal(syn.items[1].rankLabel, 'Strong Alternative');
-    assert.match(syn.reply, /College B appears to be the strongest fit/i);
+    assert.match(syn.reply, /Why College B appears to be a strong fit/i);
+    assert.match(syn.reply, /College B aligns well with your goals/i);
     assert.match(syn.reply, /Strong practical fit|internship/i);
     assert.doesNotMatch(syn.reply, /\*Best Match: College B\*/);
+    assert.doesNotMatch(syn.reply, /Course focus:/i);
   });
 
   test('core never injects preferredCollege outside the shortlist', () => {
@@ -1569,7 +1578,7 @@ describe('careerCounsellingV2 phase 9 personalized recommendation', () => {
     });
     assert.equal(syn.items.length, 2);
     assert.ok(syn.items.every((i) => i.collegeName !== 'Outside College'));
-    assert.doesNotMatch(syn.reply, /Outside College appears to be the strongest fit/i);
+    assert.doesNotMatch(syn.reply, /Outside College appears to be a strong fit|Outside College aligns well/i);
   });
 
   test('core ranks at most three preserving Phase 5 array order', () => {
@@ -2507,6 +2516,29 @@ describe('careerCounsellingV2 Phase 13 booking orchestrator', () => {
     const url = r.context.profile.phase13BookingUrl;
     r = await handleCareerCounsellingMessage('Book now', r.context);
     assert.match(r.reply, new RegExp(url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.match(r.reply, /Wonderful|personalized 1-on-1|reply \*Done\*/i);
+  });
+
+  test('Done after URL share stays engaged (does not complete journey)', async () => {
+    let r = await reachPhase13();
+    r = await handleCareerCounsellingMessage('Book now', r.context);
+    assert.equal(r.context.step, 'booking_presented');
+    r = await handleCareerCounsellingMessage('Done', r.context);
+    assert.equal(r.context.stage, STAGES.PHASE_13_BOOKING_ORCHESTRATOR);
+    assert.equal(r.context.step, 'booking_confirmed');
+    assert.notEqual(r.context.stage, STAGES.JOURNEY_COMPLETED);
+    assert.notEqual(r.context.profile.journeyCompleted, true);
+    assert.match(r.reply, /submitted the form|remaining questions|Send booking link/i);
+  });
+
+  test('explicit wrap-up after Done exits to journey completion', async () => {
+    let r = await reachPhase13();
+    r = await handleCareerCounsellingMessage('Book now', r.context);
+    r = await handleCareerCounsellingMessage('Done', r.context);
+    assert.equal(r.context.step, 'booking_confirmed');
+    r = await handleCareerCounsellingMessage("That's all", r.context);
+    assert.equal(r.context.stage, STAGES.JOURNEY_COMPLETED || 'journey_completed');
+    assert.equal(r.context.profile.journeyCompleted, true);
   });
 
   test('resume send booking link after defer', async () => {

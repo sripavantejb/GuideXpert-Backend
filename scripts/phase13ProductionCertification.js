@@ -312,6 +312,21 @@ async function main() {
   );
 
   results.push(
+    await caseResultAsync('P13-05b', 'engagement', 'Done after URL stays engaged (not journey_completed)', async () => {
+      let r = await journeyToPhase13();
+      r = await handleCareerCounsellingMessage('Book now', r.context);
+      assert.equal(r.context.step, 'booking_presented');
+      assert.match(r.reply, /Wonderful|personalized 1-on-1/i);
+      r = await handleCareerCounsellingMessage('Done', r.context);
+      assert.equal(r.context.stage, STAGES.PHASE_13_BOOKING_ORCHESTRATOR);
+      assert.equal(r.context.step, 'booking_confirmed');
+      assert.notEqual(r.context.profile.journeyCompleted, true);
+      assert.match(r.reply, /remaining questions|submitted the form/i);
+      return 'done-stays-engaged';
+    })
+  );
+
+  results.push(
     await caseResultAsync('P13-06', 'resume', 'Send booking link resumes after Phase 14 defer', async () => {
       let r = await journeyToPhase13();
       r = await handleCareerCounsellingMessage('Later', r.context);

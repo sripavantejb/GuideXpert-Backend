@@ -35,68 +35,133 @@ function answerCompareQuestion(text) {
   return null;
 }
 
-function conciseTag(profileText, tags, yesText, fallback) {
-  for (const t of tags) {
-    if (profileText.includes(t)) return yesText;
-  }
-  return fallback;
+function shortCollegeLabel(name) {
+  const raw = String(name || '').trim();
+  if (!raw) return 'College';
+  if (/\bniat\b/i.test(raw)) return 'NIAT';
+  if (/scaler/i.test(raw)) return 'Scaler';
+  if (/newton/i.test(raw)) return 'Newton';
+  if (/plaksha/i.test(raw)) return 'Plaksha';
+  if (/upes/i.test(raw)) return 'UPES';
+  if (/kalvium/i.test(raw)) return 'Kalvium';
+  if (/srm/i.test(raw)) return 'SRM';
+  if (/manipal/i.test(raw)) return 'Manipal';
+  return raw.length > 18 ? `${raw.slice(0, 16)}…` : raw;
 }
 
-function buildFactorCells(college, profile = {}) {
-  const tags = Array.isArray(college._curatedTags) ? college._curatedTags : [];
-  const profileText = [
-    profile.careerGoal,
-    profile.careerPriority,
-    profile.preferredCourse,
-    profile.preferredLearningStyle,
-    ...(Array.isArray(profile.evaluationPriorities) ? profile.evaluationPriorities : []),
-    ...(Array.isArray(profile.studentPriorities) ? profile.studentPriorities : []),
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-  const has = (x) => tags.includes(x);
-  return {
-    curriculum: has('curriculum') || has('project_based') ? 'modern applied' : 'structured modern',
-    aiFocus:
-      has('ai') || /niat/i.test(college.collegeName || '')
-        ? 'strong'
-        : conciseTag(profileText, ['ai', 'machine learning'], 'moderate', 'emerging'),
-    industryProjects: has('industry') || has('projects') ? 'high' : 'moderate',
-    mentorship: has('mentoring') ? 'strong' : 'moderate',
-    internships: has('internships') || has('placements') ? 'active' : 'growing',
-    careerSupport: has('placements') || has('industry') ? 'strong' : 'developing',
-    portfolio: has('projects') || has('hands_on') ? 'project-heavy' : 'moderate',
-    innovation: has('innovation') || has('startup') ? 'high' : 'moderate',
-    studentExperience: has('hands_on') || has('balanced') ? 'hands-on' : 'mixed',
-  };
+function resolveCuratedMeta(college = {}) {
+  if (
+    (Array.isArray(college._curatedTags) && college._curatedTags.length) ||
+    college._curatedWhy ||
+    college._curatedId
+  ) {
+    return {
+      id: college._curatedId || null,
+      tags: Array.isArray(college._curatedTags) ? college._curatedTags : [],
+      why: college._curatedWhy || '',
+    };
+  }
+  try {
+    const {
+      CURATED_MODERN_CATALOG,
+    } = require('../../../constants/careerCounsellingV2ExploreModernColleges');
+    const name = String(college.collegeName || '').toLowerCase();
+    const hit = CURATED_MODERN_CATALOG.find(
+      (item) =>
+        String(item.name || '').toLowerCase() === name ||
+        name.includes(String(item.id || '').toLowerCase()) ||
+        String(item.name || '')
+          .toLowerCase()
+          .includes(name.split('(')[0].trim())
+    );
+    if (hit) {
+      return {
+        id: hit.id || null,
+        tags: Array.isArray(hit.tags) ? hit.tags : [],
+        why: hit.why || '',
+      };
+    }
+  } catch (_err) {
+    // Catalog optional for predictor-only shortlists.
+  }
+  return { id: null, tags: [], why: '' };
 }
+
+function stars(n) {
+  const count = Math.max(1, Math.min(5, Math.round(Number(n) || 1)));
+  return '⭐'.repeat(count);
+}
+
+function scoreFactor(tags, id, factorId) {
+  const has = (x) => tags.includes(x);
+  const isNiat = id === 'niat' || tags.includes('ai');
+  switch (factorId) {
+    case 'ai':
+      if (has('ai') || isNiat) return 5;
+      if (has('software') || has('cse')) return 4;
+      if (has('innovation') || has('curriculum')) return 3;
+      return 3;
+    case 'projects':
+      if (has('projects') && has('industry')) return 5;
+      if (has('projects') || has('hands_on')) return 4;
+      if (has('industry')) return 3;
+      return 3;
+    case 'mentorship':
+      if (has('mentoring') && (has('industry') || isNiat)) return 5;
+      if (has('mentoring')) return 4;
+      return 3;
+    case 'internships':
+      if (has('internships') && has('placements')) return 5;
+      if (has('internships') || has('placements')) return 4;
+      if (has('industry')) return 3;
+      return 3;
+    case 'career':
+      if ((has('placements') || has('industry')) && (has('mentoring') || has('internships'))) return 5;
+      if (has('placements') || has('industry')) return 4;
+      return 3;
+    case 'portfolio':
+      if (has('projects') && has('hands_on')) return 5;
+      if (has('projects') || has('hands_on')) return 4;
+      return 3;
+    default:
+      return 3;
+  }
+}
+
+const COMPARE_FACTORS = Object.freeze([
+  Object.freeze({ id: 'ai', label: 'AI-focused curriculum' }),
+  Object.freeze({ id: 'projects', label: 'Industry projects' }),
+  Object.freeze({ id: 'mentorship', label: 'Mentorship' }),
+  Object.freeze({ id: 'internships', label: 'Internship readiness' }),
+  Object.freeze({ id: 'career', label: 'Career preparation' }),
+  Object.freeze({ id: 'portfolio', label: 'Portfolio building' }),
+]);
 
 function formatComparisonReply(selectedColleges, profile = {}) {
-  const headers = ['College', 'Curr', 'AI', 'Proj', 'Mentor', 'Intern', 'Career', 'Portf', 'Innov', 'Exp'];
-  const rows = selectedColleges.map((college) => {
-    const c = buildFactorCells(college, profile);
-    return [
-      college.collegeName,
-      c.curriculum,
-      c.aiFocus,
-      c.industryProjects,
-      c.mentorship,
-      c.internships,
-      c.careerSupport,
-      c.portfolio,
-      c.innovation,
-      c.studentExperience,
-    ];
+  const enriched = selectedColleges.map((college) => {
+    const meta = resolveCuratedMeta(college);
+    return { ...college, _curatedId: meta.id, _curatedTags: meta.tags, _curatedWhy: meta.why };
   });
 
   const lines = [getCompareMessage('comparison_header'), ''];
-  lines.push(headers.join(' | '));
-  lines.push(headers.map(() => '---').join(' | '));
-  for (const row of rows) lines.push(row.join(' | '));
+  for (const factor of COMPARE_FACTORS) {
+    lines.push(`*${factor.label}*`);
+    const parts = enriched.map((college) => {
+      const score = scoreFactor(college._curatedTags || [], college._curatedId, factor.id);
+      return `${shortCollegeLabel(college.collegeName)} ${stars(score)}`;
+    });
+    lines.push(parts.join(' · '));
+    lines.push('');
+  }
+
+  const lead =
+    profile.preferredCollege ||
+    enriched[0]?.collegeName ||
+    'your top shortlisted option';
+  lines.push(getCompareMessage('comparison_summary', shortCollegeLabel(lead)));
   lines.push('');
   lines.push(getCompareMessage('ask_recommendation'));
-  return lines.join('\n').trim();
+  return lines.filter((line, i, arr) => !(line === '' && arr[i - 1] === '')).join('\n').trim();
 }
 
 function answerFollowupFromContext(inbound, ctx) {
