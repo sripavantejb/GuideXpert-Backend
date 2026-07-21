@@ -98,7 +98,8 @@ function exitToPhase13(ctx, analyticsMeta = {}) {
       }),
     },
     analyticsMeta,
-    { entry: 'phase12_continue' }
+    // Phase 12 continue is the last permission gate — share official URL immediately.
+    { entry: 'phase12_continue', shareUrlImmediately: true }
   );
 }
 

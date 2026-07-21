@@ -2304,12 +2304,14 @@ describe('careerCounsellingV2 Phase 12 counseling experience selection', () => {
     assert.doesNotMatch(r.reply, /https?:\/\//i);
   });
 
-  test('continue transitions to Phase 13 CTA without URL', async () => {
+  test('continue transitions to Phase 13 with booking URL immediately', async () => {
     let r = await reachPhase12();
     r = await handleCareerCounsellingMessage('continue', r.context);
     assert.equal(r.context.stage, STAGES.PHASE_13_BOOKING_ORCHESTRATOR);
-    assert.equal(r.context.step, 'booking_intro');
-    assert.doesNotMatch(r.reply, /https?:\/\//i);
+    assert.equal(r.context.step, 'booking_presented');
+    assert.match(r.reply, /https:\/\/www\.guidexpert\.co\.in\/one-on-one-session/);
+    assert.match(r.reply, /1-on-1 Career Counseling|Done/i);
+    assert.doesNotMatch(r.reply, /Wonderful\.|Booking happens on the GuideXpert website/i);
   });
 
   test('skip gate helpers for escalation and NIAT', () => {
@@ -2509,31 +2511,30 @@ describe('careerCounsellingV2 Phase 13 booking orchestrator', () => {
     setShortlistingEligibilityDeps({});
   });
 
-  test('CTA first then Book Now shares registry URL', async () => {
+  test('Phase 12 positive intent immediately shares booking URL', async () => {
     let r = await reachPhase13();
     assert.equal(r.context.stage, STAGES.PHASE_13_BOOKING_ORCHESTRATOR);
-    assert.doesNotMatch(r.reply, /https?:\/\//i);
+    assert.equal(r.context.step, 'booking_presented');
+    assert.equal(r.context.profile.phase13UrlShared, true);
     const url = r.context.profile.phase13BookingUrl;
-    r = await handleCareerCounsellingMessage('Book now', r.context);
     assert.match(r.reply, new RegExp(url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-    assert.match(r.reply, /Wonderful|personalized 1-on-1|reply \*Done\*/i);
+    assert.match(r.reply, /1-on-1 Career Counseling|Done/i);
+    assert.doesNotMatch(r.reply, /Wonderful\.|Booking happens on the GuideXpert website/i);
   });
 
   test('Done after URL share stays engaged (does not complete journey)', async () => {
     let r = await reachPhase13();
-    r = await handleCareerCounsellingMessage('Book now', r.context);
     assert.equal(r.context.step, 'booking_presented');
     r = await handleCareerCounsellingMessage('Done', r.context);
     assert.equal(r.context.stage, STAGES.PHASE_13_BOOKING_ORCHESTRATOR);
     assert.equal(r.context.step, 'booking_confirmed');
     assert.notEqual(r.context.stage, STAGES.JOURNEY_COMPLETED);
     assert.notEqual(r.context.profile.journeyCompleted, true);
-    assert.match(r.reply, /submitted the form|remaining questions|Send booking link/i);
+    assert.match(r.reply, /Perfect! Your request has been received|still here to help/i);
   });
 
   test('explicit wrap-up after Done exits to journey completion', async () => {
     let r = await reachPhase13();
-    r = await handleCareerCounsellingMessage('Book now', r.context);
     r = await handleCareerCounsellingMessage('Done', r.context);
     assert.equal(r.context.step, 'booking_confirmed');
     r = await handleCareerCounsellingMessage("That's all", r.context);
@@ -2552,7 +2553,10 @@ describe('careerCounsellingV2 Phase 13 booking orchestrator', () => {
 
   test('registry and skip helpers', () => {
     assert.ok(BOOKING_SERVICE_REGISTRY.one_on_one);
-    assert.match(buildOfficialBookingUrl(BOOKING_SERVICE_REGISTRY.career), /service=career/);
+    assert.equal(
+      buildOfficialBookingUrl(BOOKING_SERVICE_REGISTRY.career),
+      'https://www.guidexpert.co.in/one-on-one-session'
+    );
     assert.equal(shouldSkipPhase13({ phase12Service: 'none' }).skip, true);
   });
 });

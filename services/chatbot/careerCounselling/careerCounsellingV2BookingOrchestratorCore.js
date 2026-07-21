@@ -55,16 +55,11 @@ function getRegistryEntry(serviceKey) {
 
 /**
  * Build official booking URL exclusively from registry entry.
- * No hardcoded URLs outside BOOKING_SERVICE_REGISTRY.
+ * Single-form destination is the official One-on-One landing page (no query clutter).
  */
 function buildOfficialBookingUrl(entry) {
   if (!entry || !entry.baseUrl) return null;
-  if (entry.formMode === 'dedicated_form') {
-    return String(entry.baseUrl);
-  }
-  const base = String(entry.baseUrl).replace(/\?.*$/, '');
-  const param = encodeURIComponent(entry.serviceParam || entry.serviceKey);
-  return `${base}?service=${param}`;
+  return String(entry.baseUrl).replace(/\?.*$/, '');
 }
 
 function resolveBookingDestination(profile = {}) {

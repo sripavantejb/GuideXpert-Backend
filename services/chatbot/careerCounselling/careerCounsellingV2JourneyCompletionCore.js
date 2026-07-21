@@ -23,6 +23,9 @@ function resolveJourneyOutcome(profile = {}, opts = {}) {
 
   if (phase12 === 'declined') return JOURNEY_OUTCOMES.OPTED_OUT;
 
+  // Explicit pause after CTA/URL still counts as deferred (not initiated).
+  if (phase13 === 'deferred') return JOURNEY_OUTCOMES.BOOKING_DEFERRED;
+
   if (
     profile.phase13UrlShared === true ||
     phase13 === 'url_shared' ||
@@ -30,8 +33,6 @@ function resolveJourneyOutcome(profile = {}, opts = {}) {
   ) {
     return JOURNEY_OUTCOMES.BOOKING_INITIATED;
   }
-
-  if (phase13 === 'deferred') return JOURNEY_OUTCOMES.BOOKING_DEFERRED;
 
   if (
     profile.phase12Service === 'none' ||

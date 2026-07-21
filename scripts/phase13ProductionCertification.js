@@ -253,8 +253,7 @@ async function main() {
       for (const key of ['one_on_one', 'admission', 'career']) {
         assert.ok(BOOKING_SERVICE_REGISTRY[key]);
         const url = buildOfficialBookingUrl(BOOKING_SERVICE_REGISTRY[key]);
-        assert.match(url, /\?service=/);
-        assert.match(url, new RegExp(key));
+        assert.equal(url, 'https://www.guidexpert.co.in/one-on-one-session');
       }
       assert.equal(BOOKING_SERVICE_REGISTRY.none, undefined);
       return 'registry-ok';
@@ -262,39 +261,40 @@ async function main() {
   );
 
   results.push(
-    await caseResultAsync('P13-02', 'entry', 'Phase 12 continue → CTA without URL', async () => {
+    await caseResultAsync('P13-02', 'entry', 'Phase 12 continue → booking URL immediately', async () => {
       const r = await journeyToPhase13();
       assert.equal(r.context.stage, STAGES.PHASE_13_BOOKING_ORCHESTRATOR);
-      assert.equal(r.context.step, 'booking_intro');
+      assert.equal(r.context.step, 'booking_presented');
       assert.ok(r.context.profile.phase13Service);
       assert.equal(r.context.profile.phase13CtaPresented, true);
-      assert.doesNotMatch(r.reply, /https?:\/\//i);
-      assert.match(r.reply, /Book now/i);
+      assert.equal(r.context.profile.phase13UrlShared, true);
+      assert.match(r.reply, /https:\/\/www\.guidexpert\.co\.in\/one-on-one-session/);
+      assert.match(r.reply, /1-on-1 Career Counseling|Done/i);
+      assert.doesNotMatch(r.reply, /Wonderful\.|Booking happens on the GuideXpert website/i);
       return r.context.profile.phase13Service;
     })
   );
 
   results.push(
-    await caseResultAsync('P13-03', 'url_timing', 'Book Now shares registry URL', async () => {
+    await caseResultAsync('P13-03', 'url_timing', 'First positive reply already shared registry URL', async () => {
       let r = await journeyToPhase13();
       const expected = r.context.profile.phase13BookingUrl;
       assert.ok(expected);
-      assert.doesNotMatch(r.reply, /https?:\/\//i);
-      r = await handleCareerCounsellingMessage('Book now', r.context);
       assert.equal(r.context.step, 'booking_presented');
       assert.match(r.reply, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
       assert.equal(r.context.profile.phase13UrlShared, true);
-      return 'url-after-book-now';
+      return 'url-on-first-positive';
     })
   );
 
   results.push(
-    await caseResultAsync('P13-04', 'negative', 'Question before Book Now has no URL', async () => {
+    await caseResultAsync('P13-04', 'qa', 'Booking question after URL stays in Phase 13', async () => {
       let r = await journeyToPhase13();
+      assert.equal(r.context.step, 'booking_presented');
       r = await handleCareerCounsellingMessage('How does booking work?', r.context);
-      assert.equal(r.context.step, 'booking_intro');
-      assert.doesNotMatch(r.reply, /https?:\/\//i);
-      return 'no-url-on-question';
+      assert.equal(r.context.stage, STAGES.PHASE_13_BOOKING_ORCHESTRATOR);
+      assert.ok(r.context.step === 'booking_presented' || r.context.step === 'booking_confirmed');
+      return 'qa-after-url';
     })
   );
 
@@ -314,14 +314,13 @@ async function main() {
   results.push(
     await caseResultAsync('P13-05b', 'engagement', 'Done after URL stays engaged (not journey_completed)', async () => {
       let r = await journeyToPhase13();
-      r = await handleCareerCounsellingMessage('Book now', r.context);
       assert.equal(r.context.step, 'booking_presented');
-      assert.match(r.reply, /Wonderful|personalized 1-on-1/i);
+      assert.match(r.reply, /1-on-1 Career Counseling|Done/i);
       r = await handleCareerCounsellingMessage('Done', r.context);
       assert.equal(r.context.stage, STAGES.PHASE_13_BOOKING_ORCHESTRATOR);
       assert.equal(r.context.step, 'booking_confirmed');
       assert.notEqual(r.context.profile.journeyCompleted, true);
-      assert.match(r.reply, /remaining questions|submitted the form/i);
+      assert.match(r.reply, /Perfect! Your request has been received|still here to help/i);
       return 'done-stays-engaged';
     })
   );
@@ -371,14 +370,14 @@ async function main() {
   );
 
   results.push(
-    caseResult('P13-10', 'routing', 'Admission and career resolve via registry params', () => {
+    caseResult('P13-10', 'routing', 'Admission and career resolve to official form URL', () => {
       const adm = resolveBookingDestination({ phase12Service: 'admission' });
       const car = resolveBookingDestination({ phase12Service: 'career' });
       assert.equal(adm.ok, true);
       assert.equal(car.ok, true);
-      assert.match(adm.url, /service=admission/);
-      assert.match(car.url, /service=career/);
-      return 'service-params';
+      assert.equal(adm.url, 'https://www.guidexpert.co.in/one-on-one-session');
+      assert.equal(car.url, 'https://www.guidexpert.co.in/one-on-one-session');
+      return 'official-form';
     })
   );
 
@@ -399,7 +398,9 @@ async function main() {
       let r = await journeyToPhase13();
       r = await handleCareerCounsellingMessage('Why book on the website?', r.context);
       assert.notEqual(r.context.stage, STAGES.PHASE_12_PERSONALIZED_COUNSELING_RECOMMENDATION);
-      assert.equal(r.context.step, 'booking_intro');
+      assert.ok(
+        r.context.step === 'booking_presented' || r.context.step === 'booking_confirmed'
+      );
       return 'no-phase12-restart';
     })
   );
@@ -408,8 +409,8 @@ async function main() {
     caseResult('P13-13', 'guardrail', 'URL built only from registry entry', () => {
       const entry = BOOKING_SERVICE_REGISTRY.one_on_one;
       const url = buildOfficialBookingUrl(entry);
-      assert.ok(url.startsWith(entry.baseUrl.split('?')[0]));
-      assert.match(url, /service=one_on_one/);
+      assert.equal(url, entry.baseUrl.split('?')[0]);
+      assert.equal(url, 'https://www.guidexpert.co.in/one-on-one-session');
       return 'registry-only';
     })
   );

@@ -1,12 +1,33 @@
 'use strict';
 
 const { normalizeText } = require('../intentTextUtils');
+const {
+  isPermissionAffirmative,
+  normalizePermissionText,
+} = require('../permissionAffirmative');
 
+/**
+ * Inside Phase 13: any booking-positive intent shares / re-shares the official URL.
+ * Soft acks (yes/ready/sure) count here so we never ask for a second confirmation.
+ */
 function isPhase13BookNow(text) {
-  const t = normalizeText(text);
-  return /^(book now|book|yes book|lets book|i want to book|schedule now|send booking link|send (the )?link|give me (the )?booking form|booking form|im ready|i am ready)$/i.test(
+  if (isPermissionAffirmative(text)) return true;
+  const t = normalizePermissionText(text);
+  return /^(book now|book|yes book|lets book|i want to book|schedule now|send booking link|send (the )?link|give me (the )?booking form|booking form|i('m| am) interested)$/i.test(
     t
   );
+}
+
+/**
+ * Cross-stage resume only — must NOT match soft continue/yes/ready.
+ * Those belong to Phase 12 (last permission gate) and earlier stages.
+ */
+function isExplicitBookingLinkRequest(text) {
+  const t = normalizePermissionText(text);
+  if (!t) return false;
+  return /^(book now|book|yes book|lets book|i want to book|schedule now|send booking link|send (the )?link|give me (the )?booking form|booking form)$/i.test(
+    t
+  ) || /\b(send booking link|give me (the )?booking form|schedule now|book now)\b/i.test(t);
 }
 
 /** Soft defer / not-now — does not include form Done or wrap-up. */
@@ -37,25 +58,22 @@ function isPhase13WrapUp(text) {
 function isPhase13Question(text) {
   const raw = String(text || '').trim();
   if (!raw) return false;
+  if (isPhase13BookNow(raw) || isPhase13FormDone(raw) || isPhase13Defer(raw) || isPhase13WrapUp(raw)) {
+    return false;
+  }
   if (/\?/.test(raw)) return true;
   return /\b(why|how|what|which|explain|where)\b/i.test(raw);
 }
 
 /**
  * Deterministic resume into Phase 13 — never replays Phases 9–12.
- * Link-seeking phrases share URL immediately after eligibility checks.
+ * Only explicit link/book phrases (not soft yes/continue) so Phase 12 remains the last permission gate.
  */
 function detectBookingResume(text) {
   const t = normalizeText(text);
   if (!t) return { matched: false, shareUrlImmediately: false };
 
-  const linkSeeking =
-    /^(book now|book|schedule now|send booking link|send (the )?link|give me (the )?booking form|booking form|im ready|i am ready)$/i.test(
-      t
-    ) ||
-    /\b(send booking link|give me (the )?booking form|schedule now|book now)\b/i.test(t);
-
-  if (linkSeeking) {
+  if (isExplicitBookingLinkRequest(text)) {
     return { matched: true, shareUrlImmediately: true, phrase: t };
   }
 
@@ -64,6 +82,7 @@ function detectBookingResume(text) {
 
 module.exports = {
   isPhase13BookNow,
+  isExplicitBookingLinkRequest,
   isPhase13Defer,
   isPhase13FormDone,
   isPhase13WrapUp,

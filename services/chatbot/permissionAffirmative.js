@@ -28,7 +28,7 @@ function isPermissionAffirmative(text) {
   if (!t) return false;
 
   if (
-    /^(yes|yeah|yep|yup|y|sure|ok|okay|please|continue|proceed|ready|next|go ahead|absolutely|definitely|shortlist|compare|show|narrow|personalize|book|book now)\b/i.test(
+    /^(yes|yeah|yep|yup|y|sure|ok|okay|please|continue|proceed|ready|next|go ahead|absolutely|definitely|shortlist|compare|show|narrow|personalize)\b/i.test(
       t
     )
   ) {
@@ -36,10 +36,11 @@ function isPermissionAffirmative(text) {
   }
 
   if (/^(yes|yeah|yep|yup|sure|ok|okay)\b.{0,24}$/i.test(t)) return true;
-  if (/^(let'?s|lets) (do it|go|continue|proceed|shortlist|compare|book)\b/i.test(t)) {
+  if (/^(let'?s|lets) (do it|go|continue|proceed|shortlist|compare)\b/i.test(t)) {
     return true;
   }
   if (/^(i('m| am)? )?(ready|in)\b/i.test(t) && t.length <= 24) return true;
+  if (/^(i('m| am) )?interested\b/i.test(t) && t.length <= 40) return true;
 
   return false;
 }

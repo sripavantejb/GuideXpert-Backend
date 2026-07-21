@@ -107,6 +107,8 @@ function shareOfficialUrl(ctx, dest, analyticsMeta = {}, extraProfile = {}) {
 
   return {
     reply,
+    keepIntact: true,
+    skipLineCap: true,
     context: {
       ...ctx,
       stage: STAGES.PHASE_13_BOOKING_ORCHESTRATOR,
@@ -233,6 +235,14 @@ function tryBookingResume(text, context = {}, opts = {}) {
 
   // Already inside Phase 13 — let the turn processor handle Book now
   if (isPhase13Stage(context.stage) || isPhase13Step(context.step)) {
+    return null;
+  }
+
+  // Do not steal Phase 12 continue / ready / yes — that stage owns the last permission gate.
+  if (
+    context.stage === 'phase_12_personalized_counseling_recommendation' ||
+    String(context.step || '').startsWith('counsel_rec_')
+  ) {
     return null;
   }
 

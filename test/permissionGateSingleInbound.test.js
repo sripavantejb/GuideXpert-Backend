@@ -340,7 +340,7 @@ describe('permission gates advance on ONE inbound', () => {
     assert.equal(r.context.stage, STAGES.PHASE_11_FINAL_DECISION_HESITATION);
   });
 
-  test('Counseling Phase 12: ONE continue enters booking', async () => {
+  test('Counseling Phase 12: ONE continue enters booking with URL', async () => {
     let r = await handleCareerCounsellingMessage('continue', {
       flow: 'career_counselling_v2',
       version: 2,
@@ -363,7 +363,27 @@ describe('permission gates advance on ONE inbound', () => {
       },
     });
     assert.equal(r.context.stage, STAGES.PHASE_13_BOOKING_ORCHESTRATOR);
-    assert.equal(r.context.step, 'booking_intro');
+    assert.equal(r.context.step, 'booking_presented');
+    assert.match(r.reply, /https:\/\/www\.guidexpert\.co\.in\/one-on-one-session/);
+  });
+
+  test('Phase 12 ready immediately shares booking URL (no second confirm)', async () => {
+    let r = await handleCareerCounsellingMessage('ready', {
+      flow: 'career_counselling_v2',
+      version: 2,
+      stage: 'phase_12_personalized_counseling_recommendation',
+      step: 'counsel_rec_followup',
+      profile: {
+        phase12Presented: true,
+        phase12Service: 'one_on_one',
+        recommendedColleges: [
+          { collegeName: 'NIAT (NxtWave Institute of Advanced Technologies)', tier: 'best_match' },
+        ],
+      },
+    });
+    assert.equal(r.context.step, 'booking_presented');
+    assert.match(r.reply, /https:\/\/www\.guidexpert\.co\.in\/one-on-one-session/);
+    assert.doesNotMatch(r.reply, /Wonderful\.|Booking happens on the GuideXpert website|Reply \*Book now\*/i);
   });
 
   test('Phase 13: ONE Book now shares URL', async () => {
@@ -376,7 +396,7 @@ describe('permission gates advance on ONE inbound', () => {
         phase12Service: 'one_on_one',
         phase13Service: 'one_on_one',
         phase13CtaPresented: true,
-        phase13BookingUrl: 'https://www.guidexpert.co.in/one-on-one-session?service=one_on_one',
+        phase13BookingUrl: 'https://www.guidexpert.co.in/one-on-one-session',
         recommendedColleges: [
           { collegeName: 'NIAT (NxtWave Institute of Advanced Technologies)', tier: 'best_match' },
         ],

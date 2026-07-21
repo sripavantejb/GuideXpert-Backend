@@ -4,7 +4,14 @@ const { normalizeText } = require('../intentTextUtils');
 
 function isPhase12Continue(text) {
   const { isPermissionAffirmative } = require('../permissionAffirmative');
-  return isPermissionAffirmative(text);
+  const {
+    isExplicitBookingLinkRequest,
+  } = require('./careerCounsellingV2BookingOrchestratorParser');
+  if (isPermissionAffirmative(text)) return true;
+  if (isExplicitBookingLinkRequest(text)) return true;
+  const { normalizeText } = require('../intentTextUtils');
+  const t = normalizeText(text);
+  return /^(book|lets book|i want to book|i('m| am) interested)$/i.test(t);
 }
 
 function isPhase12Decline(text) {

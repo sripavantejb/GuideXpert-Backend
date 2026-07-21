@@ -320,15 +320,14 @@ async function main() {
   );
 
   results.push(
-    await caseResultAsync('P12-07', 'transition', 'Continue → Phase 13 CTA without URL', async () => {
+    await caseResultAsync('P12-07', 'transition', 'Continue → Phase 13 booking URL immediately', async () => {
       let r = await journeyToPhase12();
       r = await handleCareerCounsellingMessage('continue', r.context);
       assert.equal(r.context.stage, STAGES.PHASE_13_BOOKING_ORCHESTRATOR);
       assert.equal(r.context.profile.phase12Outcome, 'continued');
-      assert.equal(r.context.step, 'booking_intro');
-      assert.doesNotMatch(r.reply, bookingRe);
-      assert.doesNotMatch(r.reply, /https?:\/\//i);
-      return 'phase13-cta';
+      assert.equal(r.context.step, 'booking_presented');
+      assert.match(r.reply, /https:\/\/www\.guidexpert\.co\.in\/one-on-one-session/);
+      return 'phase13-url';
     })
   );
 

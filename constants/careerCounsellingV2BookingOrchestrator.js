@@ -72,23 +72,26 @@ const GUARANTEE_FORBIDDEN = Object.freeze([
 
 const MESSAGES = Object.freeze({
   intro: [
-    'Wonderful.',
+    '🎉 Great! You\'re just one step away from your personalized *1-on-1 Career Counseling Session*.',
     '',
-    'Optional next step: book your personalized *{ctaLabel}* session on the GuideXpert website.',
-    '',
-    'I won’t create a booking inside WhatsApp.',
-    '',
-    'Reply *Book now*, *Later*, or ask a short question about booking.',
+    'Reply *Book now* to get the official booking form, or *Later* if you want to pause.',
   ].join('\n'),
 
   url_share: [
-    'Wonderful.',
+    '🎉 Great! You\'re just one step away from your personalized *1-on-1 Career Counseling Session*.',
     '',
-    'You can book your personalized 1-on-1 counseling session here:',
+    'Please complete the booking form here:',
     '',
-    '{url}',
+    '👉 {url}',
     '',
-    "Once you've submitted the form, simply reply *Done* and I'll continue helping you.",
+    'During your session, an experienced career counselor will help you:',
+    '',
+    '• Compare the colleges that best match your goals',
+    '• Build a personalized academic and career roadmap',
+    '• Discuss placements, internships and scholarships',
+    '• Answer your questions and help you make a confident decision',
+    '',
+    "Once you've submitted the form, simply reply *Done* here and I'll continue assisting you with any remaining questions before your counseling session.",
   ].join('\n'),
 
   deferred: [
@@ -98,29 +101,27 @@ const MESSAGES = Object.freeze({
   ].join('\n'),
 
   question_fallback: [
-    'Booking happens on the GuideXpert website form — not inside WhatsApp.',
+    'I can help with remaining questions about colleges, careers, admissions, placements, or scholarships.',
     '',
-    'I can still help with remaining questions about fit, fees, or next steps.',
-    '',
-    'Reply *Book now* for the official link, *Send booking link* if you need it again, or ask another short question.',
+    'If you still need the booking form, say *Send booking link*.',
   ].join('\n'),
 
-  clarify: 'Reply *Book now*, *Later*, or ask a short booking question.',
+  clarify: 'Reply *Book now* for the official form, *Later* to pause, or ask a short question.',
 
   confirmed_intent: [
-    "Thanks — I'll assume you've submitted the form.",
+    'Perfect! Your request has been received.',
     '',
-    'I can keep helping with any remaining questions about colleges, fit, fees, or next steps.',
+    "While you're waiting for your counseling session, I'm still here to help.",
     '',
-    'Ask anytime, say *Send booking link* if you need the form again, or reply *That’s all* when you’re ready to wrap up.',
+    'If you have any questions about colleges, careers, admissions, placements or scholarships, just ask.',
   ].join('\n'),
 
   post_submit_engaged: [
-    "Thanks — I'll assume you've submitted the form.",
+    'Perfect! Your request has been received.',
     '',
-    'I can keep helping with any remaining questions about colleges, fit, fees, or next steps.',
+    "While you're waiting for your counseling session, I'm still here to help.",
     '',
-    'Ask anytime, say *Send booking link* if you need the form again, or reply *That’s all* when you’re ready to wrap up.',
+    'If you have any questions about colleges, careers, admissions, placements or scholarships, just ask.',
   ].join('\n'),
 
   skipped_none: [
