@@ -177,63 +177,74 @@ function buildTradeoffs(items) {
   return lines.slice(0, 3);
 }
 
-function formatRecommendationReply(profile, items) {
+function profileSignalsBlob(profile = {}) {
+  return [
+    profile.careerGoal,
+    profile.careerPriority,
+    profile.preferredCourse,
+    profile.preferredLearningStyle,
+    ...(Array.isArray(profile.studentPriorities) ? profile.studentPriorities : []),
+    ...(Array.isArray(profile.evaluationPriorities) ? profile.evaluationPriorities : []),
+    ...(Array.isArray(profile.biggestConcerns) ? profile.biggestConcerns : []),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+}
+
+function niatProfileFit(profile = {}) {
+  const blob = profileSignalsBlob(profile);
+  const lean = String(profile.preferredCollege || '').toLowerCase();
+  const signalHit =
+    /\bai\b|artificial intelligence|machine learning|projects?|mentor|industry|internship|portfolio/.test(blob);
+  const leanHit = /\bniat\b/.test(lean);
+  return signalHit || leanHit;
+}
+
+function selectBestFitCollege(profile = {}) {
+  const items = selectRankedRecommendations(profile);
+  if (!items.length) return null;
+  const lean = String(profile.preferredCollege || '').toLowerCase();
+  const niatItem = items.find((i) => /\bniat\b/i.test(i.collegeName || ''));
+  if (niatItem && niatProfileFit(profile)) {
+    if (!lean || /\bniat\b/.test(lean)) return niatItem;
+    const reasons = Array.isArray(profile.decisionReasons) ? profile.decisionReasons.join(' ').toLowerCase() : '';
+    if (/\bai\b|project|mentor|industry|portfolio/.test(reasons)) return niatItem;
+  }
+  if (lean) {
+    const leaned = items.find((i) => String(i.collegeName || '').toLowerCase() === lean);
+    if (leaned) return leaned;
+  }
+  return items[0];
+}
+
+function formatBestFitRecommendation(profile, bestFit, items = []) {
   const lines = [];
 
-  if (items.length === 0) {
+  if (!bestFit) {
     return getPhase9Message('empty');
   }
 
   lines.push(getPhase9Message('header'));
   lines.push('');
-
-  const profileBits = [];
-  if (profile.preferredCourse) profileBits.push(profile.preferredCourse);
-  if (profile.careerPriority || profile.careerGoal) {
-    profileBits.push(String(profile.careerPriority || profile.careerGoal).slice(0, 40));
-  }
-  if (profile.budgetPreference) profileBits.push(`budget: ${profile.budgetPreference}`);
-  if (profileBits.length) {
-    lines.push(`For you (${profileBits.join(' · ')}):`);
+  lines.push(
+    getPhase9Message('recommendation_prefix').replace('{{college}}', bestFit.collegeName)
+  );
+  const reasons = buildReasoningLines(bestFit, profile).slice(0, 3);
+  for (const reason of reasons) lines.push(`• ${reason}`);
+  lines.push('');
+  const alternatives = items
+    .filter((i) => i.collegeName !== bestFit.collegeName)
+    .slice(0, 2)
+    .map((i) => i.collegeName);
+  if (alternatives.length) {
+    lines.push(
+      `This conclusion also considers close alternatives like ${alternatives.join(' and ')} from your shortlist.`
+    );
     lines.push('');
   }
-
-  for (const item of items) {
-    const title = item.branchName
-      ? `*${item.rankLabel}: ${item.collegeName} — ${item.branchName}*`
-      : `*${item.rankLabel}: ${item.collegeName}*`;
-    lines.push(title);
-    lines.push(`Fit: ${item.confidenceLabel}`);
-    for (const reason of buildReasoningLines(item, profile)) {
-      lines.push(`✅ ${reason}`);
-    }
-    lines.push('');
-  }
-
-  const insight = buildComparisonInsight(profile, items);
-  if (insight) {
-    lines.push(insight);
-    lines.push('');
-  }
-
-  const tradeoffs = buildTradeoffs(items);
-  if (tradeoffs.length) {
-    lines.push(getPhase9Message('tradeoffs_header'));
-    lines.push(...tradeoffs);
-    lines.push('');
-  }
-
-  if (isWeakConfidence(profile, items)) {
-    lines.push(getPhase9Message('weak_confidence_note'));
-    lines.push('');
-  }
-
-  const resolved = Array.isArray(profile.resolvedConcerns) ? profile.resolvedConcerns : [];
-  if (resolved.length) {
-    lines.push(`Concerns we already worked through: ${resolved.slice(0, 3).join(', ')}.`);
-    lines.push('');
-  }
-
+  if (isWeakConfidence(profile, items)) lines.push(getPhase9Message('weak_confidence_note'));
+  if (isWeakConfidence(profile, items)) lines.push('');
   lines.push(getPhase9Message('soft_transition'));
   lines.push('');
   lines.push(getPhase9Message('ask_continue'));
@@ -247,13 +258,15 @@ function formatRecommendationReply(profile, items) {
  */
 function synthesizePersonalizedRecommendation(profile = {}) {
   const items = selectRankedRecommendations(profile);
+  const bestFit = selectBestFitCollege(profile);
   const overallLabel = overallConfidenceLabel(profile, items);
   const comparisonInsight = buildComparisonInsight(profile, items);
-  const reply = formatRecommendationReply(profile, items);
+  const reply = formatBestFitRecommendation(profile, bestFit, items);
   const tradeoffs = buildTradeoffs(items);
 
   return {
     items,
+    bestFit,
     overallConfidenceLabel: overallLabel,
     weakConfidence: isWeakConfidence(profile, items),
     comparisonInsight,
@@ -272,6 +285,7 @@ module.exports = {
   labelForConfidence,
   overallConfidenceLabel,
   isWeakConfidence,
-  formatRecommendationReply,
+  formatBestFitRecommendation,
+  selectBestFitCollege,
   synthesizePersonalizedRecommendation,
 };

@@ -5,7 +5,7 @@ const { PHASE9_QA } = require('../../../constants/careerCounsellingV2Personalize
 
 function isPhase9Continue(text) {
   const t = normalizeText(text);
-  return /^(yes|y|ok|okay|sure|continue|next|proceed|ready|go ahead|lets go|let us go)$/i.test(
+  return /^(continue|next|proceed|ready|go ahead|lets go|let us go)$/i.test(
     t
   ) || /\b(continue|next step|ready)\b/i.test(t);
 }

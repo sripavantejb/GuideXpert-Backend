@@ -11,9 +11,6 @@ const { BREAKOUT_DEFLECTION } = require('../../../constants/careerCounsellingJou
 const { isCareerCounsellingJourneyBreakout } = require('./careerCounsellingIntentService');
 const { isSocialGreetingOnly } = require('./careerCounsellingV2ResponseParser');
 const {
-  formatShortlistChoices,
-  parseCollegeSelection,
-  isCompareContinue,
   isComparePermissionYes,
   isComparePermissionNo,
   isCompareQuestion,
@@ -38,43 +35,68 @@ function answerCompareQuestion(text) {
   return null;
 }
 
-function formatCollegeCompareBlock(card) {
-  const title = card.branchName
-    ? `${card.collegeName} — ${card.branchName}`
-    : card.collegeName;
-  const lines = [`*${title}*`, 'Why it fits:'];
-  for (const w of card.whyFits.slice(0, 2)) lines.push(`✅ ${w}`);
-  lines.push('Watch-outs:');
-  for (const c of card.consider.slice(0, 2)) lines.push(`• ${c}`);
-  return lines.join('\n');
+function conciseTag(profileText, tags, yesText, fallback) {
+  for (const t of tags) {
+    if (profileText.includes(t)) return yesText;
+  }
+  return fallback;
 }
 
-function formatComparisonReply(result) {
-  const sections = [getCompareMessage('comparison_header'), ''];
+function buildFactorCells(college, profile = {}) {
+  const tags = Array.isArray(college._curatedTags) ? college._curatedTags : [];
+  const profileText = [
+    profile.careerGoal,
+    profile.careerPriority,
+    profile.preferredCourse,
+    profile.preferredLearningStyle,
+    ...(Array.isArray(profile.evaluationPriorities) ? profile.evaluationPriorities : []),
+    ...(Array.isArray(profile.studentPriorities) ? profile.studentPriorities : []),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  const has = (x) => tags.includes(x);
+  return {
+    curriculum: has('curriculum') || has('project_based') ? 'modern applied' : 'structured modern',
+    aiFocus:
+      has('ai') || /niat/i.test(college.collegeName || '')
+        ? 'strong'
+        : conciseTag(profileText, ['ai', 'machine learning'], 'moderate', 'emerging'),
+    industryProjects: has('industry') || has('projects') ? 'high' : 'moderate',
+    mentorship: has('mentoring') ? 'strong' : 'moderate',
+    internships: has('internships') || has('placements') ? 'active' : 'growing',
+    careerSupport: has('placements') || has('industry') ? 'strong' : 'developing',
+    portfolio: has('projects') || has('hands_on') ? 'project-heavy' : 'moderate',
+    innovation: has('innovation') || has('startup') ? 'high' : 'moderate',
+    studentExperience: has('hands_on') || has('balanced') ? 'hands-on' : 'mixed',
+  };
+}
 
-  sections.push(getCompareMessage('dimensions_header'));
-  for (const dim of result.dimensions) {
-    sections.push(`- ${dim.label}`);
-  }
-  sections.push('');
+function formatComparisonReply(selectedColleges, profile = {}) {
+  const headers = ['College', 'Curr', 'AI', 'Proj', 'Mentor', 'Intern', 'Career', 'Portf', 'Innov', 'Exp'];
+  const rows = selectedColleges.map((college) => {
+    const c = buildFactorCells(college, profile);
+    return [
+      college.collegeName,
+      c.curriculum,
+      c.aiFocus,
+      c.industryProjects,
+      c.mentorship,
+      c.internships,
+      c.careerSupport,
+      c.portfolio,
+      c.innovation,
+      c.studentExperience,
+    ];
+  });
 
-  for (const card of result.cards) {
-    sections.push(formatCollegeCompareBlock(card));
-    sections.push('');
-  }
-
-  sections.push(getCompareMessage('tradeoffs_header'));
-  for (const t of result.tradeoffs) {
-    sections.push(`- ${t}`);
-  }
-  sections.push('');
-
-  sections.push(getCompareMessage('verdict_header'));
-  sections.push(result.verdict.verdict);
-  sections.push('');
-  sections.push(getCompareMessage('invite_questions'));
-
-  return sections.join('\n').trim();
+  const lines = [getCompareMessage('comparison_header'), ''];
+  lines.push(headers.join(' | '));
+  lines.push(headers.map(() => '---').join(' | '));
+  for (const row of rows) lines.push(row.join(' | '));
+  lines.push('');
+  lines.push(getCompareMessage('ask_recommendation'));
+  return lines.join('\n').trim();
 }
 
 function answerFollowupFromContext(inbound, ctx) {
@@ -168,15 +190,18 @@ function startSmartComparison(ctx, analyticsMeta = {}) {
     ...analyticsMeta,
   });
 
-  const choices = formatShortlistChoices(recommended);
+  const selected = recommended.slice(0, 5);
+  if (ctx.autoCompareFullShortlist) {
+    return presentComparison({ ...ctx, profile }, selected, analyticsMeta);
+  }
   return {
-    reply: `${getCompareMessage('compare_intro')}\n\n${getCompareMessage('ask_select')}\n\n${choices}`,
+    reply: `${getCompareMessage('compare_intro')}\n\n${getCompareMessage('ask_recommendation')}`,
     context: {
       ...ctx,
       stage: STAGES.SMART_COMPARISON,
-      step: 'compare_select',
+      step: 'compare_ask_recommendation',
       profile,
-      lastQuestionKey: 'compare_select',
+      lastQuestionKey: 'compare_recommendation',
       comparisonStartedAt: new Date().toISOString(),
     },
     clearState: false,
@@ -240,13 +265,13 @@ function presentComparison(ctx, selectedColleges, analyticsMeta = {}) {
   });
 
   return {
-    reply: formatComparisonReply(result),
+    reply: formatComparisonReply(selectedColleges, nextProfile),
     context: {
       ...ctx,
       stage: STAGES.SMART_COMPARISON,
-      step: 'compare_invite_questions',
+      step: 'compare_ask_recommendation',
       profile: nextProfile,
-      lastQuestionKey: 'compare_questions',
+      lastQuestionKey: 'compare_recommendation',
       lastComparisonResult: {
         dimensions: result.dimensions.map((d) => d.id),
         preferredCollege: result.verdict.preferredCollege,
@@ -255,7 +280,7 @@ function presentComparison(ctx, selectedColleges, analyticsMeta = {}) {
       comparisonCompletedAt: new Date().toISOString(),
     },
     clearState: false,
-    // Full comparison (Why it fits / Watch-outs / Trade-offs / Verdict) must not be truncated.
+    // Full comparison table + best-fit prompt must remain in one bubble.
     keepIntact: true,
     skipLineCap: true,
     analytics: [
@@ -288,7 +313,10 @@ async function processSmartComparisonTurn(text, context = {}, opts = {}) {
       !String(ctx.step || '').startsWith('invite_') &&
       ctx.step !== 'conversation_complete')
   ) {
-    return startSmartComparison(ctx, analyticsMeta);
+    return startSmartComparison(
+      { ...ctx, autoCompareFullShortlist: opts.autoCompareFullShortlist === true },
+      analyticsMeta
+    );
   }
 
   if (
@@ -356,115 +384,48 @@ async function processSmartComparisonTurn(text, context = {}, opts = {}) {
   }
 
   if (ctx.step === 'compare_select') {
-    const recommended = ctx.profile?.recommendedColleges || [];
-    const parsed = parseCollegeSelection(inbound, recommended);
-    if (!parsed) {
-      const choices = formatShortlistChoices(recommended);
-      return {
-        reply: `${getCompareMessage('select_clarify')}\n\n${choices}`,
-        context: ctx,
-        clearState: false,
-        keepIntact: true,
-        skipLineCap: true,
-        analytics: [],
-      };
-    }
-    return presentComparison(ctx, parsed.colleges, analyticsMeta);
+    const selected = (ctx.profile?.recommendedColleges || []).slice(0, 5);
+    return presentComparison(ctx, selected, analyticsMeta);
   }
 
-  if (ctx.step === 'compare_invite_questions' || ctx.step === 'compare_present') {
-    if (isCompareContinue(inbound) && !/\?/.test(inbound)) {
-      return {
-        reply: getCompareMessage('ask_continue'),
-        context: {
-          ...ctx,
-          step: 'compare_ask_continue',
-          lastQuestionKey: 'compare_continue',
-        },
-        clearState: false,
-        analytics: [],
-      };
-    }
-
-    if (isCompareQuestion(inbound) || inbound.length >= 4) {
-      logFollowupQuestionAsked({
-        stage: STAGES.SMART_COMPARISON,
-        questionPreview: inbound.slice(0, 80),
-        ...analyticsMeta,
-      });
-      const answer = answerFollowupFromContext(inbound, ctx);
-      return {
-        reply: `${answer}\n\n${getCompareMessage('invite_questions')}`,
-        context: ctx,
-        clearState: false,
-        analytics: [{ type: 'followup_question_asked' }],
-      };
-    }
-
-    return {
-      reply: getCompareMessage('invite_questions'),
-      context: ctx,
-      clearState: false,
-      analytics: [],
-    };
-  }
-
-  if (ctx.step === 'compare_ask_continue') {
-    if (isComparePermissionYes(inbound) || isCompareContinue(inbound)) {
+  if (ctx.step === 'compare_ask_recommendation' || ctx.step === 'compare_present') {
+    if (isComparePermissionYes(inbound)) {
       const {
-        processConcernResolutionTurn,
-      } = require('./careerCounsellingV2ConcernResolutionEngine');
-      return processConcernResolutionTurn(inbound, ctx, {
-        startConcernResolution: true,
-        analytics: analyticsMeta,
-      });
+        startPhase9PersonalizedRecommendation,
+      } = require('./careerCounsellingV2PersonalizedRecommendationEngine');
+      return {
+        ...startPhase9PersonalizedRecommendation(ctx, analyticsMeta),
+        keepIntact: true,
+      };
     }
     if (isComparePermissionNo(inbound)) {
-      const declineCount = Number(ctx.profile?._compareDeclineCount || 0) + 1;
-      if (declineCount >= 2) {
-        const {
-          processConcernResolutionTurn,
-        } = require('./careerCounsellingV2ConcernResolutionEngine');
-        const advanced = await processConcernResolutionTurn(inbound, ctx, {
-          startConcernResolution: true,
-          analytics: analyticsMeta,
-        });
-        return {
-          ...advanced,
-          skippedPhaseReason: 'user_declined_optional_gate',
-          reply: `Okay — let’s clear any remaining concerns next.\n\n${advanced.reply || ''}`.trim(),
-        };
-      }
       return {
-        reply: getCompareMessage('invite_questions'),
+        reply: 'No problem. Say Yes whenever you want a best-fit recommendation.',
         context: {
           ...ctx,
-          step: 'compare_invite_questions',
-          lastQuestionKey: 'compare_questions',
-          profile: {
-            ...(ctx.profile || {}),
-            _compareDeclineCount: declineCount,
-          },
+          step: 'compare_ask_recommendation',
+          lastQuestionKey: 'compare_recommendation',
         },
         clearState: false,
         parked: true,
         analytics: [],
       };
     }
-    if (isCompareQuestion(inbound)) {
+    if (isCompareQuestion(inbound) || /\bconcern|worried|doubt|not sure|fees|location|hostel\b/i.test(inbound)) {
+      const {
+        processConcernResolutionTurn,
+      } = require('./careerCounsellingV2ConcernResolutionEngine');
       logFollowupQuestionAsked({
         stage: STAGES.SMART_COMPARISON,
         questionPreview: inbound.slice(0, 80),
         ...analyticsMeta,
       });
-      const answer = answerFollowupFromContext(inbound, ctx);
-      return {
-        reply: `${answer}\n\n${getCompareMessage('continue_clarify')}`,
-        context: ctx,
-        clearState: false,
-        analytics: [{ type: 'followup_question_asked' }],
-      };
+      return processConcernResolutionTurn(inbound, ctx, {
+        startConcernResolution: true,
+        analytics: analyticsMeta,
+      });
     }
+
     return {
       reply: getCompareMessage('continue_clarify'),
       context: ctx,

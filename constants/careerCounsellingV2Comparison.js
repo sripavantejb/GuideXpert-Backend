@@ -25,14 +25,13 @@ const STAGES = Object.freeze({
 const COMPARISON_STEPS = Object.freeze([
   'compare_select',
   'compare_present',
-  'compare_invite_questions',
-  'compare_ask_continue',
+  'compare_ask_recommendation',
 ]);
 
-const COMPARISON_ENGINE_VERSION = 'v1.0.0';
+const COMPARISON_ENGINE_VERSION = 'v1.1.0';
 
 /** Max colleges a student can compare in one turn. */
-const MAX_COMPARE_COLLEGES = 3;
+const MAX_COMPARE_COLLEGES = 5;
 const MIN_COMPARE_COLLEGES = 2;
 
 /**
@@ -86,6 +85,46 @@ const COMPARISON_DIMENSIONS = Object.freeze([
     label: 'Your stated concerns',
     profileKeys: ['biggestConcerns'],
   }),
+  Object.freeze({
+    id: 'ai_focus',
+    label: 'AI focus',
+    profileKeys: ['careerGoal', 'careerPriority', 'preferredCourse'],
+  }),
+  Object.freeze({
+    id: 'industry_projects',
+    label: 'Industry projects',
+    profileKeys: ['careerPriority', 'evaluationPriorities'],
+  }),
+  Object.freeze({
+    id: 'mentorship',
+    label: 'Mentorship',
+    profileKeys: ['studentPriorities', 'evaluationPriorities'],
+  }),
+  Object.freeze({
+    id: 'internships',
+    label: 'Internships',
+    profileKeys: ['careerGoal', 'careerPriority'],
+  }),
+  Object.freeze({
+    id: 'career_support',
+    label: 'Career support',
+    profileKeys: ['careerPriority', 'careerGoal'],
+  }),
+  Object.freeze({
+    id: 'portfolio',
+    label: 'Portfolio development',
+    profileKeys: ['careerGoal', 'studentPriorities'],
+  }),
+  Object.freeze({
+    id: 'innovation',
+    label: 'Innovation',
+    profileKeys: ['careerGoal', 'studentPriorities'],
+  }),
+  Object.freeze({
+    id: 'student_experience',
+    label: 'Student experience',
+    profileKeys: ['preferredLearningStyle', 'studentPriorities'],
+  }),
 ]);
 
 const MESSAGES = Object.freeze({
@@ -131,23 +170,15 @@ const MESSAGES = Object.freeze({
     'Ask about fit/fees/location — or say Continue.',
   ].join('\n'),
 
-  ask_continue: [
-    'Ready for the next step?',
-    '',
-    'Reply Yes — or ask another question.',
-  ].join('\n'),
+  ask_recommendation:
+    "Would you like me to suggest which college appears to be the best fit based on everything you've shared?",
 
-  continue_clarify: 'Reply Yes to move ahead, or ask another comparison question.',
-
-  concern_resolution_placeholder: [
-    'Next we’ll clear remaining worries.',
-    '',
-    'Coming soon — send a message when ready.',
-  ].join('\n'),
+  continue_clarify:
+    "Would you like me to suggest which college appears to be the best fit based on everything you've shared?\n\nReply Yes or No.",
 
   greeting_mid: 'Hello again! Let’s continue your comparison.',
 
-  awaiting_ack_nudge: 'Pick colleges, ask a question, or say Continue.',
+  awaiting_ack_nudge: 'Reply Yes for best-fit guidance, or ask a specific concern/question.',
 
   resume_checkpoint_prefix: 'Coming back to where we were —',
 });

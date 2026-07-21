@@ -42,7 +42,7 @@ const CONFIDENCE_LABELS = Object.freeze({
 });
 
 const MESSAGES = Object.freeze({
-  header: 'Here’s your personalized recommendation 👍',
+  header: 'Here is the best-fit recommendation based on everything you shared.',
 
   empty: [
     'I don’t have enough shortlist context yet to rank colleges confidently.',
@@ -52,17 +52,18 @@ const MESSAGES = Object.freeze({
 
   tradeoffs_header: '*How they differ*',
 
+  recommendation_prefix:
+    'Based on your goals, interests, and preferences, {{college}} appears to be the strongest fit because:',
+
   soft_transition: [
-    'Based on everything we’ve discussed, I now have a clear recommendation for you.',
-    '',
-    'Next, we can explore what your future could look like after choosing the right college.',
+    'If you are ready, we can now explore what your future path could look like from this choice.',
   ].join('\n'),
 
-  ask_continue: 'Any questions — or reply *Continue* for next steps.',
+  ask_continue: 'Would you like to continue to the next step?',
 
   continue_clarify: 'Reply *Continue* when ready, or ask about fees, location, or fit.',
 
-  greeting_mid: 'Still here. Let’s finish your personalized recommendation.',
+  greeting_mid: 'Still here. Let’s finish your best-fit recommendation.',
 
   weak_confidence_note:
     'Confidence is lower because some profile or shortlist signals are still thin — treat this as decision support, not certainty.',

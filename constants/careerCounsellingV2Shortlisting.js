@@ -109,7 +109,10 @@ const MESSAGES = Object.freeze({
   strong_header: '*Strong Alternatives*',
   explore_header: '*Worth Exploring*',
 
-  ask_compare: 'Would you like to compare them side by side?',
+  ask_compare: [
+    'These are personalized matches based on what you shared — not a generic ranking.',
+    'Would you like me to compare them side by side?',
+  ].join('\n'),
 
   permission_clarify: 'Would you like to compare them side by side?\n\nReply Yes or No.',
 

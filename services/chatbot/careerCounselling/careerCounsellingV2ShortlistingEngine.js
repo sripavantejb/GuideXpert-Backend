@@ -124,30 +124,6 @@ function shortlistIntroFor(profile = {}) {
   return getShortlistMessage('shortlist_intro');
 }
 
-function idealStudentLine(item, profile = {}) {
-  const priority = String(profile.careerPriority || '').toLowerCase();
-  const goal = String(profile.careerGoal || profile.preferredCourse || '').toLowerCase();
-  if (/niat/i.test(item.collegeName || '')) {
-    return 'Ideal for students who want AI-first learning with projects, mentors, and industry exposure.';
-  }
-  if (/placement/.test(priority)) {
-    return 'Ideal for students focused on employability and structured career outcomes.';
-  }
-  if (/project|skill|hands/.test(priority) || /project/.test(goal)) {
-    return 'Ideal for students who learn best through projects and applied work.';
-  }
-  if (/startup|entrepreneur/.test(priority) || /startup|entrepreneur/.test(goal)) {
-    return 'Ideal for students exploring innovation, startups, or applied venture paths.';
-  }
-  return 'Ideal for students seeking a modern, industry-aligned learning path.';
-}
-
-function notableFeatureLine(item) {
-  const why = (item.reasons && item.reasons.why && item.reasons.why[0]) || item._curatedWhy || '';
-  if (why) return why;
-  return 'Notable for future-ready curriculum and practical learning.';
-}
-
 function flattenTopShortlist(tiers, limit = SHORTLIST_PRESENT_LIMIT) {
   const flat = [
     ...(tiers.bestMatch || []),
@@ -166,6 +142,75 @@ function flattenTopShortlist(tiers, limit = SHORTLIST_PRESENT_LIMIT) {
   return out;
 }
 
+function profileNarrativeSignals(profile = {}) {
+  return [
+    profile.careerPriority,
+    profile.careerGoal,
+    profile.preferredCourse,
+    profile.preferredLearningStyle,
+    profile.budgetPreference,
+    ...(Array.isArray(profile.evaluationPriorities) ? profile.evaluationPriorities : []),
+    ...(Array.isArray(profile.studentPriorities) ? profile.studentPriorities : []),
+    ...(Array.isArray(profile.biggestConcerns) ? profile.biggestConcerns : []),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+}
+
+function buildCounselorMatchLine(item, profile = {}) {
+  const name = String(item.collegeName || '');
+  const firstWhy = String(item?.reasons?.why?.[0] || '').trim();
+  const signals = profileNarrativeSignals(profile);
+  const conciseWhy =
+    firstWhy &&
+    firstWhy.length <= 140 &&
+    !/preferred course on profile|evaluation priorities|budget preference|location preference/i.test(
+      firstWhy
+    )
+      ? firstWhy
+      : '';
+
+  if (/niat/i.test(name)) {
+    if (/\bai\b|artificial intelligence|machine learning|projects?|industry|mentor|internship/.test(signals)) {
+      return 'Best for students who want AI-first learning, projects, mentorship, and industry exposure.';
+    }
+    return conciseWhy || 'A strong option for students seeking practical, future-ready tech learning.';
+  }
+
+  if (/scaler/i.test(name)) {
+    return 'Strong for software engineering students who want intensive mentorship and practical learning.';
+  }
+  if (/newton/i.test(name)) {
+    return 'Good for project-based learning and employability-focused tech education.';
+  }
+  if (/plaksha/i.test(name)) {
+    return 'Good for interdisciplinary, innovation-driven engineering.';
+  }
+  if (/upes/i.test(name)) {
+    return 'Good for industry-aligned programs with practical exposure.';
+  }
+
+  if (conciseWhy) return conciseWhy;
+  if (/placement/.test(signals)) {
+    return 'A good fit for students prioritizing employability, mentoring, and practical outcomes.';
+  }
+  if (/project|hands.?on|skill/.test(signals)) {
+    return 'A good fit for students who prefer project-based, applied learning.';
+  }
+  if (/startup|entrepreneur|innovation/.test(signals)) {
+    return 'A good fit for students interested in innovation and entrepreneurial exposure.';
+  }
+  return 'A good match for your goals and the preferences you shared.';
+}
+
+function buildShortlistNarrative(colleges, profile = {}) {
+  return colleges.map((item) => ({
+    collegeName: item.collegeName,
+    matchLine: buildCounselorMatchLine(item, profile),
+  }));
+}
+
 function formatShortlistReply(tiers, confidence, profile = {}) {
   const colleges = flattenTopShortlist(tiers, SHORTLIST_PRESENT_LIMIT);
   const sections = [];
@@ -173,21 +218,13 @@ function formatShortlistReply(tiers, confidence, profile = {}) {
   if (!colleges.length) {
     sections.push(getShortlistMessage('no_eligibility') || 'No eligible colleges yet.');
   } else {
+    const narrative = buildShortlistNarrative(colleges, profile);
     sections.push(getShortlistMessage('present_header') || shortlistIntroFor(profile));
     sections.push('');
-    colleges.forEach((item, idx) => {
-      const strengths =
-        (item.reasons && Array.isArray(item.reasons.why) && item.reasons.why.slice(0, 2)) || [];
-      const strengthText =
-        strengths.length > 0
-          ? strengths.join('; ')
-          : notableFeatureLine(item);
-      sections.push(`${idx + 1}. ${item.collegeName}`);
-      sections.push(`Strengths: ${strengthText}`);
-      sections.push(`Ideal for: ${idealStudentLine(item, profile)}`);
-      sections.push(`Notable: ${notableFeatureLine(item)}`);
-      sections.push('');
+    narrative.forEach((item) => {
+      sections.push(`- **${item.collegeName}** — ${item.matchLine}`);
     });
+    sections.push('');
   }
 
   sections.push(getShortlistMessage('ask_compare'));
@@ -217,6 +254,7 @@ function persistRecommendation(profile, tiers, confidence, eligibleCount) {
       fee: c.fee,
     })),
     recommendationReasons: reasons,
+    shortlistNarrative: buildShortlistNarrative(flatten.slice(0, SHORTLIST_PRESENT_LIMIT), profile),
     recommendationConfidence: confidence,
     recommendationMatrixVersion: RECOMMENDATION_MATRIX_VERSION,
     eligibleCollegeCount: eligibleCount,
@@ -792,6 +830,7 @@ async function processAiShortlistingTurn(text, context = {}, opts = {}) {
       } = require('./careerCounsellingV2ComparisonEngine');
       return processSmartComparisonTurn(inbound, ctx, {
         startSmartComparison: true,
+        autoCompareFullShortlist: true,
         analytics: analyticsMeta,
       });
     }
@@ -835,6 +874,7 @@ async function processAiShortlistingTurn(text, context = {}, opts = {}) {
       } = require('./careerCounsellingV2ComparisonEngine');
       return processSmartComparisonTurn(inbound, ctx, {
         startSmartComparison: true,
+        autoCompareFullShortlist: true,
         analytics: analyticsMeta,
       });
     }
@@ -844,6 +884,7 @@ async function processAiShortlistingTurn(text, context = {}, opts = {}) {
     } = require('./careerCounsellingV2ComparisonEngine');
     const advanced = await processSmartComparisonTurn(inbound, ctx, {
       startSmartComparison: true,
+      autoCompareFullShortlist: true,
       analytics: analyticsMeta,
     });
     return {

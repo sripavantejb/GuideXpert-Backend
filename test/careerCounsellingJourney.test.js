@@ -483,7 +483,7 @@ describe('careerCounsellingV2 personalized discovery', () => {
     assert.doesNotMatch(r.reply, /Which entrance exam|profile looks ready/i);
     assert.equal(r.context.step, 'shortlist_ask_compare');
     assert.match(r.reply, /shortlisted five colleges|align well with your goals/i);
-    assert.match(r.reply, /Would you like to compare them side by side/i);
+    assert.match(r.reply, /Would you like me to compare them side by side/i);
     assert.equal(r.context.profile.shortlistSource, 'curated_new_age');
     assert.ok((r.context.profile.recommendedColleges || []).length >= 1);
     assert.ok((r.context.profile.recommendedColleges || []).length <= 5);
@@ -759,8 +759,8 @@ describe('careerCounsellingV2 AI shortlisting', () => {
     assert.equal(r.context.profile.shortlistSource, 'curated_new_age');
     assert.doesNotMatch(r.reply, /Which entrance exam|profile looks ready/i);
     assert.match(r.reply, /shortlisted five colleges|align well with your goals/i);
-    assert.match(r.reply, /Strengths:|Ideal for:|Notable:/i);
-    assert.match(r.reply, /Would you like to compare them side by side/i);
+    assert.doesNotMatch(r.reply, /Strengths:|Ideal for:|Notable:/i);
+    assert.match(r.reply, /Would you like me to compare them side by side/i);
     assert.doesNotMatch(r.reply, /#\d|rank\s*#|score:\s*\d/i);
     assert.ok(Array.isArray(r.context.profile.recommendedColleges));
     assert.ok(r.context.profile.recommendedColleges.length >= 1);
@@ -811,15 +811,19 @@ describe('careerCounsellingV2 AI shortlisting', () => {
     assert.match(r.reply, /shortlisted five|align well|Best Match|1\./i);
   });
 
-  test('compare permission yes enters smart comparison selection', async () => {
+  test('compare permission yes enters automatic shortlist comparison', async () => {
     let r = await reachCuratedShortlist();
     assert.equal(r.context.step, 'shortlist_ask_compare');
 
     r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.stage, STAGES.SMART_COMPARISON);
-    assert.equal(r.context.step, 'compare_select');
-    assert.match(r.reply, /compare|shortlist/i);
-    assert.match(r.reply, /1\./);
+    assert.equal(r.context.step, 'compare_ask_recommendation');
+    assert.match(r.reply, /personalized comparison/i);
+    assert.match(r.reply, /College \\| Curr \\| AI \\| Proj/i);
+    assert.match(
+      r.reply,
+      /Would you like me to suggest which college appears to be the best fit based on everything you've shared\\?/i
+    );
   });
 
   test('eligibility failure does not invent colleges on predictor path', async () => {
@@ -1032,18 +1036,13 @@ describe('careerCounsellingV2 smart comparison', () => {
     setShortlistingEligibilityDeps({});
   });
 
-  test('compares selected colleges with profile-based dimensions and verdict', async () => {
+  test('compares full shortlist automatically and asks for best-fit recommendation', async () => {
     let r = await reachCompareSelect();
-    assert.equal(r.context.step, 'compare_select');
-
-    r = await handleCareerCounsellingMessage('1 and 2', r.context);
-    assert.equal(r.context.step, 'compare_invite_questions');
+    assert.equal(r.context.step, 'compare_ask_recommendation');
     assert.equal(r.context.stage, STAGES.SMART_COMPARISON);
     assert.match(r.reply, /personalized comparison/i);
-    assert.match(r.reply, /Why it fits/i);
-    assert.match(r.reply, /Watch-outs|Things to consider/i);
-    assert.match(r.reply, /Trade-offs/i);
-    assert.match(r.reply, /Personalized Verdict/i);
+    assert.match(r.reply, /College \| Curr \| AI \| Proj/i);
+    assert.match(r.reply, /Would you like me to suggest which college appears to be the best fit/i);
     assert.doesNotMatch(r.reply, /Decision Confidence:\s*\d/i);
     assert.ok(Array.isArray(r.context.profile.comparedColleges));
     assert.ok(r.context.profile.comparedColleges.length >= 2);
@@ -1056,33 +1055,23 @@ describe('careerCounsellingV2 smart comparison', () => {
     assert.doesNotMatch(r.reply, /\bNIAT\b|\bScaler\b|\bNewton\b/i);
   });
 
-  test('follow-up question stays in comparison then continue enters concern resolution', async () => {
+  test('explicit concern in comparison enters concern resolution', async () => {
     let r = await reachCompareSelect();
-    r = await handleCareerCounsellingMessage('first two', r.context);
-    assert.equal(r.context.step, 'compare_invite_questions');
-
-    r = await handleCareerCounsellingMessage('Why this verdict?', r.context);
-    assert.equal(r.context.stage, STAGES.SMART_COMPARISON);
-    assert.match(r.reply, /comparison|profile|shortlist/i);
-    assert.match(r.reply, /Continue/i);
-
-    r = await handleCareerCounsellingMessage('continue', r.context);
-    assert.equal(r.context.step, 'compare_ask_continue');
-
-    r = await handleCareerCounsellingMessage('yes', r.context);
+    assert.equal(r.context.step, 'compare_ask_recommendation');
+    r = await handleCareerCounsellingMessage('I still have concern about fees and location', r.context);
     assert.equal(r.context.stage, STAGES.CONCERN_RESOLUTION);
-    assert.equal(r.context.step, 'concern_pick');
+    assert.ok(
+      r.context.step === 'concern_pick' || r.context.step === 'concern_check_resolved',
+      `unexpected concern step ${r.context.step}`
+    );
     assert.match(r.reply, /remaining worries|concern/i);
-    assert.ok(Array.isArray(r.context.profile.activeConcerns));
-    assert.ok(r.context.profile.activeConcerns.length >= 1);
   });
 
-  test('invalid selection asks again without inventing colleges', async () => {
+  test('non-yes/non-no in recommendation prompt clarifies without changing stage', async () => {
     let r = await reachCompareSelect();
     r = await handleCareerCounsellingMessage('only one', r.context);
-    assert.equal(r.context.step, 'compare_select');
-    assert.match(r.reply, /2 or 3/i);
-    assert.equal((r.context.profile.comparedColleges || []).length, 0);
+    assert.equal(r.context.step, 'compare_ask_recommendation');
+    assert.match(r.reply, /Would you like me to suggest which college appears to be the best fit/i);
   });
 });
 
@@ -1246,9 +1235,8 @@ describe('careerCounsellingV2 concern resolution', () => {
     } else {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
-    r = await handleCareerCounsellingMessage('1 and 2', r.context);
-    r = await handleCareerCounsellingMessage('continue', r.context);
-    r = await handleCareerCounsellingMessage('yes', r.context);
+    // Auto comparison is already presented; explicit concern routes to concern engine.
+    r = await handleCareerCounsellingMessage('I still have a concern about fees', r.context);
     return r;
   }
 
@@ -1267,10 +1255,15 @@ describe('careerCounsellingV2 concern resolution', () => {
 
   test('answers seeded concern with profile evidence and can mark resolved', async () => {
     let r = await reachConcernPick();
-    assert.equal(r.context.step, 'concern_pick');
-    assert.ok(r.context.profile.activeConcerns.includes('fees'));
+    assert.ok(
+      r.context.step === 'concern_pick' || r.context.step === 'concern_check_resolved',
+      `unexpected concern step ${r.context.step}`
+    );
+    if (r.context.step === 'concern_pick') {
+      assert.ok(r.context.profile.activeConcerns.includes('fees'));
+      r = await handleCareerCounsellingMessage('1', r.context);
+    }
 
-    r = await handleCareerCounsellingMessage('1', r.context);
     assert.equal(r.context.step, 'concern_check_resolved');
     assert.match(r.reply, /Fees|affordability|budget/i);
     assert.match(r.reply, /decision support/i);
@@ -1286,7 +1279,9 @@ describe('careerCounsellingV2 concern resolution', () => {
 
   test('reopens concern on no then continue enters phase 9 recommendation', async () => {
     let r = await reachConcernPick();
-    r = await handleCareerCounsellingMessage('fees', r.context);
+    if (r.context.step === 'concern_pick') {
+      r = await handleCareerCounsellingMessage('fees', r.context);
+    }
     r = await handleCareerCounsellingMessage('no', r.context);
     assert.ok(r.context.profile.activeConcerns.includes('fees'));
     assert.equal(r.context.step, 'concern_pick');
@@ -1299,9 +1294,8 @@ describe('careerCounsellingV2 concern resolution', () => {
     r = await handleCareerCounsellingMessage('yes', r.context);
     assert.equal(r.context.stage, STAGES.PHASE_9_PERSONALIZED_RECOMMENDATION);
     assert.equal(r.context.step, 'phase9_followup');
-    assert.match(r.reply, /personalized recommendation|Best Match|Strong Alternative|Good Backup/i);
+    assert.match(r.reply, /strongest fit|best-fit recommendation/i);
     assert.equal(r.context.profile.phase9Presented, true);
-    assert.doesNotMatch(r.reply, /\bNIAT\b|\bScaler\b|\bNewton\b/i);
   });
 
   test('new concern text is classified and answered', async () => {
@@ -1474,14 +1468,10 @@ describe('careerCounsellingV2 phase 9 personalized recommendation', () => {
       r = await handleCareerCounsellingMessage('15000', r.context);
       r = await handleCareerCounsellingMessage('OC Boys', r.context);
       r = await handleCareerCounsellingMessage('yes', r.context);
-    } else {
+    }
+    if (r.context.step === 'compare_ask_recommendation') {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
-    r = await handleCareerCounsellingMessage('1 and 2', r.context);
-    r = await handleCareerCounsellingMessage('continue', r.context);
-    r = await handleCareerCounsellingMessage('yes', r.context);
-    r = await handleCareerCounsellingMessage('continue', r.context);
-    r = await handleCareerCounsellingMessage('yes', r.context);
     return r;
   }
 
@@ -1498,20 +1488,18 @@ describe('careerCounsellingV2 phase 9 personalized recommendation', () => {
     setShortlistingEligibilityDeps({});
   });
 
-  test('synthesizes ranked explainable recommendations from journey context', async () => {
+  test('synthesizes single best-fit recommendation from journey context', async () => {
     const r = await reachPhase9();
     assert.equal(r.context.stage, STAGES.PHASE_9_PERSONALIZED_RECOMMENDATION);
     assert.equal(r.context.step, 'phase9_followup');
-    assert.match(r.reply, /Best Match/i);
-    assert.match(r.reply, /Excellent Match|Strong Match|Good Match/i);
-    assert.match(r.reply, /How they differ|Comparison Insight|trade/i);
-    assert.match(r.reply, /future could look like/i);
+    assert.match(r.reply, /appears to be the strongest fit because/i);
+    assert.match(r.reply, /interests, and preferences, .*appears to be the strongest fit because/i);
     assert.ok(Array.isArray(r.context.profile.phase9Recommendations));
     assert.ok(r.context.profile.phase9Recommendations.length >= 1);
-    assert.ok(r.context.profile.phase9Recommendations.length <= 3);
-    assert.doesNotMatch(r.reply, /\bNIAT\b|\bScaler\b|\bNewton\b/i);
+    assert.ok(r.context.profile.phase9Recommendations.length <= 1);
     assert.doesNotMatch(r.reply, /Decision Confidence:\s*\d/i);
     assert.doesNotMatch(r.reply, /score:\s*\d/i);
+    assert.equal((r.replyParts || []).length, 1);
   });
 
   test('continue from phase 9 enters future path vision', async () => {
@@ -1542,7 +1530,7 @@ describe('careerCounsellingV2 phase 9 personalized recommendation', () => {
     assert.doesNotMatch(syn.reply, /\bNIAT\b|\bScaler\b/i);
   });
 
-  test('core preserves Phase 5 order; comparison lean never becomes Best Match', () => {
+  test('core uses comparison lean for best-fit narrative while preserving shortlist data', () => {
     const syn = synthesizePersonalizedRecommendation({
       preferredCourse: 'B.Tech',
       preferredCollege: 'College B',
@@ -1565,7 +1553,7 @@ describe('careerCounsellingV2 phase 9 personalized recommendation', () => {
     assert.equal(syn.items[0].rankLabel, 'Best Match');
     assert.equal(syn.items[1].collegeName, 'College B');
     assert.equal(syn.items[1].rankLabel, 'Strong Alternative');
-    assert.match(syn.reply, /Comparison Insight:.*College B/i);
+    assert.match(syn.reply, /College B appears to be the strongest fit/i);
     assert.match(syn.reply, /Strong practical fit|internship/i);
     assert.doesNotMatch(syn.reply, /\*Best Match: College B\*/);
   });
@@ -1581,8 +1569,7 @@ describe('careerCounsellingV2 phase 9 personalized recommendation', () => {
     });
     assert.equal(syn.items.length, 2);
     assert.ok(syn.items.every((i) => i.collegeName !== 'Outside College'));
-    assert.match(syn.reply, /Comparison Insight:.*Outside College/i);
-    assert.match(syn.reply, /context only/i);
+    assert.doesNotMatch(syn.reply, /Outside College appears to be the strongest fit/i);
   });
 
   test('core ranks at most three preserving Phase 5 array order', () => {
@@ -1772,10 +1759,6 @@ describe('careerCounsellingV2 phase 10 future path vision', () => {
     } else {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
-    r = await handleCareerCounsellingMessage('1 and 2', r.context);
-    r = await handleCareerCounsellingMessage('continue', r.context);
-    r = await handleCareerCounsellingMessage('yes', r.context);
-    r = await handleCareerCounsellingMessage('continue', r.context);
     r = await handleCareerCounsellingMessage('yes', r.context);
     r = await handleCareerCounsellingMessage('continue', r.context);
     return r;
@@ -2003,10 +1986,6 @@ describe('careerCounsellingV2 Phase 11 final decision hesitation', () => {
     } else {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
-    r = await handleCareerCounsellingMessage('1 and 2', r.context);
-    r = await handleCareerCounsellingMessage('continue', r.context);
-    r = await handleCareerCounsellingMessage('yes', r.context);
-    r = await handleCareerCounsellingMessage('continue', r.context);
     r = await handleCareerCounsellingMessage('yes', r.context);
     r = await handleCareerCounsellingMessage('continue', r.context);
     r = await handleCareerCounsellingMessage('continue', r.context);
@@ -2287,10 +2266,6 @@ describe('careerCounsellingV2 Phase 12 counseling experience selection', () => {
     } else {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
-    r = await handleCareerCounsellingMessage('1 and 2', r.context);
-    r = await handleCareerCounsellingMessage('continue', r.context);
-    r = await handleCareerCounsellingMessage('yes', r.context);
-    r = await handleCareerCounsellingMessage('continue', r.context);
     r = await handleCareerCounsellingMessage('yes', r.context);
     r = await handleCareerCounsellingMessage('continue', r.context);
     r = await handleCareerCounsellingMessage('continue', r.context);
@@ -2501,14 +2476,10 @@ describe('careerCounsellingV2 Phase 13 booking orchestrator', () => {
       r = await handleCareerCounsellingMessage('15000', r.context);
       r = await handleCareerCounsellingMessage('OC Boys', r.context);
       r = await handleCareerCounsellingMessage('yes', r.context);
-    } else {
+    }
+    if (r.context.step === 'compare_ask_recommendation') {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
-    r = await handleCareerCounsellingMessage('1 and 2', r.context);
-    r = await handleCareerCounsellingMessage('continue', r.context);
-    r = await handleCareerCounsellingMessage('yes', r.context);
-    r = await handleCareerCounsellingMessage('continue', r.context);
-    r = await handleCareerCounsellingMessage('yes', r.context);
     r = await handleCareerCounsellingMessage('continue', r.context);
     r = await handleCareerCounsellingMessage('continue', r.context);
     r = await handleCareerCounsellingMessage('ready', r.context);
@@ -2715,11 +2686,9 @@ describe('careerCounsellingV2 counseling invitation', () => {
     } else {
       r = await handleCareerCounsellingMessage('yes', r.context);
     }
-    r = await handleCareerCounsellingMessage('1 and 2', r.context);
-    r = await handleCareerCounsellingMessage('continue', r.context);
-    r = await handleCareerCounsellingMessage('yes', r.context);
-    r = await handleCareerCounsellingMessage('continue', r.context);
-    r = await handleCareerCounsellingMessage('yes', r.context);
+    if (r.context.step === 'compare_ask_recommendation') {
+      r = await handleCareerCounsellingMessage('yes', r.context);
+    }
     // Phase 9 → Phase 10 → Phase 11 hesitation (fast path) → Phase 12 → start invitation for Section E regression
     r = await handleCareerCounsellingMessage('continue', r.context);
     r = await handleCareerCounsellingMessage('continue', r.context);

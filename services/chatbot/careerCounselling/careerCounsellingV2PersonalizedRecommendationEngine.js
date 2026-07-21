@@ -50,7 +50,7 @@ function startPhase9PersonalizedRecommendation(ctx, analyticsMeta = {}) {
 
   const nextProfile = {
     ...profile,
-    phase9Recommendations: synthesis.items.map((i) => ({
+    phase9Recommendations: (synthesis.bestFit ? [synthesis.bestFit] : synthesis.items).map((i) => ({
       collegeName: i.collegeName,
       branchName: i.branchName,
       rankLabel: i.rankLabel,
@@ -60,6 +60,7 @@ function startPhase9PersonalizedRecommendation(ctx, analyticsMeta = {}) {
     phase9OverallConfidenceLabel: synthesis.overallConfidenceLabel,
     phase9Tradeoffs: synthesis.tradeoffs,
     phase9ComparisonInsight: synthesis.comparisonInsight || null,
+    phase9BestFitCollege: synthesis.bestFit?.collegeName || null,
     phase9Summary: synthesis.summary,
     phase9Presented: true,
     phase9EngineVersion: PHASE9_ENGINE_VERSION,
@@ -69,6 +70,7 @@ function startPhase9PersonalizedRecommendation(ctx, analyticsMeta = {}) {
     stage: STAGES.PHASE_9_PERSONALIZED_RECOMMENDATION,
     fieldsUpdated: [
       'phase9Recommendations',
+      'phase9BestFitCollege',
       'phase9OverallConfidenceLabel',
       'phase9Presented',
     ],
@@ -86,6 +88,8 @@ function startPhase9PersonalizedRecommendation(ctx, analyticsMeta = {}) {
       phase9StartedAt: new Date().toISOString(),
     },
     clearState: false,
+    keepIntact: true,
+    skipLineCap: true,
     analytics: [
       { type: 'phase9_recommendation_started' },
       { type: 'phase9_recommendation_synthesized' },
