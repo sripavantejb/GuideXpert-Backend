@@ -425,7 +425,8 @@ function isRankOnlyCollegePredictorQuery(text, originalText = null) {
     if (isExplicitRankPredictorEntryQuery(t)) return false;
     if (isRomanizedTeluguBranchGuidanceQuery(t)) return false;
     if (/\bAIR\s*[#:]?\s*\d{1,9}\b/i.test(t)) return true;
-    if (/\brank\s*(?:is|:|=|-)?\s*\d{1,9}\b/i.test(t)) return true;
+    if (/\brank\s*(?:is|:|=|-|in|of|around|near)?\s*\d{1,9}\b/i.test(t)) return true;
+    if (/\b(?:i\s+got|got)\s+rank\s+(?:in\s+|of\s+)?\d{1,9}\b/i.test(t)) return true;
     if (/\b\d{1,9}\s*rank\b/i.test(t)) return true;
     if (/\b(?:i\s+got|got|scored|secured)\s+\d{3,9}\b/i.test(t) && !/\b(marks|percentile|percent|score)\b/i.test(t)) {
       return true;
@@ -433,6 +434,46 @@ function isRankOnlyCollegePredictorQuery(text, originalText = null) {
     if (hasRankSignal(t) && EXAM_SIGNAL_PATTERN.test(t) && /\d{2,}/.test(t)) return true;
     return false;
   });
+}
+
+/**
+ * Explicit college-prediction entry (rank / which colleges / predict) must beat
+ * the counseling-first gate — otherwise "rank 6000 which colleges" stalls in Discovery.
+ */
+function resolveCollegePredictorIntentEarly(t, original, botState) {
+  if (isMarksBasedRankPredictorQuery(t, original)) {
+    return { intent: 'rank_predictor', confidence: 'high', intentReason: 'marks_based_rank_query' };
+  }
+  if (isExplicitRankPredictorEntryQuery(t, original)) {
+    return {
+      intent: 'rank_predictor',
+      confidence: 'high',
+      intentReason: 'explicit_rank_predictor_entry',
+    };
+  }
+  if (isRankBranchCollegePredictorQuery(t, original) || isRankOnlyCollegePredictorQuery(t, original)) {
+    return {
+      intent: 'college_predictor',
+      confidence: 'high',
+      intentReason: isRankBranchCollegePredictorQuery(t, original)
+        ? 'rank_branch_college_query'
+        : 'rank_only_college_query',
+    };
+  }
+  if (isHighConfidenceCollegePredictorEntry(t, original, botState)) {
+    const cpEntry = resolveCollegePredictorEntry({
+      englishText: t,
+      originalText: original,
+      botState,
+    });
+    return {
+      intent: 'college_predictor',
+      confidence: cpEntry.confidence === 'medium' ? 'medium' : 'high',
+      intentReason: cpEntry.reason || 'college_predictor_high_confidence',
+      preferredCollege: cpEntry.preferredCollege || null,
+    };
+  }
+  return null;
 }
 
 /** @deprecated Use isRankBranchCollegePredictorQuery */
@@ -504,8 +545,15 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     return { intent: 'unknown', confidence: 'low', intentReason: 'commerce_out_of_scope' };
   }
 
+  // Explicit rank / college-prediction entry beats counseling-first (P0 production).
+  {
+    const predictorEarly = resolveCollegePredictorIntentEarly(t, original, botState);
+    if (predictorEarly) return predictorEarly;
+  }
+
   // P0: Admissions / college / career uncertainty → Career Counselling V2 FIRST.
   // Prefer counseling over booking-handoff soft matches, knowledge assistant, and unknown→guardrail.
+  // (Rank/college predictor already resolved above.)
   if (isCareerCounsellingJourneyEnabled()) {
     const counselingScore = scoreCareerCounsellingGuidance(t, original);
     if (counselingScore.score >= 60) {
@@ -587,26 +635,7 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     };
   }
 
-  // Predictors must win over ICE process-topic heuristics (e.g. "AIR 5400", "Rank 3000").
-  if (isMarksBasedRankPredictorQuery(t, original)) {
-    return { intent: 'rank_predictor', confidence: 'high', intentReason: 'marks_based_rank_query' };
-  }
-  if (isExplicitRankPredictorEntryQuery(t, original)) {
-    return {
-      intent: 'rank_predictor',
-      confidence: 'high',
-      intentReason: 'explicit_rank_predictor_entry',
-    };
-  }
-  if (isRankBranchCollegePredictorQuery(t, original) || isRankOnlyCollegePredictorQuery(t, original)) {
-    return {
-      intent: 'college_predictor',
-      confidence: 'high',
-      intentReason: isRankBranchCollegePredictorQuery(t, original)
-        ? 'rank_branch_college_query'
-        : 'rank_only_college_query',
-    };
-  }
+  // Predictors (after ICE session/entry) — medium/low CP entry that missed the early gate.
   {
     const cpEntry = resolveCollegePredictorEntry({
       englishText: t,

@@ -106,7 +106,8 @@ function parsePositiveIntRank(text) {
   }
 
   const rankMatch =
-    normalized.match(/\brank\s*(?:is|:|=|-)?\s*(\d{1,9})\b/i) ||
+    normalized.match(/\brank\s*(?:is|:|=|-|in|of|around|near)?\s*(\d{1,9})\b/i) ||
+    normalized.match(/\b(?:i\s+got|got)\s+rank\s+(?:in\s+|of\s+)?(\d{1,9})\b/i) ||
     normalized.match(/\b(\d{1,9})\s*rank\b/i) ||
     normalized.match(/\bAIR\s*[#:]?\s*(\d{1,9})\b/i) ||
     normalized.match(/\b(?:got|scored|secured|i\s+got)\s+(\d{1,9})\b/i) ||

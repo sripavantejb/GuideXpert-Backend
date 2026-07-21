@@ -42,16 +42,33 @@ function shortCategoryHint(ctx) {
   return `${labels.join(', ')}${more}`;
 }
 
-function buildConversationalWelcome() {
+function buildConversationalWelcome(ctx = {}) {
+  const rank = ctx && ctx.rank != null ? Number(ctx.rank) : null;
+  if (Number.isFinite(rank) && rank >= 1) {
+    return clampReplyLines(
+      [
+        'Absolutely! I can help you predict colleges.',
+        `I already have your rank (${rank}).`,
+        'Which entrance exam is this rank from?',
+        '',
+        `e.g. ${examExamples()}`,
+      ].join('\n')
+    );
+  }
   return clampReplyLines(
-    ['Sure!', 'Which entrance exam did you write?', '', `e.g. ${examExamples()}`].join('\n')
+    [
+      'Sure! I can help you predict colleges.',
+      'Which entrance exam did you write?',
+      '',
+      `e.g. ${examExamples()}`,
+    ].join('\n')
   );
 }
 
 function buildQuestionForSlot(slot, ctx) {
   switch (slot) {
     case SLOT_EXAM:
-      return buildConversationalWelcome();
+      return buildConversationalWelcome(ctx || {});
 
     case SLOT_RANK:
       return clampReplyLines(['Thanks!', "What's your rank?", '', 'Example: 18453'].join('\n'));

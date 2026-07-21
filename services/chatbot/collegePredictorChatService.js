@@ -510,7 +510,7 @@ function isCounselingBridgeIntent(text) {
 function appendCounselingAdvance(reply) {
   const base = String(reply || '').trim();
   if (/what matters most/i.test(base)) return base;
-  return `${base}\n\nWant to compare the best options for what matters most to you?`;
+  return `${base}\n\nI've shortlisted colleges based on your rank. Want to compare the best options for what matters most to you?`;
 }
 
 function seedCareerContextFromPredictor(ctx = {}) {
@@ -898,7 +898,7 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
     ) {
       logEventFn('predictor_journey_event', { eventType: 'prediction_started' });
       return {
-        reply: buildConversationalWelcome(),
+        reply: buildConversationalWelcome(merged),
         context: { ...merged, step: 'exam', conversational: true, conversationOwner: 'COLLEGE_PREDICTOR' },
       };
     }
@@ -935,7 +935,7 @@ async function handleCollegePredictorMessage(text, context = {}, opts = {}) {
       opts.isNewEntry &&
       nextSlot === SLOT_EXAM &&
       (isNeutralPredictorEntry(text) || isMainMenuEntryDigit(text))
-        ? buildConversationalWelcome()
+        ? buildConversationalWelcome(ctx)
         : buildQuestionForSlot(nextSlot, ctx);
     if (opts.isNewEntry) {
       logEventFn('predictor_journey_event', { eventType: 'prediction_started' });
