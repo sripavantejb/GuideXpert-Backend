@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { login, loginWithPhone, getAdminLeads, getLeadById, updateLeadNotes, updateLeadSlotBooking, updateLeadSlotByPhone, getAdminStats, exportLeads, getSlotConfigs, getSlotsForDate, updateSlotConfig, getIitSlotConfigs, updateIitSlotConfig, getIitSlotOverrides, setIitSlotOverride, getIitSlotBookingCounts, getSlotBookingCounts, getSlotOverrides, setSlotOverride, getAssessmentSubmissions, getAssessment2Submissions, getAssessment3Submissions, getAssessmentSubmissionById, getAssessment2SubmissionById, getAssessment3SubmissionById, getAssessment4Submissions, getAssessment4SubmissionById, getAssessment5Submissions, getAssessment5SubmissionById, getMissingLeads, getIitCounsellingSubmissions, getIitCounsellingSubmissionById, getIitCounsellingVisitAnalytics, getIitCounsellingUtmAnalytics, getCounsellorSupportRequests } = require('../controllers/adminController');
+const { login, loginWithPhone, getAdminLeads, getLeadById, updateLeadNotes, updateLeadSlotBooking, updateLeadSlotByPhone, getAdminStats, exportLeads, getSlotConfigs, getSlotsForDate, updateSlotConfig, getIitSlotConfigs, updateIitSlotConfig, getIitSlotOverrides, setIitSlotOverride, getIitSlotBookingCounts, getSlotBookingCounts, getSlotOverrides, setSlotOverride, getAssessmentSubmissions, getAssessment2Submissions, getAssessment3Submissions, getAssessmentSubmissionById, getAssessment2SubmissionById, getAssessment3SubmissionById, getAssessment4Submissions, getAssessment4SubmissionById, getAssessment5Submissions, getAssessment5SubmissionById, getMissingLeads, getIitCounsellingSubmissions, getIitCounsellingSubmissionById, getIitCounsellingVisitAnalytics, getIitCounsellingUtmAnalytics, getCounsellorSupportRequests, getStudentLogins } = require('../controllers/adminController');
 const {
   listIitCounsellingSavedUtmLinks,
   createIitCounsellingSavedUtmLink,
@@ -128,6 +128,7 @@ router.patch('/admins/:id/password', requireAdmin, requireSuperAdmin, resetAdmin
 router.patch('/admins/:id', requireAdmin, requireSuperAdmin, updateAdmin);
 router.patch('/me/password', requireAdmin, changeMyPassword);
 router.get('/leads', requireAdmin, getAdminLeads);
+router.get('/student-logins', requireAdmin, getStudentLogins);
 router.get('/leads/:id', requireAdmin, getLeadById);
 router.patch('/leads/:id', requireAdmin, updateLeadNotes);
 router.patch('/leads/:id/slot', requireAdmin, updateLeadSlotBooking);

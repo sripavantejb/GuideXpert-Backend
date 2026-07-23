@@ -514,6 +514,106 @@ exports.verifyOtp = async (req, res) => {
       }
     }
 
+    // Student workspace login: any verified phone can sign in (open OTP login).
+    const studentLogin = req.body?.studentLogin === true;
+    if (studentLogin) {
+      const studentSecret =
+        process.env.STUDENT_JWT_SECRET ||
+        process.env.WEBINAR_JWT_SECRET ||
+        process.env.COUNSELLOR_JWT_SECRET ||
+        process.env.JWT_SECRET ||
+        '';
+      if (!studentSecret || !String(studentSecret).trim()) {
+        console.error('[verifyOtp] Student JWT secret missing. Set STUDENT_JWT_SECRET or JWT_SECRET in env.');
+        otpStore.removeVerified(p);
+        return res.status(500).json({
+          success: false,
+          message: 'Student login is not configured. Please contact support.',
+        });
+      }
+      try {
+        const nameRaw = req.body?.fullName ?? req.body?.name ?? '';
+        const fullName =
+          typeof nameRaw === 'string' && nameRaw.trim().length >= 2
+            ? nameRaw.trim().slice(0, 100)
+            : 'Student';
+
+        otpStore.removeVerified(p);
+
+        await WebsiteLogin.create({
+          phone: p,
+          fullName,
+          source: 'student_workspace',
+          loggedInAt: new Date(),
+        });
+
+        const existingLead = await FormSubmission.findOne({ phone: p }).lean();
+        if (!existingLead) {
+          await FormSubmission.create({
+            fullName,
+            phone: p,
+            occupation: 'Student Login',
+            currentStep: 2,
+            applicationStatus: 'in_progress',
+            step1Data: {
+              fullName,
+              whatsappNumber: p,
+              occupation: 'Student Login',
+              step1CompletedAt: new Date(),
+            },
+            step2Data: {
+              otpVerified: true,
+              step2CompletedAt: new Date(),
+            },
+            utm_source: 'guidexpert',
+            utm_medium: 'students_workspace',
+            utm_campaign: 'student_login',
+            utm_content: 'student_workspace_login',
+          });
+        } else {
+          const setPayload = {
+            'step2Data.otpVerified': true,
+            'step2Data.step2CompletedAt': new Date(),
+            updatedAt: new Date(),
+          };
+          if (!existingLead.fullName || existingLead.fullName === 'Student') {
+            setPayload.fullName = fullName;
+          }
+          if (!existingLead.utm_content) {
+            setPayload.utm_source = 'guidexpert';
+            setPayload.utm_medium = 'students_workspace';
+            setPayload.utm_campaign = 'student_login';
+            setPayload.utm_content = 'student_workspace_login';
+          }
+          await FormSubmission.updateOne({ phone: p }, { $set: setPayload });
+        }
+
+        const studentExpiresIn = process.env.STUDENT_JWT_EXPIRES_IN || '30d';
+        const token = jwt.sign(
+          { studentPhone: p, role: 'student', fullName },
+          studentSecret.trim(),
+          { expiresIn: studentExpiresIn }
+        );
+        const user = { name: fullName, phone: p, role: 'student' };
+        return res.status(200).json({
+          success: true,
+          message: 'OTP verified',
+          verified: true,
+          allowedAccess: true,
+          token,
+          user,
+        });
+      } catch (err) {
+        console.error('[verifyOtp] studentLogin failed:', err.message, err.stack);
+        otpStore.removeVerified(p);
+        const safeMessage =
+          process.env.NODE_ENV === 'production'
+            ? 'Login failed. Please try again or contact support.'
+            : err.message || 'Login failed. Please try again or contact support.';
+        return res.status(500).json({ success: false, message: safeMessage });
+      }
+    }
+
     return res.status(200).json({ success: true, message: 'OTP verified', verified: true });
   } catch (err) {
     console.error('[verifyOtp]', err.message, err.stack);

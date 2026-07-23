@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const Admin = require('../models/Admin');
 const FormSubmission = require('../models/FormSubmission');
+const WebsiteLogin = require('../models/WebsiteLogin');
 const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
 const { CounsellorSupportRequest } = require('../models/CounsellorSupportRequest');
 const AssessmentSubmission = require('../models/AssessmentSubmission');
@@ -2570,6 +2571,96 @@ exports.getMissingLeads = async (req, res) => {
     });
   } catch (error) {
     console.error('[getMissingLeads] Error:', error.message || error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * GET /api/admin/student-logins
+ * Lists student workspace login events (WebsiteLogin) with optional linked FormSubmission user data.
+ */
+exports.getStudentLogins = async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(ADMIN_LIST_MAX_LIMIT, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const q = (req.query.q || '').trim();
+    const fromStr = (req.query.from || '').trim();
+    const toStr = (req.query.to || '').trim();
+    const source = (req.query.source || '').trim();
+
+    const filter = {};
+    if (source) filter.source = source;
+
+    const fromDate = fromStr ? new Date(`${fromStr}T00:00:00.000Z`) : null;
+    const toDate = toStr ? new Date(`${toStr}T23:59:59.999Z`) : null;
+    if (fromDate && !Number.isNaN(fromDate.getTime())) {
+      filter.loggedInAt = { ...(filter.loggedInAt || {}), $gte: fromDate };
+    }
+    if (toDate && !Number.isNaN(toDate.getTime())) {
+      filter.loggedInAt = { ...(filter.loggedInAt || {}), $lte: toDate };
+    }
+    if (q) {
+      const digits = q.replace(/\D/g, '');
+      filter.$or = [
+        { fullName: { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
+        ...(digits ? [{ phone: { $regex: digits.slice(-10) } }] : []),
+      ];
+    }
+
+    const skip = (page - 1) * limit;
+    const [total, logins] = await Promise.all([
+      WebsiteLogin.countDocuments(filter),
+      WebsiteLogin.find(filter).sort({ loggedInAt: -1 }).skip(skip).limit(limit).lean(),
+    ]);
+
+    const phones = [...new Set(logins.map((l) => l.phone).filter(Boolean))];
+    const leads = phones.length
+      ? await FormSubmission.find({ phone: { $in: phones } })
+          .select(
+            'fullName phone occupation utm_source utm_medium utm_campaign utm_content step2Data otpVerified rankPredictorLead collegePredictorLead createdAt updatedAt applicationStatus'
+          )
+          .lean()
+      : [];
+    const leadByPhone = new Map(leads.map((lead) => [lead.phone, lead]));
+
+    const data = logins.map((login) => {
+      const lead = leadByPhone.get(login.phone) || null;
+      return {
+        _id: login._id,
+        phone: login.phone,
+        fullName: login.fullName || lead?.fullName || '',
+        source: login.source || 'student_workspace',
+        loggedInAt: login.loggedInAt,
+        user: lead
+          ? {
+              fullName: lead.fullName,
+              occupation: lead.occupation,
+              applicationStatus: lead.applicationStatus,
+              otpVerified: lead.step2Data?.otpVerified === true,
+              utm_content: lead.utm_content || '',
+              utm_source: lead.utm_source || '',
+              utm_campaign: lead.utm_campaign || '',
+              hasRankPredictor: Boolean(lead.rankPredictorLead),
+              hasCollegePredictor: Boolean(lead.collegePredictorLead),
+              createdAt: lead.createdAt,
+              updatedAt: lead.updatedAt,
+            }
+          : null,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+    });
+  } catch (error) {
+    console.error('[getStudentLogins] Error:', error.message || error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
