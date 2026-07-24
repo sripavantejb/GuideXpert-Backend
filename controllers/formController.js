@@ -657,7 +657,17 @@ exports.saveStep1 = async (req, res) => {
       updatedAt: new Date()
     };
     const utm = getUtmFromBody(req.body);
-    if (utm) Object.assign(setPayload, utm);
+    if (utm) {
+      // Student workspace auth always owns the lead tag so logins/actions show under Student workspace leads
+      if (utm.utm_content === 'student_workspace_login') {
+        Object.assign(setPayload, utm);
+      } else {
+        const existingForUtm = await FormSubmission.findOne({ phone: p })
+          .select('utm_source utm_content')
+          .lean();
+        mergeUtmIfFirstTouch(setPayload, req.body, existingForUtm);
+      }
+    }
 
     const rankPredictorLead = parseRankPredictorLeadFromBody(req.body);
     if (rankPredictorLead) {
@@ -1845,8 +1855,11 @@ exports.saveRankPredictorPrediction = async (req, res) => {
     const isOrganicRank =
       utm === 'organic_rank_predictor' ||
       (typeof occ === 'string' && occ.includes('Rank predictor'));
-    if (!isOrganicRank) {
-      return res.status(403).json({ success: false, message: 'Not an organic rank predictor lead' });
+    const isStudentWorkspace =
+      utm === 'student_workspace_login' ||
+      (typeof occ === 'string' && occ.includes('GuideXpert tools'));
+    if (!isOrganicRank && !isStudentWorkspace) {
+      return res.status(403).json({ success: false, message: 'Not a rank predictor or student workspace lead' });
     }
 
     const existing =

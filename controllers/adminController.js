@@ -345,6 +345,7 @@ function mapLeadToDTO(sub) {
           title: a.title || null,
           summary: a.summary || null,
           examId: a.examId || null,
+          payload: a.payload && typeof a.payload === 'object' ? a.payload : null,
           createdAt: a.createdAt || null,
         }))
       : [],
@@ -1510,6 +1511,7 @@ exports.getAdminLeads = async (req, res) => {
     const q = (req.query.q || '').trim();
     const utm_content = (req.query.utm_content || '').trim();
     const trainingFormFilled = (req.query.trainingFormFilled || '').trim();
+    const activityType = (req.query.activityType || '').trim();
 
     const andConditions = [];
     const fromDate = fromStr ? new Date(`${fromStr}T00:00:00.000Z`) : null;
@@ -1536,6 +1538,22 @@ exports.getAdminLeads = async (req, res) => {
 
     if (utm_content) {
       andConditions.push({ utm_content });
+    }
+    if (activityType) {
+      if (activityType === 'auth') {
+        andConditions.push({
+          'studentActivityHistory.type': { $in: ['login', 'signup'] },
+        });
+      } else if (activityType === 'rank_predictor') {
+        andConditions.push({
+          $or: [
+            { 'studentActivityHistory.type': 'rank_predictor' },
+            { 'rankPredictorLead.examId': { $exists: true, $nin: [null, ''] } },
+          ],
+        });
+      } else {
+        andConditions.push({ 'studentActivityHistory.type': activityType });
+      }
     }
     if (applicationStatus && ['in_progress', 'registered', 'completed'].includes(applicationStatus)) {
       andConditions.push({ applicationStatus });
