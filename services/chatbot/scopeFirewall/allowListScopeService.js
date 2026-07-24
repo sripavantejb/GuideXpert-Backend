@@ -27,7 +27,7 @@ function stripCertNoise(text) {
 }
 
 const ALLOW_LIST_EXTRA_RE =
-  /\b(book(ing)?|session|support|contact|language|telugu|hindi|tamil|kannada|malayalam|marathi|bengali|document|documents|eligibility|cutoff|cutoffs|seat matrix|round analysis|nit|iiit|vit|bits|manipal|srm|keam|eamcet|neet|mains|advanced|percentile|percentiles|niat|nat|new[- ]?age)\b/i;
+  /\b(book(ing)?|session|support|contact|language|telugu|hindi|tamil|kannada|malayalam|marathi|bengali|document|documents|eligibility|cutoff|cutoffs|seat matrix|round analysis|nit|iiit|vit|bits|manipal|srm|keam|eamcet|neet|mains|advanced|percentile|percentiles)\b/i;
 
 function extractBase64Decodings(text) {
   const decodings = [];

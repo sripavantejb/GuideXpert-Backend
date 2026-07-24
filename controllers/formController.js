@@ -25,6 +25,7 @@ const { isOsviConfigured } = require('../utils/osviService');
 const { getOsviEnabled, getOsviAbandonedDelayMs } = require('../utils/appSettings');
 const { listExams } = require('../services/rankPredictorService');
 const { buildSlotNotificationVariables } = require('../utils/slotNotificationFormatters');
+const { recordStudentLiveActivity } = require('./studentLiveActivityController');
 const gupshupService = require('../services/gupshupService');
 const { safeSendWhatsApp } = require('../utils/safeSendWhatsApp');
 const { computeIitCounsellingSlotInstantUtc } = require('../utils/iitCounsellingSlotUtc');
@@ -57,6 +58,47 @@ function parseRankPredictorLeadFromBody(body) {
     score,
     ...(difficulty ? { difficulty } : {}),
     capturedAt: new Date(),
+  };
+}
+
+/** Optional body.studentProfile — age / studying / city from student workspace signup. */
+function parseStudentProfileFromBody(body) {
+  const raw = body?.studentProfile;
+  if (!raw || typeof raw !== 'object') return null;
+  const out = { updatedAt: new Date() };
+  let has = false;
+  if (raw.age != null && raw.age !== '') {
+    const age = Number(raw.age);
+    if (Number.isFinite(age) && age >= 10 && age <= 80) {
+      out.age = age;
+      has = true;
+    }
+  }
+  if (typeof raw.currentlyStudying === 'string' && raw.currentlyStudying.trim()) {
+    out.currentlyStudying = raw.currentlyStudying.trim().slice(0, 64);
+    has = true;
+  }
+  if (typeof raw.city === 'string' && raw.city.trim()) {
+    out.city = raw.city.trim().slice(0, 120);
+    has = true;
+  }
+  return has ? out : null;
+}
+
+function parseStudentActivityFromBody(body) {
+  const raw = body?.activity || body;
+  if (!raw || typeof raw !== 'object') return null;
+  const type = typeof raw.type === 'string' ? raw.type.trim().slice(0, 64) : '';
+  const title = typeof raw.title === 'string' ? raw.title.trim().slice(0, 200) : '';
+  if (!type || !title) return null;
+  return {
+    type,
+    tool: typeof raw.tool === 'string' ? raw.tool.trim().slice(0, 120) : type,
+    title,
+    summary: typeof raw.summary === 'string' ? raw.summary.trim().slice(0, 500) : '',
+    examId: typeof raw.examId === 'string' ? raw.examId.trim().slice(0, 64) : undefined,
+    payload: raw.payload && typeof raw.payload === 'object' ? raw.payload : undefined,
+    createdAt: new Date(),
   };
 }
 
@@ -514,106 +556,6 @@ exports.verifyOtp = async (req, res) => {
       }
     }
 
-    // Student workspace login: any verified phone can sign in (open OTP login).
-    const studentLogin = req.body?.studentLogin === true;
-    if (studentLogin) {
-      const studentSecret =
-        process.env.STUDENT_JWT_SECRET ||
-        process.env.WEBINAR_JWT_SECRET ||
-        process.env.COUNSELLOR_JWT_SECRET ||
-        process.env.JWT_SECRET ||
-        '';
-      if (!studentSecret || !String(studentSecret).trim()) {
-        console.error('[verifyOtp] Student JWT secret missing. Set STUDENT_JWT_SECRET or JWT_SECRET in env.');
-        otpStore.removeVerified(p);
-        return res.status(500).json({
-          success: false,
-          message: 'Student login is not configured. Please contact support.',
-        });
-      }
-      try {
-        const nameRaw = req.body?.fullName ?? req.body?.name ?? '';
-        const fullName =
-          typeof nameRaw === 'string' && nameRaw.trim().length >= 2
-            ? nameRaw.trim().slice(0, 100)
-            : 'Student';
-
-        otpStore.removeVerified(p);
-
-        await WebsiteLogin.create({
-          phone: p,
-          fullName,
-          source: 'student_workspace',
-          loggedInAt: new Date(),
-        });
-
-        const existingLead = await FormSubmission.findOne({ phone: p }).lean();
-        if (!existingLead) {
-          await FormSubmission.create({
-            fullName,
-            phone: p,
-            occupation: 'Student Login',
-            currentStep: 2,
-            applicationStatus: 'in_progress',
-            step1Data: {
-              fullName,
-              whatsappNumber: p,
-              occupation: 'Student Login',
-              step1CompletedAt: new Date(),
-            },
-            step2Data: {
-              otpVerified: true,
-              step2CompletedAt: new Date(),
-            },
-            utm_source: 'guidexpert',
-            utm_medium: 'students_workspace',
-            utm_campaign: 'student_login',
-            utm_content: 'student_workspace_login',
-          });
-        } else {
-          const setPayload = {
-            'step2Data.otpVerified': true,
-            'step2Data.step2CompletedAt': new Date(),
-            updatedAt: new Date(),
-          };
-          if (!existingLead.fullName || existingLead.fullName === 'Student') {
-            setPayload.fullName = fullName;
-          }
-          if (!existingLead.utm_content) {
-            setPayload.utm_source = 'guidexpert';
-            setPayload.utm_medium = 'students_workspace';
-            setPayload.utm_campaign = 'student_login';
-            setPayload.utm_content = 'student_workspace_login';
-          }
-          await FormSubmission.updateOne({ phone: p }, { $set: setPayload });
-        }
-
-        const studentExpiresIn = process.env.STUDENT_JWT_EXPIRES_IN || '30d';
-        const token = jwt.sign(
-          { studentPhone: p, role: 'student', fullName },
-          studentSecret.trim(),
-          { expiresIn: studentExpiresIn }
-        );
-        const user = { name: fullName, phone: p, role: 'student' };
-        return res.status(200).json({
-          success: true,
-          message: 'OTP verified',
-          verified: true,
-          allowedAccess: true,
-          token,
-          user,
-        });
-      } catch (err) {
-        console.error('[verifyOtp] studentLogin failed:', err.message, err.stack);
-        otpStore.removeVerified(p);
-        const safeMessage =
-          process.env.NODE_ENV === 'production'
-            ? 'Login failed. Please try again or contact support.'
-            : err.message || 'Login failed. Please try again or contact support.';
-        return res.status(500).json({ success: false, message: safeMessage });
-      }
-    }
-
     return res.status(200).json({ success: true, message: 'OTP verified', verified: true });
   } catch (err) {
     console.error('[verifyOtp]', err.message, err.stack);
@@ -722,7 +664,36 @@ exports.saveStep1 = async (req, res) => {
       setPayload.rankPredictorLead = rankPredictorLead;
     }
 
-    console.log('[saveStep1] Attempting to save:', { phone: p, fullName: fullName.trim(), occupation: occupation.trim() });
+    const studentProfile = parseStudentProfileFromBody(req.body);
+    if (studentProfile) {
+      setPayload.studentProfile = studentProfile;
+    }
+
+    const loginOnly = req.body?.loginOnly === true;
+    const existing = loginOnly ? await FormSubmission.findOne({ phone: p }).lean() : null;
+    if (existing) {
+      // Login OTP path: keep signup name / occupation / profile unless new profile sent
+      if (existing.fullName) setPayload.fullName = existing.fullName;
+      if (existing.occupation) setPayload.occupation = existing.occupation;
+      if (existing.step1Data && typeof existing.step1Data === 'object') {
+        setPayload.step1Data = {
+          ...existing.step1Data,
+          whatsappNumber: p,
+          step1CompletedAt: existing.step1Data.step1CompletedAt || new Date(),
+        };
+      }
+      if (!studentProfile && existing.studentProfile) {
+        delete setPayload.studentProfile;
+      }
+      if (existing.applicationStatus) {
+        setPayload.applicationStatus = existing.applicationStatus;
+      }
+      if (existing.currentStep) {
+        setPayload.currentStep = Math.max(existing.currentStep, 1);
+      }
+    }
+
+    console.log('[saveStep1] Attempting to save:', { phone: p, fullName: setPayload.fullName, occupation: setPayload.occupation });
 
     const result = await FormSubmission.findOneAndUpdate(
       { phone: p },
@@ -1911,9 +1882,88 @@ exports.saveRankPredictorPrediction = async (req, res) => {
       { phone: p },
       { $set: { rankPredictorLead: next, updatedAt: new Date() } }
     );
+
+    recordStudentLiveActivity({
+      fullName: sub.fullName,
+      activity: {
+        type: 'rank_predictor',
+        tool: 'Rank Predictor',
+        title: 'Used Rank Predictor',
+        examId: examIdStr,
+      },
+    }).catch(() => {});
+
     return res.status(200).json({ success: true, message: 'Prediction saved' });
   } catch (err) {
     console.error('[saveRankPredictorPrediction]', err);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * Append student workspace tool activity for admin lead tracking.
+ * Body: { phone, activity: { type, tool, title, summary?, examId?, payload? }, studentProfile? }
+ */
+exports.saveStudentActivity = async (req, res) => {
+  try {
+    const phone = req.body?.phone || req.body?.whatsappNumber;
+    if (!phone || typeof phone !== 'string') {
+      return res.status(400).json({ success: false, message: 'phone is required' });
+    }
+    const p = normalizePhone(phone);
+    if (!/^\d{10}$/.test(p)) {
+      return res.status(400).json({ success: false, message: 'Valid 10-digit Indian phone required' });
+    }
+
+    const activity = parseStudentActivityFromBody(req.body);
+    if (!activity) {
+      return res.status(400).json({ success: false, message: 'activity type and title are required' });
+    }
+
+    const sub = await FormSubmission.findOne({ phone: p });
+    if (!sub) {
+      return res.status(404).json({
+        success: false,
+        message: 'Lead not found. Complete signup / OTP first.',
+      });
+    }
+
+    const update = {
+      $push: {
+        studentActivityHistory: {
+          $each: [activity],
+          $position: 0,
+          $slice: 100,
+        },
+      },
+      $set: { updatedAt: new Date() },
+    };
+
+    const studentProfile = parseStudentProfileFromBody(req.body);
+    if (studentProfile) {
+      update.$set.studentProfile = {
+        ...(sub.studentProfile && typeof sub.studentProfile === 'object'
+          ? {
+              age: sub.studentProfile.age,
+              currentlyStudying: sub.studentProfile.currentlyStudying,
+              city: sub.studentProfile.city,
+            }
+          : {}),
+        ...studentProfile,
+      };
+    }
+
+    await FormSubmission.updateOne({ phone: p }, update);
+
+    // Public hero live toast (name + tool only — no results)
+    recordStudentLiveActivity({
+      fullName: sub.fullName,
+      activity,
+    }).catch(() => {});
+
+    return res.status(200).json({ success: true, message: 'Activity saved' });
+  } catch (err) {
+    console.error('[saveStudentActivity]', err);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };

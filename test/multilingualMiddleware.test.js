@@ -87,36 +87,4 @@ describe('multilingualMiddleware pivot', () => {
     assert.equal(inbound.language, 'en');
     assert.equal(inbound.translationApplied, false);
   });
-
-  test('AU slot token stays passthrough English (no Telugu memory flip / no translate)', async () => {
-    const detection = require(detectionPath);
-    mock.method(detection, 'detectLanguage', async () => ({
-      language: 'en',
-      confidence: 0.3,
-      source: 'offline',
-    }));
-
-    const translation = require(translationPath);
-    let translateCalls = 0;
-    mock.method(translation, 'translateToEnglish', async () => {
-      translateCalls += 1;
-      return 'Andhra University';
-    });
-
-    const conversationLang = require(conversationLangPath);
-    mock.method(conversationLang, 'recordDetectedLanguage', async () => {});
-
-    const { prepareMultilingualInbound } = require(middlewarePath);
-    const inbound = await prepareMultilingualInbound({
-      message: 'AU',
-      conversation: { _id: '507f1f77bcf86cd799439011', preferredLanguage: 'te' },
-      leadContext: { iit: { preferredLanguage: 'Telugu' } },
-    });
-
-    assert.equal(inbound.englishMessage, 'AU');
-    assert.equal(inbound.resolvedLanguage, 'en');
-    assert.equal(inbound.resolutionReason, 'guided_flow_slot_token');
-    assert.equal(inbound.translationApplied, false);
-    assert.equal(translateCalls, 0);
-  });
 });

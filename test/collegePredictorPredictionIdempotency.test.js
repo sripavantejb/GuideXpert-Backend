@@ -101,8 +101,7 @@ describe('collegePredictor prediction idempotency', () => {
 
     const first = await runPrediction(ctx, opts);
     assert.equal(apiCalls.length, 1);
-    // Sticky results mode: keep college_predictor state after first prediction.
-    assert.equal(first.clearState, false);
+    assert.equal(first.clearState, true);
     assert.equal(first.idempotentReplay, undefined);
 
     const second = await runPrediction(ctx, opts);

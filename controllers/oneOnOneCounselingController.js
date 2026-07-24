@@ -26,6 +26,7 @@ const {
   GUPSHUP_TEMPLATE_ONE_ON_ONE_CONFIRM,
 } = require('../utils/oneOnOneCounselingWhatsApp');
 const { getISTDayRangeFromString } = require('../utils/dateHelpers');
+const { recordStudentLiveActivity } = require('./studentLiveActivityController');
 
 function to10Digits(val) {
   if (val == null) return '';
@@ -464,6 +465,16 @@ exports.saveOneOnOneSection2 = async (req, res) => {
 
     const whatsappSubmit = await dispatchOneOnOneSubmitWhatsApp(doc);
 
+    recordStudentLiveActivity({
+      fullName: doc.studentName,
+      activity: {
+        type: 'counselling_booking',
+        tool: 'IITian counselling session',
+        title: 'Booked counselling session',
+        action: 'booked',
+      },
+    }).catch(() => {});
+
     return res.status(200).json({
       success: true,
       message: 'Submitted successfully',
@@ -538,6 +549,16 @@ exports.saveOneOnOneSection3 = async (req, res) => {
 
     const whatsappSubmit = await dispatchOneOnOneSubmitWhatsApp(doc);
 
+    recordStudentLiveActivity({
+      fullName: doc.studentName,
+      activity: {
+        type: 'counselling_booking',
+        tool: 'IITian counselling session',
+        title: 'Booked counselling session',
+        action: 'booked',
+      },
+    }).catch(() => {});
+
     return res.status(200).json({
       success: true,
       message: 'Submitted successfully',
@@ -571,6 +592,16 @@ exports.submitOneOnOneCounselingLead = async (req, res) => {
     await linkOneOnOneLeadToVisit(doc, req.body || {});
 
     const whatsappSubmit = await dispatchOneOnOneSubmitWhatsApp(doc);
+
+    recordStudentLiveActivity({
+      fullName: doc.studentName,
+      activity: {
+        type: 'counselling_booking',
+        tool: 'IITian counselling session',
+        title: 'Booked counselling session',
+        action: 'booked',
+      },
+    }).catch(() => {});
 
     return res.status(201).json({
       success: true,
@@ -850,5 +881,46 @@ exports.patchOneOnOneCounselingLead = async (req, res) => {
   } catch (err) {
     console.error('[patchOneOnOneCounselingLead]', err);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+/**
+ * GET /api/one-on-one-counseling/my-bookings?phone=
+ * Student profile / reminders — counselling bookings for this mobile (no sensitive parent fields).
+ */
+exports.listMyOneOnOneBookings = async (req, res) => {
+  try {
+    const phoneRaw = req.query?.phone || req.body?.phone;
+    const phone = to10Digits(phoneRaw);
+    if (!INDIAN_MOBILE_REGEX.test(phone)) {
+      return res.status(400).json({ success: false, message: 'Valid 10-digit phone is required' });
+    }
+
+    const leads = await OneOnOneCounselingLead.find({
+      mobileNumber: phone,
+      formCompleted: true,
+    })
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean();
+
+    const items = leads.map((doc) => ({
+      id: doc._id.toString(),
+      studentName: doc.studentName || '',
+      preferredTimeSlot: doc.preferredTimeSlot || '',
+      preferredTimeSlotDate: doc.preferredTimeSlotDate || '',
+      preferredLanguage: doc.preferredLanguage || '',
+      interestedBranch: doc.interestedBranch || '',
+      bookingStatus: doc.bookingStatus || 'Not Booked',
+      bookingConfirmed: !!doc.bookingConfirmed,
+      leadStatus: doc.leadStatus || 'New Lead',
+      createdAt: doc.createdAt,
+      bookingConfirmedAt: doc.bookingConfirmedAt || null,
+    }));
+
+    return res.json({ success: true, data: { items } });
+  } catch (err) {
+    console.error('[listMyOneOnOneBookings]', err);
+    return res.status(500).json({ success: false, message: 'Failed to load bookings' });
   }
 };

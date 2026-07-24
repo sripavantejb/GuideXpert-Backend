@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { login, loginWithPhone, getAdminLeads, getLeadById, updateLeadNotes, updateLeadSlotBooking, updateLeadSlotByPhone, getAdminStats, exportLeads, getSlotConfigs, getSlotsForDate, updateSlotConfig, getIitSlotConfigs, updateIitSlotConfig, getIitSlotOverrides, setIitSlotOverride, getIitSlotBookingCounts, getSlotBookingCounts, getSlotOverrides, setSlotOverride, getAssessmentSubmissions, getAssessment2Submissions, getAssessment3Submissions, getAssessmentSubmissionById, getAssessment2SubmissionById, getAssessment3SubmissionById, getAssessment4Submissions, getAssessment4SubmissionById, getAssessment5Submissions, getAssessment5SubmissionById, getMissingLeads, getIitCounsellingSubmissions, getIitCounsellingSubmissionById, getIitCounsellingVisitAnalytics, getIitCounsellingUtmAnalytics, getCounsellorSupportRequests, getStudentLogins } = require('../controllers/adminController');
+const { login, loginWithPhone, getAdminLeads, getLeadById, updateLeadNotes, updateLeadSlotBooking, updateLeadSlotByPhone, getAdminStats, exportLeads, getSlotConfigs, getSlotsForDate, updateSlotConfig, getIitSlotConfigs, updateIitSlotConfig, getIitSlotOverrides, setIitSlotOverride, getIitSlotBookingCounts, getSlotBookingCounts, getSlotOverrides, setSlotOverride, getAssessmentSubmissions, getAssessment2Submissions, getAssessment3Submissions, getAssessmentSubmissionById, getAssessment2SubmissionById, getAssessment3SubmissionById, getAssessment4Submissions, getAssessment4SubmissionById, getAssessment5Submissions, getAssessment5SubmissionById, getMissingLeads, getIitCounsellingSubmissions, getIitCounsellingSubmissionById, getIitCounsellingVisitAnalytics, getIitCounsellingUtmAnalytics, getCounsellorSupportRequests } = require('../controllers/adminController');
 const {
   listIitCounsellingSavedUtmLinks,
   createIitCounsellingSavedUtmLink,
@@ -56,6 +56,24 @@ const {
   adminUnpublish,
   adminAnalytics,
 } = require('../controllers/announcementController');
+const {
+  adminList: studentUpdatesAdminList,
+  adminCreate: studentUpdatesAdminCreate,
+  adminGetOne: studentUpdatesAdminGetOne,
+  adminUpdate: studentUpdatesAdminUpdate,
+  adminDelete: studentUpdatesAdminDelete,
+  adminPublish: studentUpdatesAdminPublish,
+  adminUnpublish: studentUpdatesAdminUnpublish,
+} = require('../controllers/studentWorkspaceUpdateController');
+const {
+  adminList: studentTestimonialsAdminList,
+  adminCreate: studentTestimonialsAdminCreate,
+  adminGetOne: studentTestimonialsAdminGetOne,
+  adminUpdate: studentTestimonialsAdminUpdate,
+  adminDelete: studentTestimonialsAdminDelete,
+  adminPublish: studentTestimonialsAdminPublish,
+  adminUnpublish: studentTestimonialsAdminUnpublish,
+} = require('../controllers/studentTestimonialController');
 const requireAdmin = require('../middleware/requireAdmin');
 const requireSuperAdmin = require('../middleware/requireSuperAdmin');
 const requireOsviAdminToken = require('../middleware/requireOsviAdminToken');
@@ -128,7 +146,6 @@ router.patch('/admins/:id/password', requireAdmin, requireSuperAdmin, resetAdmin
 router.patch('/admins/:id', requireAdmin, requireSuperAdmin, updateAdmin);
 router.patch('/me/password', requireAdmin, changeMyPassword);
 router.get('/leads', requireAdmin, getAdminLeads);
-router.get('/student-logins', requireAdmin, getStudentLogins);
 router.get('/leads/:id', requireAdmin, getLeadById);
 router.patch('/leads/:id', requireAdmin, updateLeadNotes);
 router.patch('/leads/:id/slot', requireAdmin, updateLeadSlotBooking);
@@ -252,6 +269,22 @@ router.patch('/announcements/:id', requireAdmin, adminUpdate);
 router.delete('/announcements/:id', requireAdmin, adminDelete);
 router.post('/announcements/:id/publish', requireAdmin, adminPublish);
 router.post('/announcements/:id/unpublish', requireAdmin, adminUnpublish);
+
+router.get('/student-workspace-updates', requireAdmin, studentUpdatesAdminList);
+router.post('/student-workspace-updates', requireAdmin, studentUpdatesAdminCreate);
+router.get('/student-workspace-updates/:id', requireAdmin, studentUpdatesAdminGetOne);
+router.patch('/student-workspace-updates/:id', requireAdmin, studentUpdatesAdminUpdate);
+router.delete('/student-workspace-updates/:id', requireAdmin, studentUpdatesAdminDelete);
+router.post('/student-workspace-updates/:id/publish', requireAdmin, studentUpdatesAdminPublish);
+router.post('/student-workspace-updates/:id/unpublish', requireAdmin, studentUpdatesAdminUnpublish);
+
+router.get('/student-testimonials', requireAdmin, studentTestimonialsAdminList);
+router.post('/student-testimonials', requireAdmin, studentTestimonialsAdminCreate);
+router.get('/student-testimonials/:id', requireAdmin, studentTestimonialsAdminGetOne);
+router.patch('/student-testimonials/:id', requireAdmin, studentTestimonialsAdminUpdate);
+router.delete('/student-testimonials/:id', requireAdmin, studentTestimonialsAdminDelete);
+router.post('/student-testimonials/:id/publish', requireAdmin, studentTestimonialsAdminPublish);
+router.post('/student-testimonials/:id/unpublish', requireAdmin, studentTestimonialsAdminUnpublish);
 
 router.get('/posters', requireAdmin, listPosters);
 router.post('/posters', requireAdmin, createPoster);

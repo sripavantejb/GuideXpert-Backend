@@ -1,36 +1,22 @@
 const mongoose = require('mongoose');
 
 /**
- * Logs student (and external) workspace logins.
- * Phone is required; name/source are optional enrichment for admin views.
+ * Logs phone numbers of users who log in on an external website.
+ * Only phone is stored; no OTP or other PII.
  */
 const websiteLoginSchema = new mongoose.Schema({
   phone: {
     type: String,
     required: true,
     trim: true,
-    match: [/^\d{10}$/, 'Phone must be 10 digits'],
-  },
-  fullName: {
-    type: String,
-    trim: true,
-    default: '',
-    maxlength: 200,
-  },
-  source: {
-    type: String,
-    trim: true,
-    default: 'student_workspace',
-    maxlength: 80,
+    match: [/^\d{10}$/, 'Phone must be 10 digits']
   },
   loggedInAt: {
     type: Date,
-    default: Date.now,
-  },
+    default: Date.now
+  }
 });
 
 websiteLoginSchema.index({ phone: 1, loggedInAt: -1 });
-websiteLoginSchema.index({ loggedInAt: -1 });
-websiteLoginSchema.index({ source: 1, loggedInAt: -1 });
 
 module.exports = mongoose.model('WebsiteLogin', websiteLoginSchema);

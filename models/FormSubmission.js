@@ -219,6 +219,25 @@ const formSubmissionSchema = new mongoose.Schema({
     predictionMessage: { type: String, trim: true, maxlength: 500 },
     predictedAt: { type: Date },
   },
+  /** Student workspace signup profile (age / studying / city) — admin Leads */
+  studentProfile: {
+    age: { type: Number, min: 10, max: 80 },
+    currentlyStudying: { type: String, trim: true, maxlength: 64 },
+    city: { type: String, trim: true, maxlength: 120 },
+    updatedAt: { type: Date },
+  },
+  /** Tool prediction / activity history from student workspace (capped in controller) */
+  studentActivityHistory: [
+    {
+      type: { type: String, trim: true, maxlength: 64 },
+      tool: { type: String, trim: true, maxlength: 120 },
+      title: { type: String, trim: true, maxlength: 200 },
+      summary: { type: String, trim: true, maxlength: 500 },
+      examId: { type: String, trim: true, maxlength: 64 },
+      payload: { type: mongoose.Schema.Types.Mixed },
+      createdAt: { type: Date, default: Date.now },
+    },
+  ],
   // Admin-only notes (internal follow-up, not shown to applicant)
   adminNotes: { type: String, trim: true, maxlength: 2000 },
   adminNotesUpdatedAt: { type: Date },
