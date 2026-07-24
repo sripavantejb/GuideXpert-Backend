@@ -672,12 +672,23 @@ exports.saveStep1 = async (req, res) => {
     const loginOnly = req.body?.loginOnly === true;
     const existing = loginOnly ? await FormSubmission.findOne({ phone: p }).lean() : null;
     if (existing) {
-      // Login OTP path: keep signup name / occupation / profile unless new profile sent
-      if (existing.fullName) setPayload.fullName = existing.fullName;
+      // Login OTP path: keep a real signup name; replace placeholder "Student" with the name they enter
+      const existingName = String(existing.fullName || '').trim();
+      const incomingName = String(fullName || '').trim();
+      const isPlaceholder = (n) => {
+        const v = String(n || '').trim().toLowerCase();
+        return !v || v === 'student' || v === 'a student' || v === 'user';
+      };
+      if (!isPlaceholder(existingName)) {
+        setPayload.fullName = existingName;
+      } else if (!isPlaceholder(incomingName)) {
+        setPayload.fullName = incomingName;
+      }
       if (existing.occupation) setPayload.occupation = existing.occupation;
       if (existing.step1Data && typeof existing.step1Data === 'object') {
         setPayload.step1Data = {
           ...existing.step1Data,
+          fullName: setPayload.fullName,
           whatsappNumber: p,
           step1CompletedAt: existing.step1Data.step1CompletedAt || new Date(),
         };

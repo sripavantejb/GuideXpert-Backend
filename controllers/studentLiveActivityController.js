@@ -4,10 +4,13 @@ const SKIP_TYPES = new Set(['profile_update', 'login', 'signup']);
 
 function firstDisplayName(fullName) {
   const raw = String(fullName || '').trim();
-  if (!raw) return 'A student';
-  const first = raw.split(/\s+/).filter(Boolean)[0] || 'A student';
+  const lower = raw.toLowerCase();
+  if (!raw || lower === 'student' || lower === 'a student' || lower === 'user') {
+    return 'A student';
+  }
+  const first = raw.split(/\s+/).filter(Boolean)[0] || '';
   const cleaned = first.replace(/[^a-zA-Z.'-]/g, '').slice(0, 24);
-  if (!cleaned) return 'A student';
+  if (!cleaned || cleaned.toLowerCase() === 'student') return 'A student';
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
