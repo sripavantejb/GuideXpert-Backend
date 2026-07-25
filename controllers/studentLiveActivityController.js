@@ -112,6 +112,11 @@ exports.publicLiveFeed = async (req, res) => {
     const sinceMs = Math.min(Math.max(parseInt(req.query.sinceHours, 10) || 48, 1), 168) * 3600_000;
     const since = new Date(Date.now() - sinceMs);
 
+    // Soft-fail when Mongo is down or the collection is not ready yet.
+    if (StudentLiveActivity.db?.readyState !== 1) {
+      return res.json({ success: true, data: { items: [] } });
+    }
+
     const list = await StudentLiveActivity.find({ createdAt: { $gte: since } })
       .sort({ createdAt: -1 })
       .limit(limit)
@@ -139,6 +144,7 @@ exports.publicLiveFeed = async (req, res) => {
     });
   } catch (err) {
     console.error('[StudentLiveActivity] publicLiveFeed:', err);
-    return res.status(500).json({ success: false, message: 'Failed to load live activity' });
+    // Prefer empty feed over breaking the students home page.
+    return res.json({ success: true, data: { items: [] } });
   }
 };
