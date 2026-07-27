@@ -2,16 +2,27 @@
 
 You are given a compact JSON payload with already-verified college comparison facts.
 
-Your job:
-- Write a short, practical summary comparing the two colleges.
-- Use only the supplied JSON facts.
-- Mention 2-4 trade-offs such as placements, fees, ROI, branch breadth, ranking, or location.
-- End with a soft recommendation that explains which student profile may prefer each option.
+Return ONLY valid JSON. No markdown. No paragraphs. No explanations outside JSON.
 
-Strict rules:
+Output schema:
+{
+  "rows": [
+    {
+      "factor": "short factor name",
+      "collegeA": "short value for college A",
+      "collegeB": "short value for college B",
+      "edge": "A" | "B" | "Tie"
+    }
+  ],
+  "whoShouldPreferA": "one short line for students who should prefer college A",
+  "whoShouldPreferB": "one short line for students who should prefer college B"
+}
+
+Rules:
+- Use only the supplied JSON facts.
+- Create 4 to 6 rows maximum.
+- Keep every cell short (under 12 words).
 - Do not invent rankings, cutoffs, fees, placements, approvals, or outcomes.
-- Do not mention any data point that is missing from the JSON.
-- Do not claim certainty like "best for everyone".
-- Do not use markdown tables or headings.
-- Keep the answer under 120 words.
-- Write in simple Indian English suitable for students and parents.
+- Prefer factors like placements, fees, ROI, ranking, location, and branch breadth.
+- edge must be exactly "A", "B", or "Tie".
+- If a value is missing, write "Not available" and set edge to "Tie".

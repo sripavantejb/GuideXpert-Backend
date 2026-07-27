@@ -8,7 +8,7 @@ const {
 
 const provider = new OpenAiCompatibleProvider();
 const DEFAULT_SEARCH_LIMIT = 8;
-const SUMMARY_MAX_TOKENS = Number(process.env.COLLEGE_COMPARISON_SUMMARY_MAX_TOKENS) || 220;
+const SUMMARY_MAX_TOKENS = Number(process.env.COLLEGE_COMPARISON_SUMMARY_MAX_TOKENS) || 350;
 const SUMMARY_TIMEOUT_MS = Number(process.env.COLLEGE_COMPARISON_SUMMARY_TIMEOUT_MS) || 10000;
 
 function normalizeText(value) {
@@ -176,6 +176,9 @@ function buildWinnerSummary(aCollege, bCollege) {
 
 function buildComparisonPayload(aCollege, bCollege) {
   const rows = [
+    textRow('Location', `${aCollege.city}, ${aCollege.state}`, `${bCollege.city}, ${bCollege.state}`),
+    textRow('Ownership', aCollege.ownership, bCollege.ownership),
+    textRow('Approvals', aCollege.approvals.join(' · '), bCollege.approvals.join(' · ')),
     numericRow(
       'Average package',
       aCollege.averagePackageValue,
@@ -196,15 +199,18 @@ function buildComparisonPayload(aCollege, bCollege) {
       'lower'
     ),
     numericRow('ROI score', aCollege.roiScore, bCollege.roiScore, (value) => `${Math.round(value)}/100`),
+    textRow('Ranking signal', aCollege.rankingLabel, bCollege.rankingLabel),
     numericRow(
       'Branch breadth',
       aCollege.branchCount,
       bCollege.branchCount,
       (value) => `${Math.round(value)} core options`
     ),
-    textRow('Ranking signal', aCollege.rankingLabel, bCollege.rankingLabel),
-    textRow('Location', `${aCollege.city}, ${aCollege.state}`, `${bCollege.city}, ${bCollege.state}`),
-    textRow('Approvals', aCollege.approvals.join(' · '), bCollege.approvals.join(' · ')),
+    textRow(
+      'Key highlight',
+      (aCollege.highlights && aCollege.highlights[0]) || 'Not available',
+      (bCollege.highlights && bCollege.highlights[0]) || 'Not available'
+    ),
   ];
 
   return {
@@ -219,6 +225,49 @@ function buildComparisonPayload(aCollege, bCollege) {
   };
 }
 
+function parseSummaryTable(rawText, comparison) {
+  const fallback = {
+    rows: (comparison.rows || []).slice(0, 6).map((row) => ({
+      factor: row.metric,
+      collegeA: row.aValue,
+      collegeB: row.bValue,
+      edge: row.better === 'a' ? 'A' : row.better === 'b' ? 'B' : 'Tie',
+    })),
+    whoShouldPreferA: `Prefer ${comparison.institutionA.name} if outcomes and brand matter more.`,
+    whoShouldPreferB: `Prefer ${comparison.institutionB.name} if cost and ROI matter more.`,
+  };
+
+  try {
+    const start = rawText.indexOf('{');
+    const end = rawText.lastIndexOf('}');
+    if (start < 0 || end <= start) return fallback;
+    const parsed = JSON.parse(rawText.slice(start, end + 1));
+    const rows = Array.isArray(parsed.rows)
+      ? parsed.rows
+          .slice(0, 6)
+          .map((row) => ({
+            factor: String(row.factor || '').trim(),
+            collegeA: String(row.collegeA || '').trim(),
+            collegeB: String(row.collegeB || '').trim(),
+            edge: ['A', 'B', 'Tie'].includes(String(row.edge || '').trim())
+              ? String(row.edge).trim()
+              : 'Tie',
+          }))
+          .filter((row) => row.factor && row.collegeA && row.collegeB)
+      : [];
+    if (!rows.length) return fallback;
+    return {
+      rows,
+      whoShouldPreferA:
+        String(parsed.whoShouldPreferA || '').trim() || fallback.whoShouldPreferA,
+      whoShouldPreferB:
+        String(parsed.whoShouldPreferB || '').trim() || fallback.whoShouldPreferB,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 async function generateComparisonSummary(comparison) {
   const apiKey = String(process.env.LLM_API_KEY || '').trim();
   const baseURL = String(process.env.LLM_BASE_URL || '').trim();
@@ -226,8 +275,30 @@ async function generateComparisonSummary(comparison) {
   if (!apiKey || !baseURL || !model) return null;
 
   const promptPayload = {
-    institutionA: comparison.institutionA,
-    institutionB: comparison.institutionB,
+    institutionA: {
+      name: comparison.institutionA.name,
+      city: comparison.institutionA.city,
+      state: comparison.institutionA.state,
+      ownership: comparison.institutionA.ownership,
+      averagePackageLabel: comparison.institutionA.averagePackageLabel,
+      placementRateLabel: comparison.institutionA.placementRateLabel,
+      annualFeesLabel: comparison.institutionA.annualFeesLabel,
+      roiLabel: comparison.institutionA.roiLabel,
+      rankingLabel: comparison.institutionA.rankingLabel,
+      branchCount: comparison.institutionA.branchCount,
+    },
+    institutionB: {
+      name: comparison.institutionB.name,
+      city: comparison.institutionB.city,
+      state: comparison.institutionB.state,
+      ownership: comparison.institutionB.ownership,
+      averagePackageLabel: comparison.institutionB.averagePackageLabel,
+      placementRateLabel: comparison.institutionB.placementRateLabel,
+      annualFeesLabel: comparison.institutionB.annualFeesLabel,
+      roiLabel: comparison.institutionB.roiLabel,
+      rankingLabel: comparison.institutionB.rankingLabel,
+      branchCount: comparison.institutionB.branchCount,
+    },
     rows: comparison.rows,
     winners: comparison.winners,
   };
@@ -238,13 +309,14 @@ async function generateComparisonSummary(comparison) {
         { role: 'system', content: buildCollegeComparisonSystemPrompt() },
         { role: 'user', content: JSON.stringify(promptPayload) },
       ],
-      temperature: 0.2,
+      temperature: 0.1,
       maxTokens: SUMMARY_MAX_TOKENS,
       timeoutMs: SUMMARY_TIMEOUT_MS,
       maxRetries: 0,
     });
     const text = String(result?.text || '').trim();
-    return text || null;
+    if (!text) return null;
+    return parseSummaryTable(text, comparison);
   } catch (error) {
     console.warn('[college-comparison] summary failed:', error.message);
     return null;
