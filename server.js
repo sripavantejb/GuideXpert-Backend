@@ -42,6 +42,7 @@ const posterRoutes = require('./routes/posterRoutes');
 const studentRoutes = require('./routes/studentRoutes');
 const collegePredictorRoutes = require('./routes/collegePredictorRoutes');
 const collegePredictorPublicRoutes = require('./routes/collegePredictorPublicRoutes');
+const webChatRoutes = require('./routes/webChatRoutes');
 const rankPredictorPublicRoutes = require('./routes/rankPredictorPublicRoutes');
 const counsellorAssessmentRoutes = require('./routes/counsellorAssessmentRoutes');
 const assessmentCareerDnaRoutes = require('./routes/assessmentCareerDnaRoutes');
@@ -331,6 +332,7 @@ app.post('/api/counsellor/poster-downloads/track', trackPosterDownload);
 
 // Public college predictor (no auth) — mount before counsellor routes
 app.use('/api/college-predictor', collegePredictorPublicRoutes);
+app.use('/api/web-chat', webChatRoutes);
 // Public rank predictor (strict dataset lookup)
 app.use('/api/rank-predictor', rankPredictorPublicRoutes);
 // Mount more specific paths first so /api/counsellor/students is never handled by generic /api
