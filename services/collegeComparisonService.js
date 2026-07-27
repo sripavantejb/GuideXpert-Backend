@@ -9,6 +9,12 @@ const { buildCollegeComparisonSystemPrompt } = require('./ai/prompts/collegeComp
 const {
   buildCollegeComparisonProfileSystemPrompt,
 } = require('./ai/prompts/collegeComparisonProfile.system');
+const {
+  buildCollegeComparisonChatSystemPrompt,
+} = require('./ai/prompts/collegeComparisonChat.system');
+const {
+  buildCollegeComparisonSuggestSystemPrompt,
+} = require('./ai/prompts/collegeComparisonSuggest.system');
 
 const MAX_SEARCH_RESULTS = 40;
 const PROFILE_TIMEOUT_MS = Math.max(
@@ -19,6 +25,23 @@ const PROFILE_MAX_TOKENS = Math.max(
   220,
   Number(process.env.COLLEGE_COMPARISON_PROFILE_MAX_TOKENS) || 420
 );
+const SUGGEST_TIMEOUT_MS = Math.max(
+  3000,
+  Number(process.env.COLLEGE_COMPARISON_SUGGEST_TIMEOUT_MS) || 12000
+);
+const SUGGEST_MAX_TOKENS = Math.max(
+  180,
+  Number(process.env.COLLEGE_COMPARISON_SUGGEST_MAX_TOKENS) || 360
+);
+const CHAT_TIMEOUT_MS = Math.max(
+  3000,
+  Number(process.env.COLLEGE_COMPARISON_CHAT_TIMEOUT_MS) || 20000
+);
+const CHAT_MAX_TOKENS = Math.max(
+  160,
+  Number(process.env.COLLEGE_COMPARISON_CHAT_MAX_TOKENS) || 320
+);
+const MAX_CHAT_HISTORY = 8;
 
 function normalizePhone(value) {
   return String(value || '').replace(/\D/g, '').slice(0, 10);
@@ -160,22 +183,197 @@ function scoreCollegeMatch(college, query) {
   return Math.round((tokenHits / tokens.length) * 60);
 }
 
-async function searchCollegesForComparison(query, limit = 12) {
+async function searchCollegesForComparison(query, limit = 12, { useAi = false } = {}) {
   const capped = Math.min(Math.max(Number(limit) || 12, 1), MAX_SEARCH_RESULTS);
   const q = String(query || '').trim();
   const cached = await listCachedProfileColleges(120);
   const pool = [...COLLEGE_COMPARISON_CATALOG, ...cached];
 
   if (!q) {
-    return pool.slice(0, capped).map(toPublicCollege);
+    return {
+      options: pool.slice(0, capped).map(toPublicCollege),
+      source: 'catalog',
+      aiUsed: false,
+    };
   }
 
-  return pool
+  const catalogHits = pool
     .map((college) => ({ college, score: scoreCollegeMatch(college, q) }))
     .filter((row) => row.score > 0)
     .sort((a, b) => b.score - a.score || a.college.name.localeCompare(b.college.name))
     .slice(0, capped)
     .map((row) => toPublicCollege(row.college));
+
+  const shouldUseAi = Boolean(useAi) && catalogHits.length < Math.min(3, capped) && q.length >= 2;
+  if (!shouldUseAi) {
+    return { options: catalogHits, source: 'catalog', aiUsed: false };
+  }
+
+  try {
+    const aiOptions = await suggestCollegesWithAi(q, capped);
+    const byKey = new Map();
+    for (const option of [...catalogHits, ...aiOptions]) {
+      const key = option.id || normalizeSearchText(option.name);
+      if (!byKey.has(key)) byKey.set(key, option);
+    }
+    return {
+      options: Array.from(byKey.values()).slice(0, capped),
+      source: catalogHits.length ? 'catalog+ai' : 'ai',
+      aiUsed: true,
+    };
+  } catch (error) {
+    console.warn('[college-comparison] AI suggest failed:', error.message);
+    return { options: catalogHits, source: 'catalog', aiUsed: false, aiError: error.message };
+  }
+}
+
+async function suggestCollegesWithAi(query, limit = 8) {
+  const completion = await chatCompletion({
+    systemPrompt: buildCollegeComparisonSuggestSystemPrompt(),
+    userPrompt: JSON.stringify({ query: String(query || '').trim().slice(0, 80), limit }),
+    temperature: 0.1,
+    maxTokens: SUGGEST_MAX_TOKENS,
+    timeoutMs: SUGGEST_TIMEOUT_MS,
+  });
+
+  const parsed = parseJsonObject(completion.content);
+  const list = Array.isArray(parsed?.colleges) ? parsed.colleges : [];
+  return list
+    .map((item) => {
+      const name = String(item?.name || '').trim().slice(0, 160);
+      if (!name) return null;
+      const shortName = String(item?.shortName || name).trim().slice(0, 80) || name;
+      return {
+        id: '',
+        name,
+        shortName,
+        city: String(item?.city || 'Unknown').trim().slice(0, 80) || 'Unknown',
+        state: String(item?.state || 'Unknown').trim().slice(0, 80) || 'Unknown',
+        ownership: String(item?.ownership || 'Unknown').trim().slice(0, 80) || 'Unknown',
+        approvals: [],
+        rankingLabel: 'OpenAI suggestion',
+        averagePackageLabel: 'Resolved on compare',
+        placementRateLabel: 'Resolved on compare',
+        annualFeesLabel: 'Resolved on compare',
+        roiLabel: 'Resolved on compare',
+        campusSizeLabel: 'Resolved on compare',
+        branchCount: 0,
+        flagshipBranches: [],
+        highlights: ['Suggested via OpenAI — profile builds when you compare'],
+        source: 'ai_suggest',
+      };
+    })
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function sanitizeChatHistory(history) {
+  if (!Array.isArray(history)) return [];
+  return history
+    .map((item) => {
+      const role = String(item?.role || '').toLowerCase() === 'assistant' ? 'assistant' : 'user';
+      const content = String(item?.content || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 600);
+      if (!content) return null;
+      return { role, content };
+    })
+    .filter(Boolean)
+    .slice(-MAX_CHAT_HISTORY);
+}
+
+function buildComparisonChatContext(comparison) {
+  const src = comparison && typeof comparison === 'object' ? comparison : {};
+  const collegeA = src.institutionA || src.collegeA || {};
+  const collegeB = src.institutionB || src.collegeB || {};
+  return {
+    collegeA: toSummaryCollege({
+      ...collegeA,
+      id: collegeA.id || 'college-a',
+      name: collegeA.name || 'College A',
+      shortName: collegeA.shortName || collegeA.name || 'College A',
+    }),
+    collegeB: toSummaryCollege({
+      ...collegeB,
+      id: collegeB.id || 'college-b',
+      name: collegeB.name || 'College B',
+      shortName: collegeB.shortName || collegeB.name || 'College B',
+    }),
+    rows: Array.isArray(src.rows)
+      ? src.rows.slice(0, 12).map((row) => ({
+          metric: row.metric || row.factor || row.label || '',
+          collegeA: row.aValue || row.collegeA || row.valueA || '',
+          collegeB: row.bValue || row.collegeB || row.valueB || '',
+          better: row.better || row.edge || row.winner || 'tie',
+        }))
+      : [],
+    winnerSummary: src.winnerSummary || null,
+    summary: src.summary
+      ? {
+          whoShouldPreferA: src.summary.whoShouldPreferA || '',
+          whoShouldPreferB: src.summary.whoShouldPreferB || '',
+        }
+      : null,
+    disclaimer: src.disclaimer || '',
+  };
+}
+
+async function answerComparisonChat({ message, comparison, history = [] } = {}) {
+  const question = String(message || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 500);
+  if (!question) {
+    const err = new Error('Enter a question about this college comparison.');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const collegeA = comparison?.institutionA || comparison?.collegeA;
+  const collegeB = comparison?.institutionB || comparison?.collegeB;
+  if (!collegeA?.name || !collegeB?.name) {
+    const err = new Error('Run a comparison first, then ask doubts about those two colleges.');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const context = buildComparisonChatContext(comparison);
+  const prior = sanitizeChatHistory(history);
+  const messages = [
+    { role: 'system', content: buildCollegeComparisonChatSystemPrompt() },
+    {
+      role: 'user',
+      content: `Comparison facts (JSON):\n${JSON.stringify(context)}`,
+    },
+    {
+      role: 'assistant',
+      content: `I have the comparison between ${context.collegeA.name} and ${context.collegeB.name}. Ask your doubt.`,
+    },
+    ...prior,
+    { role: 'user', content: question },
+  ];
+
+  const completion = await chatCompletion({
+    messages,
+    temperature: 0.3,
+    maxTokens: CHAT_MAX_TOKENS,
+    timeoutMs: CHAT_TIMEOUT_MS,
+  });
+
+  const reply =
+    String(completion.content || '').trim() ||
+    'I could not draft an answer from this comparison. Try rephrasing, or confirm details from official college sources.';
+
+  return {
+    reply,
+    model: completion.model,
+    usage: completion.usage || null,
+    colleges: {
+      a: context.collegeA.name,
+      b: context.collegeB.name,
+    },
+  };
 }
 
 function findExactCatalogMatch(raw) {
@@ -815,8 +1013,11 @@ async function listCollegeComparisonSearchesForAdmin({
   };
 }
 
-async function searchCollegeComparisonCatalog(query, limit = 12) {
-  return searchCollegesForComparison(query, limit);
+async function searchCollegeComparisonCatalog(query, limit = 12, options = {}) {
+  const result = await searchCollegesForComparison(query, limit, options);
+  // Keep backward compatibility for callers that expect an array.
+  if (Array.isArray(result)) return result;
+  return result;
 }
 
 async function compareCollegeProfiles(payload = {}) {
@@ -827,6 +1028,8 @@ module.exports = {
   getCollegeComparisonOptions,
   searchCollegesForComparison,
   searchCollegeComparisonCatalog,
+  suggestCollegesWithAi,
+  answerComparisonChat,
   compareColleges,
   compareCollegeProfiles,
   listCollegeComparisonSearchesForAdmin,

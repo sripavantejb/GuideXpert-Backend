@@ -4,6 +4,7 @@ const { fetchCollegeDostColleges } = require('../services/collegePredictorCore')
 const {
   searchCollegeComparisonCatalog,
   compareCollegeProfiles,
+  answerComparisonChat,
 } = require('../services/collegeComparisonService');
 const { rankToCutoff } = require('../utils/rankToCutoff');
 
@@ -233,14 +234,24 @@ module.exports = {
   searchCollegeComparisonOptions(req, res) {
     const q = String(req.query.q || '').trim();
     const limit = req.query.limit != null ? parseInt(req.query.limit, 10) : 8;
-    Promise.resolve(searchCollegeComparisonCatalog(q, limit))
-      .then((options) =>
-        res.status(200).json({
+    const useAi =
+      req.query.ai === '1' ||
+      req.query.ai === 'true' ||
+      req.query.useAi === '1' ||
+      req.query.useAi === 'true';
+    Promise.resolve(searchCollegeComparisonCatalog(q, limit, { useAi }))
+      .then((result) => {
+        const options = Array.isArray(result) ? result : result?.options || [];
+        return res.status(200).json({
           options,
           total: options.length,
           allowFreeText: true,
-        })
-      )
+          source: Array.isArray(result) ? 'catalog' : result?.source || 'catalog',
+          aiUsed: Array.isArray(result) ? false : Boolean(result?.aiUsed),
+          catalogSize: require('../data/collegeComparisonCatalog').COLLEGE_COMPARISON_CATALOG
+            .length,
+        });
+      })
       .catch((error) =>
         res.status(500).json({
           response: error.message || 'Could not load college options',
@@ -267,6 +278,24 @@ module.exports = {
       return res.status(status).json({
         response: error.message || 'Could not compare colleges',
         res_status: error.code || 'COLLEGE_COMPARISON_FAILED',
+        http_status_code: status,
+      });
+    }
+  },
+  async chatCollegeComparison(req, res) {
+    try {
+      const body = req.body || {};
+      const answer = await answerComparisonChat({
+        message: body.message,
+        comparison: body.comparison,
+        history: body.history,
+      });
+      return res.status(200).json(answer);
+    } catch (error) {
+      const status = error.statusCode || error.status || 500;
+      return res.status(status).json({
+        response: error.message || 'Could not answer comparison question',
+        res_status: error.code || 'COLLEGE_COMPARISON_CHAT_FAILED',
         http_status_code: status,
       });
     }
