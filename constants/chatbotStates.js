@@ -17,6 +17,7 @@ const BOT_STATES = Object.freeze([
   'college_predictor',
   'career_counselling_journey',
   'career_counselling_v2',
+  'career_counselling_flow_v2',
   'human_handoff',
   'idle',
 ]);
@@ -73,6 +74,10 @@ const HANDOFF_REASONS = Object.freeze([
   'keyword',
   'admin_initiated',
   'reopened',
+  // Added for Flow v2 Phase 3 — R7 Tier-2 crisis/self-harm escalation.
+  // Distinct from 'bot_escalation' so it is immediately identifiable on the
+  // admin dashboard as the highest-severity handoff reason.
+  'crisis_escalation',
 ]);
 
 const WEBHOOK_EVENT_KINDS = Object.freeze(['inbound', 'dlr', 'unknown']);
