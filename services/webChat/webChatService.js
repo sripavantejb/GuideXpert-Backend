@@ -2,19 +2,8 @@
 
 const crypto = require('crypto');
 const WebChatSession = require('../../models/WebChatSession');
-const { classifyIntent } = require('../chatbot/intentClassifierService');
-const { handleCollegePredictorMessage } = require('../chatbot/collegePredictorChatService');
-const {
-  buildWelcomeResponse,
-  buildMenuResponse,
-  isMenuCommand,
-  isResetCommand,
-  detectFlowStart,
-  QUICK_REPLIES_DEFAULT,
-} = require('./webChatMenu');
-const { answerKnowledgeQuestion } = require('./webChatKnowledge');
-const { handleRankPredictorTurn } = require('./webChatRankPredictor');
-const { handleComparisonTurn } = require('./webChatComparison');
+const { buildWelcomeResponse, QUICK_REPLIES_DEFAULT } = require('./webChatMenu');
+const { processConversationTurn } = require('./webChatStateMachine');
 
 function isWebChatEnabled() {
   return String(process.env.WEB_CHAT_ENABLED || '1').trim() !== '0';
@@ -70,103 +59,6 @@ async function getOrCreateSession(sessionId, identity = {}) {
   }
 }
 
-function mapCollegePredictorResult(result) {
-  const nextFlow = result.clearState ? 'idle' : 'college_predictor';
-  const payload = {
-    reply: result.reply,
-    context: result.context || {},
-    flow: nextFlow,
-    clearFlow: Boolean(result.clearState),
-    quickReplies: nextFlow === 'idle' ? ['Predict rank', 'Compare colleges', 'Menu'] : ['Menu', 'Cancel'],
-  };
-  if (result.predictionIdempotency?.colleges?.length) {
-    payload.toolResult = {
-      type: 'college_predictor',
-      data: {
-        colleges: result.predictionIdempotency.colleges.slice(0, 8),
-        exam: result.context?.exam || null,
-      },
-    };
-  }
-  return payload;
-}
-
-async function routeActiveFlow(session, message, identity) {
-  if (session.flow === 'college_predictor') {
-    const result = await handleCollegePredictorMessage(message, session.context || {}, {
-      isNewEntry: false,
-    });
-    return mapCollegePredictorResult(result);
-  }
-  if (session.flow === 'rank_predictor') {
-    return handleRankPredictorTurn(message, session.context || {}, { isNewEntry: false });
-  }
-  if (session.flow === 'college_comparison') {
-    return handleComparisonTurn(message, session.context || {}, identity);
-  }
-  return null;
-}
-
-async function startFlow(flow, message, identity) {
-  if (flow === 'college_predictor') {
-    const result = await handleCollegePredictorMessage(message, {}, { isNewEntry: true });
-    return mapCollegePredictorResult(result);
-  }
-  if (flow === 'rank_predictor') {
-    return handleRankPredictorTurn(message, {}, { isNewEntry: true });
-  }
-  if (flow === 'college_comparison') {
-    return handleComparisonTurn(message, {}, identity);
-  }
-  return buildMenuResponse();
-}
-
-async function routeIdleIntent(session, message) {
-  const botState = { state: 'main_menu' };
-  const intent = classifyIntent(message, botState, 'guidexpert', message)?.intent || 'unknown';
-  const flowStart = detectFlowStart(message);
-
-  if (flowStart) {
-    return startFlow(flowStart, message, {
-      phone: session.phone,
-      fullName: session.fullName,
-    });
-  }
-
-  if (intent === 'college_predictor') {
-    return startFlow('college_predictor', message, {
-      phone: session.phone,
-      fullName: session.fullName,
-    });
-  }
-  if (intent === 'rank_predictor') {
-    return startFlow('rank_predictor', message, {
-      phone: session.phone,
-      fullName: session.fullName,
-    });
-  }
-
-  const kb = await answerKnowledgeQuestion(message);
-  if (kb) {
-    return {
-      reply: kb.reply,
-      flow: 'idle',
-      context: {},
-      usedLlm: Boolean(kb.usedLlm),
-      source: kb.source,
-      quickReplies: QUICK_REPLIES_DEFAULT,
-    };
-  }
-
-  return {
-    reply:
-      'I can predict colleges, predict rank, compare colleges, or answer GuideXpert questions. Say "menu" to see options.',
-    flow: 'idle',
-    context: {},
-    quickReplies: QUICK_REPLIES_DEFAULT,
-  };
-}
-
 async function processWebChatMessage({ sessionId, message, phone, fullName, isWelcome = false }) {
   if (!isWebChatEnabled()) {
     const err = new Error('Website chat is temporarily unavailable.');
@@ -188,25 +80,8 @@ async function processWebChatMessage({ sessionId, message, phone, fullName, isWe
     throw err;
   }
 
-  if (isResetCommand(text)) {
-    session.flow = 'idle';
-    session.context = {};
-    session.messageCount = (session.messageCount || 0) + 1;
-    session.lastMessageAt = new Date();
-    await session.save?.();
-    return formatResponse(session.sessionId, buildMenuResponse({ cleared: true }));
-  }
-
-  if (isMenuCommand(text) && session.flow === 'idle') {
-    session.messageCount = (session.messageCount || 0) + 1;
-    session.lastMessageAt = new Date();
-    await session.save?.();
-    return formatResponse(session.sessionId, buildMenuResponse());
-  }
-
-  let outcome =
-    (await routeActiveFlow(session, text, { phone: session.phone, fullName: session.fullName })) ||
-    (await routeIdleIntent(session, text));
+  const identity = { phone: session.phone, fullName: session.fullName };
+  const outcome = await processConversationTurn({ session, message: text, identity });
 
   if (outcome.clearFlow) {
     session.flow = 'idle';
@@ -215,11 +90,15 @@ async function processWebChatMessage({ sessionId, message, phone, fullName, isWe
     session.flow = outcome.flow || 'idle';
     session.context = outcome.context || {};
   }
+
   session.messageCount = (session.messageCount || 0) + 1;
   session.lastMessageAt = new Date();
   await session.save?.();
 
-  return formatResponse(session.sessionId, outcome);
+  return formatResponse(session.sessionId, {
+    ...outcome,
+    flow: session.flow,
+  });
 }
 
 async function resetWebChatSession(sessionId) {

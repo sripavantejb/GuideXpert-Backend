@@ -1,5 +1,13 @@
 'use strict';
 
+const {
+  INTENT,
+  detectIntent,
+  isCompareEntryPhrase,
+  isPredictCollegesPhrase,
+  isPredictRankPhrase,
+} = require('./webChatIntent');
+
 const WELCOME_REPLY = `Hi! I'm GuideXpert Assistant.
 
 I can help you with:
@@ -16,7 +24,7 @@ const MENU_REPLY = `Choose what you want to do:
 • "Compare colleges" — e.g. IIIT Hyderabad vs NIT Trichy
 • Ask any GuideXpert question — fees, counselling, tools
 
-Say "menu" anytime to return here.`;
+Say "menu" anytime to return here. Say "cancel" to leave a tool mid-way.`;
 
 const QUICK_REPLIES_DEFAULT = [
   'Predict colleges',
@@ -30,6 +38,7 @@ function buildWelcomeResponse(extra = {}) {
     reply: WELCOME_REPLY,
     flow: 'idle',
     context: {},
+    clearFlow: true,
     quickReplies: QUICK_REPLIES_DEFAULT,
     ...extra,
   };
@@ -40,36 +49,28 @@ function buildMenuResponse(extra = {}) {
     reply: MENU_REPLY,
     flow: 'idle',
     context: {},
+    clearFlow: true,
     quickReplies: QUICK_REPLIES_DEFAULT,
     ...extra,
   };
 }
 
 function isMenuCommand(text) {
-  const t = String(text || '').trim().toLowerCase();
-  return /^(menu|help|options|start|hi|hello|hey)$/.test(t);
+  const intent = detectIntent(text);
+  return intent.type === INTENT.MENU || intent.type === INTENT.HELP;
 }
 
 function isResetCommand(text) {
-  const t = String(text || '').trim().toLowerCase();
-  return /^(reset|cancel|stop|exit|quit|back)$/.test(t);
+  const intent = detectIntent(text);
+  return intent.type === INTENT.CANCEL || intent.type === INTENT.RESTART;
 }
 
 function detectFlowStart(text) {
-  const t = String(text || '').trim().toLowerCase();
-  if (
-    /college predict|predict college|shortlist college|which college|colleges for my rank|college predictor/.test(
-      t
-    )
-  ) {
-    return 'college_predictor';
-  }
-  if (/rank predict|predict rank|my rank|marks to rank|percentile to rank|rank from/.test(t)) {
-    return 'rank_predictor';
-  }
-  if (/compare college|college compar|vs | versus /.test(t)) {
-    return 'college_comparison';
-  }
+  if (isPredictCollegesPhrase(text)) return 'college_predictor';
+  if (isPredictRankPhrase(text)) return 'rank_predictor';
+  if (isCompareEntryPhrase(text)) return 'college_comparison';
+  const intent = detectIntent(text);
+  if (intent.type === INTENT.COLLEGE_PAIR) return 'college_comparison';
   return null;
 }
 
