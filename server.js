@@ -61,6 +61,7 @@ const aiCallsAdminRoutes = require('./routes/aiCallsAdminRoutes');
 const whatsappChatBdaRoutes = require('./routes/whatsappChatBdaRoutes');
 const { configStatus: counsellorConfigStatus } = require('./controllers/counsellorAuthController');
 const { getPosterDownloads, getPosterDownloadStats } = require('./controllers/posterDownloadController');
+const { getCollegeComparisons } = require('./controllers/collegeComparisonAdminController');
 const { checkPosterEligibility, trackPosterDownload } = require('./controllers/posterController');
 const requireAdmin = require('./middleware/requireAdmin');
 const {
@@ -322,6 +323,7 @@ app.get('/api/health', async (req, res) => {
 });
 app.get('/api/admin/poster-downloads/stats', requireAdmin, getPosterDownloadStats);
 app.get('/api/admin/poster-downloads', requireAdmin, getPosterDownloads);
+app.get('/api/admin/college-comparisons', requireAdmin, getCollegeComparisons);
 // Public poster endpoints — registered before counsellor routers whose
 // router.use(requireCounsellor) would otherwise block unauthenticated requests.
 app.post('/api/counsellor/poster-eligibility', checkPosterEligibility);

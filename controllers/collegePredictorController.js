@@ -233,18 +233,37 @@ module.exports = {
   searchCollegeComparisonOptions(req, res) {
     const q = String(req.query.q || '').trim();
     const limit = req.query.limit != null ? parseInt(req.query.limit, 10) : 8;
-    const options = searchCollegeComparisonCatalog(q, limit);
-    return res.status(200).json({
-      options,
-      total: options.length,
-    });
+    Promise.resolve(searchCollegeComparisonCatalog(q, limit))
+      .then((options) =>
+        res.status(200).json({
+          options,
+          total: options.length,
+          allowFreeText: true,
+        })
+      )
+      .catch((error) =>
+        res.status(500).json({
+          response: error.message || 'Could not load college options',
+          res_status: 'COLLEGE_COMPARISON_OPTIONS_FAILED',
+          http_status_code: 500,
+        })
+      );
   },
   async compareColleges(req, res) {
     try {
-      const comparison = await compareCollegeProfiles(req.body || {});
+      const body = req.body || {};
+      const comparison = await compareCollegeProfiles({
+        collegeAId: body.collegeAId,
+        collegeBId: body.collegeBId,
+        collegeAName: body.collegeAName,
+        collegeBName: body.collegeBName,
+        includeSummary: Boolean(body.includeSummary),
+        phone: body.phone,
+        fullName: body.fullName,
+      });
       return res.status(200).json(comparison);
     } catch (error) {
-      const status = error.status || 500;
+      const status = error.statusCode || error.status || 500;
       return res.status(status).json({
         response: error.message || 'Could not compare colleges',
         res_status: error.code || 'COLLEGE_COMPARISON_FAILED',
