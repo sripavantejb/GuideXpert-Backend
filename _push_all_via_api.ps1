@@ -38,7 +38,7 @@ $localFiles = Get-ChildItem -Path $srcRoot -Recurse -File | Where-Object {
   $full = $_.FullName
   $name = $_.Name
   if ($full -match '\\node_modules\\|\\dist\\|\\.git\\|\\coverage\\') { return $false }
-  if ($name -eq '.env' -or $name -eq '.env.local' -or $name -eq '.env.example') { return $false }
+  if ($name -eq '.env' -or $name -eq '.env.local') { return $false }
   if ($name -match '^\.env\..*\.local$') { return $false }
   if ($name -match 'credentials|serviceAccount|private.?key' -and $_.Extension -in @('.json','.pem')) { return $false }
   if ($_.Extension -in @('.map', '.log')) { return $false }

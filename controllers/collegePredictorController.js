@@ -1,6 +1,10 @@
 const { getPredictedColleges: getNwPredictedColleges } = require('../services/nwCollegePredictorService');
 const { canonicalExamKey, isSupportedExamInput } = require('../services/collegeDostService');
 const { fetchCollegeDostColleges } = require('../services/collegePredictorCore');
+const {
+  searchCollegeComparisonCatalog,
+  compareCollegeProfiles,
+} = require('../services/collegeComparisonService');
 const { rankToCutoff } = require('../utils/rankToCutoff');
 
 function logPredictorSearchAsync(req, body, offset, data) {
@@ -226,4 +230,26 @@ async function handleNwPredictor(req, res, offset, limit, body) {
 
 module.exports = {
   getPredictedColleges: getPredictedCollegesHandler,
+  searchCollegeComparisonOptions(req, res) {
+    const q = String(req.query.q || '').trim();
+    const limit = req.query.limit != null ? parseInt(req.query.limit, 10) : 8;
+    const options = searchCollegeComparisonCatalog(q, limit);
+    return res.status(200).json({
+      options,
+      total: options.length,
+    });
+  },
+  async compareColleges(req, res) {
+    try {
+      const comparison = await compareCollegeProfiles(req.body || {});
+      return res.status(200).json(comparison);
+    } catch (error) {
+      const status = error.status || 500;
+      return res.status(status).json({
+        response: error.message || 'Could not compare colleges',
+        res_status: error.code || 'COLLEGE_COMPARISON_FAILED',
+        http_status_code: status,
+      });
+    }
+  },
 };
