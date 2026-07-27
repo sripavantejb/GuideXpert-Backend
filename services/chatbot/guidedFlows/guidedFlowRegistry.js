@@ -37,13 +37,13 @@ const GUIDED_FLOW_DEFINITIONS = Object.freeze([
     localizationTier: 'static',
   }),
   Object.freeze({
-    id: 'career_counselling_journey',
-    botState: 'career_counselling_journey',
+    id: 'career_counselling_v2',
+    botState: 'career_counselling_v2',
     contextKey: 'careerCounselling',
     continueIntent: 'career_counselling_journey_continue',
     entryIntents: Object.freeze(['career_counselling_journey']),
     slotFilling: false,
-    completeBotState: 'career_counselling_journey',
+    completeBotState: 'career_counselling_v2',
     localizationTier: 'translate',
   }),
 ]);

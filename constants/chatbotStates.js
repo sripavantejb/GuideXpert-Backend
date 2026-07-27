@@ -16,6 +16,7 @@ const BOT_STATES = Object.freeze([
   'rank_predictor',
   'college_predictor',
   'career_counselling_journey',
+  'career_counselling_v2',
   'human_handoff',
   'idle',
 ]);
@@ -79,8 +80,18 @@ const WEBHOOK_EVENT_KINDS = Object.freeze(['inbound', 'dlr', 'unknown']);
 // menu: command words only; hi/hello/hey use whole-message matching in intentClassifierService
 const GLOBAL_KEYWORDS = Object.freeze({
   menu: ['menu', 'help', 'start'],
-  agent: ['agent', 'human', 'person', 'talk to someone', 'counsellor', 'counselor', 'support'],
-  stop: ['stop', 'unsubscribe', 'opt out', 'optout'],
+  // Soft phrases only — explicit handoff uses humanHandoffIntent.js patterns.
+  agent: [
+    'talk to counsellor',
+    'talk to counselor',
+    'talk to agent',
+    'talk to someone',
+    'connect me to an agent',
+    'human support',
+    'real person',
+    'escalate',
+  ],
+  stop: ['unsubscribe', 'opt out', 'optout'],
   cancel: ['cancel'],
 });
 

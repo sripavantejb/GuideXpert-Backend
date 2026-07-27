@@ -13,6 +13,7 @@ const {
   isUnsupportedFallbackText,
 } = require('../../utils/guideXpertIdentity');
 const { resolveScopeFirewallReply } = require('../../constants/scopeFirewallReplies');
+const { applyBookingHallucinationGuard } = require('./bookingContext/bookingHallucinationGuard');
 
 const GUARANTEE_PATTERNS = [
   /\bguarantee(?:d|s)?\b.{0,40}\b(?:job|jobs|placement|placements|internship|internships|salary|admission|admissions)\b/i,
@@ -243,6 +244,8 @@ function validateAiResponse({
   knowledgeResults,
   userMessage = null,
   englishUserMessage = null,
+  leadContext = null,
+  resolvedLanguage = 'en',
 } = {}) {
   const text = String(response || '').trim();
   const allowedNumbers = extractUserProvidedNumbers(userMessage, englishUserMessage);
@@ -315,6 +318,15 @@ function validateAiResponse({
       modified: true,
       reason: entityClaim.reason,
     };
+  }
+
+  const bookingGuard = applyBookingHallucinationGuard({
+    response: text,
+    leadContext,
+    resolvedLanguage,
+  });
+  if (bookingGuard.modified) {
+    return bookingGuard;
   }
 
   return { text, modified: false, reason: null };

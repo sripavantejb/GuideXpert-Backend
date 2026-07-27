@@ -114,6 +114,9 @@ register('gender', {
     WOMAN: 'female',
     WOMEN: 'female',
     LADIES: 'female',
+    FEMLAE: 'female',
+    FEMAIL: 'female',
+    FEMAL: 'female',
     LADY: 'female',
     '2': 'female',
     // Telugu / Hinglish tokens
@@ -127,8 +130,8 @@ register('gender', {
     LADKI: 'female',
   },
   patterns: [
-    { value: 'female', re: /\b(female|girl|woman|women|f)\b/i },
-    { value: 'male', re: /\b(male|boy|man|men|m)\b(?!.*\bfemale\b)/i },
+    { value: 'female', re: /\b(female|femlae|femail|femal|girl|woman|women|f)\b/i },
+    { value: 'male', re: /\b(male|boy|man|men|m)\b(?!.*\b(female|femlae|femail|femal)\b)/i },
   ],
 });
 

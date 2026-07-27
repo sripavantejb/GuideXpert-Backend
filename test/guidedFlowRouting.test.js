@@ -50,7 +50,17 @@ describe('guided flow registry', () => {
 
 describe('guided flow interrupt policy', () => {
   const nonInterrupts = ['20000', 'BC-B', 'hello', 'hi', 'thanks', '👍', '😂', 'yes', 'no', 'AU', 'Male'];
-  const interrupts = ['menu', 'home', 'main menu', 'cancel', 'stop', 'exit', 'agent', 'human'];
+  const interrupts = [
+    'menu',
+    'home',
+    'main menu',
+    'cancel',
+    'stop',
+    'exit',
+    'talk to counsellor',
+    'connect me to an agent',
+    'agent',
+  ];
 
   for (const text of nonInterrupts) {
     test(`"${text}" is not a guided flow interrupt`, () => {
@@ -63,6 +73,18 @@ describe('guided flow interrupt policy', () => {
       assert.equal(isGuidedFlowInterrupt(text), true);
     });
   }
+
+  test('"Are you human?" is not a guided flow interrupt', () => {
+    assert.equal(isGuidedFlowInterrupt('Are you human?'), false);
+  });
+
+  test('"Support" alone is not a guided flow interrupt', () => {
+    assert.equal(isGuidedFlowInterrupt('Support'), false);
+  });
+
+  test('"human" alone is not a guided flow interrupt', () => {
+    assert.equal(isGuidedFlowInterrupt('human'), false);
+  });
 });
 
 describe('guided flow orchestrator routing', () => {

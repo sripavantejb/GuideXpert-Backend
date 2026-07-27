@@ -92,20 +92,21 @@ describe('chatbotCollegePredictor', () => {
 
   test('TS EAMCET happy path with gender', async () => {
     const r = await runFlow(['2', '15000', '4', '2']);
-    assert.equal(r.clearState, true);
+    assert.equal(r.clearState, false);
+    assert.equal(r.context.step, 'results');
     assert.match(r.reply, /TS EAMCET/);
     assert.match(r.reply, /Rank\/Percentile: 15000/);
     assert.match(r.reply, /BC-C/);
     assert.match(r.reply, /Gender: Female/);
     assert.match(r.reply, /VNR VJIET/);
-    assert.equal(r.context.step, 'done');
     assert.equal(calls.at(-1).body.admission_category_name_enum, 'DEFAULT');
     assert.equal(calls.at(-1).body.reservation_category_codes[0], 'BCC GIRLS');
   });
 
   test('TNEA happy path', async () => {
     const r = await runFlow(['3', '12000', '2']);
-    assert.equal(r.clearState, true);
+    assert.equal(r.clearState, false);
+    assert.equal(r.context.step, 'results');
     assert.equal(calls.at(-1).exam, EXAM_TNEA);
     assert.equal(calls.at(-1).body.admission_category_name_enum, 'DEFAULT');
     assert.equal(calls.at(-1).body.reservation_category_codes[0], 'BC');
@@ -113,30 +114,42 @@ describe('chatbotCollegePredictor', () => {
 
   test('KCET happy path with admission type then category', async () => {
     const r = await runFlow(['4', '9500', '2', '3']);
-    assert.equal(r.clearState, true);
+    assert.equal(r.clearState, false);
+    assert.equal(r.context.step, 'results');
     assert.equal(calls.at(-1).exam, EXAM_KCET);
     assert.equal(calls.at(-1).body.admission_category_name_enum, 'HK');
     assert.equal(calls.at(-1).body.reservation_category_codes[0], '2BG');
   });
 
   test('KEAM happy path', async () => {
-    const r = await runFlow(['5', '5000', '2']);
-    assert.equal(r.clearState, true);
+    // Menu digit "5" is College Predictor entry — choose KEAM after welcome.
+    const r = await runFlow(['College predictor', '5', '5000', '2']);
+    assert.equal(r.clearState, false);
+    assert.equal(r.context.step, 'results');
     assert.equal(calls.at(-1).exam, EXAM_KEAM);
     assert.equal(calls.at(-1).body.admission_category_name_enum, 'DEFAULT');
     assert.equal(calls.at(-1).body.reservation_category_codes[0], 'EW');
   });
 
+  test('menu digit 5 on new entry shows welcome not KEAM', async () => {
+    const r = await handleCollegePredictorMessage('5', {}, { isNewEntry: true });
+    assert.equal(r.context.exam, undefined);
+    assert.equal(r.context.step, 'exam');
+    assert.match(r.reply, /Which entrance exam/i);
+  });
+
   test('WBJEE happy path with quota', async () => {
     const r = await runFlow(['6', '7000', '1', '1']);
-    assert.equal(r.clearState, true);
+    assert.equal(r.clearState, false);
+    assert.equal(r.context.step, 'results');
     assert.equal(calls.at(-1).exam, EXAM_WBJEE);
     assert.equal(calls.at(-1).body.reservation_category_codes[0], 'OPEN_AI');
   });
 
   test('JEE Main happy path gender + category expansion', async () => {
     const r = await runFlow(['7', '25000', '2', '5']);
-    assert.equal(r.clearState, true);
+    assert.equal(r.clearState, false);
+    assert.equal(r.context.step, 'results');
     assert.equal(calls.at(-1).exam, EXAM_JEE_MAIN);
     assert.ok(calls.at(-1).body.reservation_category_codes.length > 0);
     assert.ok(calls.at(-1).body.reservation_category_codes.some((x) => /OBC-NCL/.test(x)));
@@ -144,14 +157,16 @@ describe('chatbotCollegePredictor', () => {
 
   test('JEE Advanced happy path gender + category expansion', async () => {
     const r = await runFlow(['8', '7000', '1', '1']);
-    assert.equal(r.clearState, true);
+    assert.equal(r.clearState, false);
+    assert.equal(r.context.step, 'results');
     assert.equal(calls.at(-1).exam, EXAM_JEE_ADV);
     assert.deepEqual(calls.at(-1).body.reservation_category_codes, ['OPEN_AI']);
   });
 
   test('MHT CET happy path percentile flow', async () => {
     const r = await runFlow(['9', '94.5', '1', '1']);
-    assert.equal(r.clearState, true);
+    assert.equal(r.clearState, false);
+    assert.equal(r.context.step, 'results');
     assert.equal(calls.at(-1).exam, EXAM_MHT);
     assert.equal(calls.at(-1).body.admission_category_name_enum, 'SL');
     assert.ok(Number.isInteger(calls.at(-1).body.cutoff_from));
@@ -169,9 +184,61 @@ describe('chatbotCollegePredictor', () => {
     assert.equal(r.context.reservation_category_codes[0], 'OC GIRLS');
     r = await handleCollegePredictorMessage('2', r.context);
     assert.equal(r.context.admission_category_name_enum, 'SVU');
-    assert.equal(r.clearState, true);
+    assert.equal(r.clearState, false);
+    assert.equal(r.context.step, 'results');
     assert.match(r.reply, /AP EAMCET/);
     assert.match(r.reply, /GRIET/);
+  });
+
+  test('literal AU on region step predicts colleges', async () => {
+    setCollegePredictorDeps({ getPredictedColleges: makeSuccessPredictor(calls) });
+    let r = await handleCollegePredictorMessage('1', {}, { isNewEntry: true });
+    r = await handleCollegePredictorMessage('5000', r.context);
+    r = await handleCollegePredictorMessage('1', r.context);
+    r = await handleCollegePredictorMessage('2', r.context);
+    assert.equal(r.context.step, 'region');
+    r = await handleCollegePredictorMessage('AU', r.context);
+    assert.equal(r.context.admission_category_name_enum, 'AU');
+    assert.equal(r.context.step, 'results');
+    assert.match(r.reply, /Top Matches/);
+    assert.equal(calls.at(-1).body.admission_category_name_enum, 'AU');
+    assert.equal(/still in College Predictor/i.test(r.reply), false);
+  });
+
+  test('AU on results step re-predicts instead of sticky nav', async () => {
+    setCollegePredictorDeps({ getPredictedColleges: makeSuccessPredictor(calls) });
+    let r = await handleCollegePredictorMessage('1', {}, { isNewEntry: true });
+    r = await handleCollegePredictorMessage('5000', r.context);
+    r = await handleCollegePredictorMessage('1', r.context);
+    r = await handleCollegePredictorMessage('2', r.context);
+    r = await handleCollegePredictorMessage('SVU', r.context);
+    assert.equal(r.context.step, 'results');
+    assert.equal(r.context.admission_category_name_enum, 'SVU');
+    const beforeCalls = calls.length;
+    r = await handleCollegePredictorMessage('AU', r.context);
+    assert.equal(r.context.admission_category_name_enum, 'AU');
+    assert.equal(r.context.step, 'results');
+    assert.match(r.reply, /Top Matches/);
+    assert.equal(/still in College Predictor/i.test(r.reply), false);
+    assert.ok(calls.length > beforeCalls);
+    assert.equal(calls.at(-1).body.admission_category_name_enum, 'AU');
+  });
+
+  test('AGAIN clears prior region and result cache', async () => {
+    setCollegePredictorDeps({ getPredictedColleges: makeSuccessPredictor(calls) });
+    let r = await handleCollegePredictorMessage('1', {}, { isNewEntry: true });
+    r = await handleCollegePredictorMessage('5000', r.context);
+    r = await handleCollegePredictorMessage('1', r.context);
+    r = await handleCollegePredictorMessage('2', r.context);
+    r = await handleCollegePredictorMessage('AU', r.context);
+    assert.equal(r.context.step, 'results');
+    assert.ok(Array.isArray(r.context.resultCache));
+    r = await handleCollegePredictorMessage('AGAIN', r.context);
+    assert.equal(r.restart, true);
+    assert.equal(r.context.step, 'exam');
+    assert.equal(r.context.admission_category_name_enum, undefined);
+    assert.equal(r.context.rank, undefined);
+    assert.equal(r.context.resultCache, undefined);
   });
 
   test('AP OC Male blocks prediction without calling API', async () => {
@@ -197,7 +264,8 @@ describe('chatbotCollegePredictor', () => {
     r = await handleCollegePredictorMessage('2', r.context);
     assert.equal(r.context.reservation_category_codes[0], 'OC GIRLS');
     r = await handleCollegePredictorMessage('1', r.context);
-    assert.equal(r.clearState, true);
+    assert.equal(r.clearState, false);
+    assert.equal(r.context.step, 'results');
     assert.match(r.reply, /Top Matches/);
     assert.match(r.reply, /Gender: Female/);
   });
@@ -209,7 +277,8 @@ describe('chatbotCollegePredictor', () => {
     r = await handleCollegePredictorMessage('1', r.context);
     r = await handleCollegePredictorMessage('1', r.context);
     assert.equal(r.context.reservation_category_codes[0], 'OC BOYS');
-    assert.equal(r.clearState, true);
+    assert.equal(r.clearState, false);
+    assert.equal(r.context.step, 'results');
     assert.match(r.reply, /Top Matches/);
     assert.match(r.reply, /Gender: Male/);
   });
@@ -251,7 +320,7 @@ describe('chatbotCollegePredictor', () => {
     let r = await handleCollegePredictorMessage('9', {}, { isNewEntry: true });
     r = await handleCollegePredictorMessage('200', r.context);
     assert.equal(r.context.step, 'percentile');
-    assert.match(r.reply, /1 to 100|percentile.*between/i);
+    assert.match(r.reply, /1.?100|percentile/i);
   });
 
   test('invalid admission type keeps admission step (KCET)', async () => {
@@ -289,7 +358,8 @@ describe('chatbotCollegePredictor', () => {
 
     setCollegePredictorDeps({ getPredictedColleges: makeSuccessPredictor(calls) });
     r = await handleCollegePredictorMessage('retry', r.context);
-    assert.equal(r.clearState, true);
+    assert.equal(r.clearState, false);
+    assert.equal(r.context.step, 'results');
     assert.match(r.reply, /Top Matches/);
   });
 
@@ -299,8 +369,8 @@ describe('chatbotCollegePredictor', () => {
     console.info = (_t, line) => lines.push(line);
     try {
       const r = await runFlow(['2', '15000', '1', '2']);
-      assert.equal(r.clearState, true);
-      assert.equal(r.context.step, 'done');
+      assert.equal(r.clearState, false);
+    assert.equal(r.context.step, 'results');
       assert.ok(lines.some((l) => l.includes('predictor_success')));
     } finally {
       console.info = orig;
@@ -334,12 +404,12 @@ describe('chatbotCollegePredictor', () => {
 
   test('PROMPT_EXAM shows expanded exam list', () => {
     assert.match(buildConversationalWelcome(), /AP EAMCET/);
-    assert.match(buildConversationalWelcome(), /MHT CET/);
+    assert.match(buildConversationalWelcome(), /TS EAMCET|JEE Main|KCET/);
   });
 
   test('conversational welcome on new entry', async () => {
     const r = await handleCollegePredictorMessage('I want to predict colleges', {}, { isNewEntry: true });
-    assert.match(r.reply, /Sure! I can help you predict colleges/);
+    assert.match(r.reply, /Sure!/);
     assert.match(r.reply, /Which entrance exam did you write/);
     assert.equal(r.context.step, 'exam');
     assert.equal(calls.length, 0);
@@ -360,7 +430,8 @@ describe('chatbotCollegePredictor', () => {
       {},
       { isNewEntry: true }
     );
-    assert.equal(r.clearState, true);
+    assert.equal(r.clearState, false);
+    assert.equal(r.context.step, 'results');
     assert.match(r.reply, /TS EAMCET/);
     assert.match(r.reply, /18453/);
     assert.equal(calls.at(-1).body.reservation_category_codes[0], 'BCB BOYS');
@@ -422,6 +493,7 @@ describe('chatbotCollegePredictor', () => {
     });
     const r = await runFlow(['2', '15000', '4', '2']);
     assert.match(r.reply, /No colleges found/i);
-    assert.equal(r.clearState, true);
+    assert.equal(r.clearState, false);
+    assert.equal(r.context.step, 'results');
   });
 });

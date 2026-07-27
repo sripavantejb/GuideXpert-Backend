@@ -17,6 +17,8 @@ const DEFAULT_PRESERVE_TERMS = [
   'KCET',
   'TS EAMCET',
   'AP EAMCET',
+  'AU',
+  'SVU',
 ];
 
 function parsePreserveTermsFromEnv() {

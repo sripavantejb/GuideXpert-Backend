@@ -55,6 +55,16 @@ async function createHandoff({
   userLastMessage = null,
   createdBy = 'bot',
 }) {
+  const existingActive = await WhatsAppAgentHandoff.findOne({
+    conversationId: conversation._id,
+    status: { $in: ['open', 'claimed'] },
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+  if (existingActive) {
+    return existingActive;
+  }
+
   const now = new Date();
   const routing = await determineRoute(leadContext);
   const summary = await buildHandoffSummary(leadContext);
