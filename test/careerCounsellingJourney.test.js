@@ -54,11 +54,11 @@ describe('careerCounsellingIntentService', () => {
     });
   }
 
-  test('rank + branch query stays on college predictor', () => {
+  test('rank + branch query enters Master Flow v2 (legacy predictor door retired)', () => {
     const text = 'Can I get CSE with rank 20000';
     assert.equal(isCareerCounsellingJourneyEntryQuery(text), false);
     const result = classifyIntent(text, null, 'unknown', text);
-    assert.equal(result.intent, 'college_predictor');
+    assert.equal(result.intent, 'career_counselling_flow_v2');
   });
 
   test('breakout during journey for rank predictor phrase', () => {
@@ -279,7 +279,7 @@ describe('career counselling guided flow orchestration', () => {
     assert.doesNotMatch(outboundCalls[0].text || '', /I'm here to help only with GuideXpert services/i);
   });
 
-  test('MENU interrupt exits guided flow', async () => {
+  test('MENU interrupt exits guided flow into Master Flow v2 (legacy menu retired)', async () => {
     await processInbound({
       conversation: { _id: CONVERSATION_ID, phone: PHONE, productLine: 'unknown' },
       inbound: { _id: new mongoose.Types.ObjectId(), messageType: 'text', text: 'menu' },
@@ -287,7 +287,7 @@ describe('career counselling guided flow orchestration', () => {
     });
 
     assert.equal(outboundCalls.length, 1);
-    assert.ok(transitionLog.some((t) => t.state === 'main_menu'));
+    assert.ok(transitionLog.some((t) => t.state === 'career_counselling_flow_v2'));
     assert.equal(isGuidedFlowInterrupt('menu'), true);
   });
 

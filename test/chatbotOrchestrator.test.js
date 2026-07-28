@@ -16,19 +16,19 @@ describe('chatbotOrchestrator rules', () => {
     assert.equal(r.intent, 'human_handoff');
   });
 
-  test('classifyIntent detects menu', () => {
+  test('classifyIntent detects menu as Flow v2', () => {
     const r = classifyIntent('menu', null, 'iit_counselling');
-    assert.equal(r.intent, 'main_menu');
+    assert.equal(r.intent, 'career_counselling_flow_v2');
   });
 
-  test('classifyIntent digit 4 in college_predictor state is continue', () => {
+  test('classifyIntent digit 4 in college_predictor state migrates to Flow v2', () => {
     const r = classifyIntent('4', { state: 'college_predictor' }, 'iit_counselling');
-    assert.equal(r.intent, 'college_predictor_continue');
+    assert.equal(r.intent, 'career_counselling_flow_v2');
   });
 
   test('classifyIntent rank predictor via natural language on guidexpert', () => {
     const r = classifyIntent('rank predictor', null, 'guidexpert');
-    assert.equal(r.intent, 'rank_predictor');
+    assert.equal(r.intent, 'career_counselling_flow_v2');
   });
 
   test('static FAQ search finds meeting link', () => {
@@ -36,26 +36,21 @@ describe('chatbotOrchestrator rules', () => {
     assert.ok(hits.length > 0);
   });
 
-  test('buildMainMenuText organic welcome options', () => {
-    const text = buildMainMenuText({ productLine: 'unknown', iit: null, gx: null });
-    assert.match(text, /IIT \/ College Counselling/);
-    assert.match(text, /Talk to an Expert/);
+  test('buildMainMenuText organic is Rithika bridge', () => {
+    const text = buildMainMenuText({ productLine: 'unknown' });
+    assert.match(text, /Rithika/i);
+    assert.doesNotMatch(text, /IIT \/ College Counselling/);
   });
 
-  test('buildMainMenuText IIT welcome options', () => {
-    const text = buildMainMenuText({
-      productLine: 'iit_counselling',
-      iit: { fullName: 'Test User' },
-    });
-    assert.match(text, /My Counselling Details/);
-    assert.match(text, /My Assigned Expert/);
-    assert.match(text, /College Predictor/);
-    assert.match(text, /Talk to My Counsellor/);
+  test('buildMainMenuText IIT is Rithika bridge', () => {
+    const text = buildMainMenuText({ productLine: 'iit_counselling', iit: { fullName: 'A' } });
+    assert.match(text, /Rithika/i);
+    assert.doesNotMatch(text, /My Counselling Details/);
   });
 
-  test('IIT list menu exposes college predictor', () => {
+  test('IIT list menu row ids still exist but map into Flow v2', () => {
     const rows = buildMainMenuListSections()[0].rows.map((r) => r.id);
     assert.ok(rows.includes('menu_5'));
-    assert.equal(mapMenuIdToIntent('menu_5', 'iit_counselling'), 'college_predictor');
+    assert.equal(mapMenuIdToIntent('menu_5', 'iit_counselling'), 'career_counselling_flow_v2');
   });
 });

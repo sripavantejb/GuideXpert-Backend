@@ -18,7 +18,7 @@ const IIT_QUESTIONS = [
   'What is OBC-NCL rank?',
 ];
 
-describe('IIT counselling expert intent routing', () => {
+describe('IIT counselling expert intent routing — Master Flow v2 sole door', () => {
   let savedFlag;
 
   afterEach(() => {
@@ -29,38 +29,25 @@ describe('IIT counselling expert intent routing', () => {
     }
   });
 
-  test('routes spec IIT counselling questions when flag is enabled', () => {
+  test('IIT counselling questions enter Flow v2 when flag is enabled', () => {
     savedFlag = process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED;
     process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED = '1';
 
-    const factualDelegation = new Set([
-      'What is JoSAA?',
-      'What is CSAB?',
-      'What is home state quota?',
-      'What is CRL rank?',
-      'What is OBC-NCL rank?',
-      'How many rounds are there in JoSAA?',
-    ]);
-
     for (const message of IIT_QUESTIONS) {
       const result = classifyIntent(message, null, 'unknown', message);
-      assert.equal(result.intent, 'iit_counselling_expert', message);
-      const expectedReason = factualDelegation.has(message)
-        ? 'iit_counselling_factual_delegation'
-        : 'iit_counselling_question';
-      assert.equal(result.intentReason, expectedReason, message);
+      assert.equal(result.intent, 'career_counselling_flow_v2', message);
     }
   });
 
-  test('does not route IIT expert when flag is disabled', () => {
+  test('IIT counselling questions still enter Flow v2 when flag is disabled', () => {
     savedFlag = process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED;
     process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED = '0';
 
     const result = classifyIntent('What is JoSAA?', null, 'unknown', 'What is JoSAA?');
-    assert.notEqual(result.intent, 'iit_counselling_expert');
+    assert.equal(result.intent, 'career_counselling_flow_v2');
   });
 
-  test('active IIT session keeps short follow-ups on iit_counselling_expert', () => {
+  test('active IIT session context still enters Flow v2', () => {
     savedFlag = process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED;
     process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED = '1';
 
@@ -71,12 +58,11 @@ describe('IIT counselling expert intent routing', () => {
 
     for (const message of ['float', 'slide', 'how many rounds', 'What is float?']) {
       const result = classifyIntent(message, botState, 'unknown', message);
-      assert.equal(result.intent, 'iit_counselling_expert', message);
-      assert.equal(result.intentReason, 'iit_counselling_session_active', message);
+      assert.equal(result.intent, 'career_counselling_flow_v2', message);
     }
   });
 
-  test('lead support queries are not routed to IIT expert', () => {
+  test('lead support queries enter Flow v2', () => {
     savedFlag = process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED;
     process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED = '1';
 
@@ -86,10 +72,10 @@ describe('IIT counselling expert intent routing', () => {
       'iit_counselling',
       'When is my session?'
     );
-    assert.notEqual(result.intent, 'iit_counselling_expert');
+    assert.equal(result.intent, 'career_counselling_flow_v2');
   });
 
-  test('GuideXpert program questions still route to CPA', () => {
+  test('GuideXpert program questions enter Flow v2', () => {
     savedFlag = process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED;
     process.env.CHATBOT_IIT_COUNSELLING_EXPERT_ENABLED = '1';
 
@@ -99,6 +85,6 @@ describe('IIT counselling expert intent routing', () => {
       'unknown',
       'Do you provide IIT counselling support?'
     );
-    assert.equal(result.intent, 'counsellor_program_assistant');
+    assert.equal(result.intent, 'career_counselling_flow_v2');
   });
 });

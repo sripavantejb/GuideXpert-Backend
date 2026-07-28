@@ -117,18 +117,14 @@ function buildOrganicVisitorWelcome() {
 }
 
 /**
- * Full welcome / main-menu body for the current lead classification.
+ * Full welcome / main-menu body — RETIRED as a live counselling door.
+ * Master Flow v2 (Rithika) owns WhatsApp entry. Kept only so old callers
+ * do not crash; returns a short bridge, never the IIT/GX/organic novels.
  * @param {object} leadContext — from buildLeadContext (productLine, iit, gx)
  */
 function buildWelcomeMenuText(leadContext) {
-  const line = leadContext?.productLine || 'unknown';
-  if (line === 'iit_counselling') {
-    return buildIitStudentWelcome(leadContext);
-  }
-  if (line === 'guidexpert') {
-    return buildGuidexpertLeadWelcome(leadContext);
-  }
-  return buildOrganicVisitorWelcome();
+  void leadContext;
+  return "I'm Rithika from GuideXpert — I'll help you figure out the right path after Class 12. Tell me your name to begin, or just share what you need help with.";
 }
 
 module.exports = {
