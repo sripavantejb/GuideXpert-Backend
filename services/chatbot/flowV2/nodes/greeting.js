@@ -4,8 +4,8 @@
  * Flow v2 — Greeting / Node E (first live beat).
  *
  * `handleGreetingEntry` fires when `context.flowV2.stage` is falsy (first
- * turn). Master Flow: never ask for name — seed from profile/CRM if present,
- * open the 9-row stage list immediately, then entry side-tracks → B1.
+ * turn). Never asks for name — seed from profile/CRM if present, open the
+ * 10-row qualification list immediately, then entry side-tracks → B1.
  * Both are only ever invoked by `flowV2Dispatcher.processFlowV2Turn` — see
  * that file for the actual routing guarantee (this is the source of the
  * "never send the full greeting twice" contract, not node-file discipline
@@ -21,21 +21,16 @@ const { handleB1Entry } = require('./b1Goal');
 const { handleB3Entry } = require('./b3Constraints');
 
 const QUALIFICATION_ROWS = Object.freeze([
-  // waTitle = Master Flow locked list labels (WhatsApp ≤24 chars).
-  // title = canonical internal value used by routing / profile.
-  Object.freeze({ id: 'flowv2_qual_10_completed', title: '10th Completed', waTitle: 'Class 10' }),
-  Object.freeze({ id: 'flowv2_qual_11_studying', title: '11th Studying', waTitle: 'Class 11' }),
-  Object.freeze({ id: 'flowv2_qual_12_pcm', title: '12th Completed (PCM)', waTitle: '12th — MPC' }),
-  Object.freeze({ id: 'flowv2_qual_12_pcb', title: '12th Completed (PCB)', waTitle: '12th — BiPC' }),
-  Object.freeze({
-    id: 'flowv2_qual_12_commerce',
-    title: '12th Completed (Commerce)',
-    waTitle: '12th — MEC / CEC',
-  }),
-  Object.freeze({ id: 'flowv2_qual_diploma', title: 'Diploma', waTitle: 'Diploma' }),
-  Object.freeze({ id: 'flowv2_qual_drop_year', title: 'Drop Year', waTitle: 'Dropper / gap year' }),
-  Object.freeze({ id: 'flowv2_qual_degree', title: 'Degree', waTitle: 'Already in college' }),
-  Object.freeze({ id: 'flowv2_qual_other', title: 'Other', waTitle: 'Something else' }),
+  Object.freeze({ id: 'flowv2_qual_10_completed', title: '10th Completed' }),
+  Object.freeze({ id: 'flowv2_qual_11_studying', title: '11th Studying' }),
+  Object.freeze({ id: 'flowv2_qual_12_pcm', title: '12th Completed (PCM)' }),
+  Object.freeze({ id: 'flowv2_qual_12_pcb', title: '12th Completed (PCB)' }),
+  Object.freeze({ id: 'flowv2_qual_12_commerce', title: '12th Completed (Commerce)' }),
+  Object.freeze({ id: 'flowv2_qual_12_arts', title: '12th Completed (Arts)' }),
+  Object.freeze({ id: 'flowv2_qual_diploma', title: 'Diploma' }),
+  Object.freeze({ id: 'flowv2_qual_degree', title: 'Degree' }),
+  Object.freeze({ id: 'flowv2_qual_drop_year', title: 'Drop Year' }),
+  Object.freeze({ id: 'flowv2_qual_other', title: 'Other' }),
 ]);
 
 function findQualificationRow(text) {
@@ -43,25 +38,21 @@ function findQualificationRow(text) {
   if (!t) return null;
   return (
     QUALIFICATION_ROWS.find(
-      (row) =>
-        row.id.toLowerCase() === t ||
-        row.title.toLowerCase() === t ||
-        (row.waTitle && row.waTitle.toLowerCase() === t)
+      (row) => row.id.toLowerCase() === t || row.title.toLowerCase() === t
     ) || null
   );
 }
-const QUALIFICATION_LIST_SECTION_TITLE = 'Choose your stage';
+const QUALIFICATION_LIST_SECTION_TITLE = 'Your qualification';
 const QUALIFICATION_LIST_BUTTON_TEXT = 'Select';
-/** Master Flow Node E open — Rithika persona, never asks for name. */
-const NEUTRAL_QUALIFICATION_LINE = 'First — where are you right now?';
+/** Qualification prompt line — never asks for name on entry. */
+const NEUTRAL_QUALIFICATION_LINE = 'Can I know your qualifications?';
 const NAME_REASK = "Sorry, didn't catch that 😊 What should I call you?";
 
 function buildNodeEOpenBody(firstName) {
-  const hello = firstName ? `Hey ${firstName} 👋` : 'Hi 👋';
+  const hello = firstName ? `Hey ${firstName}! 👋` : 'Hi! 👋';
   return (
     `${hello}\n\n` +
     "I'm Rithika, from GuideXpert's counselling desk. We help students find a college that actually fits them — not just the ones with the biggest ads.\n\n" +
-    "Takes about 2 minutes, and it's free.\n\n" +
     NEUTRAL_QUALIFICATION_LINE
   );
 }
@@ -84,7 +75,7 @@ function buildQualificationListInteractive(body) {
         title: QUALIFICATION_LIST_SECTION_TITLE,
         rows: QUALIFICATION_ROWS.map((row) => ({
           id: row.id,
-          title: row.waTitle || row.title,
+          title: row.title,
         })),
       },
     ],
