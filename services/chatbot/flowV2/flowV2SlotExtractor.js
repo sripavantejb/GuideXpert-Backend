@@ -21,16 +21,20 @@
  * forward-compatibility with later beats.
  */
 
-const QUALIFICATION_GROUP_KEYWORDS = ['mpc', 'mec', 'bipc', 'cec', 'hec'];
+const QUALIFICATION_GROUP_KEYWORDS = ['pcm', 'mpc', 'pcb', 'bipc', 'commerce', 'mec', 'cec', 'arts', 'hec'];
 
 /** Display casing for 12th-group codes (replaces a blanket .toUpperCase()
  * so 'bipc' renders as the conventional 'BiPC', not 'BIPC'). */
 const QUALIFICATION_GROUP_LABELS = Object.freeze({
-  mpc: 'MPC',
-  mec: 'MEC',
-  bipc: 'BiPC',
-  cec: 'CEC',
-  hec: 'HEC',
+  pcm: 'PCM',
+  mpc: 'PCM',
+  pcb: 'PCB',
+  bipc: 'PCB',
+  commerce: 'Commerce',
+  mec: 'Commerce',
+  cec: 'Commerce',
+  arts: 'Arts',
+  hec: 'Arts',
 });
 
 /**
@@ -42,27 +46,76 @@ const QUALIFICATION_GROUP_LABELS = Object.freeze({
  * titles arrive as plain text) and free-typed replies.
  */
 function extractQualification(t) {
-  // Combined MEC/CEC group, checked before the single-group match below.
-  if (/\bmec\s*\/\s*cec\b/.test(t) || (/\bmec\b/.test(t) && /\bcec\b/.test(t))) {
-    if (/\b12\s*th\b|\bclass\s*12\b|\bxii\b|\bintermediate\b|\binter\b/.test(t)) {
-      return 'Class 12 (MEC/CEC)';
-    }
-  }
+  if (/^\s*other\s*$|\bsomething else\b/.test(t)) return 'Other';
   const groupMatch = t.match(new RegExp(`\\b(${QUALIFICATION_GROUP_KEYWORDS.join('|')})\\b`));
   if (/\b12\s*th\b|\bclass\s*12\b|\bxii\b|\bintermediate\b|\binter\b/.test(t)) {
-    return groupMatch ? `Class 12 (${QUALIFICATION_GROUP_LABELS[groupMatch[1]]})` : 'Class 12 / Intermediate';
+    return groupMatch
+      ? `12th Completed (${QUALIFICATION_GROUP_LABELS[groupMatch[1]]})`
+      : null;
   }
-  if (/\bclass\s*10\b|\b10\s*th\b/.test(t)) return 'Class 10';
-  if (/\bclass\s*11\b|\b11\s*th\b/.test(t)) return 'Class 11';
+  if (/\bclass\s*10\b|\b10\s*th\b|\b10th completed\b/.test(t)) return '10th Completed';
+  if (/\bclass\s*11\b|\b11\s*th\b|\b11th studying\b/.test(t)) return '11th Studying';
   if (/\bdiploma\b/.test(t)) return 'Diploma';
-  const btechYear = t.match(/\bb\.?\s*tech\b[^.]{0,20}\b(1st|first|2nd|second|3rd|third|4th|fourth)\s*year\b/);
-  if (btechYear) return `B.Tech ${btechYear[1]} year`;
-  if (/\bdropper\b|\bgap year\b/.test(t)) return 'Dropper / gap year';
+  if (/\bdrop year\b|\bdropper\b|\bgap year\b/.test(t)) return 'Drop Year';
   if (/\balready in college\b|\balready studying\b|\bpursuing (my )?(degree|graduation|b\.?\s*tech)\b/.test(t)) {
-    return 'Already in college';
+    return 'Degree';
   }
-  if (/\bgraduation\b|\bgraduate\b|\bdegree\b/.test(t)) return 'Graduation';
+  if (/\bb\.?\s*tech\b|\bgraduation\b|\bgraduate\b|\bdegree\b|\balready in college\b/.test(t)) return 'Degree';
   return null;
+}
+
+const NAME_STOP_WORDS = new Set([
+  'hi', 'hello', 'hey', 'hii', 'okay', 'ok', 'yes', 'no', 'student', 'name',
+  'myself', 'unknown', 'nothing', 'other', 'medical', 'commerce', 'arts',
+  'diploma', 'degree', 'drop', 'year', 'pcm', 'pcb', 'mpc', 'bipc',
+  'not', 'sure', 'dont', "don't", 'know', 'looking', 'pursuing', 'studying',
+  'completed', 'in', 'from', 'good', 'morning', 'evening',
+]);
+
+function titleCaseName(value) {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toLocaleUpperCase() + part.slice(1).toLocaleLowerCase())
+    .join(' ');
+}
+
+/**
+ * Deterministic first-name extraction for Node E. It tolerates emoji and
+ * conversational wrappers, but never guesses from arbitrary prose.
+ */
+function extractName(text) {
+  const raw = String(text || '').normalize('NFKC');
+  const letters = "[\\p{L}][\\p{L}'’-]*";
+  const explicitPatterns = [
+    new RegExp(`\\b(?:my name is|i am|i'm|im|call me|this is|myself)\\s+(${letters}(?:\\s+${letters}){0,2})`, 'iu'),
+    new RegExp(`(${letters})\\s+here\\b`, 'iu'),
+  ];
+  let candidate = null;
+  for (const pattern of explicitPatterns) {
+    const match = raw.match(pattern);
+    if (match) {
+      candidate = match[1];
+      break;
+    }
+  }
+
+  if (!candidate) {
+    const cleaned = raw
+      .replace(/[^\p{L}'’\-\s]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const words = cleaned.split(' ').filter(Boolean);
+    if (words.length >= 1 && words.length <= 3) candidate = cleaned;
+  }
+
+  if (!candidate) return null;
+  const words = candidate.split(/\s+/).filter(Boolean);
+  while (words.length && NAME_STOP_WORDS.has(words[0].toLocaleLowerCase())) words.shift();
+  if (!words.length || words.some((word) => NAME_STOP_WORDS.has(word.toLocaleLowerCase()))) return null;
+  const first = words[0].replace(/^['’\-]+|['’\-]+$/g, '');
+  if (first.length < 2 || first.length > 30) return null;
+  return titleCaseName(first);
 }
 
 const BRANCH_KEYWORD_MAP = Object.freeze([
@@ -185,12 +238,30 @@ function extractCityPref(t) {
   return null;
 }
 
+/**
+ * R4-P Stage 2 addition — TNEA/KEAM/WBJEE/MHT_CET were entirely missing
+ * before this phase (only AP/TS EAMCET, JEE Main/Advanced, and KCET had
+ * patterns). Canonical values ('TNEA', 'KEAM') were kept identical to
+ * `constants/whatsappCollegePredictor.js`'s own `EXAM_TNEA`/`EXAM_KEAM`
+ * constants (no adapter needed there), but 'WBJEE' and 'MHT_CET' were
+ * deliberately kept as clean, unversioned Flow v2 canonical values rather
+ * than copying that file's year-tagged `EXAM_WBJEE = 'WBJEE_2024'` /
+ * `EXAM_MHT = 'MHTCET'` — those look like an implementation detail of the
+ * OLD predictor flow's own yearly exam-cycle bookkeeping, not something
+ * Flow v2's schema should bind to directly. `r4pPredictor.js`'s
+ * `LEGACY_EXAM_BY_FLOWV2_EXAM` adapter bridges the two, the same pattern
+ * Stage 1 already established for `resolveApTsCategoryId`.
+ */
 const EXAM_TYPE_PATTERNS = Object.freeze([
   Object.freeze({ re: /\bjee\s*adv/i, value: 'JEE_ADVANCED' }),
   Object.freeze({ re: /\bjee\b/i, value: 'JEE_MAIN' }),
   Object.freeze({ re: /\bap\s*eamcet\b|\beapcet\b/i, value: 'AP_EAMCET' }),
   Object.freeze({ re: /\bts\s*eamcet\b/i, value: 'TS_EAMCET' }),
   Object.freeze({ re: /\bkcet\b/i, value: 'KCET' }),
+  Object.freeze({ re: /\btnea\b/i, value: 'TNEA' }),
+  Object.freeze({ re: /\bkeam\b/i, value: 'KEAM' }),
+  Object.freeze({ re: /\bwbjee\b/i, value: 'WBJEE' }),
+  Object.freeze({ re: /\bmht[\s-]?cet\b|\bmhtcet\b/i, value: 'MHT_CET' }),
 ]);
 
 function extractExamType(t) {
@@ -206,6 +277,49 @@ function extractRank(t) {
   if (!/\brank\b|\bair\b/.test(t)) return null;
   const match = t.replace(/,/g, '').match(/(\d{1,7})/);
   return match ? parseInt(match[1], 10) : null;
+}
+
+/**
+ * R4-P Stage 2 addition (percentile-based exams, e.g. MHT-CET). Same
+ * conservative discipline as `extractRank` above — only fires with an
+ * explicit "percentile" keyword, and only accepts a value inside the
+ * genuinely valid 0-100 range, so it never mistakes an unrelated number
+ * for a percentile. NOTE: this keyword-gated behavior is intentionally
+ * NOT enough on its own to answer a directly-asked "what's your
+ * percentile?" question with a bare number reply (e.g. "91.5") — see
+ * `r4pPredictor.js`'s own stage-scoped bare-number fallback for why that
+ * narrower exception belongs at the node level, not here.
+ */
+function extractPercentile(t) {
+  if (!/\bpercentile\b/.test(t)) return null;
+  const match = t.match(/(\d{1,3}(?:\.\d+)?)/);
+  if (!match) return null;
+  const value = parseFloat(match[1]);
+  return value >= 0 && value <= 100 ? value : null;
+}
+
+/**
+ * R4-P Stage 2 addition (WBJEE quota). Generic phrasing, not literally
+ * coupled to WBJEE's own option labels — "all india" / "home state" are
+ * plain English quota stances, matching the same self-contained,
+ * no-exam-specific-coupling spirit as every other extractor in this file.
+ */
+function extractQuota(t) {
+  if (/\ball india\b/.test(t)) return 'all_india';
+  if (/\bhome state\b|\bwest bengal\b/.test(t)) return 'home_state_wb';
+  return null;
+}
+
+/**
+ * R4-P Stage 2 addition (AP EAMCET region). Values match
+ * `whatsappCollegePredictor/apTs.js`'s `AP_REGION_OPTIONS` (`AU`/`SVU`) —
+ * imported live by `r4pPredictor.js` for the button UI, so this extractor
+ * only needs to recognize the same two short codes/names as free text.
+ */
+function extractRegion(t) {
+  if (/\bau\b|\bandhra university\b/.test(t)) return 'AU';
+  if (/\bsvu\b|\bsri venkateswara\b/.test(t)) return 'SVU';
+  return null;
 }
 
 const CATEGORY_KEYWORDS = Object.freeze(['bc-a', 'bc-b', 'bc-c', 'bc-d', 'bc-e', 'oc', 'sc', 'st', 'ews', 'general']);
@@ -294,8 +408,11 @@ function extractFlowV2Slots(text, profile = {}) {
   maybeSet('cityPref', extractCityPref(t));
   maybeSet('examType', extractExamType(t));
   maybeSet('rank', extractRank(t));
+  maybeSet('percentile', extractPercentile(t));
   maybeSet('category', extractCategory(t));
   maybeSet('gender', extractGender(t));
+  maybeSet('quota', extractQuota(t));
+  maybeSet('region', extractRegion(t));
   maybeSet('goalPriority', extractGoalPriority(t));
   maybeSet('scholarshipFlag', extractScholarshipFlag(t));
   maybeSet('isParent', extractIsParent(t));
@@ -307,13 +424,17 @@ module.exports = {
   extractFlowV2Slots,
   // exported individually for focused unit testing / future reuse
   extractQualification,
+  extractName,
   extractBranchInterest,
   extractBudgetBand,
   extractCityPref,
   extractExamType,
   extractRank,
+  extractPercentile,
   extractCategory,
   extractGender,
+  extractQuota,
+  extractRegion,
   extractGoalPriority,
   extractScholarshipFlag,
   extractIsParent,

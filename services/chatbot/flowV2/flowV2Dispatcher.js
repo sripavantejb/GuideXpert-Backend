@@ -77,8 +77,9 @@
  *   pendingSideEffect?: { type: string, execute: () => Promise<object> },
  * }
  *
- * ROUTING ORDER (Phase 3, unchanged since): crisis-lock short-circuit >
- * Node 0 pre-empt > classifyReply() > 8 fully-wired bucket handlers (R5,
+ * ROUTING ORDER (Master Flow Stage 1): persisted crisis-lock short-circuit >
+ * I-10 distress pre-check > Node 0 pre-empt > classifyReply() >
+ * 8 fully-wired bucket handlers (R5,
  * R6, R7 both tiers, R8, R9, R10, R11, R12) > R1-R4 fallthrough
  * (stage-based routing, now covering B1/B2/the core-fork and its exit
  * sub-flow as of Phase 4, B3 as of Phase 5, B5/B6 as of Phase 6, and B7 as
@@ -86,8 +87,8 @@
  * safeFallbackReply.
  */
 
-const { detectOverrideIntent, handleNode0Override } = require('./nodes/node0Override');
-const { handleGreetingEntry, handleGreetingReply } = require('./nodes/greeting');
+const { detectOverrideIntent, handleNode0Override, handleNode0BackfillReply } = require('./nodes/node0Override');
+const { handleGreetingEntry, handleGreetingReply, handleEntrySideTrackReply } = require('./nodes/greeting');
 const { handleB1Entry, handleB1Reply } = require('./nodes/b1Goal');
 const { handleB2Reply } = require('./nodes/b2Branch');
 const { handleCoreForkReply } = require('./nodes/b2CoreFork');
@@ -96,8 +97,17 @@ const { handleB3Entry, handleB3Reply } = require('./nodes/b3Constraints');
 const { handleB5Entry, handleB5Reply } = require('./nodes/b5Shortlist');
 const { handleB6Entry } = require('./nodes/b6TheCase');
 const { handleB7Entry, handleB7Reply } = require('./nodes/b7Book');
+const { handleR4PEntry, handleR4PReply } = require('./nodes/r4pPredictor');
 const { classifyReply } = require('./router/classifyReply');
+const { isTier2Crisis } = require('./router/crisisClassifier');
+const { extractFlowV2Slots } = require('./flowV2SlotExtractor');
 const { mergeFlowV2Profile } = require('./flowV2ProfileMerge');
+const { combineNodeResults, withMergedProfile } = require('./flowV2NodeUtils');
+const {
+  detectNonDistressInterrupt,
+  startNonDistressInterrupt,
+  handlePendingInterrupt,
+} = require('./nonDistressInterrupts');
 const { emptyFlowV2Profile } = require('../../../constants/careerCounsellingFlowV2Profile');
 
 const { handleR7Tier2 } = require('./router/handlers/r7Tier2Handler');
@@ -109,6 +119,7 @@ const { handleR9 } = require('./router/handlers/r9Handler');
 const { handleR10 } = require('./router/handlers/r10Handler');
 const { handleR11 } = require('./router/handlers/r11Handler');
 const { handleR12 } = require('./router/handlers/r12Handler');
+const { handleR4, handleR4PendingReply } = require('./router/handlers/r4Handler');
 
 /** Buckets fully owned by a router handler this phase — intercept and
  * return that handler's result directly (after doorHistory recording).
@@ -176,7 +187,26 @@ function safeFallbackReply() {
  * with zero further changes to the branches already listed. */
 async function runStageFallthrough(ctx, stage, text) {
   if (!stage) return await handleGreetingEntry(ctx);
-  if (stage === 'greeting_awaiting_reply') return await handleGreetingReply(ctx, text);
+  if (stage === 'node0_awaiting_backfill') {
+    // Backfill is optional. "Done" bypasses it and enters B7's existing
+    // completion path; every other answer is offered to the backfill
+    // handler, which either captures goalPriority or skips cleanly.
+    if (/\bdone\b/i.test(String(text || ''))) {
+      const doneCtx = { ...ctx, flowV2: { ...(ctx.flowV2 || {}), stage: 'b7_awaiting_done' } };
+      return await handleB7Reply(doneCtx, text);
+    }
+    return await handleNode0BackfillReply(ctx, text);
+  }
+  if (
+    stage === 'greeting_awaiting_name' ||
+    stage === 'greeting_awaiting_qualification' ||
+    stage === 'greeting_awaiting_reply'
+  ) {
+    return await handleGreetingReply(ctx, text);
+  }
+  if (typeof stage === 'string' && stage.startsWith('entry_')) {
+    return await handleEntrySideTrackReply(ctx, text);
+  }
   // Phase 4 — B1 · Goal, B2 · Branch, and the B2.2 core-engineering fork
   // + its honest-exit sub-flow.
   if (stage === 'greeting_captured_pending_b1') return await handleB1Entry(ctx);
@@ -188,6 +218,7 @@ async function runStageFallthrough(ctx, stage, text) {
   if (stage === 'b3_awaiting_entry') return await handleB3Entry(ctx);
   if (stage === 'b3_awaiting_budget') return await handleB3Reply(ctx, text);
   if (stage === 'b3_awaiting_location') return await handleB3Reply(ctx, text);
+  if (stage === 'b3_awaiting_city') return await handleB3Reply(ctx, text);
   // Phase 6 additions — B5 · Shortlist and B6 · The Case. B4 (Phase 5) sets
   // 'b5_awaiting_entry' and waits for the next turn (same precedent as B2's
   // advanceToB3, since B4 could not chain directly into a B5 that did not
@@ -208,6 +239,19 @@ async function runStageFallthrough(ctx, stage, text) {
   if (stage === 'b7_awaiting_done') return await handleB7Reply(ctx, text);
   if (stage === 'b7_post_decline') return await handleB7Reply(ctx, text);
   if (stage === 'b7_post_booking') return await handleB7Reply(ctx, text);
+  // Stage 6 — R4 pending sub-stages and R4-P predictor stages.
+  if (
+    stage === 'r4_college_awaiting_reply' ||
+    stage === 'r4_money_awaiting_reply' ||
+    stage === 'r4_admission_awaiting_reply' ||
+    stage === 'r4_vs_awaiting_reply'
+  ) {
+    const pending = await handleR4PendingReply(ctx, text);
+    if (pending) return pending;
+  }
+  if (typeof stage === 'string' && stage.startsWith('r4p_')) {
+    return await handleR4PReply(ctx, text);
+  }
   return safeFallbackReply();
 }
 
@@ -273,6 +317,47 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
     return crisisLockedReply();
   }
 
+  // I-10 genuine distress is a PIPELINE PRE-CHECK, not an ordinary
+  // router branch. It must run before Node 0, slot extraction, and
+  // classifyReply — a message such as "book a session, my life is over"
+  // is a crisis escalation, never a booking conversion. classifyReply
+  // retains the same check as defense in depth for direct callers, but
+  // every real Flow v2 turn reaches this check first.
+  if (isTier2Crisis(text)) {
+    return handleR7Tier2(ctx, text);
+  }
+
+  // Part 13 Layer 3: extraction runs once at the turn boundary for every
+  // non-crisis inbound message, before Node 0, classification, or stage
+  // routing. Every downstream path sees the same additive merged profile;
+  // no handler can accidentally discard facts merely because the message
+  // took an override or leaf-router path.
+  // A name answer is identity text, not a qualification turn. Keeping it
+  // out of the generic slot extractor prevents names such as "Arts" or
+  // "Degree" from silently contaminating the profile before Node E has
+  // accepted (or rejected) them as a name.
+  const extractedPatch = stage === 'greeting_awaiting_name' ? {} : extractFlowV2Slots(text, profile);
+  if (!stage && !profile.rawFirstMessage && text) extractedPatch.rawFirstMessage = text;
+  if (!profile.botState) extractedPatch.botState = 'career_counselling_flow_v2';
+  const extractedProfile = mergeFlowV2Profile(profile, extractedPatch);
+  const turnCtx = {
+    ...(ctx || {}),
+    flowV2: {
+      ...((ctx && ctx.flowV2) || {}),
+      profile: extractedProfile,
+    },
+  };
+
+  // I-7 ("how much does this cost") must beat Node 0: bare `session` is an
+  // OVERRIDE_PATTERN, and a price question containing that word must never
+  // be mistaken for a booking jump. Answer the fee plainly first.
+  {
+    const earlyInterrupt = detectNonDistressInterrupt(text, stage);
+    if (earlyInterrupt === 'I-7') {
+      return startNonDistressInterrupt(turnCtx, 'I-7');
+    }
+  }
+
   // Node 0 is a pre-empt, not a stage: checked next, on every turn,
   // regardless of context.flowV2.stage — EXCEPT once the student is
   // already inside B7 · Book (Phase 7). Node 0's OVERRIDE_PATTERNS
@@ -285,25 +370,129 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
   // else — is moot once the student is already in the booking beat itself.
   const isB7Stage = typeof stage === 'string' && stage.startsWith('b7_');
   if (!isB7Stage && detectOverrideIntent(text)) {
-    return handleNode0Override(ctx, text);
+    // The link was already sent on the immediately preceding Node 0 turn.
+    // A repeated booking word here is not a reason to send a duplicate
+    // URL; treat it as skipping the optional backfill and continue into
+    // the existing awaiting-Done helper path.
+    if (stage === 'node0_awaiting_backfill' && extractedProfile.bookingStatus === 'link_sent') {
+      return handleNode0BackfillReply(turnCtx, text);
+    }
+    return handleNode0Override(turnCtx, text);
   }
 
-  const classification = classifyReply(text, profile, {
+  // Node E and its qualification side tracks are deterministic local
+  // state machines. Route them before the generic R-bucket classifier so
+  // row titles such as "Medical" and "Other" cannot be stolen by R11/R10.
+  const isEntryStage =
+    stage === 'greeting_awaiting_name' ||
+    stage === 'greeting_awaiting_qualification' ||
+    stage === 'greeting_awaiting_reply' ||
+    (typeof stage === 'string' && stage.startsWith('entry_'));
+  if (isEntryStage) {
+    const isQualificationStage =
+      stage === 'greeting_awaiting_qualification' || stage === 'greeting_awaiting_reply';
+    if (isQualificationStage) {
+      // A pending R10 confirmation/clarification is a deterministic Node E
+      // state, so resolve it before attempting a fresh classification.
+      if (
+        turnCtx.flowV2.pendingQualificationGuess ||
+        turnCtx.flowV2.pendingAmbiguousResolution
+      ) {
+        return await handleGreetingReply(turnCtx, text);
+      }
+
+      // Stage 5 reconciliation: Node E still owns qualification routing,
+      // but its inbound is classified so typed rows (R2), multi-fact
+      // answers (R3), and ambiguous answers (R10) receive their documented
+      // behavior without moving Node E below ordinary interrupts.
+      const entryClassification = classifyReply(text, extractedProfile, {
+        stage,
+        messageType: meta.messageType || 'text',
+        pendingQualificationGuess: null,
+      });
+      if (entryClassification.bucket === 'R10') {
+        return withDoorHistory(
+          handleR10(turnCtx, text, entryClassification),
+          turnCtx,
+          entryClassification.bucket,
+          stage
+        );
+      }
+      return withDoorHistory(
+        handleGreetingReply(turnCtx, text, {
+          classification: entryClassification,
+          messageType: meta.messageType || 'text',
+        }),
+        turnCtx,
+        entryClassification.bucket,
+        stage
+      );
+    }
+    return await runStageFallthrough(turnCtx, stage, text);
+  }
+
+  // Stage 4b non-distress interrupts. Node E remains untouched above; for
+  // the B1-B7 spine these run after I-10 and Node 0, but before the ordinary
+  // reply classifier/stage logic. Pending interrupts always retain the
+  // exact stage they interrupted instead of resetting the journey.
+  if (stage === 'interrupt_i1_awaiting_reply' || stage === 'interrupt_i2_awaiting_reply') {
+    const interruptResult = handlePendingInterrupt(turnCtx, text);
+    if (interruptResult && interruptResult.interruptResolved) {
+      const resumedCtx = {
+        ...turnCtx,
+        flowV2: {
+          ...(turnCtx.flowV2 || {}),
+          stage: interruptResult.interruptedStage,
+          profile: interruptResult.profile,
+          interruptedStage: null,
+        },
+      };
+      const resumed = await runStageFallthrough(resumedCtx, interruptResult.interruptedStage, interruptResult.resumeText);
+      return {
+        ...resumed,
+        replyText: null,
+        replyParts: [interruptResult.confirmation, ...(resumed.replyText ? [resumed.replyText] : []), ...(resumed.replyParts || [])],
+        contextPatch: { ...resumed.contextPatch, interruptedStage: null },
+      };
+    }
+    return interruptResult;
+  }
+
+  if (
+    stage === 'interrupt_i3_awaiting_reply' ||
+    stage === 'interrupt_i4_awaiting_reply' ||
+    stage === 'interrupt_i6_awaiting_reply'
+  ) {
+    return handlePendingInterrupt(turnCtx, text);
+  }
+
+  // Core-fork / exit button stages own their replies — R4 must not steal
+  // "I want pure mechanical" (which matches R4-D goal) away from F2.
+  if (stage === 'b2_core_fork_awaiting_reply' || stage === 'b2_core_exit_awaiting_reply') {
+    return withDoorHistory(await runStageFallthrough(turnCtx, stage, text), turnCtx, 'R1', stage);
+  }
+
+  const interruptId = detectNonDistressInterrupt(text, stage);
+  if (interruptId) return startNonDistressInterrupt(turnCtx, interruptId);
+
+  const classification = classifyReply(text, extractedProfile, {
     stage,
     messageType: meta.messageType || 'text',
     pendingQualificationGuess: ctx?.flowV2?.pendingQualificationGuess || null,
   });
   const { bucket } = classification;
 
-  // R7 Tier-2 — hard stop, checked before any other bucket dispatch.
+  // R7 Tier-2 — defensive fallback for a future/direct classifier path.
+  // The normal dispatcher path was already intercepted by the I-10
+  // pipeline pre-check above before Node 0.
   if (bucket === 'R7' && classification.tier === 2) {
-    return handleR7Tier2(ctx, text);
+    return handleR7Tier2(turnCtx, text);
   }
 
   // R7 Tier-1 — one empathetic line, THEN falls through to whatever the
   // current stage was. Never reachable from/into the Tier-2 path above.
   if (bucket === 'R7' && classification.tier === 1) {
-    const fallthrough = await runStageFallthrough(ctx, stage, text);
+    const fallthrough = await runStageFallthrough(turnCtx, stage, text);
     const combinedReplyParts = [
       getR7Tier1PrefixLine(),
       ...(fallthrough.replyText ? [fallthrough.replyText] : []),
@@ -311,7 +500,7 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
     ];
     return withDoorHistory(
       { ...fallthrough, replyText: null, replyParts: combinedReplyParts },
-      ctx,
+      turnCtx,
       bucket,
       stage
     );
@@ -320,15 +509,37 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
   // 8 fully self-contained, fully-wired buckets — intercept, do not fall
   // through to stage-based routing.
   if (WIRED_HANDLERS[bucket]) {
-    const result = WIRED_HANDLERS[bucket](ctx, text, classification);
-    return withDoorHistory(result, ctx, bucket, stage);
+    const result = WIRED_HANDLERS[bucket](turnCtx, text, classification);
+    return withDoorHistory(result, turnCtx, bucket, stage);
   }
 
-  // R1-R4 (taps / types / over-answers / jumps ahead): destinations don't
-  // exist yet (B1-B7 not built) — classify + record only, then fall
-  // through to whatever stage handler already exists, UNCHANGED.
-  const fallthrough = await runStageFallthrough(ctx, stage, text);
-  return withDoorHistory(fallthrough, ctx, bucket, stage);
+  // R4 — jumps ahead: answer the need, then rejoin (R4-A → R4-P).
+  if (bucket === 'R4') {
+    const result = await handleR4(turnCtx, text, classification);
+    return withDoorHistory(result, turnCtx, bucket, stage);
+  }
+
+  // R1-R3 (taps / types / over-answers): fall through to stage handlers.
+  let fallthrough = await runStageFallthrough(turnCtx, stage, text);
+  if (
+    stage === 'b1_awaiting_reply' &&
+    turnCtx.flowV2.r3OverAnswerPending === true &&
+    fallthrough.contextPatch?.stage === 'b3_awaiting_entry'
+  ) {
+    const prefix = [
+      ...(fallthrough.replyText ? [fallthrough.replyText] : []),
+      ...(fallthrough.replyParts || []),
+    ];
+    const skippedB3 = handleB3Entry(
+      withMergedProfile(turnCtx, fallthrough.contextPatch.profile)
+    );
+    fallthrough = combineNodeResults(prefix, skippedB3);
+    fallthrough.contextPatch = {
+      ...fallthrough.contextPatch,
+      r3OverAnswerPending: null,
+    };
+  }
+  return withDoorHistory(fallthrough, turnCtx, bucket, stage);
 }
 
 module.exports = {

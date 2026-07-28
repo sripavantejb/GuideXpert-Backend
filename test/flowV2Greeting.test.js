@@ -5,113 +5,260 @@ const assert = require('node:assert/strict');
 const {
   handleGreetingEntry,
   handleGreetingReply,
+  handleEntrySideTrackReply,
   QUALIFICATION_ROWS,
+  UNKNOWN_NAME_GREETING,
+  NAME_REASK,
+  NEUTRAL_QUALIFICATION_LINE,
 } = require('../services/chatbot/flowV2/nodes/greeting');
 const { emptyFlowV2Profile } = require('../constants/careerCounsellingFlowV2Profile');
 
 describe('flowV2 greeting — entry', () => {
-  test('sends the correct message + 9-row list, and sets stage correctly', () => {
-    const result = handleGreetingEntry({ leadContext: { iit: { fullName: 'Priya Sharma' } } });
-    assert.match(result.replyText, /^Hey Priya 👋/);
-    assert.match(result.replyText, /First — where are you right now\?/);
+  test('known profile.name skips the name ask and shows the exact 10-row qualification list', () => {
+    const profile = { ...emptyFlowV2Profile(), name: 'Priya' };
+    const result = handleGreetingEntry({ flowV2: { profile } });
+    assert.equal(result.replyText, null);
+    assert.equal(
+      result.interactive.body,
+      'Nice to meet you, Priya 😊 Quick one first — can I know your qualification?'
+    );
+    assert.equal(result.contextPatch.stage, 'greeting_awaiting_qualification');
     assert.equal(result.interactive.type, 'list');
-    assert.equal(result.interactive.sections[0].rows.length, 9);
+    assert.equal(result.interactive.sections[0].title, 'Where are you right now?');
+    assert.equal(result.interactive.sections[0].rows.length, 10);
     assert.deepEqual(result.interactive.sections[0].rows, QUALIFICATION_ROWS);
-    assert.equal(result.contextPatch.stage, 'greeting_awaiting_reply');
+    assert.deepEqual(
+      QUALIFICATION_ROWS.map((row) => row.title),
+      [
+        '10th Completed',
+        '11th Studying',
+        '12th Completed (PCM)',
+        '12th Completed (PCB)',
+        '12th Completed (Commerce)',
+        '12th Completed (Arts)',
+        'Diploma',
+        'Degree',
+        'Drop Year',
+        'Other',
+      ]
+    );
   });
 
-  test('omits the name gracefully when no leadContext name is available', () => {
-    const result = handleGreetingEntry({});
-    assert.match(result.replyText, /^Hey there 👋/);
-    assert.doesNotMatch(result.replyText, /undefined/);
+  test('known name plus known qualification skips both questions and routes immediately', () => {
+    const profile = {
+      ...emptyFlowV2Profile(),
+      name: 'Priya',
+      qualification: '12th Completed (PCM)',
+      stream: 'PCM',
+    };
+    const result = handleGreetingEntry({ flowV2: { profile } });
+    assert.equal(result.contextPatch.stage, 'greeting_captured_pending_b1');
+    assert.equal(result.interactive, null);
   });
 
-  test('does not set door/temperature at entry (left at tri-state null default)', () => {
-    // Greeting's contextPatch never mentions door/temperature at all —
-    // they stay whatever the caller's existing profile already has
-    // (typically the emptyFlowV2Profile() null default).
+  test('unknown name gets the exact Rithika greeting and no qualification list yet', () => {
     const result = handleGreetingEntry({});
-    assert.equal('door' in (result.contextPatch.profile || {}), false);
-    assert.equal('temperature' in (result.contextPatch.profile || {}), false);
+    assert.equal(result.replyText, UNKNOWN_NAME_GREETING);
+    assert.equal(
+      result.replyText,
+      "Hi 😊 I'm Rithika from GuideXpert. I help students figure out the right path after Class 12. May I know your name?"
+    );
+    assert.equal(result.interactive, null);
+    assert.equal(result.contextPatch.stage, 'greeting_awaiting_name');
+    assert.equal(result.contextPatch.nameAttempts, 0);
   });
 
   test('is a defensive no-op if called with a stage already set (belt-and-suspenders; real guarantee is at dispatcher level)', () => {
-    const result = handleGreetingEntry({ flowV2: { stage: 'greeting_awaiting_reply' } });
+    const result = handleGreetingEntry({ flowV2: { stage: 'greeting_awaiting_name' } });
     assert.equal(result.replyText, null);
     assert.equal(result.interactive, null);
   });
 });
 
-describe('flowV2 greeting — reply (tapped row + free text)', () => {
-  test('a tapped list row title extracts qualification correctly', () => {
-    const result = handleGreetingReply({ flowV2: { profile: emptyFlowV2Profile() } }, '12th — MPC');
-    assert.equal(result.contextPatch.profile.qualification, 'Class 12 (MPC)');
-    assert.equal(result.contextPatch.stage, 'greeting_captured_pending_b1');
-    assert.match(result.replyText, /Got it — Class 12 \(MPC\)\. Thanks!/);
+describe('flowV2 greeting — deterministic name capture', () => {
+  const nameCtx = (patch = {}) => ({
+    flowV2: { stage: 'greeting_awaiting_name', profile: emptyFlowV2Profile(), nameAttempts: 0, ...patch },
   });
 
-  test('free-typed text extracts qualification correctly via the same path', () => {
-    const result = handleGreetingReply({ flowV2: { profile: emptyFlowV2Profile() } }, 'im in 12th mpc');
-    assert.equal(result.contextPatch.profile.qualification, 'Class 12 (MPC)');
-    assert.equal(result.contextPatch.stage, 'greeting_captured_pending_b1');
+  test('extracts names from emoji, short, and long conversational replies', () => {
+    for (const [text, expected] of [
+      ['😊 Rahul', 'Rahul'],
+      ['Ananya', 'Ananya'],
+      ["Hi Rithika! My name is mohammed, I'm looking for college advice 😊", 'Mohammed'],
+    ]) {
+      const result = handleGreetingReply(nameCtx(), text);
+      assert.equal(result.contextPatch.profile.name, expected);
+      assert.equal(result.contextPatch.stage, 'greeting_awaiting_qualification');
+      assert.equal(
+        result.interactive.body,
+        `Nice to meet you, ${expected} 😊 Quick one first — can I know your qualification?`
+      );
+    }
   });
 
-  test('tapped rows for Class 10, Dropper / gap year, and Already in college all resolve via the extended extractor', () => {
-    const class10 = handleGreetingReply({ flowV2: { profile: emptyFlowV2Profile() } }, 'Class 10');
-    assert.equal(class10.contextPatch.profile.qualification, 'Class 10');
+  test('unclear first reply gets exact re-ask; unclear second reply never asks a third time', () => {
+    const first = handleGreetingReply(nameCtx(), '🤷');
+    assert.equal(first.replyText, NAME_REASK);
+    assert.equal(first.replyText, "Sorry, didn't catch that 😊 What should I call you?");
+    assert.equal(first.contextPatch.nameAttempts, 1);
 
-    const dropper = handleGreetingReply({ flowV2: { profile: emptyFlowV2Profile() } }, 'Dropper / gap year');
-    assert.equal(dropper.contextPatch.profile.qualification, 'Dropper / gap year');
-
-    const college = handleGreetingReply({ flowV2: { profile: emptyFlowV2Profile() } }, 'Already in college');
-    assert.equal(college.contextPatch.profile.qualification, 'Already in college');
-  });
-
-  test('does not clobber unrelated existing profile fields on a successful capture', () => {
-    const existing = { ...emptyFlowV2Profile(), branchInterest: 'ECE' };
-    const result = handleGreetingReply({ flowV2: { profile: existing } }, '12th mpc');
-    assert.equal(result.contextPatch.profile.branchInterest, 'ECE');
-  });
-
-  test('unrecognized text triggers the short re-ask, not a repeated full greeting or a throw', () => {
-    const result = handleGreetingReply({ flowV2: { profile: emptyFlowV2Profile() } }, "I don't really know");
-    assert.equal(result.contextPatch.stage, 'greeting_awaiting_reply');
-    assert.equal(result.interactive.type, 'list');
-    assert.doesNotMatch(result.interactive.body, /I'm Guide, from GuideXpert/);
-    assert.match(result.interactive.body, /didn't quite catch that/i);
-  });
-
-  test('"Something else" is treated as unresolved (no guess), triggering the short re-ask', () => {
-    const result = handleGreetingReply({ flowV2: { profile: emptyFlowV2Profile() } }, 'Something else');
-    assert.equal(result.contextPatch.stage, 'greeting_awaiting_reply');
-    assert.equal(result.interactive.type, 'list');
-  });
-
-  test('a near-miss free-typed reply offers a one-tap guess confirm, and "yes" accepts it', () => {
-    const guessResult = handleGreetingReply(
-      { flowV2: { profile: emptyFlowV2Profile() } },
-      'just finished 10, no exams yet'
+    const second = handleGreetingReply(nameCtx({ nameAttempts: 1 }), '...');
+    assert.equal(second.interactive.body, NEUTRAL_QUALIFICATION_LINE);
+    assert.equal(
+      second.interactive.body,
+      'Nice to meet you 😊 Quick one first — can I know your qualification?'
     );
-    assert.equal(guessResult.interactive.type, 'button');
-    assert.equal(guessResult.contextPatch.pendingQualificationGuess, 'Class 10');
-    assert.equal(guessResult.contextPatch.stage, 'greeting_awaiting_reply');
-
-    const confirmCtx = {
-      flowV2: { profile: emptyFlowV2Profile(), pendingQualificationGuess: 'Class 10' },
-    };
-    const acceptResult = handleGreetingReply(confirmCtx, "Yes, that's right");
-    assert.equal(acceptResult.contextPatch.profile.qualification, 'Class 10');
-    assert.equal(acceptResult.contextPatch.stage, 'greeting_captured_pending_b1');
-    assert.equal(acceptResult.contextPatch.pendingQualificationGuess, null);
+    assert.equal(second.contextPatch.stage, 'greeting_awaiting_qualification');
+    assert.equal(second.contextPatch.nameAttempts, null);
   });
 
-  test('declining a guess confirm ("no") clears the pending guess and re-asks shortened', () => {
-    const confirmCtx = {
-      flowV2: { profile: emptyFlowV2Profile(), pendingQualificationGuess: 'Class 10' },
+  test('name attempts remain ephemeral and accepted name preserves existing profile fields', () => {
+    const existing = { ...emptyFlowV2Profile(), branchInterest: 'ECE', cityPref: 'Pune' };
+    const result = handleGreetingReply(nameCtx({ profile: existing, nameAttempts: 1 }), 'I am Kavya 😊');
+    assert.equal(result.contextPatch.profile.name, 'Kavya');
+    assert.equal(result.contextPatch.profile.branchInterest, 'ECE');
+    assert.equal(result.contextPatch.profile.cityPref, 'Pune');
+    assert.equal('nameAttempts' in result.contextPatch.profile, false);
+    assert.equal(result.contextPatch.nameAttempts, null);
+  });
+});
+
+describe('flowV2 greeting — qualification routes', () => {
+  function qualCtx(profilePatch = {}) {
+    return {
+      flowV2: {
+        stage: 'greeting_awaiting_qualification',
+        profile: { ...emptyFlowV2Profile(), name: 'Rahul', ...profilePatch },
+      },
     };
-    const result = handleGreetingReply(confirmCtx, 'No, let me pick');
-    assert.equal(result.contextPatch.pendingQualificationGuess, null);
-    assert.equal(result.contextPatch.stage, 'greeting_awaiting_reply');
-    assert.equal(result.interactive.type, 'list');
+  }
+
+  test('PCM follows the default B1 path and preserves unrelated profile data', () => {
+    const result = handleGreetingReply(qualCtx({ cityPref: 'Hyderabad' }), '12th Completed (PCM)');
+    assert.equal(result.contextPatch.profile.qualification, '12th Completed (PCM)');
+    assert.equal(result.contextPatch.profile.stream, 'PCM');
+    assert.equal(result.contextPatch.profile.cityPref, 'Hyderabad');
+    assert.equal(result.contextPatch.stage, 'greeting_captured_pending_b1');
+  });
+
+  test('all non-PCM rows enter their required side tracks', () => {
+    const expectedStages = {
+      '10th Completed': 'entry_class10_awaiting_reply',
+      '11th Studying': 'entry_class11_awaiting_reply',
+      '12th Completed (PCB)': 'entry_pcb_awaiting_reply',
+      '12th Completed (Commerce)': 'entry_commerce_awaiting_reply',
+      '12th Completed (Arts)': 'entry_arts_honest_scope',
+      Diploma: 'entry_diploma_awaiting_reply',
+      Degree: 'entry_degree_awaiting_reply',
+      'Drop Year': 'entry_drop_year_awaiting_reply',
+      Other: 'entry_other_awaiting_text',
+    };
+    for (const [qualification, stage] of Object.entries(expectedStages)) {
+      const result = handleGreetingReply(qualCtx(), qualification);
+      assert.equal(result.contextPatch.profile.qualification, qualification);
+      assert.equal(result.contextPatch.stage, stage, qualification);
+    }
+  });
+
+  test('Class 10 parks in stream advice without entering college shortlisting', () => {
+    const profile = { ...emptyFlowV2Profile(), qualification: '10th Completed' };
+    const result = handleEntrySideTrackReply(
+      { flowV2: { stage: 'entry_class10_awaiting_reply', profile } },
+      'Just exploring'
+    );
+    assert.equal(result.contextPatch.stage, 'entry_class10_stream_advice_parked');
+    assert.match(result.replyText, /not shortlisting colleges/i);
+  });
+
+  test('Class 11, PCB tech, Diploma, Degree, and Drop Year rejoin B1 with route data', () => {
+    const base = emptyFlowV2Profile();
+    const cases = [
+      ['entry_class11_awaiting_reply', { ...base, qualification: '11th Studying', timeline: 'next_year' }, 'Both'],
+      ['entry_pcb_awaiting_reply', { ...base, qualification: '12th Completed (PCB)' }, 'Open to tech'],
+      ['entry_diploma_awaiting_reply', { ...base, qualification: 'Diploma' }, 'Yes, lateral entry'],
+      ['entry_degree_awaiting_reply', { ...base, qualification: 'Degree' }, 'After graduation'],
+      ['entry_drop_year_awaiting_reply', { ...base, qualification: 'Drop Year', entryType: 'dropper' }, 'Both'],
+    ];
+    for (const [stage, profile, answer] of cases) {
+      const result = handleEntrySideTrackReply({ flowV2: { stage, profile } }, answer);
+      assert.equal(result.contextPatch.stage, 'greeting_captured_pending_b1', stage);
+    }
+    const diploma = handleEntrySideTrackReply(
+      { flowV2: { stage: 'entry_diploma_awaiting_reply', profile: cases[2][1] } },
+      'Yes, lateral entry'
+    );
+    assert.equal(diploma.contextPatch.profile.entryType, 'lateral');
+  });
+
+  test('Commerce prefilters the branch but uses the honest-scope route because no verified business catalog exists', () => {
+    const commerce = handleEntrySideTrackReply(
+      {
+        flowV2: {
+          stage: 'entry_commerce_awaiting_reply',
+          profile: { ...emptyFlowV2Profile(), qualification: '12th Completed (Commerce)' },
+        },
+      },
+      'Design'
+    );
+    assert.equal(commerce.contextPatch.stage, 'entry_commerce_honest_scope');
+    assert.equal(commerce.contextPatch.profile.stream, 'Commerce');
+    assert.equal(commerce.contextPatch.profile.branchInterest, 'design');
+    assert.match(commerce.interactive.body, /won't mix in or invent/i);
+  });
+
+  test('PCB medical and Arts use honest scope routes; Other captures free text and reroutes', () => {
+    const pcb = handleEntrySideTrackReply(
+      {
+        flowV2: {
+          stage: 'entry_pcb_awaiting_reply',
+          profile: { ...emptyFlowV2Profile(), qualification: '12th Completed (PCB)' },
+        },
+      },
+      'Medical'
+    );
+    assert.equal(pcb.contextPatch.stage, 'entry_pcb_medical_scope');
+    assert.match(pcb.interactive.body, /rather not guess at medical admissions/i);
+
+    const arts = handleGreetingReply(qualCtx(), '12th Completed (Arts)');
+    assert.equal(arts.contextPatch.stage, 'entry_arts_honest_scope');
+    assert.equal(arts.contextPatch.profile.stream, 'Arts');
+    assert.match(arts.interactive.body, /rather not guess at Arts pathways/i);
+
+    const other = handleEntrySideTrackReply(
+      {
+        flowV2: {
+          stage: 'entry_other_awaiting_text',
+          profile: { ...emptyFlowV2Profile(), qualification: 'Other' },
+        },
+      },
+      'I am pursuing my degree'
+    );
+    assert.equal(other.contextPatch.profile.qualification, 'Degree');
+    assert.equal(other.contextPatch.stage, 'entry_degree_awaiting_reply');
+  });
+
+  test('honest-scope "tell me about tech" choices rejoin B1, while Class 10 remains parked', () => {
+    const artsProfile = {
+      ...emptyFlowV2Profile(),
+      qualification: '12th Completed (Arts)',
+      stream: 'Arts',
+    };
+    const tech = handleEntrySideTrackReply(
+      { flowV2: { stage: 'entry_arts_honest_scope', profile: artsProfile } },
+      'Tell me about tech anyway'
+    );
+    assert.equal(tech.contextPatch.stage, 'greeting_captured_pending_b1');
+
+    const class10 = handleEntrySideTrackReply(
+      {
+        flowV2: {
+          stage: 'entry_class10_stream_advice_parked',
+          profile: { ...emptyFlowV2Profile(), qualification: '10th Completed' },
+        },
+      },
+      'show me colleges'
+    );
+    assert.equal(class10.contextPatch.stage, 'entry_class10_stream_advice_parked');
+    assert.match(class10.replyText, /College shortlisting can wait/i);
   });
 });

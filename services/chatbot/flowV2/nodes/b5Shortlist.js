@@ -253,9 +253,9 @@ function computeTiers(profile) {
 
 function flattenShortlist(tiers) {
   const tagged = [
-    ...tiers.bestMatch.map((c) => ({ ...c, tier: 'best_match' })),
-    ...tiers.strongAlternatives.map((c) => ({ ...c, tier: 'strong_alternative' })),
-    ...tiers.worthExploring.map((c) => ({ ...c, tier: 'worth_exploring' })),
+    ...tiers.bestMatch.slice(0, 1).map((c) => ({ ...c, tier: 'best_match' })),
+    ...tiers.strongAlternatives.slice(0, 2).map((c) => ({ ...c, tier: 'strong_alternative' })),
+    ...tiers.worthExploring.slice(0, 2).map((c) => ({ ...c, tier: 'worth_exploring' })),
   ];
   return tagged.map((c) => ({
     collegeName: c.collegeName,
@@ -282,20 +282,22 @@ const GOAL_FRAME_LINE = Object.freeze({
 });
 
 /**
- * ★ CORE-INTEREST PAYOFF — verbatim per task spec. Only ever appended to
- * NIAT's line, and only when NIAT is specifically the best-match college.
+ * ★ CORE-INTEREST PAYOFF — Stage 7 conservative Variant B.
  *
- * ⚠ UNVERIFIED ASSUMPTION, restated from the task (not silently shipped):
- * this makes a factual claim about NIAT's actual curriculum (robotics/
- * automation/BIM/embedded project work) that has not been confirmed against
- * any source in this codebase. Confirm before this ships to real students.
+ * DEFAULTED PENDING BUSINESS CONFIRMATION — open items ◆ NIAT-1 and ◆ NIAT-2
+ * (Part 2.3 / Part 18). NIAT is framed as CSE/AI only, with NO unverified
+ * robotics/automation curriculum claim. Payoff lines may acknowledge the
+ * student's inbound core interest and the wider software door — they must
+ * NEVER invent NIAT project-work facts (robotics, automation, BIM labs, etc.).
+ * See constants/careerCounsellingFlowV2BusinessDefaults.js · NIAT_CSE_ONLY /
+ * NIAT_NO_ROBOTICS_CLAIM.
  */
 const CORE_INTEREST_PAYOFF = Object.freeze({
   mechanical:
-    'Their project work runs into robotics and automation, which is exactly where your mechanical interest points.',
+    'You came in leaning mechanical \u2014 this keeps a wider CSE/AI door open without pretending it replaces pure mechanical college work.',
   civil:
-    'Their project and simulation work lines up with the BIM and smart-infrastructure direction civil is heading.',
-  ece: 'Their embedded and hardware-adjacent project work keeps your ECE interest genuinely in play.',
+    'You came in leaning civil \u2014 this keeps a wider CSE/AI door open, without inventing civil-lab claims we cannot verify.',
+  ece: 'You came in leaning ECE \u2014 this keeps a wider CSE/AI door open from a software-first base I can shortlist honestly.',
 });
 
 /** The core-interest payoff (see `appendCoreInterestPayoff` below) is
@@ -326,7 +328,7 @@ function buildShortlistBody(shortlistArray, profile) {
     strong_alternative: shortlistArray.filter((c) => c.tier === 'strong_alternative'),
     worth_exploring: shortlistArray.filter((c) => c.tier === 'worth_exploring'),
   };
-  const sections = [];
+  const sections = ['Based on everything you shared, here are 5 that fit you 👇', ''];
   for (const tier of ['best_match', 'strong_alternative', 'worth_exploring']) {
     const items = byTier[tier];
     if (!items.length) continue;
@@ -338,11 +340,11 @@ function buildShortlistBody(shortlistArray, profile) {
       if (tier === 'best_match' && profile.coreInterest && /\bniat\b/i.test(item.collegeName)) {
         line = appendCoreInterestPayoff(line, profile.coreInterest);
       }
-      sections.push(`- *${item.collegeName}* \u2014 ${line}`);
+      sections.push(`• *${item.collegeName}* \u2014 ${line}`);
     }
     sections.push('');
   }
-  sections.push('Want me to compare them, just tell you the best fit, or change something first?');
+  sections.push('These are matched to what you told me \u2014 not a generic ranking.');
   return sections.filter((line, i, arr) => !(line === '' && arr[i - 1] === '')).join('\n').trim();
 }
 

@@ -37,7 +37,9 @@ const OFFER_MESSAGE_2 =
 const OFFER_MESSAGE_3 =
   "The flip side is the bit people miss. A CS student can work in almost any INDUSTRY \u2014 automotive, aerospace, healthcare, finance \u2014 because all of them run on software now. What they can't do is sign off a bridge \uD83D\uDE04 So it's not that core is weaker. It's that the software door is wider, and it opens from both sides.";
 const OFFER_MESSAGE_4 =
-  "So here's what I'd actually suggest. Let me show you colleges where you learn AI and coding properly \u2014 and you can still point that at robotics, automation or EV, which is where mechanical is heading anyway. You keep the interest. You just get the wider door. Want to see those?";
+  // DEFAULTED PENDING BUSINESS CONFIRMATION — ◆ NIAT-2 / NIAT_NO_ROBOTICS_CLAIM +
+  // ◆ CORE-1 Variant B pitch stays CSE/AI door language without unverified robotics claims.
+  "So here's what I'd actually suggest. Let me show you colleges where you learn AI and coding properly \u2014 GuideXpert's depth is CSE and AI careers, and that's the wider door I can shortlist honestly. You keep the interest; you just get more industries to apply it in. Want to see those?";
 
 const PARENT_VARIANT_TEXT =
   "Both are good fields. The practical difference is that software roles hire in larger numbers and across more industries, so the job market is simply wider. That's the honest reason I'd nudge toward it. Want me to show you programs that combine both?";
@@ -50,12 +52,12 @@ const OFFER_BUTTONS = Object.freeze([
 
 const TELL_ME_MORE_BUBBLES = Object.freeze({
   mechanical:
-    'Short version \u2014 mechanical is going software-heavy fast. Robotics and factory automation, EV battery and motor control, simulation and digital twins, CAD automation. Every one of those needs someone who can code. That person is usually the one leading the project, not assisting on it.',
+    'Short version \u2014 mechanical work is going software-heavy fast. Simulation, digital twins, CAD tooling, and control software show up across modern projects. The person who can code is often the one leading that layer, not assisting on it.',
   civil:
-    'Short version \u2014 civil is going digital fast. BIM, smart infrastructure, structural simulation, drone survey and site analytics. The person who can code is the one running those projects.',
+    'Short version \u2014 civil is going digital fast. BIM, smart infrastructure, structural simulation, and site analytics all lean on software. The person who can code is often the one running those projects.',
   // "also used for eee" per spec — EEE students get the same bubble as ECE.
   ece:
-    'Honestly, ECE sits closest of all to this. Embedded systems, IoT, robotics, chip design tooling \u2014 all of it is code on top of hardware. Adding AI properly means you can go hardware OR software, and you keep both doors open.',
+    'Honestly, ECE sits closest of all to this. Embedded systems, IoT, and chip-design tooling are already code on top of hardware. Adding AI properly means you can go hardware OR software, and you keep both doors open.',
 });
 
 const F1_ACK_TEXT = 'Good call \u2014 that\u2019s the combination that actually holds up.';

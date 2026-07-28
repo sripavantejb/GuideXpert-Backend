@@ -63,7 +63,7 @@ const NOT_YET_LIST_SECTION_TITLE = 'What would help?';
 const NOT_YET_LIST_BUTTON_TEXT = 'Select';
 
 const DONE_CONFIRMATION_TEXT =
-  "Perfect, your request is in \u2705 I'm still right here \u2014 ask me anything about placements, fees or scholarships while you wait for your counsellor.";
+  "Perfect, your request is in \u2705\nI'm still right here \u2014 ask me anything about placements, fees or scholarships while you wait for your counsellor.";
 
 const AWAITING_DONE_HOLDING_TEXT =
   "No rush \u2014 once you've submitted the form, just reply Done and I'll take it from there.";
@@ -74,7 +74,7 @@ const AWAITING_DONE_HOLDING_TEXT =
  * phase (flagged in this phase's report, not silently invented) — the only
  * requirement here is that the state never goes silent. */
 const POST_DECLINE_HOLDING_TEXT =
-  "I don't have that fully built out here yet, but I've noted it \u2014 your counsellor can go deep on this in the session. Whenever you're ready, just say Book and I'll send the link.";
+  "I'm here whenever. Pick fees, placements, hostel & safety, or scholarships and I'll help with that.";
 
 /** `b7_post_booking` holding reply — same "never dead-end" requirement,
  * same out-of-scope note as above; this beat's own confirmation message
@@ -148,7 +148,13 @@ function buildB7BookingLinkMessage() {
   return [
     'Great \u2014 here\u2019s your booking form:',
     nodeZeroOverride.buildBookingUrlLine(),
-    'After submitting, just reply Done here. \uD83C\uDF89',
+    '',
+    'In the session your counsellor will:',
+    '\u2022 Compare colleges against YOUR goals',
+    '\u2022 Walk through placements, internships and scholarships',
+    '\u2022 Answer anything still open',
+    '',
+    'After submitting, just reply Done here. \uD83D\uDE4C',
   ].join('\n');
 }
 
@@ -218,16 +224,38 @@ function handleB7AwaitingDoneReply(ctx, text) {
 // b7_post_decline / b7_post_booking — holding states, never silent.
 // ---------------------------------------------------------------------------
 
-function handleB7PostDeclineReply(ctx) {
-  const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
-  // Stays on b7_post_decline regardless of what was said (including a tap
-  // on one of the 4 topic rows) — never re-invokes handleB7Entry.
-  return nodeResult({ replyText: POST_DECLINE_HOLDING_TEXT, stage: 'b7_post_decline', profile });
+const TOPIC_REPLIES = Object.freeze({
+  fees:
+    'For fees, compare the total yearly cost \u2014 tuition, hostel, deposits and compulsory extras \u2014 not just the headline number. Verify the current figure with each college before deciding.',
+  placements:
+    'For placements, ask for branch-specific numbers: eligible students, students placed, median package and the companies that hired. Overall percentages can hide a lot.',
+  hostel:
+    'For hostel and safety, check supervision, transport, curfew policy, medical support and how complaints are handled. A campus visit is the best verification.',
+  scholarships:
+    'For scholarships, check eligibility, renewal conditions, the amount covered and whether it applies to tuition only. Current terms should be confirmed directly with the college.',
+});
+
+function topicReply(text) {
+  const value = String(text || '');
+  if (/\bfees?\b/i.test(value)) return TOPIC_REPLIES.fees;
+  if (/\bplacements?\b/i.test(value)) return TOPIC_REPLIES.placements;
+  if (/\bhostel\b|\bsafety\b/i.test(value)) return TOPIC_REPLIES.hostel;
+  if (/\bscholarships?\b|\baid\b/i.test(value)) return TOPIC_REPLIES.scholarships;
+  return null;
 }
 
-function handleB7PostBookingReply(ctx) {
+function handleB7PostDeclineReply(ctx, text) {
   const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
-  return nodeResult({ replyText: POST_BOOKING_HOLDING_TEXT, stage: 'b7_post_booking', profile });
+  if (BOOK_PATTERN.test(String(text || ''))) {
+    const mergedProfile = mergeFlowV2Profile(profile, { bookingStatus: 'link_sent' });
+    return nodeResult({ replyText: buildB7BookingLinkMessage(), stage: 'b7_awaiting_done', profile: mergedProfile });
+  }
+  return nodeResult({ replyText: topicReply(text) || POST_DECLINE_HOLDING_TEXT, stage: 'b7_post_decline', profile });
+}
+
+function handleB7PostBookingReply(ctx, text) {
+  const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
+  return nodeResult({ replyText: topicReply(text) || POST_BOOKING_HOLDING_TEXT, stage: 'b7_post_booking', profile });
 }
 
 // ---------------------------------------------------------------------------
@@ -264,4 +292,5 @@ module.exports = {
   AWAITING_DONE_HOLDING_TEXT,
   POST_DECLINE_HOLDING_TEXT,
   POST_BOOKING_HOLDING_TEXT,
+  TOPIC_REPLIES,
 };

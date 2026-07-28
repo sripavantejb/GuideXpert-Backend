@@ -79,22 +79,104 @@ async function executeActiveGuidedFlowTurn({
   );
 
   let replyText = turn.replyText;
-  if (replyText) {
-    replyText = await deliverOutboundReply({
-      replyText,
+  const flowV2Interactive = flow?.id === 'career_counselling_flow_v2' ? turn.interactive : null;
+  if (
+    !replyText &&
+    !flowV2Interactive &&
+    (!Array.isArray(turn.replyParts) || turn.replyParts.length === 0)
+  ) {
+    replyText =
+      'Share what matters most in a college — placements, coding culture, fees, or say "I don\'t know".';
+  }
+  const replyParts =
+    (flow?.id === 'career_counselling_v2' || flow?.id === 'career_counselling_flow_v2') &&
+    Array.isArray(turn.replyParts) &&
+    turn.replyParts.length > 0
+      ? turn.replyParts
+      : null;
+
+  let result = null;
+  if (replyParts && replyParts.length) {
+    for (const part of replyParts) {
+      let partText = part;
+      if (partText) {
+        partText = await deliverOutboundReply({
+          replyText: partText,
+          multilingualInbound,
+          intent: turn.intent,
+          localizationTier: turn.localizationTier || flow.localizationTier || 'translate',
+          preLocalized: Boolean(turn.preLocalized),
+        });
+      }
+      result = await h.outbound.sendBotTextReply({
+        conversationId: activeConversation._id,
+        phone10: activeConversation.phone,
+        text: partText,
+        inReplyToInboundId: inbound._id,
+      });
+    }
+    replyText = replyParts.join('\n\n');
+  }
+
+  if (flowV2Interactive && flowV2Interactive.type === 'list') {
+    const body = await deliverOutboundReply({
+      replyText: flowV2Interactive.body,
       multilingualInbound,
       intent: turn.intent,
       localizationTier: turn.localizationTier || flow.localizationTier || 'translate',
       preLocalized: Boolean(turn.preLocalized),
     });
+    result = await h.outbound.sendBotListReply({
+      conversationId: activeConversation._id,
+      phone10: activeConversation.phone,
+      body,
+      buttonText: flowV2Interactive.buttonText || 'Select',
+      sections: flowV2Interactive.sections || [],
+      inReplyToInboundId: inbound._id,
+    });
+    replyText = body;
+  } else if (flowV2Interactive && flowV2Interactive.type === 'button') {
+    const body = await deliverOutboundReply({
+      replyText: flowV2Interactive.body,
+      multilingualInbound,
+      intent: turn.intent,
+      localizationTier: turn.localizationTier || flow.localizationTier || 'translate',
+      preLocalized: Boolean(turn.preLocalized),
+    });
+    result = await h.outbound.sendBotButtonReply({
+      conversationId: activeConversation._id,
+      phone10: activeConversation.phone,
+      body,
+      buttons: flowV2Interactive.buttons || [],
+      inReplyToInboundId: inbound._id,
+    });
+    replyText = body;
+  } else if (!replyParts || !replyParts.length) {
+    if (replyText) {
+      replyText = await deliverOutboundReply({
+        replyText,
+        multilingualInbound,
+        intent: turn.intent,
+        localizationTier: turn.localizationTier || flow.localizationTier || 'translate',
+        preLocalized: Boolean(turn.preLocalized),
+      });
+    }
+
+    result = await h.outbound.sendBotTextReply({
+      conversationId: activeConversation._id,
+      phone10: activeConversation.phone,
+      text: replyText,
+      inReplyToInboundId: inbound._id,
+    });
   }
 
-  const result = await h.outbound.sendBotTextReply({
-    conversationId: activeConversation._id,
-    phone10: activeConversation.phone,
-    text: replyText,
-    inReplyToInboundId: inbound._id,
-  });
+  if (turn.pendingSideEffect && typeof turn.pendingSideEffect.execute === 'function') {
+    try {
+      await turn.pendingSideEffect.execute();
+    } catch (err) {
+      console.warn('[flowV2] pendingSideEffect failed', err?.message || err);
+    }
+  }
 
   logInboundResult({
     event: 'inbound_processed',

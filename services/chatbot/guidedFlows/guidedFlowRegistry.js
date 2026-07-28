@@ -46,6 +46,18 @@ const GUIDED_FLOW_DEFINITIONS = Object.freeze([
     completeBotState: 'career_counselling_journey',
     localizationTier: 'translate',
   }),
+  Object.freeze({
+    id: 'career_counselling_flow_v2',
+    botState: 'career_counselling_flow_v2',
+    contextKey: 'flowV2',
+    continueIntent: 'career_counselling_flow_v2_continue',
+    // Entry is opt-in via botState transition / feature flag — do not steal
+    // the frozen V2 career_counselling_journey intent.
+    entryIntents: Object.freeze(['career_counselling_flow_v2']),
+    slotFilling: false,
+    completeBotState: 'career_counselling_flow_v2',
+    localizationTier: 'translate',
+  }),
 ]);
 
 const BY_BOT_STATE = new Map(GUIDED_FLOW_DEFINITIONS.map((flow) => [flow.botState, flow]));

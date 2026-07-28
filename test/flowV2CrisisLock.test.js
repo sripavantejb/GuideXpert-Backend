@@ -41,6 +41,34 @@ describe('flowV2Dispatcher — crisis lock is checked before EVERYTHING else', (
     const result = await processFlowV2Turn({}, 'i want to end it all');
     assert.equal(result.contextPatch.profile.crisisLocked, true);
   });
+
+  test('I-10 outranks Node 0 on the SAME inbound message: distress + booking escalates, never sends the booking link', async (t) => {
+    const { createHandoffMock } = mockHandoffPlumbing(t);
+    const ctx = { flowV2: { stage: 'b5_awaiting_reply', profile: emptyFlowV2Profile() } };
+
+    const result = await processFlowV2Turn(ctx, 'book a session please, my life is over');
+
+    assert.equal(result.contextPatch.profile.crisisLocked, true);
+    assert.equal(result.nextState, 'human_handoff');
+    assert.equal(result.interactive, null);
+    assert.doesNotMatch(result.replyText || '', /booking form|one-on-one-session/i);
+    assert.match(result.replyText, /Tele-MANAS/i);
+    assert.equal(createHandoffMock.mock.callCount(), 1);
+    assert.equal(createHandoffMock.mock.calls[0].arguments[0].reason, 'crisis_escalation');
+  });
+
+  test('I-10 outranks predictor/rank routing on the SAME inbound message: no slot question or prediction state can win', async (t) => {
+    mockHandoffPlumbing(t);
+    const ctx = { flowV2: { stage: 'r4p_awaiting_slot', profile: emptyFlowV2Profile(), r4pPendingSlot: 'exam' } };
+
+    const result = await processFlowV2Turn(ctx, 'TS EAMCET rank 18453 OC male and I want to end my life');
+
+    assert.equal(result.contextPatch.profile.crisisLocked, true);
+    assert.equal(result.nextState, 'human_handoff');
+    assert.equal(result.interactive, null);
+    assert.notEqual(result.contextPatch.stage, 'r4p_awaiting_prediction');
+    assert.match(result.replyText, /Tele-MANAS/i);
+  });
 });
 
 describe('flowV2Dispatcher — R7 Tier-2 fires the real human alert end-to-end (guarantee #2, independent of the lock)', () => {
@@ -169,6 +197,6 @@ describe('flowV2Dispatcher — crisis lock non-recovery (guard rail test)', () =
     );
     const turn2Result = await processFlowV2Turn(turn2Ctx, 'hi, is anyone there?');
     assert.equal(turn2Result.nextState, 'human_handoff');
-    assert.ok(!/I'm Guide, from GuideXpert/i.test(turn2Result.replyText || ''));
+    assert.ok(!/from GuideXpert/i.test(turn2Result.replyText || ''));
   });
 });

@@ -4,7 +4,7 @@
  * Flow v2 — "what do I ask next" resolver.
  *
  * `nextSlot(profile)` walks the beat order (entry -> B1 -> ... -> B7) and
- * returns the first slot key that is still empty for its type. Returns
+ * returns the first ASKABLE slot key that is still empty for its type. Returns
  * `null` once every slot in the walked beats is filled (meaning: advance
  * past the current beat / conversation can move on).
  *
@@ -16,7 +16,9 @@
  * "not yet asked" — so gating must check `=== null`/`=== undefined`, never
  * falsiness. This lets a later beat genuinely gate on a yes/no answer
  * (e.g. "is a parent present in this chat?"). There is no carve-out for
- * boolean/object slots: every slot type gates the same way.
+ * boolean/object slots when a future slot explicitly declares
+ * `askable: true`. Metadata, derived fields, optional flags, and node
+ * outputs are never questions merely because they belong to a beat.
  *
  * DESIGN NOTE — `beats` option (added, not in original spec): the full
  * `LEAD_PROFILE_SCHEMA` already includes B4-B7 slots (per the schema spec),
@@ -50,6 +52,7 @@ function nextSlot(profile = {}, options = {}) {
   for (const beat of beats) {
     for (const key of getSlotsForBeat(beat)) {
       const slotDef = LEAD_PROFILE_SCHEMA[key];
+      if (slotDef.askable !== true) continue;
       if (isEmptyForGating(slotDef, safeProfile[key])) return key;
     }
   }

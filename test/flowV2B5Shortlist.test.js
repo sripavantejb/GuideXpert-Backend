@@ -144,33 +144,35 @@ describe('b5Shortlist — coreInterest payoff (buildShortlistBody, deterministic
     { collegeName: 'NIAT (NxtWave Institute of Advanced Technologies)', tier: 'strong_alternative', matchScore: 0.7, why: 'AI-first curriculum.' },
   ];
 
-  test('mechanical: appends the mechanical-specific payoff line to NIAT\u2019s best-match line only', () => {
+  test('mechanical: appends the honest CSE/AI door payoff — never an unverified robotics curriculum claim', () => {
     const body = buildShortlistBody(bestMatchNiat, { goalPriority: [], coreInterest: 'mechanical' });
-    assert.ok(body.includes('robotics and automation'));
+    assert.ok(body.includes('wider CSE/AI door'));
+    assert.ok(!body.includes('robotics and automation'));
     const niatLine = body.split('\n').find((l) => l.includes('NIAT'));
-    assert.ok(niatLine.includes('robotics and automation'));
+    assert.ok(niatLine.includes('leaning mechanical'));
   });
 
-  test('civil: appends the civil-specific payoff line', () => {
+  test('civil: appends the civil-specific honest payoff', () => {
     const body = buildShortlistBody(bestMatchNiat, { goalPriority: [], coreInterest: 'civil' });
-    assert.ok(body.includes('BIM and smart-infrastructure'));
+    assert.ok(body.includes('leaning civil'));
+    assert.ok(!body.includes('BIM and smart-infrastructure'));
   });
 
-  test('ece: appends the ece-specific payoff line', () => {
+  test('ece: appends the ece-specific honest payoff', () => {
     const body = buildShortlistBody(bestMatchNiat, { goalPriority: [], coreInterest: 'ece' });
-    assert.ok(body.includes('embedded and hardware-adjacent'));
+    assert.ok(body.includes('leaning ECE'));
+    assert.ok(!body.includes('embedded and hardware-adjacent'));
   });
 
   test('negative: coreInterest null -> no payoff line appended even though NIAT is best-match', () => {
     const body = buildShortlistBody(bestMatchNiat, { goalPriority: [], coreInterest: null });
-    assert.ok(!body.includes('robotics and automation'));
-    assert.ok(!body.includes('BIM and smart-infrastructure'));
-    assert.ok(!body.includes('embedded and hardware-adjacent'));
+    assert.ok(!body.includes('wider CSE/AI door'));
+    assert.ok(!body.includes('leaning mechanical'));
   });
 
   test('negative: NIAT in best-match slot is required — a NIAT entry in strong_alternative never gets the payoff', () => {
     const body = buildShortlistBody(bestMatchOther, { goalPriority: [], coreInterest: 'mechanical' });
-    assert.ok(!body.includes('robotics and automation'));
+    assert.ok(!body.includes('leaning mechanical'));
   });
 
   test('the payoff never modifies a non-NIAT best-match college\u2019s own line', () => {
@@ -178,6 +180,14 @@ describe('b5Shortlist — coreInterest payoff (buildShortlistBody, deterministic
     const plakshaLine = body.split('\n').find((l) => l.includes('Plaksha'));
     assert.ok(!plakshaLine.includes('robotics'));
     assert.ok(!plakshaLine.includes('mechanical'));
+  });
+
+  test('invariant: shortlist copy never ships unverified NIAT robotics / automation curriculum claims', () => {
+    for (const interest of ['mechanical', 'civil', 'ece']) {
+      const body = buildShortlistBody(bestMatchNiat, { goalPriority: [], coreInterest: interest });
+      assert.ok(!/\brobotics\b/i.test(body));
+      assert.ok(!/\bautomation\b/i.test(body));
+    }
   });
 });
 

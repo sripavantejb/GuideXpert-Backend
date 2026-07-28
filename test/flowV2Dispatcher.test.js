@@ -15,19 +15,19 @@ const {
 const handoffService = require('../services/chatbot/handoffService');
 const WhatsAppAgentHandoff = require('../models/WhatsAppAgentHandoff');
 
-const FULL_GREETING_MARKER = "I'm Guide, from GuideXpert's counselling desk";
+const FULL_GREETING_MARKER = "I'm Rithika from GuideXpert";
 
 describe('flowV2Dispatcher — stage routing', () => {
   test('a fresh conversation (no stage) routes to the full greeting entry', async () => {
     const result = await processFlowV2Turn({}, 'hi');
     assert.match(result.replyText, new RegExp(FULL_GREETING_MARKER));
-    assert.equal(result.contextPatch.stage, 'greeting_awaiting_reply');
+    assert.equal(result.contextPatch.stage, 'greeting_awaiting_name');
   });
 
   test("stage === 'greeting_awaiting_reply' routes to the reply handler, NOT the entry handler", async () => {
     const ctx = { flowV2: { stage: 'greeting_awaiting_reply', profile: emptyFlowV2Profile() } };
     const result = await processFlowV2Turn(ctx, '12th mpc');
-    assert.equal(result.contextPatch.profile.qualification, 'Class 12 (MPC)');
+    assert.equal(result.contextPatch.profile.qualification, '12th Completed (PCM)');
   });
 });
 
@@ -60,8 +60,8 @@ describe('flowV2Dispatcher — Node 0 pre-empts every stage, checked before any 
   });
 });
 
-describe('flowV2Dispatcher — unrecognized (future-phase) stages fall back safely', () => {
-  test('a stage with no handler yet (e.g. node0_awaiting_backfill) does not throw/reject and returns a safe generic reply', async () => {
+describe('flowV2Dispatcher — Node 0 optional backfill stage', () => {
+  test('node0_awaiting_backfill is a real handler that captures the answer and advances safely', async () => {
     const ctx = { flowV2: { stage: 'node0_awaiting_backfill', profile: emptyFlowV2Profile() } };
     // ASYNC (Phase 8): processFlowV2Turn now returns a Promise, so a bad
     // stage would surface as a REJECTION, not a synchronous throw —
@@ -72,6 +72,8 @@ describe('flowV2Dispatcher — unrecognized (future-phase) stages fall back safe
     const result = await processFlowV2Turn(ctx, 'Placements');
     assert.equal(typeof result.replyText, 'string');
     assert.equal(result.nextState, 'career_counselling_flow_v2');
+    assert.deepEqual(result.contextPatch.profile.goalPriority, ['placement']);
+    assert.equal(result.contextPatch.stage, 'b7_awaiting_done');
   });
 });
 

@@ -156,12 +156,8 @@ describe('classifyReply — R4 (jumps ahead)', () => {
 });
 
 describe('classifyReply — R3 (over-answers, 3+ slots)', () => {
-  // Deliberately avoids the literal words "budget"/"fees"/"cost"/
-  // "scholarship" (R4's money sub-case is checked BEFORE R3 per the
-  // classification order, so those words would correctly reclassify the
-  // message as R4 instead — see the R4 "money" test above).
-  test('4-slot message -> R3', () => {
-    const r = classifyReply('12th mpc, want cse, around 3 lakhs, hyderabad only', emptyProfile, {});
+  test('canonical 4-slot paste (including the word "budget") -> R3, not R4-C', () => {
+    const r = classifyReply('im in 12th mpc, want cse, budget around 3 lakhs, hyderabad only', emptyProfile, {});
     assert.equal(r.bucket, BUCKETS.R3);
     assert.ok(Object.keys(r.extractedSlots).length >= 3);
   });

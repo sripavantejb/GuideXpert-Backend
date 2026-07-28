@@ -27,6 +27,7 @@
  */
 
 const { extractFlowV2Slots } = require('../flowV2SlotExtractor');
+const { isTier2Crisis, R7_TIER2_CRISIS_PATTERNS } = require('./crisisClassifier');
 
 /** All 13 bucket ids, for reference/validation elsewhere. R13 is never
  * returned by classifyReply — see module docstring. */
@@ -58,21 +59,6 @@ const BUCKETS = Object.freeze({
  * instead) would also misroute a student into an unrecoverable crisis lock —
  * so this list is intentionally NOT expanded with broad/ambiguous phrasing.
  */
-const R7_TIER2_CRISIS_PATTERNS = Object.freeze([
-  /\bmy life is over\b/i,
-  /\bno point (in )?living\b/i,
-  /\bno point (in )?going on\b/i,
-  /\beveryone( would| will)? be better off without me\b/i,
-  /\bi want to (die|end it all|end my life)\b/i,
-  /\b(want|going) to kill myself\b/i,
-  /\bsuicid(e|al)\b/i,
-  /\bcan'?t (take it anymore|go on anymore|do this anymore)\b/i,
-  /\bi('m| am) done with (life|everything)\b/i,
-  /\bnothing matters anymore\b/i,
-  /\bi don'?t want to (live|be alive) anymore\b/i,
-  /\bself[- ]harm\b/i,
-]);
-
 /** R7 TIER-1 — disappointment / pressure. Does NOT overlap with Tier-2 —
  * checked second, only after Tier-2 has already failed to match. */
 const R7_TIER1_PATTERNS = Object.freeze([
@@ -142,18 +128,22 @@ const R5_ASKS_ABOUT_US_PATTERNS = Object.freeze([
  * group/context word that would let extractFlowV2Slots resolve confidently. */
 const R10_BARE_INTER_PATTERN = /\binter\b/i;
 const R10_BARE_YEAR_PATTERN = /\b(1st|first|2nd|second)\s*year\b/i;
+const R10_PASSED_OUT_PATTERN = /\bpassed out\b/i;
+const R10_12TH_PASS_PATTERN = /^\s*(?:12th|class\s*12)\s+pass(?:ed)?\s*$/i;
 const R10_PCM_PATTERN = /\bpcm\b/i;
 const R10_PCB_PATTERN = /\bpcb\b/i;
 
 /** Known qualification-adjacent terms for the generic typo-guess sub-case. */
 const R10_KNOWN_TERMS = Object.freeze([
   { term: 'diploma', guess: 'Diploma' },
-  { term: 'graduation', guess: 'Graduation' },
-  { term: 'dropper', guess: 'Dropper / gap year' },
+  { term: 'graduation', guess: 'Degree' },
+  { term: 'dropper', guess: 'Drop Year' },
 ]);
 
 /** R4 — jumps ahead. Sub-case patterns, checked in this order. */
-const R4_RANK_PATTERN = /\b(rank|percentile|air)\b/i;
+const R4_RANK_PATTERN =
+  /\b((my|the|eamcet|jee|ts|ap|wbjee|kcet|mht)\s+)?(rank|percentile|air)\b|\brank\s*(is|=|:)?\s*\d|\b\d{2,7}\s*(rank|percentile|%ile)/i;
+const R4_STICK_RANK_LIST_PATTERN = /\bstick to my rank list\b/i;
 const R4_KNOWN_COLLEGES = Object.freeze([
   'plaksha',
   'scaler',
@@ -171,6 +161,10 @@ const R4_MONEY_PATTERN = /\b(fees?|cost|budget|scholarship)\b/i;
 const R4_BEST_PATTERN = /\bbest college\b/i;
 const R4_ADMISSION_PATTERN = /\b(admission|deadline|apply by)\b/i;
 const R4_VS_PATTERN = /\b\w+\s+vs\s+\w+/i;
+const R4_GOAL_PATTERN =
+  /\b(i want|want to (become|do|study)|interested in|looking (at|for))\b.{0,40}\b(cse|ai|software|coding|mechanical|civil|ece|eee|engineer|engineering|data|design)\b/i;
+const R4_UNKNOWN_COLLEGE_ASK_PATTERN =
+  /\b(is|about|tell me about|what('?s| is)|how (is|good is))\b.{0,60}\b(any good|worth it|good\??|placements?|fees?)\b/i;
 
 function levenshteinAtMost2(a, b) {
   if (Math.abs(a.length - b.length) > 2) return false;
@@ -194,10 +188,13 @@ function matchAny(patterns, t) {
 }
 
 function classifyR4SubCase(t) {
+  if (R4_STICK_RANK_LIST_PATTERN.test(t)) return null;
   if (R4_RANK_PATTERN.test(t)) return 'rank';
+  if (R4_VS_PATTERN.test(t)) return 'vs';
   if (R4_KNOWN_COLLEGES.some((name) => t.includes(name))) return 'college';
   if (R4_MONEY_PATTERN.test(t)) return 'money';
-  if (R4_VS_PATTERN.test(t)) return 'vs';
+  if (R4_UNKNOWN_COLLEGE_ASK_PATTERN.test(t)) return 'college';
+  if (R4_GOAL_PATTERN.test(t)) return 'goal';
   if (R4_BEST_PATTERN.test(t)) return 'best';
   if (R4_ADMISSION_PATTERN.test(t)) return 'admission';
   return null;
@@ -213,12 +210,16 @@ function classifyReply(text, profile = {}, ctx = {}) {
   const raw = String(text || '');
   const t = raw.toLowerCase();
   const messageType = ctx.messageType || 'text';
-  const extractedSlots = extractFlowV2Slots(raw, profile);
 
-  // R7 TIER-2 — checked FIRST, always, unconditionally. No exceptions.
-  if (matchAny(R7_TIER2_CRISIS_PATTERNS, t)) {
+  // Defense in depth: the dispatcher already performs this exact I-10
+  // check before Node 0 and before entering the router at all. Keep the
+  // router-level check too for direct callers, and keep it before slot
+  // extraction so even those callers preserve the same safety ordering.
+  if (isTier2Crisis(raw)) {
     return { bucket: BUCKETS.R7, tier: 2, confidence: 0.98, extractedSlots: {}, subCase: 'tier2' };
   }
+
+  const extractedSlots = extractFlowV2Slots(raw, profile);
 
   // R7 TIER-1 — checked second.
   if (matchAny(R7_TIER1_PATTERNS, t)) {
@@ -259,7 +260,13 @@ function classifyReply(text, profile = {}, ctx = {}) {
   }
 
   // R10 — ambiguous (recognized-but-incomplete).
-  const hasGroupKeyword = /\bmpc\b|\bmec\b|\bbipc\b|\bcec\b|\bhec\b/.test(t);
+  const hasGroupKeyword = /\b(?:mpc|pcm|mec|cec|commerce|bipc|pcb|hec|arts)\b/.test(t);
+  if (R10_PASSED_OUT_PATTERN.test(t)) {
+    return { bucket: BUCKETS.R10, confidence: 0.6, extractedSlots: {}, subCase: 'passed_out' };
+  }
+  if (R10_12TH_PASS_PATTERN.test(t)) {
+    return { bucket: BUCKETS.R10, confidence: 0.65, extractedSlots: {}, subCase: 'bare_12th_pass' };
+  }
   if (R10_BARE_INTER_PATTERN.test(t) && !hasGroupKeyword) {
     return { bucket: BUCKETS.R10, confidence: 0.6, extractedSlots: {}, subCase: 'bare_inter' };
   }
@@ -281,13 +288,21 @@ function classifyReply(text, profile = {}, ctx = {}) {
     }
   }
 
-  // R4 — jumps ahead.
+  // R3 — over-answers (3+ extractable slots in one message). The Master
+  // Flow's canonical R3 paste contains the word "budget", which also
+  // resembles R4-C. Treat a genuinely multi-fact answer as R3 unless it is
+  // rank-led (R4-P owns rank/exam jumps and must keep its earlier route).
   const r4SubCase = classifyR4SubCase(t);
+  if (Object.keys(extractedSlots).length >= 3 && r4SubCase !== 'rank') {
+    return { bucket: BUCKETS.R3, confidence: 0.8, extractedSlots, subCase: null };
+  }
+
+  // R4 — jumps ahead.
   if (r4SubCase) {
     return { bucket: BUCKETS.R4, confidence: 0.75, extractedSlots, subCase: r4SubCase };
   }
 
-  // R3 — over-answers (3+ extractable slots in one message).
+  // R3 — over-answers without an R4-shaped keyword.
   if (Object.keys(extractedSlots).length >= 3) {
     return { bucket: BUCKETS.R3, confidence: 0.8, extractedSlots, subCase: null };
   }

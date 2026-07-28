@@ -231,10 +231,12 @@ describe('r10Handler — sub-case copy + silent PCM/PCB save', () => {
     assert.equal(result.contextPatch.profile.qualification, PCM_QUALIFICATION);
     assert.equal(result.contextPatch.stage, 'greeting_captured_pending_b1');
   });
-  test('pcb -> silent save, no interactive confirm prompt', () => {
+  test('pcb -> silent save and enters the required medical/tech split without a confirm prompt', () => {
     const result = handleR10(ctxWithProfile(), 'pcb', { subCase: 'pcb' });
-    assert.equal(result.interactive, null);
+    assert.equal(result.interactive.type, 'button');
+    assert.deepEqual(result.interactive.buttons.map((item) => item.title), ['Medical', 'Open to tech', 'Not sure']);
     assert.equal(result.contextPatch.profile.qualification, PCB_QUALIFICATION);
+    assert.equal(result.contextPatch.stage, 'entry_pcb_awaiting_reply');
   });
   test('typo_guess -> Yes/No confirm interactive (unlike PCM/PCB)', () => {
     const result = handleR10(ctxWithProfile(), 'diplma', { subCase: 'typo_guess', guess: 'Diploma' });

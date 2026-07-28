@@ -174,6 +174,60 @@ async function processFaqTurn({
   };
 }
 
+async function processCareerCounsellingFlowV2Turn({
+  inboundText,
+  inbound,
+  contextPatch,
+  isNewEntry = false,
+}) {
+  const { processFlowV2Turn } = require('../flowV2/flowV2Dispatcher');
+  const flowV2 = contextPatch.flowV2 || { stage: null, profile: null };
+  const ctx = {
+    conversationId: inbound?.conversationId || null,
+    phone: null,
+    flowV2: {
+      ...flowV2,
+      inboundId: inbound?._id ? String(inbound._id) : null,
+      predictionIdempotency: flowV2.predictionIdempotency || contextPatch.predictionIdempotency || null,
+    },
+  };
+
+  if (isNewEntry && !ctx.flowV2.stage) {
+    ctx.flowV2.stage = null;
+  }
+
+  const result = await processFlowV2Turn(ctx, inboundText, {
+    messageType: inbound?.messageType || 'text',
+  });
+
+  const nextFlowV2 = {
+    ...flowV2,
+    ...(result.contextPatch || {}),
+    profile: (result.contextPatch && result.contextPatch.profile) || flowV2.profile || null,
+    stage:
+      result.contextPatch && Object.prototype.hasOwnProperty.call(result.contextPatch, 'stage')
+        ? result.contextPatch.stage
+        : flowV2.stage,
+  };
+
+  return {
+    replyText: result.replyText,
+    replyParts: result.replyParts,
+    interactive: result.interactive || null,
+    nextState: result.nextState || 'career_counselling_flow_v2',
+    contextPatch: clearAssistantSessionFlags({
+      ...contextPatch,
+      flowV2: nextFlowV2,
+      ...(result.contextPatch?.predictionIdempotency
+        ? { predictionIdempotency: result.contextPatch.predictionIdempotency }
+        : {}),
+    }),
+    intent: result.intent || 'career_counselling_flow_v2',
+    pendingSideEffect: result.pendingSideEffect || null,
+    localizationTier: 'translate',
+  };
+}
+
 async function processGuidedFlowTurn({
   flow,
   inboundText,
@@ -211,6 +265,13 @@ async function processGuidedFlowTurn({
           conversationId: inbound?.conversationId || null,
         },
       });
+    case 'career_counselling_flow_v2':
+      return await processCareerCounsellingFlowV2Turn({
+        inboundText,
+        inbound,
+        contextPatch,
+        isNewEntry,
+      });
     case 'faq':
       return processFaqTurn({
         flow,
@@ -232,5 +293,6 @@ module.exports = {
   processCollegePredictorTurn,
   processRankPredictorTurn,
   processCareerCounsellingTurn,
+  processCareerCounsellingFlowV2Turn,
   processFaqTurn,
 };

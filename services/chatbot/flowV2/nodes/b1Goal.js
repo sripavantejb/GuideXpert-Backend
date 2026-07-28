@@ -48,15 +48,20 @@ const B1_REASK_BODY = "No worries — take your time. Pick whichever fits best f
  */
 function qualificationAckLine(qualification) {
   const q = String(qualification || '').toLowerCase();
-  if (q.includes('mpc')) return 'Perfect \u2014 MPC keeps engineering and tech wide open for you.';
-  if (q.includes('bipc')) return "Good to know \u2014 BiPC gives you options beyond just engineering, useful context.";
-  if (q.includes('mec') || q.includes('cec')) return "Got it \u2014 a commerce background gives you a different lens on this.";
-  if (q.includes('diploma')) return "Diploma's a solid, practical base to build on.";
-  if (q.includes('dropper') || q.includes('gap year')) return "A gap year isn't wasted time if it's used well \u2014 let's make it count.";
-  if (q.includes('already in college')) return 'Good \u2014 you already know the ropes a bit, that helps.';
-  if (q.includes('b.tech')) return "Good \u2014 you're already in the thick of it, so let's build on that.";
-  if (q.includes('graduation') || q.includes('graduate')) return "Good \u2014 that background will genuinely help here.";
-  if (q.includes('class 10') || q.includes('class 11')) return "Good \u2014 plenty of runway to plan this properly.";
+  if (q.includes('(pcm)') || q.includes('(mpc)')) return 'Perfect \u2014 MPC keeps engineering and tech wide open for you.';
+  if (q.includes('(pcb)') || q.includes('(bipc)')) return 'Got it.';
+  if (q.includes('(commerce)') || q.includes('mec') || q.includes('cec')) {
+    return 'Got it \u2014 commerce opens up business, finance and design routes.';
+  }
+  if (q === 'diploma') return 'Good \u2014 and lateral entry gives you a real head start.';
+  if (q === 'drop year' || q.includes('dropper') || q.includes('gap year')) {
+    return 'Good \u2014 and a drop year works more often than people think.';
+  }
+  if (q === 'degree' || q.includes('already in college') || q.includes('b.tech') || q.includes('graduation')) {
+    return 'Understood.';
+  }
+  if (q === '11th studying') return "Good timing \u2014 you've got room to prepare properly.";
+  if (q === '10th completed') return "Good \u2014 plenty of runway to plan this properly.";
   return 'Thanks for sharing that.';
 }
 
@@ -106,19 +111,17 @@ function handleB1Entry(ctx) {
  * example) — a documented judgment call covering every label this
  * extractor can currently produce. */
 const GOAL_ACK_LEAD = Object.freeze({
-  placement: 'Noted \u2014 placements first.',
-  ai_future_tech: 'Noted \u2014 AI and future tech excite you.',
-  affordable: 'Noted \u2014 affordability matters most.',
-  fee: 'Noted \u2014 fees matter most.',
-  higher_studies: "Noted \u2014 you're thinking long-term, higher studies later.",
-  startup: 'Noted \u2014 startup energy, got it.',
-  entrepreneurship: 'Noted \u2014 entrepreneurship energy, got it.',
+  placement: "Noted \u2014 placements first. That genuinely changes what I'd recommend, so thanks for being clear.",
+  ai_future_tech: "Good instinct \u2014 that's where the sharpest students are heading right now.",
+  affordable: 'Completely fair \u2014 and there are genuinely good options in that range.',
+  fee: 'Completely fair \u2014 and there are genuinely good options in that range.',
+  higher_studies: 'Useful to know \u2014 that changes which colleges actually make sense.',
+  startup: "Good \u2014 that's a different filter entirely, and a useful one.",
+  entrepreneurship: "Good \u2014 that's a different filter entirely, and a useful one.",
 });
-const GOAL_ACK_TAIL = 'That genuinely changes what I\u2019d recommend.';
 
 function goalPriorityAckLine(goalPriority) {
-  const lead = GOAL_ACK_LEAD[goalPriority[0]] || 'Noted \u2014 got it.';
-  return `${lead} ${GOAL_ACK_TAIL}`;
+  return GOAL_ACK_LEAD[goalPriority[0]] || 'Noted \u2014 got it.';
 }
 
 function reAskB1(mergedProfile) {
@@ -166,6 +169,8 @@ module.exports = {
   goalPriorityAckLine,
   buildB1ListInteractive,
   B1_ROWS,
+  B1_LIST_SECTION_TITLE,
+  B1_LIST_BUTTON_TEXT,
   B1_QUESTION_TAIL,
   B1_REASK_BODY,
 };
