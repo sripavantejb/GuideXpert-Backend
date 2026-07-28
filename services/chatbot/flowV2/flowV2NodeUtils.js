@@ -46,17 +46,13 @@ function combineNodeResults(prefixReplyParts, nextResult) {
 }
 
 /**
- * Sets `stage: 'b3_awaiting_entry'`, matching the established precedent
- * from Node 0 / Greeting (`'greeting_captured_pending_b1'` -> B1Entry,
- * `'node0_awaiting_backfill'`) of "advance-to-next-beat" callers setting
- * an entry stage and WAITING for the next turn, rather than chaining
- * straight into the next beat's entry function inline — B3 (Phase 5) is
- * now wired to this stage in `flowV2Dispatcher.js`'s `runStageFallthrough`.
- * Kept as a shared helper (rather than duplicated) because B2, the
- * core-engineering fork, AND the fork's honest-exit sub-flow all need to
- * "advance to B3" — keeping it in this dependency-free leaf module avoids
- * a circular require between b2Branch.js <-> b2CoreFork.js <->
- * b2CoreForkExit.js.
+ * Parks at `stage: 'b3_awaiting_entry'` with an optional ack line.
+ *
+ * Callers historically waited for the next inbound so B3 could be wired
+ * later. `processFlowV2Turn` now drains this park in the SAME turn via
+ * `drainAwaitingEntryStages` — students must never see an ack with no
+ * follow-up question. Kept as a park (not an inline handleB3Entry call)
+ * so this leaf module stays free of circular requires with b3Constraints.
  *
  * @param {object} mergedProfile
  * @param {string|null} [ackLine] - omit (or pass null) for a silent,

@@ -287,16 +287,12 @@ describe('B7 — full chained transition through the dispatcher', () => {
     assert.equal(result.contextPatch.stage, 'node0_awaiting_backfill');
   });
 
-  test('B6 -> B7 full handoff via the dispatcher (no recommendation set mid-chain loses nothing)', async () => {
+  test('B6 -> B7 full handoff via the dispatcher drains into the booking CTA in one turn', async () => {
     let profile = { ...emptyFlowV2Profile(), shortlist: [{ collegeName: 'NIAT', tier: 'best_match', matchScore: 0.9, why: 'AI-first curriculum.' }] };
     let ctx = { flowV2: { compareMode: 'best_only', stage: 'b6_awaiting_entry', profile } };
     let result = await processFlowV2Turn(ctx, 'ok');
-    assert.equal(result.contextPatch.stage, 'b7_awaiting_entry');
-    assert.equal(result.contextPatch.profile.recommendation, 'NIAT');
-
-    ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
-    result = await processFlowV2Turn(ctx, 'hi');
     assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
+    assert.equal(result.contextPatch.profile.recommendation, 'NIAT');
     assert.equal(result.interactive.body, STANDARD_INVITE_TEXT);
   });
 });

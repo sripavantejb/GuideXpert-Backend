@@ -152,8 +152,8 @@ describe('b6TheCase — handleB6Entry', () => {
   });
 });
 
-describe('B5/B6 — full chained transition through the dispatcher (B5 -> B6 -> b7_awaiting_entry)', () => {
-  test('best_only path: b5_awaiting_entry -> b5_awaiting_reply -> b6_awaiting_entry -> b7_awaiting_entry', async () => {
+describe('B5/B6 — full chained transition through the dispatcher (B5 -> B6 -> B7)', () => {
+  test('best_only path drains B6+B7 in the same turn after Just the best fit', async () => {
     let profile = { ...emptyFlowV2Profile(), qualification: 'Class 12 (MPC)', goalPriority: ['placement'], branchInterest: 'cse_ai', budgetBand: '2_5l', cityPref: 'Hyderabad' };
     let ctx = { flowV2: { stage: 'b5_awaiting_entry', profile } };
     let result = await processFlowV2Turn(ctx, 'hi');
@@ -161,27 +161,21 @@ describe('B5/B6 — full chained transition through the dispatcher (B5 -> B6 -> 
 
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     result = await processFlowV2Turn(ctx, 'Just the best fit');
-    assert.equal(result.contextPatch.stage, 'b6_awaiting_entry');
+    assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
     assert.equal(result.contextPatch.compareMode, 'best_only');
-
-    ctx = { flowV2: { stage: result.contextPatch.stage, compareMode: result.contextPatch.compareMode, profile: result.contextPatch.profile } };
-    result = await processFlowV2Turn(ctx, 'ok');
-    assert.equal(result.contextPatch.stage, 'b7_awaiting_entry');
     assert.equal(result.contextPatch.profile.qualification, 'Class 12 (MPC)');
     assert.ok(result.contextPatch.profile.recommendation);
+    assert.ok(result.interactive || (result.replyParts && result.replyParts.length));
   });
 
-  test('full-compare path produces 3 reply parts end-to-end via processFlowV2Turn', async () => {
+  test('full-compare path produces the case bubbles and lands on B7 booking in one turn', async () => {
     let profile = { ...emptyFlowV2Profile(), goalPriority: ['ai_future_tech'], branchInterest: 'cse_ai', budgetBand: '2_5l', cityPref: 'Hyderabad' };
     let ctx = { flowV2: { stage: 'b5_awaiting_entry', profile } };
     let result = await processFlowV2Turn(ctx, 'hi');
 
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     result = await processFlowV2Turn(ctx, 'Compare them');
-
-    ctx = { flowV2: { stage: result.contextPatch.stage, compareMode: result.contextPatch.compareMode, profile: result.contextPatch.profile } };
-    result = await processFlowV2Turn(ctx, 'ok');
-    assert.equal(result.replyParts.length, 3);
-    assert.equal(result.contextPatch.stage, 'b7_awaiting_entry');
+    assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
+    assert.ok((result.replyParts || []).length >= 3);
   });
 });

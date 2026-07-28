@@ -227,23 +227,22 @@ describe('b4Bridge — handleB4Entry', () => {
 });
 
 describe('B3/B4 — end-to-end through the full dispatcher', () => {
-  test('reaching b3_awaiting_entry for real (via B2\u2019s CSE tap), then the following turn renders the B3 budget question', async () => {
-    // Matches the established "advance-to-next-beat sets an entry stage
-    // and waits for the next turn" precedent (Node0 -> Greeting -> B1),
-    // NOT an inline same-turn chain — advanceToB3() deliberately stops at
-    // 'b3_awaiting_entry'.
+  test('B2 CSE tap continues into B3 budget question in the SAME turn (no ack-only park)', async () => {
+    // Master Flow: Coding/software/AI ack → B3 immediately. The dispatcher
+    // drains advanceToB3's b3_awaiting_entry park so WhatsApp never stalls.
     let ctx = { flowV2: { stage: 'b2_awaiting_reply', profile: emptyFlowV2Profile() } };
     let result = await processFlowV2Turn(ctx, 'Coding / software / AI');
-    assert.equal(result.contextPatch.stage, 'b3_awaiting_entry');
     assert.equal(result.contextPatch.profile.branchInterest, 'cse_ai');
-
-    ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
-    result = await processFlowV2Turn(ctx, 'hi');
     assert.equal(result.contextPatch.stage, 'b3_awaiting_budget');
-    assert.equal(result.contextPatch.profile.branchInterest, 'cse_ai');
+    assert.equal(result.interactive.type, 'button');
+    assert.match(
+      [...(result.replyParts || []), result.replyText, result.interactive?.body].filter(Boolean).join('\n'),
+      /most flexible base/i
+    );
+    assert.match(result.interactive.body, /comfortable for your family/i);
   });
 
-  test('a full budget+location round trip to B4, driven entirely through processFlowV2Turn', async () => {
+  test('a full budget+location round trip continues through B4 bridge into B5 in the same turn', async () => {
     let ctx = { flowV2: { stage: 'b3_awaiting_budget', profile: emptyFlowV2Profile() } };
     let result = await processFlowV2Turn(ctx, 'Under \u20B92L');
     assert.equal(result.contextPatch.profile.budgetBand, 'under_2l');
@@ -252,7 +251,15 @@ describe('B3/B4 — end-to-end through the full dispatcher', () => {
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     result = await processFlowV2Turn(ctx, 'Open to move');
     assert.equal(result.contextPatch.profile.cityPref, 'open_to_move');
-    assert.equal(result.contextPatch.stage, 'b5_awaiting_entry');
-    assert.equal(result.replyText, BRIDGE_TEXT);
+    assert.equal(result.contextPatch.stage, 'b5_awaiting_reply');
+    const visible = [
+      result.replyText,
+      ...(result.replyParts || []),
+      result.interactive && result.interactive.body,
+    ]
+      .filter(Boolean)
+      .join('\n');
+    assert.match(visible, /Before I show you the list/i);
+    assert.ok(result.interactive);
   });
 });

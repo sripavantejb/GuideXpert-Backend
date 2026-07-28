@@ -155,7 +155,8 @@ describe('b2CoreFork — F1 preserves coreInterest specifically (pre-Phase-5 dat
 
     assert.equal(f1Result.contextPatch.profile.coreInterest, 'mechanical');
     assert.equal(f1Result.contextPatch.profile.branchInterest, 'cse_ai');
-    assert.equal(f1Result.contextPatch.stage, 'b3_awaiting_entry');
+    assert.equal(f1Result.contextPatch.stage, 'b3_awaiting_budget');
+    assert.equal(f1Result.interactive.type, 'button');
     // Full profile object, not a partial/truncated one — every schema
     // slot the entry turn had is still present after F1.
     assert.deepEqual(Object.keys(f1Result.contextPatch.profile).sort(), Object.keys(emptyFlowV2Profile()).sort());

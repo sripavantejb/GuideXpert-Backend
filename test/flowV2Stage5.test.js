@@ -67,7 +67,7 @@ describe('Master Flow Stage 5 — R3 over-answer', () => {
     );
 
     const afterGoal = await processFlowV2Turn(continueCtx(captured), 'Strong placements');
-    assert.equal(afterGoal.contextPatch.stage, 'b5_awaiting_entry');
+    assert.equal(afterGoal.contextPatch.stage, 'b5_awaiting_reply');
     assert.doesNotMatch(
       visibleText(afterGoal),
       /which field|comfortable for your family|near home|open to moving|12th MPC, CSE/i
@@ -75,6 +75,7 @@ describe('Master Flow Stage 5 — R3 over-answer', () => {
     assert.equal(afterGoal.contextPatch.profile.branchInterest, 'CSE');
     assert.equal(afterGoal.contextPatch.profile.budgetBand, '2_4l');
     assert.equal(afterGoal.contextPatch.profile.cityPref, 'Hyderabad');
+    assert.ok(afterGoal.interactive);
   });
 });
 
