@@ -69,13 +69,14 @@ describe('Master Flow Stage 4b — B1/B2/B3/B5/B7 reconciliation', () => {
         cityPref: 'Hyderabad',
       })
     );
-    assert.equal(result.contextPatch.profile.shortlist.length, 3);
+    assert.equal(result.contextPatch.profile.shortlist.length, 6);
     const visible = [...(result.replyParts || []), result.replyText, result.interactive?.body]
       .filter(Boolean)
       .join('\n');
     assert.match(visible, /Newton School|🥇|worth exploring/i);
+    assert.match(visible, /Polar School of Technology/i);
+    assert.match(visible, /best fit/i);
     assert.doesNotMatch(visible, /\*Best Match\*/i);
-    assert.doesNotMatch(visible, /\bPlaksha\b|\bKalvium\b/i);
     assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
     assert.ok(result.interactive.buttons.some((b) => /help me|explore/i.test(b.title)));
   });

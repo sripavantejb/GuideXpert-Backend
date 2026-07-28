@@ -10,13 +10,14 @@
 const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
 const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingFlowV2Profile');
 const { assertGuardrails } = require('../../../../constants/careerCounsellingFlowV2Guardrails');
-const { advanceToB10 } = require('../flowV2NodeUtils');
+const { withMergedProfile, combineNodeResults } = require('../flowV2NodeUtils');
+const { handleB7Entry } = require('./b7Book');
+const { FIT_ASK_BODY: SHORTLIST_FIT_ASK, FIT_BUTTONS: SHORTLIST_FIT_BUTTONS } = require('./b8FlatShortlist');
 
-// Company Stage 8 closing ask (shown after medal shortlist).
-const FIT_ASK_BODY = 'Would you like me to help you find the best fit?';
-const FIT_BUTTONS = Object.freeze([
+// Prefer B8's shared fit copy so Stage 8 + Stage 9 stay consistent.
+const FIT_ASK_BODY = SHORTLIST_FIT_ASK || 'Would you like me to help you find the best fit?';
+const FIT_BUTTONS = SHORTLIST_FIT_BUTTONS || Object.freeze([
   Object.freeze({ id: 'flowv2_b9_yes', title: 'Yes, help me' }),
-  // Company: "I'll explore myself" (19 ≤ 20)
   Object.freeze({ id: 'flowv2_b9_self', title: "I'll explore myself" }),
 ]);
 
@@ -27,22 +28,21 @@ const SELF_LOOKUP_TEXT = [
 ].join('\n');
 
 const HONEST_PASS_TEXT = [
-  "Being straight with you — from what you've shared, I'm not sure any of these three is the obvious fit. Your interests point somewhere our catalog doesn't cover well, and I'd rather say that than talk you into one.",
+  "Being straight with you — from what you've shared, I'm not sure any of these colleges is the obvious fit. Your interests point somewhere our catalog doesn't cover well, and I'd rather say that than talk you into one.",
   '',
   'The checklist above still works on whatever you’re considering.',
   '',
   "If it'd help, I can put you in front of a counsellor who'll talk through the options that *do* fit — including ones we have nothing to do with.",
 ].join('\n');
 
-/** Compact compare — 3 medal colleges. */
+/** Compact compare — Stage 8 catalog. */
 const COMPARE_TABLE = [
-  "Here's how the three stack up on what you care about 👇",
+  "Here's how they stack up on what you care about 👇",
   '',
-  'Focus           Newton · NIAT · Scaler',
-  'AI / curriculum ●●     · ●●●  · ●●●',
-  'Projects        ●●●    · ●●●  · ●●●',
-  'Internships     ●●     · ●●●  · ●●●',
-  'Mentorship      ●●     · ●●●  · ●●●',
+  'Focus           Newton · NIAT · Scaler · Polar · Plaksha · Kalvium',
+  'AI / curriculum ●●     · ●●●  · ●●●    · ●●    · ●●●     · ●●',
+  'Projects        ●●●    · ●●●  · ●●●    · ●●●   · ●●      · ●●●',
+  'Internships     ●●     · ●●●  · ●●●    · ●●    · ●●      · ●●●',
 ].join('\n');
 
 const NIAT_NAME = 'NIAT';
@@ -173,6 +173,7 @@ function namedCollegeFromText(text, profile) {
   if (/\bniat\b/.test(t)) return { id: 'niat', name: NIAT_NAME };
   if (/\bnewton\b/.test(t)) return { id: 'newton', name: 'Newton School of Technology' };
   if (/\bscaler\b/.test(t)) return { id: 'scaler', name: 'Scaler' };
+  if (/\bpolar\b/.test(t)) return { id: 'polar', name: 'Polar School of Technology' };
   if (/\bplaksha\b/.test(t)) return { id: 'plaksha', name: 'Plaksha University' };
   if (/\bkalvium\b/.test(t)) return { id: 'kalvium', name: 'Kalvium' };
   return null;
@@ -186,7 +187,8 @@ function deliverNiatPitch(ctx, profile) {
       recommendation: null,
     });
     assertGuardrails(HONEST_PASS_TEXT);
-    return advanceToB10(merged, HONEST_PASS_TEXT);
+    const book = handleB7Entry(withMergedProfile(ctx, merged));
+    return combineNodeResults([HONEST_PASS_TEXT], book);
   }
 
   const body = buildNiatCounsellorPitch(profile);
@@ -197,7 +199,9 @@ function deliverNiatPitch(ctx, profile) {
     recommendation: 'niat',
     honestPassFired: false,
   });
-  return advanceToB10(merged, body);
+  // Same turn: Stage 9 pitch + Stage 10 booking invite (do not rely on drain alone).
+  const book = handleB7Entry(withMergedProfile(ctx, merged));
+  return combineNodeResults([body], book);
 }
 
 /** If student named a non-NIAT college, acknowledge it then still offer counsellor depth. */
@@ -219,7 +223,8 @@ function deliverNamedCollege(ctx, profile, college) {
     recommendation: college.id,
     honestPassFired: false,
   });
-  return advanceToB10(merged, body);
+  const book = handleB7Entry(withMergedProfile(ctx, merged));
+  return combineNodeResults([body], book);
 }
 
 function handleB9Entry(ctx) {

@@ -27,10 +27,10 @@ const DECLINE_TEXT = [
 ].join('\n');
 
 function alreadyAskedForColleges(profile) {
-  if (profile?.permissionRecommend === true) return true;
-  const door = String(profile?.door || '').toLowerCase();
-  if (door.includes('college') || door === 'jumps_ahead') return true;
-  return false;
+  // Only skip when the student already answered this gate.
+  // Do NOT skip because goal/door mentions "college" — Stage 2 "Best colleges
+  // for my profile" was wrongly auto-skipping Stage 6 and dumping B7–B9.
+  return profile?.permissionRecommend === true;
 }
 
 function looksLikeYes(text) {

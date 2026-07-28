@@ -117,7 +117,7 @@ describe('b5Shortlist — computeTiers (real reuse of scoreEligibleColleges/tier
 });
 
 describe('b5Shortlist — handleB5Entry (V3 B8 medal shortlist)', () => {
-  test('produces FIT ask with 3-medal shortlist (no Best Match tiers)', () => {
+  test('produces FIT ask with 6-college shortlist in one interactive (no Best Match tiers)', () => {
     const result = handleB5Entry(ctxWithProfile(STANDARD_PROFILE_PATCH));
     assert.equal(result.interactive.type, 'button');
     assert.ok(
@@ -129,10 +129,11 @@ describe('b5Shortlist — handleB5Entry (V3 B8 medal shortlist)', () => {
       .join('\n');
     assert.doesNotMatch(visible, /\*Best Match\*/i);
     assert.match(visible, /worth exploring|Newton School|🥇/i);
-    assert.doesNotMatch(visible, /\bPlaksha\b|\bKalvium\b/i);
+    assert.match(visible, /Polar School of Technology/i);
+    assert.match(visible, /best fit/i);
     assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
     assert.ok(Array.isArray(result.contextPatch.profile.shortlist));
-    assert.equal(result.contextPatch.profile.shortlist.length, 3);
+    assert.equal(result.contextPatch.profile.shortlist.length, 6);
   });
 
   test('REGRESSION (Phase 4/5 propagation-bug shape): contextPatch always carries the profile forward', () => {

@@ -50,7 +50,7 @@ describe('b7Book — handleB7Entry (framing)', () => {
   test('sets stage to b7_awaiting_reply and presents exactly 2 buttons, profile carried forward', () => {
     const result = handleB7Entry(ctxWithProfile({ recommendation: 'NIAT', qualification: 'Class 12 (MPC)' }));
     assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
-    assert.deepEqual(result.interactive.buttons.map((b) => b.title), ['Book My Session', 'Maybe Later']);
+    assert.deepEqual(result.interactive.buttons.map((b) => b.title), ['📅 Book My Session', 'Maybe Later']);
     assert.equal(result.contextPatch.profile.qualification, 'Class 12 (MPC)');
   });
 });
@@ -189,15 +189,12 @@ describe('b7Book — "done" only transitions correctly from b7_awaiting_done, no
 });
 
 describe('b7Book — [Not yet] never auto-re-invites', () => {
-  test('[Not yet] shows the spec-verbatim holding line and a 4-row LIST of topics (not >3 buttons)', async () => {
+  test('[Maybe Later] soft-closes and schedules +30m/+1h/+3h follow-ups (company Stage 10)', async () => {
     const result = await handleB7Reply(ctxWithProfile({}, { stage: 'b7_awaiting_reply' }), 'Not yet');
-    assert.equal(result.interactive.type, 'list');
-    assert.equal(result.interactive.body, NOT_YET_TEXT);
-    assert.deepEqual(
-      result.interactive.sections[0].rows.map((r) => r.title),
-      NOT_YET_TOPIC_ROWS.map((r) => r.title)
-    );
-    assert.deepEqual(NOT_YET_TOPIC_ROWS.map((r) => r.title), ['Fees', 'Placements', 'Hostel & safety', 'Scholarships']);
+    assert.equal(result.interactive, null);
+    assert.match(result.replyText || '', /no rush|whenever you.re ready|IITian/i);
+    assert.ok(result.contextPatch.profile.bookingFollowup?.declinedAt);
+    assert.equal(result.contextPatch.profile.followupsSent, 0);
   });
 
   test('[Not yet] moves to b7_post_decline, not back to b7_awaiting_reply', async () => {

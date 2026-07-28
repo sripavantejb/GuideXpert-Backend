@@ -19,6 +19,7 @@ const EXPECTED_NEW_SLOTS = [
   'permissionRecommend',
   'frameSent',
   'followupsSent',
+  'bookingFollowup',
   'callbackNumber',
   'honestPassFired',
   'fitCollege',

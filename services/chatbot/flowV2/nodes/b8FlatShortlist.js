@@ -1,40 +1,36 @@
 'use strict';
 
 /**
- * Flow V3 — B8 · SHORTLIST (Company Stage 8 — 3 medal colleges).
+ * Flow V3 — B8 · SHORTLIST (Company Stage 8).
  *
- * Newton / NIAT / Scaler with medal framing. Same-turn handoff to B9 fit ask.
+ * Medals for Newton / NIAT / Scaler, then Polar + two more new-age colleges.
+ * Shortlist + fit ask ship as ONE interactive button message so WhatsApp
+ * never drops the college list (separate text + fit-only body was losing B8).
  */
 
 const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
 const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingFlowV2Profile');
 const { assertGuardrails } = require('../../../../constants/careerCounsellingFlowV2Guardrails');
-const { withMergedProfile, combineNodeResults } = require('../flowV2NodeUtils');
 
-/** Company Stage 8 medal shortlist — Newton, NIAT, Scaler only. */
 const FLAT_CATALOG = Object.freeze([
-  Object.freeze({
-    id: 'newton',
-    name: 'Newton School of Technology',
-    medal: '🥇',
-  }),
-  Object.freeze({
-    id: 'niat',
-    name: 'NIAT',
-    medal: '🥈',
-  }),
-  Object.freeze({
-    id: 'scaler',
-    name: 'Scaler',
-    medal: '🥉',
-  }),
+  Object.freeze({ id: 'newton', name: 'Newton School of Technology', medal: '🥇' }),
+  Object.freeze({ id: 'niat', name: 'NIAT', medal: '🥈' }),
+  Object.freeze({ id: 'scaler', name: 'Scaler', medal: '🥉' }),
+  Object.freeze({ id: 'polar', name: 'Polar School of Technology', medal: null }),
+  Object.freeze({ id: 'plaksha', name: 'Plaksha University', medal: null }),
+  Object.freeze({ id: 'kalvium', name: 'Kalvium', medal: null }),
 ]);
 
 const WIDER_CATALOG_LINE =
-  "Wider options people often ask about: Plaksha · Kalvium · Masters' Union · Krea · UPES · SRM AP.\n\nRun them through the same checklist before you decide.";
+  "Wider options people often ask about: Masters' Union · Krea · Ahmedabad Univ · UPES · SRM AP.\n\nRun them through the same checklist before you decide.";
 
-/** Soft optional line — company Stage 8 is medal list without partnership pitch. */
 const DISCLOSURE = '';
+
+const FIT_ASK_BODY = 'Would you like me to help you find the best fit?';
+const FIT_BUTTONS = Object.freeze([
+  Object.freeze({ id: 'flowv2_b9_yes', title: 'Yes, help me' }),
+  Object.freeze({ id: 'flowv2_b9_self', title: "I'll explore myself" }),
+]);
 
 function interestPhrase(profile) {
   const cluster = profile?.interestCluster;
@@ -64,10 +60,12 @@ function buildShortlistBody(_profile, colleges) {
     'I think these colleges could be worth exploring:',
   ];
   for (const c of colleges) {
-    lines.push(`${c.medal} ${c.name}`);
+    lines.push(c.medal ? `${c.medal} ${c.name}` : c.name);
   }
   lines.push(
-    'Each has a different learning style, so the right choice depends on your goals, budget, and interests.'
+    'Each has a different learning style, so the right choice depends on your goals, budget, and interests.',
+    '',
+    FIT_ASK_BODY
   );
   return lines.join('\n');
 }
@@ -93,6 +91,12 @@ function handleB8Entry(ctx) {
     };
   }
 
+  // Already showed shortlist this journey — only re-ask fit if needed.
+  if (Array.isArray(profile.shortlist) && profile.shortlist.length > 0) {
+    const fit = require('./b9Fit');
+    return fit.handleB9Entry(ctx);
+  }
+
   const colleges = orderCatalog(profile);
   const body = buildShortlistBody(profile, colleges);
   assertGuardrails(body);
@@ -105,9 +109,19 @@ function handleB8Entry(ctx) {
   const merged = mergeFlowV2Profile(profile, { shortlist });
   merged.shortlist = shortlist;
 
-  const fit = require('./b9Fit');
-  const next = fit.handleB9Entry(withMergedProfile(ctx, merged));
-  return combineNodeResults([body], next);
+  // One WhatsApp button message: colleges + fit question (avoids dropped text bubble).
+  return {
+    replyText: null,
+    replyParts: null,
+    interactive: {
+      type: 'button',
+      body,
+      buttons: FIT_BUTTONS,
+    },
+    contextPatch: { stage: 'b9_awaiting_reply', profile: merged },
+    nextState: 'career_counselling_flow_v2',
+    intent: 'career_counselling_flow_v2',
+  };
 }
 
 function handleB8Reply(ctx, text) {
@@ -117,7 +131,11 @@ function handleB8Reply(ctx, text) {
     return {
       replyText: WIDER_CATALOG_LINE,
       replyParts: null,
-      interactive: null,
+      interactive: {
+        type: 'button',
+        body: FIT_ASK_BODY,
+        buttons: FIT_BUTTONS,
+      },
       contextPatch: { stage: 'b9_awaiting_reply', profile },
       nextState: 'career_counselling_flow_v2',
       intent: 'career_counselling_flow_v2',
@@ -134,6 +152,8 @@ module.exports = {
   FLAT_CATALOG,
   DISCLOSURE,
   WIDER_CATALOG_LINE,
+  FIT_ASK_BODY,
+  FIT_BUTTONS,
   interestPhrase,
   priorityPhrase,
 };

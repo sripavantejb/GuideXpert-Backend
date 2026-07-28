@@ -32,6 +32,7 @@
 const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
 const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingFlowV2Profile');
 const nodeZeroOverride = require('./node0Override');
+const { startBookingFollowups } = require('../bookingFollowupService');
 
 // ---------------------------------------------------------------------------
 // Copy — verbatim per task spec.
@@ -51,9 +52,9 @@ const STANDARD_INVITE_TEXT = [
 ].join('\n');
 const GENERIC_INVITE_TEXT = STANDARD_INVITE_TEXT;
 
-// Company Stage 10 buttons (titles ≤20).
+// Company Stage 10 buttons (titles ≤20). Calendar emoji kept for Book.
 const B7_INVITE_BUTTONS = Object.freeze([
-  Object.freeze({ id: 'flowv2_b7_book', title: 'Book My Session' }),
+  Object.freeze({ id: 'flowv2_b7_book', title: '📅 Book My Session' }),
   Object.freeze({ id: 'flowv2_b7_not_yet', title: 'Maybe Later' }),
 ]);
 
@@ -193,18 +194,14 @@ async function handleB7InviteReply(ctx, text) {
   }
 
   if (action === 'not_yet') {
-    // Guard rail: this branch must NEVER call handleB7Entry() again (in
-    // this turn or implicitly on the next) — it moves to its own distinct
-    // holding stage instead of re-showing the booking question.
+    const declinedProfile = mergeFlowV2Profile(profile, startBookingFollowups());
     return nodeResult({
-      interactive: {
-        type: 'list',
-        body: NOT_YET_TEXT,
-        buttonText: NOT_YET_LIST_BUTTON_TEXT,
-        sections: [{ title: NOT_YET_LIST_SECTION_TITLE, rows: NOT_YET_TOPIC_ROWS }],
-      },
+      replyText:
+        "Totally fine — no rush at all 🙂\nI'm here whenever you're ready to book your free IITian session.",
+      replyParts: null,
+      interactive: null,
       stage: 'b7_post_decline',
-      profile,
+      profile: declinedProfile,
     });
   }
 

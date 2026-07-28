@@ -296,7 +296,13 @@ const LEAD_PROFILE_SCHEMA = Object.freeze({
     type: 'number',
     writeBeats: ['system'],
     readBeats: ['system'],
-    description: 'B10-F nudge count (0 | 1 | 2).',
+    description: 'B10-F nudge count (0 | 1 | 2 | 3).',
+  }),
+  bookingFollowup: Object.freeze({
+    type: 'object',
+    writeBeats: ['B10', 'system'],
+    readBeats: ['B10', 'system'],
+    description: 'Maybe Later follow-up schedule: declinedAt + sentLevels for +30m/+1h/+3h.',
   }),
   callbackNumber: Object.freeze({
     type: 'string',
