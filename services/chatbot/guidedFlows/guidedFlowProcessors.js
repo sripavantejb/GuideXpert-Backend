@@ -224,7 +224,9 @@ async function processCareerCounsellingFlowV2Turn({
     }),
     intent: result.intent || 'career_counselling_flow_v2',
     pendingSideEffect: result.pendingSideEffect || null,
-    localizationTier: 'translate',
+    // Master Flow v2 is English-only — never translate Rithika copy.
+    localizationTier: 'static',
+    preLocalized: true,
   };
 }
 
