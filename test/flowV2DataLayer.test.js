@@ -39,7 +39,7 @@ describe('Flow v2 Part 13 data layer — extraction at every inbound boundary', 
     assert.equal(result.contextPatch.stage, 'b2_goal_awaiting_reply');
     assert.equal(result.interactive.type, 'button');
     assert.equal(result.interactive.buttons.length, 3);
-    assert.match(result.interactive.body, /What are you mainly trying to figure out/i);
+    assert.match(result.interactive.body, /main thing you want clarity on/i);
     assert.equal((result.replyParts || []).filter((part) => /12th MPC, CSE, around ₹3L, Hyderabad/.test(part)).length, 1);
   });
 

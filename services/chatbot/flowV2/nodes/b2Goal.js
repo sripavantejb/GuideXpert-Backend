@@ -13,10 +13,12 @@ const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingF
 const { withMergedProfile } = require('../flowV2NodeUtils');
 const { handleB2Entry } = require('./b2Branch');
 
+// WhatsApp reply-button titles hard-cap at 20 characters — longer titles
+ // silently truncate on the client (e.g. "Which branch suits me" → "...suits m").
 const GOAL_BUTTONS = Object.freeze([
-  Object.freeze({ id: 'flowv2_b2_goal_branch', title: 'Which branch suits me' }),
-  Object.freeze({ id: 'flowv2_b2_goal_career', title: 'Careers with good scope' }),
-  Object.freeze({ id: 'flowv2_b2_goal_college', title: 'Best colleges for me' }),
+  Object.freeze({ id: 'flowv2_b2_goal_branch', title: 'Which branch for me' }), // 19
+  Object.freeze({ id: 'flowv2_b2_goal_career', title: 'Careers with scope' }), // 18
+  Object.freeze({ id: 'flowv2_b2_goal_college', title: 'Best colleges for me' }), // 20
 ]);
 
 const GOAL_BY_ID = Object.freeze({
@@ -31,7 +33,7 @@ const GOAL_BY_TEXT = Object.freeze([
   Object.freeze({ re: /\bcollege/i, value: 'college_fit' }),
 ]);
 
-const B2_BODY = 'What are you mainly trying to figure out right now?';
+const B2_BODY = "What's the main thing you want clarity on?";
 const B2_REASK = 'No worries — pick whichever is closest:';
 
 function isGoalFilled(goal) {
