@@ -14,7 +14,7 @@ describe('Flow v2 Part 13 data layer — extraction at every inbound boundary', 
     );
 
     const profile = result.contextPatch.profile;
-    assert.equal(profile.qualification, 'Class 12 (MPC)');
+    assert.equal(profile.qualification, '12th Completed (PCM)');
     assert.equal(profile.branchInterest, 'CSE');
     assert.equal(profile.budgetBand, '2_4l');
     assert.equal(profile.cityPref, 'Hyderabad');

@@ -48,15 +48,20 @@ const B1_REASK_BODY = "No worries — take your time. Pick whichever fits best f
  */
 function qualificationAckLine(qualification) {
   const q = String(qualification || '').toLowerCase();
-  if (q.includes('mpc')) return 'Perfect \u2014 MPC keeps engineering and tech wide open for you.';
-  if (q.includes('bipc')) return "Good to know \u2014 BiPC gives you options beyond just engineering, useful context.";
-  if (q.includes('mec') || q.includes('cec')) return "Got it \u2014 a commerce background gives you a different lens on this.";
-  if (q.includes('diploma')) return "Diploma's a solid, practical base to build on.";
-  if (q.includes('dropper') || q.includes('gap year')) return "A gap year isn't wasted time if it's used well \u2014 let's make it count.";
-  if (q.includes('already in college')) return 'Good \u2014 you already know the ropes a bit, that helps.';
-  if (q.includes('b.tech')) return "Good \u2014 you're already in the thick of it, so let's build on that.";
-  if (q.includes('graduation') || q.includes('graduate')) return "Good \u2014 that background will genuinely help here.";
-  if (q.includes('class 10') || q.includes('class 11')) return "Good \u2014 plenty of runway to plan this properly.";
+  if (q.includes('(pcm)') || q.includes('(mpc)')) return 'Perfect \u2014 PCM keeps engineering and tech wide open for you.';
+  if (q.includes('(pcb)') || q.includes('(bipc)')) return 'Got it.';
+  if (q.includes('(commerce)') || q.includes('mec') || q.includes('cec')) {
+    return 'Got it \u2014 commerce opens up business, finance and design routes.';
+  }
+  if (q === 'diploma') return 'Good \u2014 and lateral entry gives you a real head start.';
+  if (q === 'drop year' || q.includes('dropper') || q.includes('gap year')) {
+    return 'Good \u2014 and a drop year works more often than people think.';
+  }
+  if (q === 'degree' || q.includes('already in college') || q.includes('b.tech') || q.includes('graduation')) {
+    return 'Understood.';
+  }
+  if (q === '11th studying') return "Good timing \u2014 you've got room to prepare properly.";
+  if (q === '10th completed') return "Good \u2014 plenty of runway to plan this properly.";
   return 'Thanks for sharing that.';
 }
 

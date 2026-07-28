@@ -7,7 +7,7 @@ const { extractFlowV2Slots, extractBudgetBand } = require('../services/chatbot/f
 describe('flowV2SlotExtractor', () => {
   test('extracts all four slots from a multi-slot message in one pass', () => {
     const patch = extractFlowV2Slots('im in 12th mpc, want cse, budget around 3 lakhs, hyderabad only', {});
-    assert.equal(patch.qualification, 'Class 12 (MPC)');
+    assert.equal(patch.qualification, '12th Completed (PCM)');
     assert.equal(patch.branchInterest, 'CSE');
     assert.equal(patch.budgetBand, '2_4l');
     assert.equal(patch.cityPref, 'Hyderabad');
@@ -16,7 +16,7 @@ describe('flowV2SlotExtractor', () => {
   test('extracts a single slot without inventing unrelated ones', () => {
     const patch = extractFlowV2Slots('12th mpc', {});
     assert.deepEqual(Object.keys(patch), ['qualification']);
-    assert.equal(patch.qualification, 'Class 12 (MPC)');
+    assert.equal(patch.qualification, '12th Completed (PCM)');
   });
 
   test('extracting a single slot never nulls out unrelated existing profile fields', () => {

@@ -15,19 +15,19 @@ const {
 const handoffService = require('../services/chatbot/handoffService');
 const WhatsAppAgentHandoff = require('../models/WhatsAppAgentHandoff');
 
-const FULL_GREETING_MARKER = "I'm Guide, from GuideXpert's counselling desk";
+const FULL_GREETING_MARKER = "I'm Rithika from GuideXpert";
 
 describe('flowV2Dispatcher — stage routing', () => {
   test('a fresh conversation (no stage) routes to the full greeting entry', async () => {
     const result = await processFlowV2Turn({}, 'hi');
     assert.match(result.replyText, new RegExp(FULL_GREETING_MARKER));
-    assert.equal(result.contextPatch.stage, 'greeting_awaiting_reply');
+    assert.equal(result.contextPatch.stage, 'greeting_awaiting_name');
   });
 
   test("stage === 'greeting_awaiting_reply' routes to the reply handler, NOT the entry handler", async () => {
     const ctx = { flowV2: { stage: 'greeting_awaiting_reply', profile: emptyFlowV2Profile() } };
     const result = await processFlowV2Turn(ctx, '12th mpc');
-    assert.equal(result.contextPatch.profile.qualification, 'Class 12 (MPC)');
+    assert.equal(result.contextPatch.profile.qualification, '12th Completed (PCM)');
   });
 });
 

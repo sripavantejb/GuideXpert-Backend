@@ -55,7 +55,7 @@ describe('flowV2ProfileMerge', () => {
     const existing = { ...emptyFlowV2Profile(), branchInterest: 'ECE', cityPref: 'Pune' };
     const patch = extractFlowV2Slots('12th mpc', existing);
     const merged = mergeFlowV2Profile(existing, patch);
-    assert.equal(merged.qualification, 'Class 12 (MPC)');
+    assert.equal(merged.qualification, '12th Completed (PCM)');
     assert.equal(merged.branchInterest, 'ECE');
     assert.equal(merged.cityPref, 'Pune');
   });

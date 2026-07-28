@@ -43,8 +43,8 @@ const BARE_YEAR_BUTTONS = Object.freeze([
   Object.freeze({ id: 'flowv2_r10_year_btech', title: 'B.Tech' }),
 ]);
 
-const PCM_QUALIFICATION = 'Class 12 (MPC)';
-const PCB_QUALIFICATION = 'Class 12 (BiPC)';
+const PCM_QUALIFICATION = '12th Completed (PCM)';
+const PCB_QUALIFICATION = '12th Completed (PCB)';
 
 function buttonShape(body, buttons, contextPatch = {}) {
   return {

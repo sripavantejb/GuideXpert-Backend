@@ -21,16 +21,20 @@
  * forward-compatibility with later beats.
  */
 
-const QUALIFICATION_GROUP_KEYWORDS = ['mpc', 'mec', 'bipc', 'cec', 'hec'];
+const QUALIFICATION_GROUP_KEYWORDS = ['pcm', 'mpc', 'pcb', 'bipc', 'commerce', 'mec', 'cec', 'arts', 'hec'];
 
 /** Display casing for 12th-group codes (replaces a blanket .toUpperCase()
  * so 'bipc' renders as the conventional 'BiPC', not 'BIPC'). */
 const QUALIFICATION_GROUP_LABELS = Object.freeze({
-  mpc: 'MPC',
-  mec: 'MEC',
-  bipc: 'BiPC',
-  cec: 'CEC',
-  hec: 'HEC',
+  pcm: 'PCM',
+  mpc: 'PCM',
+  pcb: 'PCB',
+  bipc: 'PCB',
+  commerce: 'Commerce',
+  mec: 'Commerce',
+  cec: 'Commerce',
+  arts: 'Arts',
+  hec: 'Arts',
 });
 
 /**
@@ -42,27 +46,76 @@ const QUALIFICATION_GROUP_LABELS = Object.freeze({
  * titles arrive as plain text) and free-typed replies.
  */
 function extractQualification(t) {
-  // Combined MEC/CEC group, checked before the single-group match below.
-  if (/\bmec\s*\/\s*cec\b/.test(t) || (/\bmec\b/.test(t) && /\bcec\b/.test(t))) {
-    if (/\b12\s*th\b|\bclass\s*12\b|\bxii\b|\bintermediate\b|\binter\b/.test(t)) {
-      return 'Class 12 (MEC/CEC)';
-    }
-  }
+  if (/^\s*other\s*$|\bsomething else\b/.test(t)) return 'Other';
   const groupMatch = t.match(new RegExp(`\\b(${QUALIFICATION_GROUP_KEYWORDS.join('|')})\\b`));
   if (/\b12\s*th\b|\bclass\s*12\b|\bxii\b|\bintermediate\b|\binter\b/.test(t)) {
-    return groupMatch ? `Class 12 (${QUALIFICATION_GROUP_LABELS[groupMatch[1]]})` : 'Class 12 / Intermediate';
+    return groupMatch
+      ? `12th Completed (${QUALIFICATION_GROUP_LABELS[groupMatch[1]]})`
+      : null;
   }
-  if (/\bclass\s*10\b|\b10\s*th\b/.test(t)) return 'Class 10';
-  if (/\bclass\s*11\b|\b11\s*th\b/.test(t)) return 'Class 11';
+  if (/\bclass\s*10\b|\b10\s*th\b|\b10th completed\b/.test(t)) return '10th Completed';
+  if (/\bclass\s*11\b|\b11\s*th\b|\b11th studying\b/.test(t)) return '11th Studying';
   if (/\bdiploma\b/.test(t)) return 'Diploma';
-  const btechYear = t.match(/\bb\.?\s*tech\b[^.]{0,20}\b(1st|first|2nd|second|3rd|third|4th|fourth)\s*year\b/);
-  if (btechYear) return `B.Tech ${btechYear[1]} year`;
-  if (/\bdropper\b|\bgap year\b/.test(t)) return 'Dropper / gap year';
+  if (/\bdrop year\b|\bdropper\b|\bgap year\b/.test(t)) return 'Drop Year';
   if (/\balready in college\b|\balready studying\b|\bpursuing (my )?(degree|graduation|b\.?\s*tech)\b/.test(t)) {
-    return 'Already in college';
+    return 'Degree';
   }
-  if (/\bgraduation\b|\bgraduate\b|\bdegree\b/.test(t)) return 'Graduation';
+  if (/\bb\.?\s*tech\b|\bgraduation\b|\bgraduate\b|\bdegree\b|\balready in college\b/.test(t)) return 'Degree';
   return null;
+}
+
+const NAME_STOP_WORDS = new Set([
+  'hi', 'hello', 'hey', 'hii', 'okay', 'ok', 'yes', 'no', 'student', 'name',
+  'myself', 'unknown', 'nothing', 'other', 'medical', 'commerce', 'arts',
+  'diploma', 'degree', 'drop', 'year', 'pcm', 'pcb', 'mpc', 'bipc',
+  'not', 'sure', 'dont', "don't", 'know', 'looking', 'pursuing', 'studying',
+  'completed', 'in', 'from', 'good', 'morning', 'evening',
+]);
+
+function titleCaseName(value) {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toLocaleUpperCase() + part.slice(1).toLocaleLowerCase())
+    .join(' ');
+}
+
+/**
+ * Deterministic first-name extraction for Node E. It tolerates emoji and
+ * conversational wrappers, but never guesses from arbitrary prose.
+ */
+function extractName(text) {
+  const raw = String(text || '').normalize('NFKC');
+  const letters = "[\\p{L}][\\p{L}'’-]*";
+  const explicitPatterns = [
+    new RegExp(`\\b(?:my name is|i am|i'm|im|call me|this is|myself)\\s+(${letters}(?:\\s+${letters}){0,2})`, 'iu'),
+    new RegExp(`(${letters})\\s+here\\b`, 'iu'),
+  ];
+  let candidate = null;
+  for (const pattern of explicitPatterns) {
+    const match = raw.match(pattern);
+    if (match) {
+      candidate = match[1];
+      break;
+    }
+  }
+
+  if (!candidate) {
+    const cleaned = raw
+      .replace(/[^\p{L}'’\-\s]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const words = cleaned.split(' ').filter(Boolean);
+    if (words.length >= 1 && words.length <= 3) candidate = cleaned;
+  }
+
+  if (!candidate) return null;
+  const words = candidate.split(/\s+/).filter(Boolean);
+  while (words.length && NAME_STOP_WORDS.has(words[0].toLocaleLowerCase())) words.shift();
+  if (!words.length || words.some((word) => NAME_STOP_WORDS.has(word.toLocaleLowerCase()))) return null;
+  const first = words[0].replace(/^['’\-]+|['’\-]+$/g, '');
+  if (first.length < 2 || first.length > 30) return null;
+  return titleCaseName(first);
 }
 
 const BRANCH_KEYWORD_MAP = Object.freeze([
@@ -371,6 +424,7 @@ module.exports = {
   extractFlowV2Slots,
   // exported individually for focused unit testing / future reuse
   extractQualification,
+  extractName,
   extractBranchInterest,
   extractBudgetBand,
   extractCityPref,

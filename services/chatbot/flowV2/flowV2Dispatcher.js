@@ -88,7 +88,7 @@
  */
 
 const { detectOverrideIntent, handleNode0Override, handleNode0BackfillReply } = require('./nodes/node0Override');
-const { handleGreetingEntry, handleGreetingReply } = require('./nodes/greeting');
+const { handleGreetingEntry, handleGreetingReply, handleEntrySideTrackReply } = require('./nodes/greeting');
 const { handleB1Entry, handleB1Reply } = require('./nodes/b1Goal');
 const { handleB2Reply } = require('./nodes/b2Branch');
 const { handleCoreForkReply } = require('./nodes/b2CoreFork');
@@ -189,7 +189,16 @@ async function runStageFallthrough(ctx, stage, text) {
     }
     return await handleNode0BackfillReply(ctx, text);
   }
-  if (stage === 'greeting_awaiting_reply') return await handleGreetingReply(ctx, text);
+  if (
+    stage === 'greeting_awaiting_name' ||
+    stage === 'greeting_awaiting_qualification' ||
+    stage === 'greeting_awaiting_reply'
+  ) {
+    return await handleGreetingReply(ctx, text);
+  }
+  if (typeof stage === 'string' && stage.startsWith('entry_')) {
+    return await handleEntrySideTrackReply(ctx, text);
+  }
   // Phase 4 — B1 · Goal, B2 · Branch, and the B2.2 core-engineering fork
   // + its honest-exit sub-flow.
   if (stage === 'greeting_captured_pending_b1') return await handleB1Entry(ctx);
@@ -301,7 +310,11 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
   // routing. Every downstream path sees the same additive merged profile;
   // no handler can accidentally discard facts merely because the message
   // took an override or leaf-router path.
-  const extractedPatch = extractFlowV2Slots(text, profile);
+  // A name answer is identity text, not a qualification turn. Keeping it
+  // out of the generic slot extractor prevents names such as "Arts" or
+  // "Degree" from silently contaminating the profile before Node E has
+  // accepted (or rejected) them as a name.
+  const extractedPatch = stage === 'greeting_awaiting_name' ? {} : extractFlowV2Slots(text, profile);
   if (!stage && !profile.rawFirstMessage && text) extractedPatch.rawFirstMessage = text;
   if (!profile.botState) extractedPatch.botState = 'career_counselling_flow_v2';
   const extractedProfile = mergeFlowV2Profile(profile, extractedPatch);
@@ -333,6 +346,18 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
       return handleNode0BackfillReply(turnCtx, text);
     }
     return handleNode0Override(turnCtx, text);
+  }
+
+  // Node E and its qualification side tracks are deterministic local
+  // state machines. Route them before the generic R-bucket classifier so
+  // row titles such as "Medical" and "Other" cannot be stolen by R11/R10.
+  const isEntryStage =
+    stage === 'greeting_awaiting_name' ||
+    stage === 'greeting_awaiting_qualification' ||
+    stage === 'greeting_awaiting_reply' ||
+    (typeof stage === 'string' && stage.startsWith('entry_'));
+  if (isEntryStage) {
+    return await runStageFallthrough(turnCtx, stage, text);
   }
 
   const classification = classifyReply(text, extractedProfile, {
