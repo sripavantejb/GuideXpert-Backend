@@ -1,18 +1,11 @@
 'use strict';
 
 /**
- * Flow v2 — Lead Profile schema (declarative slot registry).
+ * Flow V3 — Lead Profile schema (declarative slot registry).
  *
- * Standalone module for the new "Flow v2" track (7 beats, B1-B7, ~6 student
- * turns). Intentionally isolated from the existing Career Counselling V2
- * profile (`careerCounsellingV2DiscoveryEngine.js#emptyProfile`) and its
- * dispatcher chain — no shared imports either direction.
- *
- * Beat ids used below (`entry`, `B1`-`B7`, `system`) follow the audit's
- * provisional beat mapping (B1 GOAL, B2 BRANCH, B3 CONSTRAINTS,
- * B4 PREDICT/SHORTLIST, B5 COMPARE/EXPLAIN, B6 DECIDE/CTA, B7 BOOK/HANDOFF).
- * This mapping has not yet been checked against the full Flow v2 spec doc —
- * treat `writeBeats`/`readBeats` as easy to adjust once that doc lands.
+ * Implements GUIDEXPERT_MASTER_FLOW.md (v3) happy path B1→B10.
+ * Package path remains `flowV2` / `careerCounsellingFlowV2*` to avoid
+ * orchestrator churn; beat IDs follow V3 (qualify → … → book).
  *
  * `readBeats` records which beat(s) check a slot before asking their own
  * question (self-skip), plus any later beat that needs the value as an
@@ -22,10 +15,21 @@
 const SLOT_TYPES = Object.freeze(['string', 'number', 'array', 'boolean', 'object']);
 
 /** Beat walk order for `nextSlot()`. Excludes `system` (never "asked"). */
-const BEAT_ORDER = Object.freeze(['entry', 'B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7']);
+const BEAT_ORDER = Object.freeze([
+  'B1',
+  'B2',
+  'B3',
+  'B4',
+  'B5',
+  'B6',
+  'B6.5',
+  'B7',
+  'B8',
+  'B9',
+  'B10',
+]);
 
 const BEATS = Object.freeze([...BEAT_ORDER, 'system']);
-
 function defaultForType(type) {
   switch (type) {
     case 'array':
@@ -87,8 +91,8 @@ const LEAD_PROFILE_SCHEMA = Object.freeze({
   name: Object.freeze({
     type: 'string',
     writeBeats: ['system'],
-    readBeats: ['entry', 'system'],
-    description: 'Accepted first/display name used by Node E; null until known confidently.',
+    readBeats: ['B1', 'B10', 'system'],
+    description: 'Accepted first/display name used by B1 QUALIFY; null until known confidently.',
   }),
   language: Object.freeze({
     type: 'string',
@@ -135,119 +139,188 @@ const LEAD_PROFILE_SCHEMA = Object.freeze({
   qualification: Object.freeze({
     type: 'string',
     askable: true,
-    writeBeats: ['entry'],
-    readBeats: ['entry', 'B1', 'B4'],
+    writeBeats: ['B1'],
+    readBeats: ['B1', 'B2', 'B8'],
     description:
-      "Student's current qualification/class (e.g. 'Class 12', 'Diploma', 'B.Tech 2nd year'). Old profile equivalent: profile.currentQualification.",
+      "Student's current qualification/class (e.g. 'Class 12', 'Diploma', 'B.Tech 2nd year'). Written at B1 QUALIFY.",
   }),
   stream: Object.freeze({
     type: 'string',
     writeBeats: ['system'],
-    readBeats: ['entry', 'B1'],
+    readBeats: ['B1', 'B2'],
     description: 'Qualification stream such as PCM, PCB, Commerce, or Arts.',
   }),
   entryType: Object.freeze({
     type: 'string',
     writeBeats: ['system'],
-    readBeats: ['entry', 'B5'],
+    readBeats: ['B1', 'B8'],
     description: 'regular, lateral, or dropper entry context.',
   }),
   timeline: Object.freeze({
     type: 'string',
     writeBeats: ['system'],
-    readBeats: ['B1', 'B5'],
+    readBeats: ['B1', 'B8'],
     description: 'Planning timeline such as next_year.',
   }),
+  /** V3 B2 GOAL — branch_fit | career_scope | college_fit */
+  goal: Object.freeze({
+    type: 'string',
+    askable: true,
+    writeBeats: ['B2'],
+    readBeats: ['B2', 'B4', 'B8'],
+    description: 'B2 GOAL tap: branch_fit | career_scope | college_fit.',
+  }),
+  /**
+   * V3 B4 PRIORITY list (was v2 B1 goalPriority). Kept as goalPriority for
+   * backward-compatible merges; writers may also set `priority` synonym via merge.
+   */
   goalPriority: Object.freeze({
     type: 'array',
     askable: true,
-    writeBeats: ['B1'],
-    readBeats: ['B1', 'B5'],
+    writeBeats: ['B4'],
+    readBeats: ['B4', 'B5', 'B8', 'B9'],
     description:
-      "Ordered list of what matters most for the student's goal (e.g. ['placements','budget']). Old profile equivalent: profile.evaluationPriorities / profile.studentPriorities.",
+      "Ordered list of what matters most (e.g. ['placements','fees']). V3 B4 PRIORITY.",
   }),
   careerGoal: Object.freeze({
     type: 'string',
     writeBeats: ['system'],
-    readBeats: ['B1', 'B2', 'B5'],
-    description: 'Career outcome stated by the student; intentionally distinct from goalPriority.',
+    readBeats: ['B2', 'B3', 'B8'],
+    description: 'Career outcome stated by the student; intentionally distinct from goal / goalPriority.',
+  }),
+  /** V3 B3 INTEREST multi-select */
+  interests: Object.freeze({
+    type: 'array',
+    askable: true,
+    writeBeats: ['B3'],
+    readBeats: ['B3', 'B3.2', 'B5', 'B8'],
+    description: 'Interest rows selected at B3 (cap 4).',
+  }),
+  interestCluster: Object.freeze({
+    type: 'string',
+    writeBeats: ['B3'],
+    readBeats: ['B3', 'B5', 'B8'],
+    description: 'Derived cluster: software | data_ai | infra_security | core | undecided.',
   }),
   branchInterest: Object.freeze({
     type: 'string',
-    askable: true,
-    writeBeats: ['B2'],
-    readBeats: ['B2', 'B4'],
+    writeBeats: ['B3'],
+    readBeats: ['B3', 'B8'],
     description:
-      'Preferred branch/course of study (e.g. CSE, ECE). Old profile equivalent: profile.preferredCourse.',
+      'Preferred branch/course of study (e.g. CSE, ECE). Derived from interests or free text.',
   }),
   coreBridgeAttempted: Object.freeze({
     type: 'boolean',
-    writeBeats: ['B2'],
-    readBeats: ['B2'],
+    writeBeats: ['B3'],
+    readBeats: ['B3'],
     description:
-      "B2.2 core-engineering fork: whether the mechanical/civil/ECE 'core engineering' nudge has been offered to this student yet. null = not yet offered; true/false = offered and outcome known. Do not confuse with predictorBridgeShown (a different, unrelated fork).",
+      "B3.2 core-engineering fork: whether the nudge has been offered. Do not confuse with predictorBridgeShown.",
   }),
   coreBridgeClosed: Object.freeze({
     type: 'boolean',
-    writeBeats: ['B2'],
-    readBeats: ['B2'],
-    description:
-      'B2.2 core-engineering fork: whether the core-engineering nudge (see coreBridgeAttempted) has been resolved/closed out for this student. null = not yet resolved.',
+    writeBeats: ['B3'],
+    readBeats: ['B3'],
+    description: 'B3.2 core-engineering fork: whether the nudge has been resolved/closed.',
   }),
   coreInterest: Object.freeze({
     type: 'string',
-    writeBeats: ['B2'],
-    readBeats: ['B2'],
-    description:
-      "B2.2 core-engineering fork: the specific core field (mechanical/civil/ece) the fork's evidence-bubble ('tell me more') sub-flow addresses. Corrected in Phase 4 from an earlier provisional writeBeats:['B1'] — this slot is actually written by the B2.2 core fork (services/chatbot/flowV2/nodes/b2CoreFork.js), never by B1 · Goal, once the real fork spec landed. No direct old-profile equivalent; closest is free-text profile.careerGoal.",
+    writeBeats: ['B3'],
+    readBeats: ['B3', 'B8'],
+    description: 'B3.2: specific core field (mechanical/civil/ece) for the fork.',
   }),
   budgetBand: Object.freeze({
     type: 'string',
     askable: true,
-    writeBeats: ['B3'],
-    readBeats: ['B3', 'B4'],
+    writeBeats: ['B6.5'],
+    readBeats: ['B6.5', 'B8'],
     description:
-      "Coarse budget bucket (e.g. 'under_2l', '2_4l'). Old profile equivalent: profile.budgetPreference (free text there; banded here).",
+      "Coarse budget bucket (e.g. 'under_2l', '2_5l'). Asked at B6.5 after permission.",
   }),
   cityPref: Object.freeze({
     type: 'string',
     askable: true,
-    writeBeats: ['B3'],
-    readBeats: ['B3', 'B4'],
-    description: 'Preferred city/location or relocation stance. Old profile equivalent: profile.preferredLocation.',
+    writeBeats: ['B6.5'],
+    readBeats: ['B6.5', 'B8'],
+    description: 'Preferred city/location or relocation stance. Asked at B6.5.',
   }),
   city: Object.freeze({
     type: 'string',
     writeBeats: ['system'],
-    readBeats: ['B3', 'B5'],
+    readBeats: ['B6.5', 'B8'],
     description: 'Specific city named by the lead when distinct from relocation stance.',
   }),
   state: Object.freeze({
     type: 'string',
     writeBeats: ['system'],
-    readBeats: ['B3', 'B5'],
+    readBeats: ['B6.5', 'B8'],
     description: 'Specific state named by the lead.',
   }),
   scholarshipFlag: Object.freeze({
     type: 'boolean',
-    writeBeats: ['B3'],
-    readBeats: ['B3', 'B4'],
-    description:
-      'Whether the student indicated scholarship / financial-aid need. No direct old-profile equivalent.',
+    writeBeats: ['B4', 'B6.5'],
+    readBeats: ['B4', 'B6.5', 'B8'],
+    description: 'Whether the student indicated scholarship / financial-aid need.',
   }),
   parentConstraints: Object.freeze({
     type: 'string',
     writeBeats: ['system'],
-    readBeats: ['system', 'B5'],
+    readBeats: ['system', 'B8'],
     description:
       "I-3 family interrupt: 'nearby' | 'known_brand' | 'student_call' — only set when the student raises parents.",
   }),
   isParent: Object.freeze({
     type: 'boolean',
-    writeBeats: ['B3'],
-    readBeats: ['B3', 'B6'],
-    description:
-      'Whether the person chatting is a parent/guardian rather than the student. No direct old-profile equivalent (old profile only has free-text profile.parentPreferences).',
+    writeBeats: ['system'],
+    readBeats: ['system', 'B8'],
+    description: 'Whether the person chatting is a parent/guardian rather than the student.',
+  }),
+  checklistSent: Object.freeze({
+    type: 'boolean',
+    writeBeats: ['B5'],
+    readBeats: ['B5', 'B6', 'system'],
+    description: 'B5 CHECKLIST delivered; blocks re-send on return (R13).',
+  }),
+  permissionRecommend: Object.freeze({
+    type: 'boolean',
+    writeBeats: ['B6'],
+    readBeats: ['B6', 'B6.5', 'B8'],
+    description: 'B6 PERMISSION gate: true = yes show colleges; false = not right now.',
+  }),
+  frameSent: Object.freeze({
+    type: 'boolean',
+    writeBeats: ['B7'],
+    readBeats: ['B7', 'B8'],
+    description: 'B7 TWO MODELS framing bubble delivered.',
+  }),
+  followupsSent: Object.freeze({
+    type: 'number',
+    writeBeats: ['system'],
+    readBeats: ['system'],
+    description: 'B10-F nudge count (0 | 1 | 2).',
+  }),
+  callbackNumber: Object.freeze({
+    type: 'string',
+    writeBeats: ['B10'],
+    readBeats: ['B10'],
+    description: 'Alternate callback number collected at B10.3 when distinct from WA.',
+  }),
+  honestPassFired: Object.freeze({
+    type: 'boolean',
+    writeBeats: ['B9'],
+    readBeats: ['B9', 'system'],
+    description: 'B9 FIT honest-pass path was taken (fit below threshold).',
+  }),
+  fitCollege: Object.freeze({
+    type: 'string',
+    writeBeats: ['B9'],
+    readBeats: ['B9', 'B10'],
+    description: 'B9 FIT named college when narrowed.',
+  }),
+  fitReason: Object.freeze({
+    type: 'string',
+    writeBeats: ['B9'],
+    readBeats: ['B9', 'B10'],
+    description: 'B9 FIT reason line for the named college.',
   }),
   examType: Object.freeze({
     type: 'string',
@@ -347,38 +420,34 @@ const LEAD_PROFILE_SCHEMA = Object.freeze({
   }),
   shortlist: Object.freeze({
     type: 'array',
-    writeBeats: ['B5'],
-    readBeats: ['B5', 'B6'],
+    writeBeats: ['B8'],
+    readBeats: ['B8', 'B9'],
     description:
-      'Narrowed set of colleges the student is actively considering. See judgment call #4 above (old profile equivalent: profile.preferredColleges / profile.recommendedColleges). BEAT LABEL CORRECTED in Phase 6 from an earlier provisional writeBeats:[\'B4\']/readBeats:[\'B4\',\'B5\'] — this slot is actually written by B5 · Shortlist (services/chatbot/flowV2/nodes/b5Shortlist.js) once that beat was actually built; B4 · Bridge (built in Phase 5) writes no slots at all.',
+      'Narrowed set of colleges shown at B8 SHORTLIST. Interim Phase 1 legacy shortlist node may still write this before Phase 2 remaps file names.',
   }),
   comparedColleges: Object.freeze({
     type: 'array',
-    writeBeats: ['B6'],
-    readBeats: ['B6'],
-    description:
-      'Subset of shortlist selected for side-by-side comparison. Old profile equivalent: profile.comparedColleges (same name, same meaning). BEAT LABEL CORRECTED in Phase 6 from an earlier provisional writeBeats/readBeats:[\'B5\'] — this slot is actually written by B6 · The Case (services/chatbot/flowV2/nodes/b6TheCase.js) once that beat was actually built; B5 · Shortlist owns the narrowing step, not the compare step.',
+    writeBeats: ['B9'],
+    readBeats: ['B9'],
+    description: 'Subset of shortlist selected for side-by-side comparison (B9 FIT on-tap).',
   }),
   recommendation: Object.freeze({
     type: 'string',
-    writeBeats: ['B6'],
-    readBeats: ['B6', 'B7'],
-    description:
-      'Single best-fit college/branch the engine settled on for this student. See judgment call #4 above (old profile equivalent: profile.preferredCollege). BEAT LABEL CORRECTED in Phase 6 from an earlier provisional writeBeats:[\'B5\']/readBeats:[\'B5\',\'B6\'] — this slot is actually written by B6 · The Case (services/chatbot/flowV2/nodes/b6TheCase.js) once that beat was actually built.',
+    writeBeats: ['B9'],
+    readBeats: ['B9', 'B10'],
+    description: 'Single best-fit college from B9 FIT.',
   }),
   temperature: Object.freeze({
     type: 'string',
-    writeBeats: ['B6'],
-    readBeats: ['B6'],
-    description:
-      "Lead-qualification heat signal (e.g. 'hot', 'warm', 'cold') derived from engagement/hesitation. New Flow v2 concept — no old-profile equivalent.",
+    writeBeats: ['B6', 'system'],
+    readBeats: ['B6', 'B10'],
+    description: "Lead heat signal (e.g. 'hot', 'warm', 'cold').",
   }),
   door: Object.freeze({
     type: 'string',
-    writeBeats: ['B6'],
-    readBeats: ['B6', 'B7'],
-    description:
-      "Which exit path ('door') the student is routed through at decision time (e.g. 'book_now', 'one_on_one', 'information_only'). New Flow v2 concept — no old-profile equivalent.",
+    writeBeats: ['system'],
+    readBeats: ['system', 'B10'],
+    description: "Entry door / bucket (e.g. 'booking_intent', R-bucket).",
   }),
   jumpType: Object.freeze({
     type: 'string',
@@ -389,17 +458,15 @@ const LEAD_PROFILE_SCHEMA = Object.freeze({
   }),
   bookingStatus: Object.freeze({
     type: 'string',
-    writeBeats: ['B6', 'B7'],
-    readBeats: ['B6', 'B7'],
-    description:
-      "Status of the booking/handoff step (e.g. 'not_started', 'cta_presented', 'deferred', 'completed'). Old profile equivalent: profile.phase13Outcome / profile.phase13Service (loosely).",
+    writeBeats: ['B10', 'system'],
+    readBeats: ['B10', 'system'],
+    description: "Status of the booking/handoff step (e.g. 'not_started', 'link_sent', 'deferred').",
   }),
   doorHistory: Object.freeze({
     type: 'array',
     writeBeats: ['system'],
-    readBeats: ['B6'],
-    description:
-      'Append-only log of turn-level entries (door/beat/timestamp) for analytics on which R-bucket/door each turn passed through. New Flow v2 concept — no old-profile equivalent.',
+    readBeats: ['system'],
+    description: 'Append-only log of turn-level entries for analytics.',
   }),
 
   // --- Router bookkeeping slots (Phase 3 — added for classifyReply()/handlers,

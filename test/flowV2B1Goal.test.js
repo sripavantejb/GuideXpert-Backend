@@ -2,7 +2,7 @@
 
 const { describe, test } = require('node:test');
 const assert = require('node:assert/strict');
-const { handleB1Entry, handleB1Reply, B1_QUESTION_TAIL } = require('../services/chatbot/flowV2/nodes/b1Goal');
+const { handleB1Entry, handleB1Reply, B1_QUESTION_TAIL, B1_ROWS } = require('../services/chatbot/flowV2/nodes/b1Goal');
 const { emptyFlowV2Profile } = require('../constants/careerCounsellingFlowV2Profile');
 const { processFlowV2Turn } = require('../services/chatbot/flowV2/flowV2Dispatcher');
 
@@ -10,12 +10,26 @@ function ctxWithProfile(patch = {}) {
   return { flowV2: { profile: { ...emptyFlowV2Profile(), ...patch } } };
 }
 
-describe('b1Goal — handleB1Entry', () => {
-  test('asks the B1 question (list with 6 rows) and sets stage when goalPriority is empty', () => {
+function isChecklistOrPermissionStage(stage) {
+  return (
+    stage === 'b5_checklist_awaiting_entry' ||
+    stage === 'b5_awaiting_reply' ||
+    stage === 'b6_permission_awaiting_reply' ||
+    stage === 'b6_permission_declined' ||
+    stage === 'b3_awaiting_entry'
+  );
+}
+
+describe('b1Goal — handleB1Entry (V3 B4 PRIORITY)', () => {
+  test('asks the B4 priority question (list with 9 rows) and sets stage when goalPriority is empty', () => {
     const result = handleB1Entry(ctxWithProfile({ qualification: 'Class 12 (MPC)' }));
     assert.equal(result.interactive.type, 'list');
-    assert.equal(result.interactive.sections[0].rows.length, 6);
-    assert.equal(result.contextPatch.stage, 'b1_awaiting_reply');
+    assert.equal(result.interactive.sections[0].rows.length, 9);
+    assert.deepEqual(
+      result.interactive.sections[0].rows.map((r) => r.title),
+      B1_ROWS.map((r) => r.title)
+    );
+    assert.equal(result.contextPatch.stage, 'b4_awaiting_reply');
   });
 
   test('REGRESSION (Phase 4 propagation bug): the "ask B1 question" branch still carries forward a profile mutated by an upstream caller, not just an unmutated pass-through', () => {
@@ -30,40 +44,38 @@ describe('b1Goal — handleB1Entry', () => {
     assert.equal(result.contextPatch.profile.rank, 18453);
   });
 
-  test('SKIP: an R3-classified message that already filled goalPriority never sees the B1 question', () => {
+  test('SKIP: an R3-classified message that already filled goalPriority never sees the B4 question', () => {
     const result = handleB1Entry(ctxWithProfile({ goalPriority: ['placement'] }));
-    // Must have skipped straight into B2 (or further) — never the B1 list.
+    // Must have skipped straight into checklist / permission — never the B4 list.
+    assert.notEqual(result.contextPatch.stage, 'b4_awaiting_reply');
     assert.notEqual(result.contextPatch.stage, 'b1_awaiting_reply');
-    // Discriminate on the actual B1 question tail / row titles, not row
-    // count — B2's own list also has 6 rows, so length alone can't tell
-    // the two lists apart.
     assert.ok(!(result.interactive?.body || '').includes(B1_QUESTION_TAIL));
     const rowTitles = (result.interactive?.sections?.[0]?.rows || []).map((r) => r.title);
-    assert.ok(!rowTitles.includes('Strong placements'));
+    assert.ok(!rowTitles.includes('Placements'));
   });
 
-  test('the skip lands in B2 (either the B2 question, or straight through/into the fork)', () => {
+  test('the skip lands on the checklist / permission path (V3: not B2 branch)', () => {
     const result = handleB1Entry(ctxWithProfile({ goalPriority: ['placement'] }));
     assert.ok(
-      result.contextPatch.stage === 'b2_awaiting_reply' ||
-        result.contextPatch.stage === 'b2_core_fork_awaiting_reply' ||
-        result.contextPatch.stage === 'b3_awaiting_entry'
+      isChecklistOrPermissionStage(result.contextPatch.stage),
+      `expected checklist/permission stage, got ${result.contextPatch.stage}`
     );
   });
 });
 
-describe('b1Goal — handleB1Reply', () => {
+describe('b1Goal — handleB1Reply (V3 B4 PRIORITY)', () => {
   test('a confident goalPriority extraction acks and advances (combined reply, not a bare re-ask)', () => {
     const result = handleB1Reply(ctxWithProfile({ qualification: 'Class 12 (MPC)' }), 'Strong placements');
-    assert.ok(result.contextPatch.profile.goalPriority.includes('placement'));
+    assert.ok(result.contextPatch.profile.goalPriority.includes('placement') || result.contextPatch.profile.goalPriority.includes('placements'));
     assert.ok((result.replyParts || []).some((p) => /Noted/i.test(p)));
+    assert.notEqual(result.contextPatch.stage, 'b4_awaiting_reply');
     assert.notEqual(result.contextPatch.stage, 'b1_awaiting_reply');
   });
 
   test('"Not sure yet" does NOT set a default goalPriority value and re-asks (never silently defaults)', () => {
     const result = handleB1Reply(ctxWithProfile({ qualification: 'Class 12 (MPC)' }), 'Not sure yet');
     assert.deepEqual(result.contextPatch.profile.goalPriority, []);
-    assert.equal(result.contextPatch.stage, 'b1_awaiting_reply');
+    assert.equal(result.contextPatch.stage, 'b4_awaiting_reply');
     assert.equal(result.interactive.type, 'list');
   });
 
@@ -71,7 +83,7 @@ describe('b1Goal — handleB1Reply', () => {
     const result = handleB1Reply(ctxWithProfile({ qualification: 'Class 12 (MPC)' }), 'my rank is 18453');
     assert.deepEqual(result.contextPatch.profile.goalPriority, []);
     assert.equal(result.contextPatch.profile.rank, 18453);
-    assert.equal(result.contextPatch.stage, 'b1_awaiting_reply');
+    assert.equal(result.contextPatch.stage, 'b4_awaiting_reply');
   });
 
   test('re-ask never regresses previously-filled unrelated fields (additive merge)', () => {
@@ -79,19 +91,25 @@ describe('b1Goal — handleB1Reply', () => {
     assert.equal(result.contextPatch.profile.cityPref, 'Hyderabad');
   });
 
-  test('an over-answering B1 reply that ALSO contains a non-core branch cascades past B2 (no B2 question)', () => {
+  test('an over-answering B4 reply that ALSO contains a non-core branch advances to checklist/permission (V3)', () => {
     const result = handleB1Reply(
       ctxWithProfile({ qualification: 'Class 12 (MPC)' }),
       'placements matter most, want cse, budget 3 lakhs, hyderabad only'
     );
     assert.equal(result.contextPatch.profile.branchInterest, 'CSE');
-    assert.equal(result.contextPatch.stage, 'b3_awaiting_entry');
+    assert.ok(
+      isChecklistOrPermissionStage(result.contextPatch.stage),
+      `expected checklist/permission stage, got ${result.contextPatch.stage}`
+    );
   });
 
-  test('an over-answering B1 reply with a CORE branch cascades into the fork, not past it', () => {
+  test('an over-answering B4 reply with a CORE branch still advances to checklist/permission (fork is B3 interest path)', () => {
     const result = handleB1Reply(ctxWithProfile({ qualification: 'Class 12 (MPC)' }), 'placements matter, i want mechanical');
-    assert.equal(result.contextPatch.stage, 'b2_core_fork_awaiting_reply');
-    assert.equal(result.contextPatch.profile.coreBridgeAttempted, true);
+    assert.ok(
+      isChecklistOrPermissionStage(result.contextPatch.stage),
+      `expected checklist/permission stage, got ${result.contextPatch.stage}`
+    );
+    assert.notEqual(result.contextPatch.stage, 'b2_core_fork_awaiting_reply');
   });
 });
 

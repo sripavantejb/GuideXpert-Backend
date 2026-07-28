@@ -228,16 +228,22 @@ describe('R4-P \u2460 blocked case \u2014 [Connect me] routes through Node 0\u20
     // this function does not special-case "Connect me" at all.
     assert.equal(result.interactive.body, BLOCKED_REPLY_TEXT);
     assert.doesNotMatch(result.replyText || '', /booking form/i);
-    assert.notEqual(result.contextPatch.stage, 'node0_awaiting_backfill');
+    assert.notEqual(result.contextPatch.stage, 'node0_awaiting_slot');
   });
 
-  test('END-TO-END, with ZERO changes to flowV2Dispatcher.js: tapping [Connect me] while at R4-P\u2019s blocked stage already produces Node 0\u2019s real booking-link handoff, because the dispatcher\u2019s existing Node 0 pre-empt fires for any non-b7_* stage regardless of whether that stage has a real handler wired in yet', async () => {
+  test('END-TO-END, with ZERO changes to flowV2Dispatcher.js: tapping [Connect me] while at R4-P\u2019s blocked stage already produces Node 0\u2019s hybrid slot picker, because the dispatcher\u2019s existing Node 0 pre-empt fires for any non-b7_* stage regardless of whether that stage has a real handler wired in yet', async (t) => {
+    t.mock.method(
+      require('../services/guidanceBookingService'),
+      'getAvailableActiveSlots',
+      async () => []
+    );
     const ctx = { flowV2: { stage: R4P_BLOCKED_STAGE, profile: profileWith({ examType: 'AP_EAMCET', category: 'OC', gender: 'male' }) } };
     const result = await processFlowV2Turn(ctx, 'Connect me');
 
-    assert.match(result.replyText, /guidexpert\.co\.in\/one-on-one-session/);
-    assert.equal(result.contextPatch.stage, 'node0_awaiting_backfill');
-    assert.equal(result.contextPatch.profile.bookingStatus, 'link_sent');
+    assert.equal(result.interactive.type, 'list');
+    assert.match(result.interactive.body, /When suits you/);
+    assert.equal(result.contextPatch.stage, 'node0_awaiting_slot');
+    assert.equal(result.contextPatch.profile.bookingStatus, 'booking_started');
     assert.equal(result.contextPatch.profile.temperature, 'hot');
     // The AP/OC/male facts the student already gave R4-P are NOT lost by
     // this handoff \u2014 Node 0's merge is additive, same guarantee every
@@ -247,10 +253,15 @@ describe('R4-P \u2460 blocked case \u2014 [Connect me] routes through Node 0\u20
     assert.equal(result.contextPatch.profile.gender, 'male');
   });
 
-  test('the SAME end-to-end path works from a completely fresh stage name too (proves this is a general dispatcher property, not something specific to R4P_BLOCKED_STAGE\u2019s exact string)', async () => {
+  test('the SAME end-to-end path works from a completely fresh stage name too (proves this is a general dispatcher property, not something specific to R4P_BLOCKED_STAGE\u2019s exact string)', async (t) => {
+    t.mock.method(
+      require('../services/guidanceBookingService'),
+      'getAvailableActiveSlots',
+      async () => []
+    );
     const ctx = { flowV2: { stage: 'r4p_some_future_stage_name', profile: emptyFlowV2Profile() } };
     const result = await processFlowV2Turn(ctx, 'Connect me');
-    assert.equal(result.contextPatch.stage, 'node0_awaiting_backfill');
+    assert.equal(result.contextPatch.stage, 'node0_awaiting_slot');
   });
 });
 

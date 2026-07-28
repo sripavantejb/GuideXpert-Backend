@@ -227,19 +227,28 @@ describe('b4Bridge — handleB4Entry', () => {
 });
 
 describe('B3/B4 — end-to-end through the full dispatcher', () => {
-  test('B2 CSE tap continues into B3 budget question in the SAME turn (no ack-only park)', async () => {
-    // Master Flow: Coding/software/AI ack → B3 immediately. The dispatcher
-    // drains advanceToB3's b3_awaiting_entry park so WhatsApp never stalls.
+  test('B2 CSE tap continues into B4 priority in the SAME turn (no ack-only park)', async () => {
+    // V3: Coding/software/AI ack → B4 priority (may drain further to checklist/
+    // permission when the reply also extracts a goalPriority like ai_future_tech).
     let ctx = { flowV2: { stage: 'b2_awaiting_reply', profile: emptyFlowV2Profile() } };
     let result = await processFlowV2Turn(ctx, 'Coding / software / AI');
     assert.equal(result.contextPatch.profile.branchInterest, 'cse_ai');
-    assert.equal(result.contextPatch.stage, 'b3_awaiting_budget');
-    assert.equal(result.interactive.type, 'button');
+    assert.ok(
+      result.contextPatch.stage === 'b4_awaiting_reply' ||
+        result.contextPatch.stage === 'b4_awaiting_entry' ||
+        result.contextPatch.stage === 'b6_permission_awaiting_reply' ||
+        result.contextPatch.stage === 'b5_awaiting_reply' ||
+        result.contextPatch.stage === 'b5_checklist_awaiting_entry',
+      `expected B4 priority or drained checklist/permission, got ${result.contextPatch.stage}`
+    );
     assert.match(
       [...(result.replyParts || []), result.replyText, result.interactive?.body].filter(Boolean).join('\n'),
       /most flexible base/i
     );
-    assert.match(result.interactive.body, /comfortable for your family/i);
+    assert.doesNotMatch(
+      [...(result.replyParts || []), result.replyText, result.interactive?.body].filter(Boolean).join('\n'),
+      /comfortable for your family/i
+    );
   });
 
   test('a full budget+location round trip continues through B4 bridge into B5 in the same turn', async () => {

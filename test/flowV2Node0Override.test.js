@@ -7,12 +7,31 @@ const assert = require('node:assert/strict');
 const {
   detectOverrideIntent,
   handleNode0Override,
+  handleNode0SlotReply,
   BOOKING_LINK_MESSAGE,
   BOOKING_URL,
   buildBookingUrlLine,
+  SLOT_PICKER_BODY,
+  OTHER_TIME_ROW_ID,
+  buildLiveSlotListRows,
+  buildHybridWebsiteHandoffMessage,
 } = require('../services/chatbot/flowV2/nodes/node0Override');
 const { processFlowV2Turn } = require('../services/chatbot/flowV2/flowV2Dispatcher');
 const { emptyFlowV2Profile } = require('../constants/careerCounsellingFlowV2Profile');
+const guidanceBookingService = require('../services/guidanceBookingService');
+
+function istTodayYmd() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+function mockLiveSlots(t, slots) {
+  t.mock.method(guidanceBookingService, 'getAvailableActiveSlots', async () => slots);
+}
 
 describe('flowV2 Node 0 override — detection', () => {
   test('matches each documented trigger phrase (word-boundary aware)', () => {
@@ -235,53 +254,167 @@ describe('flowV2 Node 0 override — buildBookingUrlLine extraction (Phase 7, pu
   });
 });
 
-describe('flowV2 Node 0 override — handler', () => {
-  test('sends the booking link + backfill question, sets profile and stage', () => {
-    const result = handleNode0Override({ flowV2: { profile: emptyFlowV2Profile() } }, 'I want to book');
-    assert.match(result.replyText, /guidexpert\.co\.in\/one-on-one-session/);
-    assert.equal(result.interactive.type, 'button');
-    assert.equal(result.interactive.buttons.length, 3);
-    assert.deepEqual(
-      result.interactive.buttons.map((b) => b.title),
-      ['Placements', 'AI & future tech', 'Affordable & safe']
-    );
-    assert.equal(result.contextPatch.profile.bookingStatus, 'link_sent');
+describe('flowV2 Node 0 override — hybrid slot picker (HYBRID_BOOKING_WEBSITE_CREATE)', () => {
+  test('shows live slots list + Some other time; stage node0_awaiting_slot; no CRM bookingStatus=link_sent yet', async (t) => {
+    const today = istTodayYmd();
+    mockLiveSlots(t, [
+      {
+        id: 'slotA',
+        slotDate: today,
+        slotTime: '4:00 PM',
+        sessionTitle: '1-on-1',
+        counselorName: 'Ada',
+        bookingClosed: false,
+      },
+      {
+        id: 'slotB',
+        slotDate: today,
+        slotTime: '6:00 PM',
+        sessionTitle: '1-on-1',
+        counselorName: 'Ada',
+        bookingClosed: false,
+      },
+    ]);
+
+    const result = await handleNode0Override({ flowV2: { profile: emptyFlowV2Profile() } }, 'I want to book');
+    assert.equal(result.contextPatch.stage, 'node0_awaiting_slot');
+    assert.equal(result.interactive.type, 'list');
+    assert.match(result.interactive.body, /When suits you/);
+    assert.equal(result.interactive.body, SLOT_PICKER_BODY);
+    const rows = result.interactive.sections[0].rows;
+    assert.ok(rows.length >= 2);
+    assert.equal(rows[rows.length - 1].id, OTHER_TIME_ROW_ID);
+    assert.equal(rows[rows.length - 1].title, 'Some other time');
+    assert.ok(rows.some((r) => String(r.title).startsWith('Today')));
+    assert.equal(result.contextPatch.profile.bookingStatus, 'booking_started');
     assert.equal(result.contextPatch.profile.temperature, 'hot');
     assert.equal(result.contextPatch.profile.door, 'booking_intent');
-    assert.equal(result.contextPatch.stage, 'node0_awaiting_backfill');
+    assert.ok(Array.isArray(result.contextPatch.hybridSlotOffers));
+    assert.doesNotMatch(String(result.replyText || ''), /guidexpert\.co\.in/);
   });
 
-  test('does not clobber existing profile data when merging', () => {
+  test('caps live rows so total list length stays within WhatsApp limits (≤10 including other time)', () => {
+    const today = istTodayYmd();
+    const many = Array.from({ length: 20 }, (_, i) => ({
+      id: `s${i}`,
+      slotDate: today,
+      slotTime: `${i + 1}:00 PM`,
+      bookingClosed: false,
+    }));
+    const { rows } = buildLiveSlotListRows(many);
+    assert.ok(rows.length <= 10);
+    assert.equal(rows[rows.length - 1].id, OTHER_TIME_ROW_ID);
+  });
+
+  test('slot tap → website URL handoff + backfill; bookingStatus link_sent; never claims CRM create', async (t) => {
+    mockLiveSlots(t, [
+      { id: 'slotA', slotDate: istTodayYmd(), slotTime: '4:00 PM', bookingClosed: false },
+    ]);
+    const picker = await handleNode0Override({ flowV2: { profile: emptyFlowV2Profile() } }, 'book');
+    const slotRow = picker.interactive.sections[0].rows.find((r) => r.id.startsWith('flowv2_node0_slot_'));
+    assert.ok(slotRow);
+
+    const handoff = handleNode0SlotReply(
+      {
+        flowV2: {
+          stage: picker.contextPatch.stage,
+          profile: picker.contextPatch.profile,
+          hybridSlotOffers: picker.contextPatch.hybridSlotOffers,
+        },
+      },
+      slotRow.id
+    );
+
+    assert.equal(handoff.contextPatch.stage, 'node0_awaiting_backfill');
+    assert.equal(handoff.contextPatch.profile.bookingStatus, 'link_sent');
+    assert.match(handoff.replyText, /guidexpert\.co\.in\/one-on-one-session/);
+    assert.match(handoff.replyText, /preference/i);
+    assert.equal(handoff.interactive.type, 'button');
+    assert.deepEqual(
+      handoff.interactive.buttons.map((b) => b.title),
+      ['Placements', 'AI & future tech', 'Affordable & safe']
+    );
+  });
+
+  test('Some other time → website URL without slot hint', () => {
+    const handoff = handleNode0SlotReply(
+      { flowV2: { profile: emptyFlowV2Profile(), hybridSlotOffers: [] } },
+      OTHER_TIME_ROW_ID
+    );
+    assert.equal(handoff.replyText, buildHybridWebsiteHandoffMessage({ preferredSlotLabel: null }));
+    assert.equal(handoff.replyText, BOOKING_LINK_MESSAGE);
+    assert.equal(handoff.contextPatch.profile.bookingStatus, 'link_sent');
+  });
+
+  test('does not clobber existing profile data when merging', async (t) => {
+    mockLiveSlots(t, []);
     const existing = { ...emptyFlowV2Profile(), branchInterest: 'CSE', cityPref: 'Hyderabad' };
-    const result = handleNode0Override({ flowV2: { profile: existing } }, 'call me');
+    const result = await handleNode0Override({ flowV2: { profile: existing } }, 'call me');
     assert.equal(result.contextPatch.profile.branchInterest, 'CSE');
     assert.equal(result.contextPatch.profile.cityPref, 'Hyderabad');
   });
 
-  test('defaults to an empty profile when ctx.flowV2 is entirely absent (fresh conversation)', () => {
-    const result = handleNode0Override({}, 'book');
-    assert.equal(result.contextPatch.profile.bookingStatus, 'link_sent');
+  test('defaults to an empty profile when ctx.flowV2 is entirely absent (fresh conversation)', async (t) => {
+    mockLiveSlots(t, []);
+    const result = await handleNode0Override({}, 'book');
+    assert.equal(result.contextPatch.profile.bookingStatus, 'booking_started');
+    assert.equal(result.contextPatch.stage, 'node0_awaiting_slot');
   });
 });
 
 describe('flowV2 Node 0 override — pre-empts stage routing at the dispatcher level', () => {
-  test('fires from a completely fresh conversation (stage = null)', async () => {
+  test('fires from a completely fresh conversation (stage = null) into hybrid slot picker', async (t) => {
+    mockLiveSlots(t, []);
     const result = await processFlowV2Turn({}, 'talk to a person please');
-    assert.equal(result.contextPatch.stage, 'node0_awaiting_backfill');
-    assert.match(result.replyText, /booking form/i);
+    assert.equal(result.contextPatch.stage, 'node0_awaiting_slot');
+    assert.equal(result.interactive.type, 'list');
+    assert.match(result.interactive.body, /When suits you/);
   });
 
-  test('fires mid-greeting-reply, pre-empting the greeting reply handler', async () => {
+  test('fires mid-greeting-reply, pre-empting the greeting reply handler', async (t) => {
+    mockLiveSlots(t, []);
     const ctx = { flowV2: { stage: 'greeting_awaiting_reply', profile: emptyFlowV2Profile() } };
     const result = await processFlowV2Turn(ctx, 'actually, can you call me instead');
-    // Must be the Node 0 response, NOT a greeting-reply response
-    // (greeting replies never set stage to 'node0_awaiting_backfill').
-    assert.equal(result.contextPatch.stage, 'node0_awaiting_backfill');
-    assert.match(result.replyText, /booking form/i);
+    assert.equal(result.contextPatch.stage, 'node0_awaiting_slot');
+    assert.equal(result.interactive.type, 'list');
   });
 
-  test('NEW SCOPE: a backfill answer writes the canonical goalPriority slot and enters B7 awaiting-Done without re-sending the link', async () => {
+  test('node0_awaiting_slot routes to slot reply → website URL + backfill', async (t) => {
+    mockLiveSlots(t, [
+      { id: 'slotZ', slotDate: istTodayYmd(), slotTime: '5:00 PM', bookingClosed: false },
+    ]);
     const linkTurn = await processFlowV2Turn({}, 'book a session');
+    assert.equal(linkTurn.contextPatch.stage, 'node0_awaiting_slot');
+
+    const slotTurn = await processFlowV2Turn(
+      {
+        flowV2: {
+          stage: linkTurn.contextPatch.stage,
+          profile: linkTurn.contextPatch.profile,
+          hybridSlotOffers: linkTurn.contextPatch.hybridSlotOffers,
+        },
+      },
+      OTHER_TIME_ROW_ID
+    );
+
+    assert.equal(slotTurn.contextPatch.stage, 'node0_awaiting_backfill');
+    assert.match(slotTurn.replyText, /guidexpert\.co\.in\/one-on-one-session/);
+    assert.equal(slotTurn.contextPatch.profile.bookingStatus, 'link_sent');
+  });
+
+  test('NEW SCOPE: a backfill answer writes the canonical goalPriority slot and enters B7 awaiting-Done without re-sending the link', async (t) => {
+    mockLiveSlots(t, []);
+    const pickerTurn = await processFlowV2Turn({}, 'book a session');
+    const linkTurn = await processFlowV2Turn(
+      {
+        flowV2: {
+          stage: pickerTurn.contextPatch.stage,
+          profile: pickerTurn.contextPatch.profile,
+          hybridSlotOffers: pickerTurn.contextPatch.hybridSlotOffers,
+        },
+      },
+      OTHER_TIME_ROW_ID
+    );
     const backfillTurn = await processFlowV2Turn(
       {
         flowV2: {
@@ -298,8 +431,19 @@ describe('flowV2 Node 0 override — pre-empts stage routing at the dispatcher l
     assert.doesNotMatch(backfillTurn.replyText || '', /guidexpert\.co\.in\/one-on-one-session/);
   });
 
-  test('optional backfill may be skipped with Done and reuses B7 completion/helper mode', async () => {
-    const linkTurn = await processFlowV2Turn({}, 'connect me');
+  test('optional backfill may be skipped with Done and reuses B7 completion/helper mode', async (t) => {
+    mockLiveSlots(t, []);
+    const pickerTurn = await processFlowV2Turn({}, 'connect me');
+    const linkTurn = await processFlowV2Turn(
+      {
+        flowV2: {
+          stage: pickerTurn.contextPatch.stage,
+          profile: pickerTurn.contextPatch.profile,
+          hybridSlotOffers: pickerTurn.contextPatch.hybridSlotOffers,
+        },
+      },
+      OTHER_TIME_ROW_ID
+    );
     const doneTurn = await processFlowV2Turn(
       { flowV2: { stage: linkTurn.contextPatch.stage, profile: linkTurn.contextPatch.profile } },
       'Done'
@@ -310,8 +454,19 @@ describe('flowV2 Node 0 override — pre-empts stage routing at the dispatcher l
     assert.match(doneTurn.replyText, /request is in/i);
   });
 
-  test('repeating booking language while awaiting optional backfill does not send the URL twice', async () => {
-    const linkTurn = await processFlowV2Turn({}, 'book');
+  test('repeating booking language while awaiting optional backfill does not send the URL twice', async (t) => {
+    mockLiveSlots(t, []);
+    const pickerTurn = await processFlowV2Turn({}, 'book');
+    const linkTurn = await processFlowV2Turn(
+      {
+        flowV2: {
+          stage: pickerTurn.contextPatch.stage,
+          profile: pickerTurn.contextPatch.profile,
+          hybridSlotOffers: pickerTurn.contextPatch.hybridSlotOffers,
+        },
+      },
+      OTHER_TIME_ROW_ID
+    );
     const repeatTurn = await processFlowV2Turn(
       { flowV2: { stage: linkTurn.contextPatch.stage, profile: linkTurn.contextPatch.profile } },
       'book'

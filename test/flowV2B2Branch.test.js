@@ -47,9 +47,9 @@ describe('b2Branch — handleB2Entry', () => {
     assert.deepEqual(result.contextPatch.profile.goalPriority, ['placement']);
   });
 
-  test('SKIP to B3 works when branchInterest is pre-filled and non-core (e.g. CSE)', () => {
+  test('SKIP to B4 priority works when branchInterest is pre-filled and non-core (e.g. CSE)', () => {
     const result = handleB2Entry(ctxWithProfile({ branchInterest: 'CSE' }));
-    assert.equal(result.contextPatch.stage, 'b3_awaiting_entry');
+    assert.equal(result.contextPatch.stage, 'b4_awaiting_entry');
     // Silent structural skip — no B2 list, no unexpected message.
     assert.equal(result.interactive, null);
   });
@@ -69,36 +69,36 @@ describe('b2Branch — handleB2Entry', () => {
   test('coreBridgeClosed makes it structurally impossible to re-enter the fork, even if branchInterest reads back as core', () => {
     const result = handleB2Entry(ctxWithProfile({ coreBridgeClosed: true, branchInterest: 'core' }));
     assert.notEqual(result.contextPatch.stage, 'b2_core_fork_awaiting_reply');
-    assert.equal(result.contextPatch.stage, 'b3_awaiting_entry');
+    assert.equal(result.contextPatch.stage, 'b4_awaiting_entry');
     assert.equal(result.replyParts, null);
     assert.equal(result.interactive, null);
   });
 });
 
 describe('b2Branch — handleB2Reply', () => {
-  test('"Coding / software / AI" tap acks and advances to B3 with branchInterest=cse_ai', () => {
+  test('"Coding / software / AI" tap acks and advances to B4 priority with branchInterest=cse_ai', () => {
     const result = handleB2Reply(ctxWithProfile(), 'Coding / software / AI');
     assert.equal(result.contextPatch.profile.branchInterest, 'cse_ai');
-    assert.equal(result.contextPatch.stage, 'b3_awaiting_entry');
+    assert.equal(result.contextPatch.stage, 'b4_awaiting_entry');
     assert.ok(result.replyText);
   });
 
-  test('"Design / product" tap acks and advances to B3', () => {
+  test('"Design / product" tap acks and advances to B4 priority', () => {
     const result = handleB2Reply(ctxWithProfile(), 'Design / product');
     assert.equal(result.contextPatch.profile.branchInterest, 'design');
-    assert.equal(result.contextPatch.stage, 'b3_awaiting_entry');
+    assert.equal(result.contextPatch.stage, 'b4_awaiting_entry');
   });
 
-  test('"Data / analytics" tap acks and advances to B3', () => {
+  test('"Data / analytics" tap acks and advances to B4 priority', () => {
     const result = handleB2Reply(ctxWithProfile(), 'Data / analytics');
     assert.equal(result.contextPatch.profile.branchInterest, 'data_analytics');
-    assert.equal(result.contextPatch.stage, 'b3_awaiting_entry');
+    assert.equal(result.contextPatch.stage, 'b4_awaiting_entry');
   });
 
-  test('"Core engineering (mech, civil, ECE)" tap routes into the fork, does NOT advance to B3 directly', () => {
+  test('"Core engineering (mech, civil, ECE)" tap routes into the fork, does NOT advance to B4 directly', () => {
     const result = handleB2Reply(ctxWithProfile(), 'Core engineering (mech, civil, ECE)');
     assert.equal(result.contextPatch.stage, 'b2_core_fork_awaiting_reply');
-    assert.notEqual(result.contextPatch.stage, 'b3_awaiting_entry');
+    assert.notEqual(result.contextPatch.stage, 'b4_awaiting_entry');
   });
 
   test('"Business / management" tap with no catalog routes to R11, reusing its existing handler (not duplicated copy)', () => {

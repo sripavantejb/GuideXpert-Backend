@@ -22,7 +22,7 @@
 const { extractFlowV2Slots } = require('../flowV2SlotExtractor');
 const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
 const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingFlowV2Profile');
-const { withMergedProfile, advanceToB3 } = require('../flowV2NodeUtils');
+const { withMergedProfile, advanceToB4 } = require('../flowV2NodeUtils');
 const { handleR11 } = require('../router/handlers/r11Handler');
 const { handleCoreForkEntry } = require('./b2CoreFork');
 
@@ -111,7 +111,7 @@ function handleB2Entry(ctx) {
   // again — checked BEFORE the branchInterest pre-fill check below, even
   // if branchInterest somehow reads back as a core value.
   if (profile.coreBridgeClosed === true) {
-    return advanceToB3(profile, null);
+    return advanceToB4(profile, null);
   }
 
   if (isBranchFilled(profile.branchInterest)) {
@@ -121,7 +121,7 @@ function handleB2Entry(ctx) {
     if (isBusinessBranch(profile.branchInterest)) {
       return outOfScopeWithProfile(profile);
     }
-    return advanceToB3(profile, null);
+    return advanceToB4(profile, null);
   }
 
   return {
@@ -179,7 +179,7 @@ function handleB2Reply(ctx, text) {
     return outOfScopeWithProfile(mergedProfile);
   }
 
-  return advanceToB3(mergedProfile, branchAckLine(patch.branchInterest));
+  return advanceToB4(mergedProfile, branchAckLine(patch.branchInterest));
 }
 
 module.exports = {

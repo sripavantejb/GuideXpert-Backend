@@ -46,18 +46,11 @@ function combineNodeResults(prefixReplyParts, nextResult) {
 }
 
 /**
- * Parks at `stage: 'b3_awaiting_entry'` with an optional ack line.
- *
- * Callers historically waited for the next inbound so B3 could be wired
- * later. `processFlowV2Turn` now drains this park in the SAME turn via
- * `drainAwaitingEntryStages` — students must never see an ack with no
- * follow-up question. Kept as a park (not an inline handleB3Entry call)
- * so this leaf module stays free of circular requires with b3Constraints.
+ * Parks at `stage: 'b3_awaiting_entry'` — interim Phase 1 legacy constraints
+ * (V3 B6.5 will replace this placement in Phase 2).
  *
  * @param {object} mergedProfile
- * @param {string|null} [ackLine] - omit (or pass null) for a silent,
- *   purely structural advance (e.g. a pre-filled-slot skip check) with no
- *   visible reply.
+ * @param {string|null} [ackLine]
  * @returns {object} standard Flow v2 node return shape
  */
 function advanceToB3(mergedProfile, ackLine = null) {
@@ -71,8 +64,38 @@ function advanceToB3(mergedProfile, ackLine = null) {
   };
 }
 
+/**
+ * Parks at V3 B4 PRIORITY entry (implemented by b1Goal.js handleB1Entry).
+ */
+function advanceToB4(mergedProfile, ackLine = null) {
+  return {
+    replyText: ackLine || null,
+    replyParts: null,
+    interactive: null,
+    contextPatch: { stage: 'b4_awaiting_entry', profile: mergedProfile },
+    nextState: 'career_counselling_flow_v2',
+    intent: 'career_counselling_flow_v2',
+  };
+}
+
+/**
+ * Parks at V3 B5 CHECKLIST entry.
+ */
+function advanceToB5Checklist(mergedProfile, ackLine = null) {
+  return {
+    replyText: ackLine || null,
+    replyParts: null,
+    interactive: null,
+    contextPatch: { stage: 'b5_checklist_awaiting_entry', profile: mergedProfile },
+    nextState: 'career_counselling_flow_v2',
+    intent: 'career_counselling_flow_v2',
+  };
+}
+
 module.exports = {
   withMergedProfile,
   combineNodeResults,
   advanceToB3,
+  advanceToB4,
+  advanceToB5Checklist,
 };

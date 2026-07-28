@@ -1,14 +1,12 @@
 'use strict';
 
 /**
- * Flow v2 — I-10 genuine-distress classifier.
+ * Flow V3 — I-10 genuine-distress classifier (Master Flow Part 11 / R7 Tier 2).
  *
- * This is deliberately a dependency-free leaf module, separate from the
- * ordinary R1-R13 router. `flowV2Dispatcher.processFlowV2Turn()` calls
+ * Dependency-free leaf. `flowV2Dispatcher.processFlowV2Turn()` calls
  * `isTier2Crisis()` before Node 0, before slot extraction, and before
- * `classifyReply()`. That structural position is the Part 17 Stage-1
- * safety contract: distress is a pipeline pre-check, not merely the first
- * branch inside the normal router.
+ * `classifyReply()`. Distress is a pipeline pre-check — it overrides Node 0
+ * and every other rule. Tele-MANAS 14416 copy lives in r7Tier2Handler.
  *
  * Patterns remain conservative and high-precision. Tier-1 disappointment
  * belongs to the ordinary router and is intentionally absent here.

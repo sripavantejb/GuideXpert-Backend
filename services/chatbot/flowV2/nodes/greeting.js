@@ -17,7 +17,7 @@ const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
 const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingFlowV2Profile');
 const { handleR11, OUT_OF_SCOPE_BUTTONS } = require('../router/handlers/r11Handler');
 const { combineNodeResults, withMergedProfile } = require('../flowV2NodeUtils');
-const { handleB1Entry } = require('./b1Goal');
+const { handleB2GoalEntry } = require('./b2Goal');
 const { handleB3Entry } = require('./b3Constraints');
 
 const QUALIFICATION_ROWS = Object.freeze([
@@ -42,10 +42,10 @@ function findQualificationRow(text) {
     ) || null
   );
 }
-const QUALIFICATION_LIST_SECTION_TITLE = 'Your qualification';
-const QUALIFICATION_LIST_BUTTON_TEXT = 'Select';
+const QUALIFICATION_LIST_SECTION_TITLE = 'Your stage';
+const QUALIFICATION_LIST_BUTTON_TEXT = 'Choose your stage';
 /** Qualification prompt line — never asks for name on entry. */
-const NEUTRAL_QUALIFICATION_LINE = 'Can I know your qualifications?';
+const NEUTRAL_QUALIFICATION_LINE = 'First — where are you right now?';
 const NAME_REASK = "Sorry, didn't catch that 😊 What should I call you?";
 
 function buildNodeEOpenBody(firstName) {
@@ -53,6 +53,7 @@ function buildNodeEOpenBody(firstName) {
   return (
     `${hello}\n\n` +
     "I'm Rithika, from GuideXpert's counselling desk. We help students find a college that actually fits them — not just the ones with the biggest ads.\n\n" +
+    "Takes about 2 minutes, and it's free.\n\n" +
     NEUTRAL_QUALIFICATION_LINE
   );
 }
@@ -435,8 +436,10 @@ function handleGreetingReply(ctx, text, options = {}) {
       const reflection = r3Reflection(text, options.classification.extractedSlots || patch);
       let next = accepted;
       if (next.contextPatch.stage === 'greeting_captured_pending_b1') {
-        next = handleB1Entry(withMergedProfile(ctx, accepted.contextPatch.profile));
+        next = handleB2GoalEntry(withMergedProfile(ctx, accepted.contextPatch.profile));
       }
+      // V3 R3: skip B2/B3 → land at B4 priority (handleB1Entry) after goal skip chain.
+      // If still parked on constraints from an old path, leave as-is for interim.
       if (next.contextPatch.stage === 'b3_awaiting_entry') {
         return combineNodeResults(
           [reflection],
@@ -465,7 +468,8 @@ function handleGreetingReply(ctx, text, options = {}) {
 }
 
 function continueToB1(profile) {
-  return handleB1Entry({ flowV2: { profile } });
+  // V3: after B1 QUALIFY, next beat is B2 GOAL (not legacy priority).
+  return handleB2GoalEntry({ flowV2: { profile } });
 }
 
 function handleEntrySideTrackReply(ctx, text) {

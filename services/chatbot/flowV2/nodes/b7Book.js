@@ -15,9 +15,14 @@
  * but `handleB7Entry` is written to degrade gracefully regardless of how it
  * was reached: it never assumes `profile.recommendation` is set.
  *
- * Introduces four of its own stages, none of which may ever go silent on an
- * arbitrary next message (Flow v2's "never dead-end" rule):
+ * HYBRID BOOKING (Flow V3 Phase 1 / HYBRID_BOOKING_WEBSITE_CREATE):
+ * [Book my session] shows live slots via Node 0 shared helpers, then hands
+ * off to the official website URL. WhatsApp never creates CRM bookings.
+ *
+ * Introduces stages, none of which may ever go silent on an arbitrary next
+ * message (Flow v2's "never dead-end" rule):
  *   b7_awaiting_reply  -> the initial [Book my session]/[Not yet] question
+ *   b7_awaiting_slot   -> live slot list (hybrid); next message → website URL
  *   b7_awaiting_done   -> link already sent, waiting for "Done"
  *   b7_post_decline    -> student said "Not yet"; holding state
  *   b7_post_booking    -> booking confirmed; holding state (not a dead end
@@ -143,10 +148,14 @@ function reAskB7Invite(profile) {
  * `buildBookingUrlLine()` helper — called via the module reference (not
  * destructured) so a test can `mock.method()` it and prove real reuse
  * rather than coincidental copy-paste. This is the ONLY place in this file
- * the URL is assembled. */
-function buildB7BookingLinkMessage() {
+ * the URL is assembled. Optional preferred-slot hint is non-binding only
+ * (HYBRID_BOOKING_WEBSITE_CREATE — no CRM create from WhatsApp). */
+function buildB7BookingLinkMessage(preferredSlotLabel = null) {
+  const hint = preferredSlotLabel
+    ? `Got it — ${preferredSlotLabel} noted as a preference.\n\n`
+    : '';
   return [
-    'Great \u2014 here\u2019s your booking form:',
+    `${hint}Great \u2014 here\u2019s your booking form:`,
     nodeZeroOverride.buildBookingUrlLine(),
     '',
     'In the session your counsellor will:',
@@ -158,16 +167,17 @@ function buildB7BookingLinkMessage() {
   ].join('\n');
 }
 
-function handleB7InviteReply(ctx, text) {
+const B7_SLOT_PICKER_BODY = '\uD83D\uDC4D When suits you?';
+
+async function handleB7InviteReply(ctx, text) {
   const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
   const action = extractB7InviteAction(text);
 
   if (action === 'book') {
-    const mergedProfile = mergeFlowV2Profile(profile, { bookingStatus: 'link_sent' });
-    return nodeResult({
-      replyText: buildB7BookingLinkMessage(),
-      stage: 'b7_awaiting_done',
-      profile: mergedProfile,
+    // HYBRID_BOOKING_WEBSITE_CREATE — live slots first, then website URL.
+    return nodeZeroOverride.buildHybridSlotPickerResult(ctx, {
+      stage: 'b7_awaiting_slot',
+      body: B7_SLOT_PICKER_BODY,
     });
   }
 
@@ -190,6 +200,19 @@ function handleB7InviteReply(ctx, text) {
   // Ambiguous free text — re-ask the same 2 buttons, same shortened-reask
   // pattern established by Greeting/B1/B2/B5.
   return reAskB7Invite(profile);
+}
+
+function handleB7SlotReply(ctx, text) {
+  const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
+  const offers = ctx?.flowV2?.hybridSlotOffers || [];
+  const choice = nodeZeroOverride.resolveHybridSlotChoice(text, offers);
+  const mergedProfile = mergeFlowV2Profile(profile, { bookingStatus: 'link_sent' });
+  return nodeResult({
+    replyText: buildB7BookingLinkMessage(choice.preferredSlotLabel),
+    stage: 'b7_awaiting_done',
+    profile: mergedProfile,
+    extraPatch: { hybridSlotOffers: null, preferredSlotHint: choice.preferredSlotLabel },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -244,11 +267,13 @@ function topicReply(text) {
   return null;
 }
 
-function handleB7PostDeclineReply(ctx, text) {
+async function handleB7PostDeclineReply(ctx, text) {
   const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
   if (BOOK_PATTERN.test(String(text || ''))) {
-    const mergedProfile = mergeFlowV2Profile(profile, { bookingStatus: 'link_sent' });
-    return nodeResult({ replyText: buildB7BookingLinkMessage(), stage: 'b7_awaiting_done', profile: mergedProfile });
+    return nodeZeroOverride.buildHybridSlotPickerResult(ctx, {
+      stage: 'b7_awaiting_slot',
+      body: B7_SLOT_PICKER_BODY,
+    });
   }
   return nodeResult({ replyText: topicReply(text) || POST_DECLINE_HOLDING_TEXT, stage: 'b7_post_decline', profile });
 }
@@ -265,24 +290,27 @@ function handleB7PostBookingReply(ctx, text) {
 /**
  * @param {{ flowV2?: { stage?: string, profile?: object } }} ctx
  * @param {string} text
- * @returns {object} standard Flow v2 node return shape
+ * @returns {Promise<object>|object} standard Flow v2 node return shape
  */
-function handleB7Reply(ctx, text) {
+async function handleB7Reply(ctx, text) {
   const stage = ctx?.flowV2?.stage;
+  if (stage === 'b7_awaiting_slot') return handleB7SlotReply(ctx, text);
   if (stage === 'b7_awaiting_done') return handleB7AwaitingDoneReply(ctx, text);
-  if (stage === 'b7_post_decline') return handleB7PostDeclineReply(ctx, text);
+  if (stage === 'b7_post_decline') return await handleB7PostDeclineReply(ctx, text);
   if (stage === 'b7_post_booking') return handleB7PostBookingReply(ctx, text);
   // Default (covers 'b7_awaiting_reply' and any unrecognized stage,
   // mirroring b3Constraints.js's own defensive-default pattern).
-  return handleB7InviteReply(ctx, text);
+  return await handleB7InviteReply(ctx, text);
 }
 
 module.exports = {
   handleB7Entry,
   handleB7Reply,
+  handleB7SlotReply,
   // exported for focused unit testing
   extractB7InviteAction,
   buildB7BookingLinkMessage,
+  B7_SLOT_PICKER_BODY,
   STANDARD_INVITE_TEXT,
   GENERIC_INVITE_TEXT,
   B7_INVITE_BUTTONS,

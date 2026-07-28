@@ -27,7 +27,7 @@
 
 const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
 const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingFlowV2Profile');
-const { withMergedProfile, advanceToB3 } = require('../flowV2NodeUtils');
+const { withMergedProfile, advanceToB4 } = require('../flowV2NodeUtils');
 const { handleCoreForkExitEntry } = require('./b2CoreForkExit');
 
 const OFFER_MESSAGE_1 =
@@ -154,7 +154,7 @@ function handleCoreForkEntry(ctx, text = '') {
  */
 function acceptCoreForkPivot(ctx, profile) {
   const mergedProfile = mergeFlowV2Profile(profile, { branchInterest: 'cse_ai' });
-  return advanceToB3(mergedProfile, F1_ACK_TEXT);
+  return advanceToB4(mergedProfile, F1_ACK_TEXT);
 }
 
 /**

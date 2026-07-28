@@ -4,7 +4,6 @@ const { describe, test } = require('node:test');
 const assert = require('node:assert/strict');
 const { processFlowV2Turn } = require('../services/chatbot/flowV2/flowV2Dispatcher');
 const { emptyFlowV2Profile } = require('../constants/careerCounsellingFlowV2Profile');
-const { B1_ROWS } = require('../services/chatbot/flowV2/nodes/b1Goal');
 
 function qualificationCtx(patch = {}) {
   return {
@@ -51,14 +50,16 @@ describe('Master Flow Stage 5 — R2 typed qualification', () => {
 });
 
 describe('Master Flow Stage 5 — R3 over-answer', () => {
-  test('exact paste reflects once, uses locked B1 rows, then skips B2 and both B3 questions', async () => {
+  test('exact paste reflects once, then B2 goal; interest skips when branch filled; priority then checklist', async () => {
     const captured = await processFlowV2Turn(
       qualificationCtx(),
       'im in 12th mpc, want cse, budget around 3 lakhs, hyderabad only'
     );
 
     assert.equal(captured.contextPatch.profile.temperature, 'hot');
-    assert.deepEqual(captured.interactive.sections[0].rows, B1_ROWS);
+    assert.equal(captured.contextPatch.stage, 'b2_goal_awaiting_reply');
+    assert.equal(captured.interactive.type, 'button');
+    assert.equal(captured.interactive.buttons.length, 3);
     assert.equal(
       (captured.replyParts || []).filter((part) =>
         /12th MPC, CSE, around ₹3L, Hyderabad/.test(part)
@@ -66,16 +67,27 @@ describe('Master Flow Stage 5 — R3 over-answer', () => {
       1
     );
 
-    const afterGoal = await processFlowV2Turn(continueCtx(captured), 'Strong placements');
-    assert.equal(afterGoal.contextPatch.stage, 'b5_awaiting_reply');
+    const afterGoal = await processFlowV2Turn(continueCtx(captured), 'Which branch suits me');
+    assert.equal(afterGoal.contextPatch.stage, 'b4_awaiting_reply');
+    assert.equal(afterGoal.interactive.sections[0].rows.length, 9);
+    assert.doesNotMatch(visibleText(afterGoal), /which field|comfortable for your family|near home|open to moving/i);
+    assert.equal(afterGoal.contextPatch.profile.branchInterest, 'CSE');
+
+    const afterPriority = await processFlowV2Turn(continueCtx(afterGoal), 'Placements');
+    assert.ok(
+      afterPriority.contextPatch.stage === 'b6_permission_awaiting_reply' ||
+        afterPriority.contextPatch.stage === 'b5_awaiting_reply' ||
+        afterPriority.contextPatch.stage === 'b5_checklist_awaiting_entry',
+      `expected checklist/permission, got ${afterPriority.contextPatch.stage}`
+    );
     assert.doesNotMatch(
-      visibleText(afterGoal),
+      visibleText(afterPriority),
       /which field|comfortable for your family|near home|open to moving|12th MPC, CSE/i
     );
-    assert.equal(afterGoal.contextPatch.profile.branchInterest, 'CSE');
-    assert.equal(afterGoal.contextPatch.profile.budgetBand, '2_4l');
-    assert.equal(afterGoal.contextPatch.profile.cityPref, 'Hyderabad');
-    assert.ok(afterGoal.interactive);
+    assert.equal(afterPriority.contextPatch.profile.branchInterest, 'CSE');
+    assert.equal(afterPriority.contextPatch.profile.budgetBand, '2_4l');
+    assert.equal(afterPriority.contextPatch.profile.cityPref, 'Hyderabad');
+    assert.ok(afterPriority.interactive);
   });
 });
 

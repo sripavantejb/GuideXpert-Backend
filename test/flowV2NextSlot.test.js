@@ -6,73 +6,64 @@ const { nextSlot, isEmptyForGating } = require('../services/chatbot/flowV2/nextS
 const { LEAD_PROFILE_SCHEMA } = require('../constants/careerCounsellingFlowV2Profile');
 const { emptyFlowV2Profile } = require('../constants/careerCounsellingFlowV2Profile');
 
-const B1_TO_B3_BEATS = ['entry', 'B1', 'B2', 'B3'];
+const FRONT_HALF_BEATS = ['B1', 'B2', 'B3', 'B4'];
 
-describe('flowV2 nextSlot', () => {
-  test('an empty profile asks for the entry slot (qualification) first', () => {
+describe('flowV2 nextSlot (V3)', () => {
+  test('an empty profile asks for B1 qualification first', () => {
     assert.equal(nextSlot(emptyFlowV2Profile()), 'qualification');
   });
 
-  test('walks only the five declared conversational questions in B1-B3 order', () => {
+  test('walks V3 front-half askable slots in order', () => {
     const profile = emptyFlowV2Profile();
-    assert.equal(nextSlot(profile, { beats: B1_TO_B3_BEATS }), 'qualification');
+    assert.equal(nextSlot(profile, { beats: FRONT_HALF_BEATS }), 'qualification');
 
     profile.qualification = 'Class 12 (MPC)';
-    assert.equal(nextSlot(profile, { beats: B1_TO_B3_BEATS }), 'goalPriority');
+    assert.equal(nextSlot(profile, { beats: FRONT_HALF_BEATS }), 'goal');
 
-    profile.goalPriority = ['placement'];
-    assert.equal(nextSlot(profile, { beats: B1_TO_B3_BEATS }), 'branchInterest');
+    profile.goal = 'branch_fit';
+    assert.equal(nextSlot(profile, { beats: FRONT_HALF_BEATS }), 'interests');
 
-    profile.branchInterest = 'CSE';
-    assert.equal(nextSlot(profile, { beats: B1_TO_B3_BEATS }), 'budgetBand');
+    profile.interests = ['computers'];
+    assert.equal(nextSlot(profile, { beats: FRONT_HALF_BEATS }), 'goalPriority');
 
-    profile.budgetBand = '2_4l';
-    assert.equal(nextSlot(profile, { beats: B1_TO_B3_BEATS }), 'cityPref');
-
-    profile.cityPref = 'Hyderabad';
-    assert.equal(nextSlot(profile, { beats: B1_TO_B3_BEATS }), null);
+    profile.goalPriority = ['placements'];
+    assert.equal(nextSlot(profile, { beats: FRONT_HALF_BEATS }), null);
   });
 
-  test('derived/optional metadata never becomes a phantom question', () => {
+  test('constraints askables live at B6.5, not the front half', () => {
     const profile = {
       ...emptyFlowV2Profile(),
       qualification: 'Class 12 (MPC)',
-      goalPriority: ['placement'],
-      branchInterest: 'CSE',
-      budgetBand: '2_4l',
-      cityPref: 'Hyderabad',
+      goal: 'college_fit',
+      interests: ['ai'],
+      goalPriority: ['placements'],
     };
-    assert.equal(profile.coreBridgeAttempted, null);
-    assert.equal(profile.scholarshipFlag, null);
-    assert.equal(profile.isParent, null);
-    assert.equal(nextSlot(profile, { beats: B1_TO_B3_BEATS }), null);
+    assert.equal(nextSlot(profile, { beats: FRONT_HALF_BEATS }), null);
+    assert.equal(nextSlot(profile, { beats: ['B6.5'] }), 'budgetBand');
+    profile.budgetBand = '2_5l';
+    assert.equal(nextSlot(profile, { beats: ['B6.5'] }), 'cityPref');
   });
 
-  test('tri-state helper still treats explicit false as known if a future boolean question is declared askable', () => {
+  test('tri-state helper still treats explicit false as known', () => {
     assert.equal(isEmptyForGating({ type: 'boolean' }, null), true);
     assert.equal(isEmptyForGating({ type: 'boolean' }, false), false);
   });
 
-  test('without beats option, completed B1-B3 has no phantom B4-B7 output questions', () => {
-    const profile = {
-      ...emptyFlowV2Profile(),
-      qualification: 'Class 12 (MPC)',
-      goalPriority: ['placement'],
-      branchInterest: 'CSE',
-      budgetBand: '2_4l',
-      cityPref: 'Hyderabad',
-    };
-    assert.equal(nextSlot(profile), null);
-  });
-
-  test('the registry explicitly marks only actual generic-flow questions as askable', () => {
+  test('askable registry matches V3 conversational questions', () => {
     const askable = Object.entries(LEAD_PROFILE_SCHEMA)
       .filter(([, def]) => def.askable === true)
       .map(([key]) => key);
-    assert.deepEqual(askable, ['qualification', 'goalPriority', 'branchInterest', 'budgetBand', 'cityPref']);
+    assert.deepEqual(askable, [
+      'qualification',
+      'goal',
+      'goalPriority',
+      'interests',
+      'budgetBand',
+      'cityPref',
+    ]);
   });
 
-  test('no `stage` slot exists to gate on (removed from the schema)', () => {
+  test('no `stage` slot exists to gate on', () => {
     const profile = emptyFlowV2Profile();
     assert.equal('stage' in profile, false);
   });

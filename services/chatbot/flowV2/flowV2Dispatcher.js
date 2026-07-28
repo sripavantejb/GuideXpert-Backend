@@ -87,13 +87,16 @@
  * safeFallbackReply.
  */
 
-const { detectOverrideIntent, handleNode0Override, handleNode0BackfillReply } = require('./nodes/node0Override');
+const { detectOverrideIntent, handleNode0Override, handleNode0SlotReply, handleNode0BackfillReply } = require('./nodes/node0Override');
 const { handleGreetingEntry, handleGreetingReply, handleEntrySideTrackReply } = require('./nodes/greeting');
+const { handleB2GoalEntry, handleB2GoalReply } = require('./nodes/b2Goal');
 const { handleB1Entry, handleB1Reply } = require('./nodes/b1Goal');
 const { handleB2Reply } = require('./nodes/b2Branch');
 const { handleCoreForkReply } = require('./nodes/b2CoreFork');
 const { handleCoreForkExitReply } = require('./nodes/b2CoreForkExit');
 const { handleB3Entry, handleB3Reply } = require('./nodes/b3Constraints');
+const { handleB5ChecklistEntry } = require('./nodes/b5Checklist');
+const { handleB6PermissionEntry, handleB6PermissionReply } = require('./nodes/b6Permission');
 const { handleB5Entry, handleB5Reply } = require('./nodes/b5Shortlist');
 const { handleB6Entry } = require('./nodes/b6TheCase');
 const { handleB7Entry, handleB7Reply } = require('./nodes/b7Book');
@@ -147,7 +150,11 @@ const CRISIS_LOCKED_REPLY_TEXT =
  * looking stuck ("Solid — ..." then nothing). Drain them in the SAME turn.
  */
 const AWAITING_ENTRY_HANDLERS = Object.freeze({
-  greeting_captured_pending_b1: (ctx) => handleB1Entry(ctx),
+  greeting_captured_pending_b1: (ctx) => handleB2GoalEntry(ctx),
+  b2_awaiting_entry: (ctx) => handleB2GoalEntry(ctx),
+  b4_awaiting_entry: (ctx) => handleB1Entry(ctx),
+  b5_checklist_awaiting_entry: (ctx) => handleB5ChecklistEntry(ctx),
+  b6_permission_awaiting_entry: (ctx) => handleB6PermissionEntry(ctx),
   b3_awaiting_entry: (ctx) => handleB3Entry(ctx),
   b5_awaiting_entry: (ctx) => handleB5Entry(ctx),
   b6_awaiting_entry: (ctx) => handleB6Entry(ctx),
@@ -239,6 +246,9 @@ function safeFallbackReply() {
  * with zero further changes to the branches already listed. */
 async function runStageFallthrough(ctx, stage, text) {
   if (!stage) return await handleGreetingEntry(ctx);
+  if (stage === 'node0_awaiting_slot') {
+    return await handleNode0SlotReply(ctx, text);
+  }
   if (stage === 'node0_awaiting_backfill') {
     // Backfill is optional. "Done" bypasses it and enters B7's existing
     // completion path; every other answer is offered to the backfill
@@ -259,35 +269,33 @@ async function runStageFallthrough(ctx, stage, text) {
   if (typeof stage === 'string' && stage.startsWith('entry_')) {
     return await handleEntrySideTrackReply(ctx, text);
   }
-  // Phase 4 — B1 · Goal, B2 · Branch, and the B2.2 core-engineering fork
-  // + its honest-exit sub-flow.
-  if (stage === 'greeting_captured_pending_b1') return await handleB1Entry(ctx);
-  if (stage === 'b1_awaiting_reply') return await handleB1Reply(ctx, text);
+  // V3 spine — B2 GOAL → B3 INTEREST (b2_*) → B3.2 core → B4 PRIORITY (b1_/b4_) →
+  // B5 checklist → B6 permission → interim legacy constraints (b3_*) → shortlist…
+  if (stage === 'greeting_captured_pending_b1') return await handleB2GoalEntry(ctx);
+  if (stage === 'b2_awaiting_entry') return await handleB2GoalEntry(ctx);
+  if (stage === 'b2_goal_awaiting_reply') return await handleB2GoalReply(ctx, text);
+  if (stage === 'b1_awaiting_reply' || stage === 'b4_awaiting_reply') return await handleB1Reply(ctx, text);
+  if (stage === 'b4_awaiting_entry') return await handleB1Entry(ctx);
   if (stage === 'b2_awaiting_reply') return await handleB2Reply(ctx, text);
   if (stage === 'b2_core_fork_awaiting_reply') return await handleCoreForkReply(ctx, text);
   if (stage === 'b2_core_exit_awaiting_reply') return await handleCoreForkExitReply(ctx, text);
-  // Phase 5 additions — B3 · Constraints.
+  if (stage === 'b5_checklist_awaiting_entry') return await handleB5ChecklistEntry(ctx);
+  if (stage === 'b6_permission_awaiting_reply') return await handleB6PermissionReply(ctx, text);
+  if (stage === 'b6_permission_declined') return await handleB6PermissionReply(ctx, text);
+  // Interim legacy constraints (V3 B6.5 placement later).
   if (stage === 'b3_awaiting_entry') return await handleB3Entry(ctx);
   if (stage === 'b3_awaiting_budget') return await handleB3Reply(ctx, text);
   if (stage === 'b3_awaiting_location') return await handleB3Reply(ctx, text);
   if (stage === 'b3_awaiting_city') return await handleB3Reply(ctx, text);
-  // Phase 6 additions — B5 · Shortlist and B6 · The Case. B4 (Phase 5) sets
-  // 'b5_awaiting_entry' and waits for the next turn (same precedent as B2's
-  // advanceToB3, since B4 could not chain directly into a B5 that did not
-  // exist yet when it was built) — wired here now that B5 exists for real.
+  // Legacy shortlist / case / book (Phase 2 will remap to B7–B10).
   if (stage === 'b5_awaiting_entry') return await handleB5Entry(ctx);
   if (stage === 'b5_awaiting_reply') return await handleB5Reply(ctx, text);
   if (stage === 'b5_change_awaiting_slot') return await handleB5Reply(ctx, text);
   if (stage === 'b5_change_awaiting_value') return await handleB5Reply(ctx, text);
   if (stage === 'b6_awaiting_entry') return await handleB6Entry(ctx);
-  // Phase 7 additions — B7 · Book, the final beat in the Flow v2 spine.
-  // Reachable from B6's normal handoff today; the R4-G ("best college")
-  // early-invite dispatcher wiring that would also reach B7 directly
-  // (skipping B3/B4/B5/B6) is intentionally NOT built this phase — flagged
-  // as a follow-up, not silently dropped. handleB7Entry already degrades
-  // gracefully either way (does not assume profile.recommendation is set).
   if (stage === 'b7_awaiting_entry') return await handleB7Entry(ctx);
   if (stage === 'b7_awaiting_reply') return await handleB7Reply(ctx, text);
+  if (stage === 'b7_awaiting_slot') return await handleB7Reply(ctx, text);
   if (stage === 'b7_awaiting_done') return await handleB7Reply(ctx, text);
   if (stage === 'b7_post_decline') return await handleB7Reply(ctx, text);
   if (stage === 'b7_post_booking') return await handleB7Reply(ctx, text);
@@ -429,7 +437,13 @@ async function processFlowV2TurnRaw(ctx, inboundMessage, meta = {}) {
   // Node 0's separate, earlier-stage booking flow instead of continuing
   // B7's. Node 0's reason to exist — jumping to booking from somewhere
   // else — is moot once the student is already in the booking beat itself.
+  //
+  // Also exempt `node0_awaiting_slot`: the hybrid slot list owns the next
+  // reply (slot row / other time / free-text preference → website URL).
   const isB7Stage = typeof stage === 'string' && stage.startsWith('b7_');
+  if (stage === 'node0_awaiting_slot') {
+    return await handleNode0SlotReply(turnCtx, text);
+  }
   if (!isB7Stage && detectOverrideIntent(text)) {
     // The link was already sent on the immediately preceding Node 0 turn.
     // A repeated booking word here is not a reason to send a duplicate
@@ -438,7 +452,7 @@ async function processFlowV2TurnRaw(ctx, inboundMessage, meta = {}) {
     if (stage === 'node0_awaiting_backfill' && extractedProfile.bookingStatus === 'link_sent') {
       return handleNode0BackfillReply(turnCtx, text);
     }
-    return handleNode0Override(turnCtx, text);
+    return await handleNode0Override(turnCtx, text);
   }
 
   // Node E and its qualification side tracks are deterministic local
