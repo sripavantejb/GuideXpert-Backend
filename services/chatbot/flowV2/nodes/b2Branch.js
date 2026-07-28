@@ -3,8 +3,12 @@
 /**
  * Flow V3 — B3 · INTEREST (was v2 B2 · Branch).
  *
- * 10-row multi-select (cap 4). "done" finishes. Core → B3.2 fork.
- * Undecided is a legitimate answer (no default branch).
+ * WhatsApp LIST multi-select (cap 4):
+ *  - Row titles ≤24 chars, section title short (reply bubbles echo it)
+ *  - After the first pick, list includes a tappable "I'm done ✓" row
+ *    (students almost never type "done")
+ *  - At 4 picks, auto-advance — never loop the same ask forever
+ *  - Core → B3.2 fork; Undecided advances once (no loop)
  */
 
 const { extractFlowV2Slots } = require('../flowV2SlotExtractor');
@@ -15,106 +19,136 @@ const { handleR11 } = require('../router/handlers/r11Handler');
 const { handleCoreForkEntry } = require('./b2CoreFork');
 
 const INTEREST_CAP = 4;
+const WA_LIST_TITLE_MAX = 24;
+const WA_LIST_DESC_MAX = 72;
+const WA_LIST_SECTION_MAX = 24;
 
+const DONE_ROW = Object.freeze({
+  id: 'flowv2_b3_done',
+  title: "I'm done ✓",
+  description: 'Continue with my picks',
+});
+
+/** Spec options — titles clipped to WhatsApp list limits; detail in description. */
 const B2_ROWS = Object.freeze([
-  Object.freeze({ id: 'flowv2_b3_computers', title: 'Computers & software' }),
-  Object.freeze({ id: 'flowv2_b3_ai', title: 'Artificial Intelligence' }),
-  Object.freeze({ id: 'flowv2_b3_data', title: 'Data Science' }),
-  Object.freeze({ id: 'flowv2_b3_cloud', title: 'Cloud Computing' }),
-  Object.freeze({ id: 'flowv2_b3_cyber', title: 'Cyber Security' }),
-  Object.freeze({ id: 'flowv2_b3_app', title: 'App Development' }),
-  Object.freeze({ id: 'flowv2_b3_web', title: 'Web Development' }),
-  Object.freeze({ id: 'flowv2_b3_game', title: 'Game Development' }),
-  Object.freeze({ id: 'flowv2_b3_core', title: 'Core engineering (Mech / Civil / ECE / EEE)' }),
-  Object.freeze({ id: 'flowv2_b3_unsure', title: 'Not sure yet — help me figure it out' }),
+  Object.freeze({
+    id: 'flowv2_b3_computers',
+    title: 'Computers & software',
+    description: 'Coding, software, IT',
+    label: 'computers_software',
+  }),
+  Object.freeze({
+    id: 'flowv2_b3_ai',
+    title: 'Artificial Intelligence',
+    description: 'AI / ML paths',
+    label: 'artificial_intelligence',
+  }),
+  Object.freeze({
+    id: 'flowv2_b3_data',
+    title: 'Data Science',
+    description: 'Data & analytics',
+    label: 'data_science',
+  }),
+  Object.freeze({
+    id: 'flowv2_b3_cloud',
+    title: 'Cloud Computing',
+    description: 'Cloud & infra',
+    label: 'cloud_computing',
+  }),
+  Object.freeze({
+    id: 'flowv2_b3_cyber',
+    title: 'Cyber Security',
+    description: 'Security & networks',
+    label: 'cyber_security',
+  }),
+  Object.freeze({
+    id: 'flowv2_b3_app',
+    title: 'App Development',
+    description: 'Mobile apps',
+    label: 'app_development',
+  }),
+  Object.freeze({
+    id: 'flowv2_b3_web',
+    title: 'Web Development',
+    description: 'Web & full-stack',
+    label: 'web_development',
+  }),
+  Object.freeze({
+    id: 'flowv2_b3_game',
+    title: 'Game Development',
+    description: 'Games & interactive',
+    label: 'game_development',
+  }),
+  Object.freeze({
+    id: 'flowv2_b3_core',
+    title: 'Core engineering',
+    description: 'Mech / Civil / ECE / EEE',
+    label: 'core_engineering',
+    isCore: true,
+  }),
+  Object.freeze({
+    id: 'flowv2_b3_unsure',
+    title: 'Not sure yet',
+    description: 'Help me figure it out',
+    label: 'undecided',
+    isUndecided: true,
+  }),
 ]);
 
-const B2_LIST_SECTION_TITLE = 'Tap one, then tap more if you want';
-const B2_LIST_BUTTON_TEXT = 'Pick your interests';
+// Short section title — WhatsApp echoes this above the chosen row in the
+ // student bubble. Never put instructions here.
+const B2_LIST_SECTION_TITLE = 'Interests';
+const B2_LIST_BUTTON_TEXT = 'Pick interests';
 
 const B2_QUESTION =
-  'Good — that helps.\n\nWhich of these actually interest you? Pick as many as you like.';
-const B2_REASK_BODY = 'Noted 👍 Tap any others, or send "done" when you\'re finished.';
-const B2_CAP_BODY =
-  "That's plenty — four is the useful max. Send \"done\" when you're ready, or tap done.";
+  'Good — that helps.\n\nWhich of these actually interest you?\nPick as many as you like (up to 4).';
+const B2_REASK_BODY =
+  'Noted 👍 Tap more if you want — or tap *I\'m done ✓* when you\'re finished.';
+const B2_CAP_BODY = "That's a solid set — continuing with what you've picked.";
 
 /** @deprecated alias — tests / change-slot menus */
 const B2_QUESTION_LEGACY = 'Which field pulls you?';
 
-const INTEREST_DEFS = Object.freeze([
-  Object.freeze({
-    id: 'computers',
-    re: /\bcomputers?\b|\bsoftware\b|flowv2_b3_computers|coding \/ software/i,
-    label: 'computers_software',
-    cluster: 'software',
-    branch: 'cse_ai',
-  }),
-  Object.freeze({
-    id: 'ai',
-    re: /\bartificial intelligence\b|flowv2_b3_ai|^ai$/i,
-    label: 'artificial_intelligence',
-    cluster: 'data_ai',
-    branch: 'cse_ai',
-  }),
-  Object.freeze({
-    id: 'data',
-    re: /\bdata science\b|\bdata \/ analytics\b|flowv2_b3_data/i,
-    label: 'data_science',
-    cluster: 'data_ai',
-    branch: 'data_analytics',
-  }),
-  Object.freeze({
-    id: 'cloud',
-    re: /\bcloud computing\b|flowv2_b3_cloud/i,
-    label: 'cloud_computing',
-    cluster: 'infra_security',
-    branch: 'cse_ai',
-  }),
-  Object.freeze({
-    id: 'cyber',
-    re: /\bcyber security\b|flowv2_b3_cyber/i,
-    label: 'cyber_security',
-    cluster: 'infra_security',
-    branch: 'cse_ai',
-  }),
-  Object.freeze({
-    id: 'app',
-    re: /\bapp development\b|flowv2_b3_app/i,
-    label: 'app_development',
-    cluster: 'software',
-    branch: 'cse_ai',
-  }),
-  Object.freeze({
-    id: 'web',
-    re: /\bweb development\b|flowv2_b3_web/i,
-    label: 'web_development',
-    cluster: 'software',
-    branch: 'cse_ai',
-  }),
-  Object.freeze({
-    id: 'game',
-    re: /\bgame development\b|flowv2_b3_game/i,
-    label: 'game_development',
-    cluster: 'software',
-    branch: 'cse_ai',
-  }),
-  Object.freeze({
-    id: 'core',
-    re: /\bcore engineering\b|flowv2_b3_core/i,
-    label: 'core_engineering',
-    cluster: 'core',
-    branch: 'mechanical',
-    isCore: true,
-  }),
-  Object.freeze({
-    id: 'unsure',
-    re: /\bnot sure yet\b|help me figure it out|flowv2_b3_unsure/i,
-    label: 'undecided',
-    cluster: 'undecided',
-    branch: null,
-    isUndecided: true,
-  }),
-]);
+const INTEREST_DEFS = Object.freeze(
+  B2_ROWS.map((row) => {
+    const cluster =
+      row.label === 'undecided'
+        ? 'undecided'
+        : row.isCore
+          ? 'core'
+          : row.label === 'artificial_intelligence' || row.label === 'data_science'
+            ? 'data_ai'
+            : row.label === 'cloud_computing' || row.label === 'cyber_security'
+              ? 'infra_security'
+              : 'software';
+    const branch =
+      row.isUndecided || row.label === 'undecided'
+        ? null
+        : row.isCore
+          ? 'mechanical'
+          : row.label === 'data_science'
+            ? 'data_analytics'
+            : 'cse_ai';
+    return Object.freeze({
+      id: row.id.replace('flowv2_b3_', ''),
+      rowId: row.id,
+      title: row.title,
+      label: row.label,
+      cluster,
+      branch,
+      isCore: Boolean(row.isCore),
+      isUndecided: Boolean(row.isUndecided),
+      re: new RegExp(
+        `${escapeRe(row.id)}|${escapeRe(row.title)}|\\b${escapeRe(row.label.replace(/_/g, ' '))}\\b`,
+        'i'
+      ),
+    });
+  })
+);
+
+function escapeRe(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 const BUSINESS_BRANCH_VALUES = Object.freeze(['business/commerce', 'business', 'mba', 'bba']);
 function isBusinessBranch(branchInterest) {
@@ -141,12 +175,52 @@ function outOfScopeWithProfile(mergedProfile) {
   return { ...result, contextPatch: { ...result.contextPatch, profile: mergedProfile } };
 }
 
-function buildB2ListInteractive(body) {
+function clip(text, max) {
+  const s = String(text || '').trim();
+  if (s.length <= max) return s;
+  return s.slice(0, Math.max(0, max - 1)).trimEnd() + '…';
+}
+
+function toWaRow(row) {
+  const out = {
+    id: row.id,
+    title: clip(row.title, WA_LIST_TITLE_MAX),
+  };
+  if (row.description) out.description = clip(row.description, WA_LIST_DESC_MAX);
+  return out;
+}
+
+/**
+ * Initial ask: all 10 interest rows.
+ * Follow-up (≥1 pick): Done first, then remaining unselected interests.
+ */
+function buildInterestRows(selectedLabels = []) {
+  const selected = new Set(selectedLabels || []);
+  if (selected.size === 0) {
+    return B2_ROWS.map(toWaRow);
+  }
+
+  const remaining = B2_ROWS.filter((row) => {
+    if (selected.has(row.label)) return false;
+    // Once they have a real interest, drop "Not sure yet".
+    if (row.isUndecided) return false;
+    return true;
+  }).map(toWaRow);
+
+  return [toWaRow(DONE_ROW), ...remaining].slice(0, 10);
+}
+
+function buildB2ListInteractive(body, selectedLabels = []) {
   return {
     type: 'list',
     body,
     buttonText: B2_LIST_BUTTON_TEXT,
-    sections: [{ title: B2_LIST_SECTION_TITLE, rows: B2_ROWS }],
+    sections: [
+      {
+        title: clip(B2_LIST_SECTION_TITLE, WA_LIST_SECTION_MAX),
+        rows: buildInterestRows(selectedLabels),
+      },
+    ],
   };
 }
 
@@ -162,10 +236,35 @@ function branchAckLine(branchInterest) {
 
 function matchInterest(text) {
   const t = String(text || '').trim();
+  if (!t) return null;
+  // Prefer exact id / title hits first (list postbacks).
+  for (const def of INTEREST_DEFS) {
+    if (t === def.rowId || t.toLowerCase() === def.title.toLowerCase()) return def;
+  }
   for (const def of INTEREST_DEFS) {
     if (def.re.test(t)) return def;
   }
+  // Truncated WhatsApp titles / aliases
+  if (/\bcore engineering\b/i.test(t) || /\bmech\b.*\bcivil\b/i.test(t)) {
+    return INTEREST_DEFS.find((d) => d.isCore) || null;
+  }
+  if (/\bnot sure\b/i.test(t) || /help me figure/i.test(t)) {
+    return INTEREST_DEFS.find((d) => d.isUndecided) || null;
+  }
+  if (/\bcomputers?\b|\bsoftware\b|coding \/ software/i.test(t)) {
+    return INTEREST_DEFS.find((d) => d.label === 'computers_software') || null;
+  }
   return null;
+}
+
+function looksLikeDone(text) {
+  const t = String(text || '').trim().toLowerCase();
+  if (!t) return false;
+  if (t === 'flowv2_b3_done' || t === DONE_ROW.id.toLowerCase()) return true;
+  if (t === "i'm done ✓" || t === "i'm done" || t === 'im done' || t === 'done' || t === 'done.') {
+    return true;
+  }
+  return /\bi'?m done\b|\bdone\b/.test(t) && !/\bnot sure\b/.test(t);
 }
 
 function deriveCluster(interests, defsHit) {
@@ -183,11 +282,6 @@ function deriveBranch(defsHit) {
   if (defsHit.some((d) => d.isCore)) return 'mechanical';
   const withBranch = defsHit.find((d) => d.branch);
   return withBranch ? withBranch.branch : null;
-}
-
-function looksLikeDone(text) {
-  const t = String(text || '').trim().toLowerCase();
-  return t === 'done' || t === 'done.' || t === 'finish' || t === "i'm done" || t === 'im done';
 }
 
 function finalizeInterests(ctx, profile, interests, freePatch = {}) {
@@ -219,10 +313,11 @@ function finalizeInterests(ctx, profile, interests, freePatch = {}) {
 }
 
 function continueMultiSelect(mergedProfile, body) {
+  const selected = Array.isArray(mergedProfile.interests) ? mergedProfile.interests : [];
   return {
     replyText: null,
     replyParts: null,
-    interactive: buildB2ListInteractive(body),
+    interactive: buildB2ListInteractive(body, selected),
     contextPatch: { stage: 'b2_awaiting_reply', profile: mergedProfile },
     nextState: 'career_counselling_flow_v2',
     intent: 'career_counselling_flow_v2',
@@ -253,7 +348,7 @@ function handleB2Entry(ctx) {
   return {
     replyText: null,
     replyParts: null,
-    interactive: buildB2ListInteractive(B2_QUESTION),
+    interactive: buildB2ListInteractive(B2_QUESTION, []),
     contextPatch: { stage: 'b2_awaiting_reply', profile },
     nextState: 'career_counselling_flow_v2',
     intent: 'career_counselling_flow_v2',
@@ -271,18 +366,14 @@ function handleB2Reply(ctx, text) {
 
   if (looksLikeDone(text)) {
     if (existing.length === 0) {
-      // Done with nothing selected — treat as undecided rather than looping forever.
-      return finalizeInterests(ctx, profile, ['undecided'], freePatch);
+      return finalizeInterests(ctx, profile, ['undecided'], {});
     }
     return finalizeInterests(ctx, profile, existing, freePatch);
   }
 
   const matched = matchInterest(text);
 
-  // Legacy single-select titles still work as first (and only) pick + auto-finish
-  // when they map cleanly — except we keep multi-select for V3 rows.
   if (!matched) {
-    // Fall back: extractor branchInterest (free text / legacy).
     if (freePatch.branchInterest) {
       if (isCoreEngineeringBranch(freePatch.branchInterest)) {
         const merged = mergeFlowV2Profile(profile, freePatch);
@@ -296,11 +387,12 @@ function handleB2Reply(ctx, text) {
         : [String(freePatch.branchInterest).toLowerCase()];
       return finalizeInterests(ctx, profile, interests, freePatch);
     }
-    return continueMultiSelect(mergeFlowV2Profile(profile, freePatch), B2_REASK_BODY);
+    // Unrecognised — re-show list with Done if they already picked something.
+    const body = existing.length ? B2_REASK_BODY : B2_QUESTION;
+    return continueMultiSelect(mergeFlowV2Profile(profile, freePatch), body);
   }
 
   if (matched.isUndecided && existing.length === 0) {
-    // Do not merge free-text branch guesses ("figure it out" → IT).
     return finalizeInterests(ctx, profile, ['undecided'], {});
   }
 
@@ -322,14 +414,17 @@ function handleB2Reply(ctx, text) {
   const merged = mergeFlowV2Profile(profile, {
     ...freePatch,
     interests,
-    interestCluster: deriveCluster(interests, INTEREST_DEFS.filter((d) => interests.includes(d.label))),
+    interestCluster: deriveCluster(
+      interests,
+      INTEREST_DEFS.filter((d) => interests.includes(d.label))
+    ),
   });
 
+  // Cap reached → advance immediately (no more looping).
   if (interests.length >= INTEREST_CAP) {
-    return continueMultiSelect(merged, B2_CAP_BODY);
+    return finalizeInterests(ctx, merged, interests, {});
   }
 
-  // Multi-select: keep collecting until "done".
   return continueMultiSelect(merged, B2_REASK_BODY);
 }
 
@@ -340,10 +435,15 @@ module.exports = {
   isBusinessBranch,
   branchAckLine,
   buildB2ListInteractive,
+  buildInterestRows,
   B2_ROWS,
+  DONE_ROW,
   B2_QUESTION,
   B2_REASK_BODY,
   B2_QUESTION_LEGACY,
+  B2_LIST_SECTION_TITLE,
+  B2_LIST_BUTTON_TEXT,
   INTEREST_CAP,
   matchInterest,
+  looksLikeDone,
 };
