@@ -51,8 +51,8 @@ const GUIDED_FLOW_DEFINITIONS = Object.freeze([
     botState: 'career_counselling_flow_v2',
     contextKey: 'flowV2',
     continueIntent: 'career_counselling_flow_v2_continue',
-    // Entry is opt-in via botState transition / feature flag — do not steal
-    // the frozen V2 career_counselling_journey intent.
+    // Live counselling entry (hi / college uncertainty). Frozen
+    // career_counselling_journey remains registered for mid-journey resume only.
     entryIntents: Object.freeze(['career_counselling_flow_v2']),
     slotFilling: false,
     completeBotState: 'career_counselling_flow_v2',

@@ -365,6 +365,7 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     return { intent: activeGuidedFlow.continueIntent, confidence: 'high' };
   }
 
+  const standaloneGreeting = matchesStandaloneGreeting(t);
   const nativeGreeting = isNativeSocialGreeting(original);
   const socialGreeting = isSocialGreeting(t, original);
   const romanizedTeluguGreeting =
@@ -377,12 +378,19 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     isSocialGreeting: socialGreeting,
     isNativeSocialGreeting: nativeGreeting,
     romanizedTeluguGreeting,
+    standaloneGreeting,
   });
 
-  if (nativeGreeting || socialGreeting) {
-    const intentReason = romanizedTeluguGreeting ? 'romanized_telugu_greeting' : 'social_greeting';
-    logIntentDebug({ message: original, intent: 'greeting', reason: intentReason });
-    return { intent: 'greeting', confidence: 'high', intentReason };
+  // Master Flow v2 is the live counselling entry. "hi" / "hello" / "start"
+  // must open Rithika Node E — never the legacy IIT/GX numbered main menu.
+  if (standaloneGreeting || nativeGreeting || socialGreeting) {
+    const intentReason = romanizedTeluguGreeting
+      ? 'romanized_telugu_greeting_flow_v2'
+      : standaloneGreeting
+        ? 'standalone_greeting_flow_v2'
+        : 'social_greeting_flow_v2';
+    logIntentDebug({ message: original, intent: 'career_counselling_flow_v2', reason: intentReason });
+    return { intent: 'career_counselling_flow_v2', confidence: 'high', intentReason };
   }
 
   if (isIitCounsellingExpertEnabled() && isFactualIceDelegation(t, original)) {
@@ -414,10 +422,11 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     isCareerCounsellingJourneyEnabled() &&
     isCareerCounsellingJourneyEntryQuery(t, original)
   ) {
+    // Past frozen journey is retired as the live door — Master Flow v2 owns entry.
     return {
-      intent: 'career_counselling_journey',
+      intent: 'career_counselling_flow_v2',
       confidence: 'high',
-      intentReason: 'career_counselling_journey_entry',
+      intentReason: 'career_counselling_flow_v2_entry',
     };
   }
 

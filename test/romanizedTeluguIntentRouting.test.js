@@ -21,18 +21,18 @@ function assertIntent(original, expectedIntent, englishMessage = null) {
 }
 
 describe('romanized Telugu greeting routing', () => {
-  test('ela unnaru routes to greeting on original text', () => {
+  test('ela unnaru routes to Flow v2 on original text', () => {
     const r = classifyIntent('How are you doing?', null, PRODUCT_LINE, 'ela unnaru');
-    assert.equal(r.intent, 'greeting');
-    assert.equal(r.intentReason, 'romanized_telugu_greeting');
+    assert.equal(r.intent, 'career_counselling_flow_v2');
+    assert.equal(r.intentReason, 'romanized_telugu_greeting_flow_v2');
   });
 
-  test('ela vunnaru routes to greeting', () => {
-    assertIntent('ela vunnaru', 'greeting');
+  test('ela vunnaru routes to Flow v2', () => {
+    assertIntent('ela vunnaru', 'career_counselling_flow_v2');
   });
 
-  test('bagunnara routes to greeting', () => {
-    assertIntent('bagunnara', 'greeting', 'How are you?');
+  test('bagunnara routes to Flow v2', () => {
+    assertIntent('bagunnara', 'career_counselling_flow_v2', 'How are you?');
   });
 });
 

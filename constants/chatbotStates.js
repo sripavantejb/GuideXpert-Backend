@@ -16,6 +16,7 @@ const BOT_STATES = Object.freeze([
   'rank_predictor',
   'college_predictor',
   'career_counselling_journey',
+  'career_counselling_flow_v2',
   'human_handoff',
   'idle',
 ]);
@@ -78,7 +79,7 @@ const WEBHOOK_EVENT_KINDS = Object.freeze(['inbound', 'dlr', 'unknown']);
 
 // menu: command words only; hi/hello/hey use whole-message matching in intentClassifierService
 const GLOBAL_KEYWORDS = Object.freeze({
-  menu: ['menu', 'help', 'start'],
+  menu: ['menu', 'help'],
   agent: ['agent', 'human', 'person', 'talk to someone', 'counsellor', 'counselor', 'support'],
   stop: ['stop', 'unsubscribe', 'opt out', 'optout'],
   cancel: ['cancel'],
