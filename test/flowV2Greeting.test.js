@@ -10,47 +10,69 @@ const {
   UNKNOWN_NAME_GREETING,
   NAME_REASK,
   NEUTRAL_QUALIFICATION_LINE,
+  buildNodeEOpenBody,
 } = require('../services/chatbot/flowV2/nodes/greeting');
 const { emptyFlowV2Profile } = require('../constants/careerCounsellingFlowV2Profile');
 
-describe('flowV2 greeting — entry', () => {
-  test('known profile.name skips the name ask and shows the exact 10-row qualification list', () => {
+const EXPECTED_WA_TITLES = [
+  'Class 10',
+  'Class 11',
+  '12th — MPC',
+  '12th — BiPC',
+  '12th — MEC / CEC',
+  'Diploma',
+  'Dropper / gap year',
+  'Already in college',
+  'Something else',
+];
+
+const EXPECTED_CANONICAL = [
+  '10th Completed',
+  '11th Studying',
+  '12th Completed (PCM)',
+  '12th Completed (PCB)',
+  '12th Completed (Commerce)',
+  'Diploma',
+  'Drop Year',
+  'Degree',
+  'Other',
+];
+
+describe('flowV2 greeting — Node E entry', () => {
+  test('known profile.name opens Node E list with 9 MD rows (never asks name)', () => {
     const profile = { ...emptyFlowV2Profile(), name: 'Priya' };
     const result = handleGreetingEntry({ flowV2: { profile } });
     assert.equal(result.replyText, null);
-    assert.equal(
-      result.interactive.body,
-      'Nice to meet you, Priya 😊\nQuick one first — can I know your qualification?'
-    );
+    assert.equal(result.interactive.body, buildNodeEOpenBody('Priya'));
+    assert.match(result.interactive.body, /Hey Priya/);
+    assert.match(result.interactive.body, /counselling desk/);
+    assert.match(result.interactive.body, /2 minutes/);
+    assert.match(result.interactive.body, /First — where are you right now/);
     assert.equal(result.contextPatch.stage, 'greeting_awaiting_qualification');
     assert.equal(result.interactive.type, 'list');
-    assert.equal(result.interactive.sections[0].title, 'Where are you right now?');
-    assert.equal(result.interactive.sections[0].rows.length, 10);
+    assert.equal(result.interactive.sections[0].title, 'Choose your stage');
+    assert.equal(result.interactive.sections[0].rows.length, 9);
     assert.deepEqual(
-      result.interactive.sections[0].rows,
-      QUALIFICATION_ROWS.map((row) => ({
-        id: row.id,
-        title: row.waTitle || row.title,
-      }))
+      result.interactive.sections[0].rows.map((r) => r.title),
+      EXPECTED_WA_TITLES
     );
     assert.deepEqual(
       QUALIFICATION_ROWS.map((row) => row.title),
-      [
-        '10th Completed',
-        '11th Studying',
-        '12th Completed (PCM)',
-        '12th Completed (PCB)',
-        '12th Completed (Commerce)',
-        '12th Completed (Arts)',
-        'Diploma',
-        'Degree',
-        'Drop Year',
-        'Other',
-      ]
+      EXPECTED_CANONICAL
     );
   });
 
-  test('known name plus known qualification skips both questions and routes immediately', () => {
+  test('CRM leadContext name seeds the greeting without a name ask', () => {
+    const result = handleGreetingEntry({
+      flowV2: { profile: emptyFlowV2Profile() },
+      leadContext: { gx: { fullName: 'Arjun Sharma' } },
+    });
+    assert.equal(result.contextPatch.profile.name, 'Arjun');
+    assert.equal(result.interactive.body, buildNodeEOpenBody('Arjun'));
+    assert.equal(result.contextPatch.stage, 'greeting_awaiting_qualification');
+  });
+
+  test('known name plus known qualification skips Node E list and routes immediately', () => {
     const profile = {
       ...emptyFlowV2Profile(),
       name: 'Priya',
@@ -63,55 +85,28 @@ describe('flowV2 greeting — entry', () => {
     assert.match(result.interactive.body, /What matters most to you right now/i);
   });
 
-  test('unknown name gets the exact Rithika greeting and no qualification list yet', () => {
+  test('unknown name still opens Node E list immediately (never asks for name)', () => {
     const result = handleGreetingEntry({});
-    assert.equal(result.replyText, UNKNOWN_NAME_GREETING);
-    assert.equal(
-      result.replyText,
-      "Hi 😊\nI'm Rithika from GuideXpert. I help students figure out the right path after Class 12.\n\nMay I know your name?"
-    );
-    assert.equal(result.interactive, null);
-    assert.equal(result.contextPatch.stage, 'greeting_awaiting_name');
-    assert.equal(result.contextPatch.nameAttempts, 0);
+    assert.equal(result.replyText, null);
+    assert.equal(result.interactive.body, UNKNOWN_NAME_GREETING);
+    assert.equal(result.interactive.body, buildNodeEOpenBody(null));
+    assert.match(result.interactive.body, /^Hi /);
+    assert.doesNotMatch(result.interactive.body, /May I know your name/i);
+    assert.equal(result.interactive.type, 'list');
+    assert.equal(result.contextPatch.stage, 'greeting_awaiting_qualification');
+    assert.equal(result.interactive.sections[0].rows.length, 9);
   });
 
-  test('hi with no listed name then a free-text name opens the 10-row qualification list', async () => {
+  test('hi with no name opens the 9-row qualification list in one turn', async () => {
     const { processFlowV2Turn } = require('../services/chatbot/flowV2/flowV2Dispatcher');
     const open = await processFlowV2Turn({ flowV2: { stage: null, profile: null } }, 'hi');
-    assert.equal(open.replyText, UNKNOWN_NAME_GREETING);
-    assert.equal(open.interactive, null);
-
-    const named = await processFlowV2Turn(
-      {
-        flowV2: {
-          stage: open.contextPatch.stage,
-          profile: open.contextPatch.profile,
-          nameAttempts: open.contextPatch.nameAttempts,
-        },
-      },
-      'My name is Arjun 😊'
-    );
-    assert.equal(named.contextPatch.profile.name, 'Arjun');
-    assert.equal(named.interactive.type, 'list');
-    assert.equal(named.interactive.sections[0].title, 'Where are you right now?');
-    assert.equal(
-      named.interactive.body,
-      'Nice to meet you, Arjun 😊\nQuick one first — can I know your qualification?'
-    );
+    assert.equal(open.replyText, null);
+    assert.equal(open.interactive.type, 'list');
+    assert.equal(open.interactive.body, UNKNOWN_NAME_GREETING);
+    assert.equal(open.contextPatch.stage, 'greeting_awaiting_qualification');
     assert.deepEqual(
-      named.interactive.sections[0].rows.map((row) => row.title),
-      [
-        '10th Completed',
-        '11th Studying',
-        '12th Completed (PCM)',
-        '12th Completed (PCB)',
-        '12th Commerce',
-        '12th Completed (Arts)',
-        'Diploma',
-        'Degree',
-        'Drop Year',
-        'Other',
-      ]
+      open.interactive.sections[0].rows.map((row) => row.title),
+      EXPECTED_WA_TITLES
     );
   });
 
@@ -122,7 +117,7 @@ describe('flowV2 greeting — entry', () => {
   });
 });
 
-describe('flowV2 greeting — deterministic name capture', () => {
+describe('flowV2 greeting — legacy name capture (greeting_awaiting_name only)', () => {
   const nameCtx = (patch = {}) => ({
     flowV2: { stage: 'greeting_awaiting_name', profile: emptyFlowV2Profile(), nameAttempts: 0, ...patch },
   });
@@ -136,10 +131,7 @@ describe('flowV2 greeting — deterministic name capture', () => {
       const result = handleGreetingReply(nameCtx(), text);
       assert.equal(result.contextPatch.profile.name, expected);
       assert.equal(result.contextPatch.stage, 'greeting_awaiting_qualification');
-      assert.equal(
-        result.interactive.body,
-        `Nice to meet you, ${expected} 😊\nQuick one first — can I know your qualification?`
-      );
+      assert.equal(result.interactive.body, buildNodeEOpenBody(expected));
     }
   });
 
@@ -151,10 +143,7 @@ describe('flowV2 greeting — deterministic name capture', () => {
 
     const second = handleGreetingReply(nameCtx({ nameAttempts: 1 }), '...');
     assert.equal(second.interactive.body, NEUTRAL_QUALIFICATION_LINE);
-    assert.equal(
-      second.interactive.body,
-      'Nice to meet you 😊\nQuick one first — can I know your qualification?'
-    );
+    assert.equal(second.interactive.body, 'First — where are you right now?');
     assert.equal(second.contextPatch.stage, 'greeting_awaiting_qualification');
     assert.equal(second.contextPatch.nameAttempts, null);
   });
@@ -191,13 +180,23 @@ describe('flowV2 greeting — qualification routes', () => {
     assert.match(result.interactive.body, /What matters most to you right now/i);
   });
 
-  test('all non-PCM rows enter their required side tracks', () => {
+  test('waTitle taps resolve to canonical titles', () => {
+    const mpc = handleGreetingReply(qualCtx(), '12th — MPC');
+    assert.equal(mpc.contextPatch.profile.qualification, '12th Completed (PCM)');
+    assert.equal(mpc.contextPatch.stage, 'b1_awaiting_reply');
+
+    const bipc = handleGreetingReply(qualCtx(), '12th — BiPC');
+    assert.equal(bipc.contextPatch.profile.qualification, '12th Completed (PCB)');
+    assert.equal(bipc.contextPatch.stage, 'entry_pcb_awaiting_reply');
+    assert.match(bipc.interactive.body, /BiPC/i);
+  });
+
+  test('all non-PCM list rows enter their required side tracks', () => {
     const expectedStages = {
       '10th Completed': 'entry_class10_awaiting_reply',
       '11th Studying': 'entry_class11_awaiting_reply',
       '12th Completed (PCB)': 'entry_pcb_awaiting_reply',
       '12th Completed (Commerce)': 'entry_commerce_awaiting_reply',
-      '12th Completed (Arts)': 'entry_arts_honest_scope',
       Diploma: 'entry_diploma_awaiting_reply',
       Degree: 'entry_degree_awaiting_reply',
       'Drop Year': 'entry_drop_year_awaiting_reply',
@@ -257,7 +256,7 @@ describe('flowV2 greeting — qualification routes', () => {
     assert.match(commerce.interactive.body, /won't mix in or invent/i);
   });
 
-  test('PCB medical and Arts use honest scope routes; Other captures free text and reroutes', () => {
+  test('PCB medical uses honest scope; free-text Arts still works; Other captures and reroutes', () => {
     const pcb = handleEntrySideTrackReply(
       {
         flowV2: {

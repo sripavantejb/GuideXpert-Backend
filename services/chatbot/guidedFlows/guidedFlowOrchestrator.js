@@ -43,6 +43,7 @@ async function executeActiveGuidedFlowTurn({
   logInboundResult,
   h,
   resolvedLanguageFrom,
+  leadContext = null,
 }) {
   let contextPatch = botState?.context || {};
   const inboundText =
@@ -72,6 +73,8 @@ async function executeActiveGuidedFlowTurn({
     isNewEntry: false,
     resolvedLanguage: resolvedLanguageFrom(multilingualInbound),
     intent: flow.continueIntent,
+    leadContext,
+    phone: activeConversation?.phone || null,
   });
 
   if (turn.predictionIdempotency && turn.persistIdempotencyBeforeComplete) {
@@ -262,6 +265,7 @@ async function applyGuidedFlowSwitchTurn({
   multilingualInbound,
   transitionState,
   resolvedLanguageFrom,
+  leadContext = null,
 }) {
   await transitionState(
     activeConversation._id,
@@ -278,6 +282,8 @@ async function applyGuidedFlowSwitchTurn({
     isNewEntry: flow.entryIntents.includes(intentResult.intent),
     resolvedLanguage: resolvedLanguageFrom(multilingualInbound),
     intent: intentResult.intent,
+    leadContext,
+    phone: activeConversation?.phone || null,
   });
 
   if (turn.predictionIdempotency && turn.persistIdempotencyBeforeComplete) {

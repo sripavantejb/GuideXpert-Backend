@@ -522,6 +522,7 @@ async function processInboundCore({
     logInboundResult,
     h,
     resolvedLanguageFrom,
+    leadContext,
   });
   if (guidedResult) {
     return guidedResult;
@@ -772,6 +773,7 @@ async function processInboundCore({
         logInboundResult,
         h,
         resolvedLanguageFrom,
+        leadContext,
       });
     }
   }
@@ -963,6 +965,7 @@ async function processInboundCore({
         multilingualInbound,
         transitionState,
         resolvedLanguageFrom,
+        leadContext,
       });
       replyText = applied.replyText;
       nextState = applied.nextState;

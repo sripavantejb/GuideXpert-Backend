@@ -15,13 +15,14 @@ const {
 const handoffService = require('../services/chatbot/handoffService');
 const WhatsAppAgentHandoff = require('../models/WhatsAppAgentHandoff');
 
-const FULL_GREETING_MARKER = "I'm Rithika from GuideXpert";
+const FULL_GREETING_MARKER = "GuideXpert's counselling desk";
 
 describe('flowV2Dispatcher — stage routing', () => {
   test('a fresh conversation (no stage) routes to the full greeting entry', async () => {
     const result = await processFlowV2Turn({}, 'hi');
-    assert.match(result.replyText, new RegExp(FULL_GREETING_MARKER));
-    assert.equal(result.contextPatch.stage, 'greeting_awaiting_name');
+    assert.match(String(result.interactive?.body || result.replyText || ''), new RegExp(FULL_GREETING_MARKER));
+    assert.equal(result.interactive.type, 'list');
+    assert.equal(result.contextPatch.stage, 'greeting_awaiting_qualification');
   });
 
   test("stage === 'greeting_awaiting_reply' routes to the reply handler, NOT the entry handler", async () => {
