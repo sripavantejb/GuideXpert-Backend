@@ -87,7 +87,7 @@
  * safeFallbackReply.
  */
 
-const { detectOverrideIntent, handleNode0Override } = require('./nodes/node0Override');
+const { detectOverrideIntent, handleNode0Override, handleNode0BackfillReply } = require('./nodes/node0Override');
 const { handleGreetingEntry, handleGreetingReply } = require('./nodes/greeting');
 const { handleB1Entry, handleB1Reply } = require('./nodes/b1Goal');
 const { handleB2Reply } = require('./nodes/b2Branch');
@@ -179,6 +179,16 @@ function safeFallbackReply() {
  * with zero further changes to the branches already listed. */
 async function runStageFallthrough(ctx, stage, text) {
   if (!stage) return await handleGreetingEntry(ctx);
+  if (stage === 'node0_awaiting_backfill') {
+    // Backfill is optional. "Done" bypasses it and enters B7's existing
+    // completion path; every other answer is offered to the backfill
+    // handler, which either captures goalPriority or skips cleanly.
+    if (/\bdone\b/i.test(String(text || ''))) {
+      const doneCtx = { ...ctx, flowV2: { ...(ctx.flowV2 || {}), stage: 'b7_awaiting_done' } };
+      return await handleB7Reply(doneCtx, text);
+    }
+    return await handleNode0BackfillReply(ctx, text);
+  }
   if (stage === 'greeting_awaiting_reply') return await handleGreetingReply(ctx, text);
   // Phase 4 — B1 · Goal, B2 · Branch, and the B2.2 core-engineering fork
   // + its honest-exit sub-flow.
@@ -315,6 +325,13 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
   // else — is moot once the student is already in the booking beat itself.
   const isB7Stage = typeof stage === 'string' && stage.startsWith('b7_');
   if (!isB7Stage && detectOverrideIntent(text)) {
+    // The link was already sent on the immediately preceding Node 0 turn.
+    // A repeated booking word here is not a reason to send a duplicate
+    // URL; treat it as skipping the optional backfill and continue into
+    // the existing awaiting-Done helper path.
+    if (stage === 'node0_awaiting_backfill' && extractedProfile.bookingStatus === 'link_sent') {
+      return handleNode0BackfillReply(turnCtx, text);
+    }
     return handleNode0Override(turnCtx, text);
   }
 

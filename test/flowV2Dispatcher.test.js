@@ -60,8 +60,8 @@ describe('flowV2Dispatcher — Node 0 pre-empts every stage, checked before any 
   });
 });
 
-describe('flowV2Dispatcher — unrecognized (future-phase) stages fall back safely', () => {
-  test('a stage with no handler yet (e.g. node0_awaiting_backfill) does not throw/reject and returns a safe generic reply', async () => {
+describe('flowV2Dispatcher — Node 0 optional backfill stage', () => {
+  test('node0_awaiting_backfill is a real handler that captures the answer and advances safely', async () => {
     const ctx = { flowV2: { stage: 'node0_awaiting_backfill', profile: emptyFlowV2Profile() } };
     // ASYNC (Phase 8): processFlowV2Turn now returns a Promise, so a bad
     // stage would surface as a REJECTION, not a synchronous throw —
@@ -72,6 +72,8 @@ describe('flowV2Dispatcher — unrecognized (future-phase) stages fall back safe
     const result = await processFlowV2Turn(ctx, 'Placements');
     assert.equal(typeof result.replyText, 'string');
     assert.equal(result.nextState, 'career_counselling_flow_v2');
+    assert.deepEqual(result.contextPatch.profile.goalPriority, ['placement']);
+    assert.equal(result.contextPatch.stage, 'b7_awaiting_done');
   });
 });
 

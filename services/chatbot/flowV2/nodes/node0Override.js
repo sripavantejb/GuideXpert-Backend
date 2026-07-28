@@ -17,6 +17,7 @@
  */
 
 const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
+const { extractFlowV2Slots } = require('../flowV2SlotExtractor');
 const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingFlowV2Profile');
 
 /**
@@ -37,6 +38,7 @@ const OVERRIDE_PATTERNS = Object.freeze([
   /\bphone number\b/i,
   /\bconnect me\b/i,
   /\btalk to a person\b/i,
+  /\bagent\b/i,
 ]);
 
 /**
@@ -51,7 +53,7 @@ function detectOverrideIntent(text) {
 /** Single source of truth for the booking URL — a future URL change is a
  * one-line edit here, not a grep-and-hope across every file that mentions
  * it. */
-const BOOKING_URL = 'guidexpert.co.in/one-on-one-session';
+const BOOKING_URL = 'https://www.guidexpert.co.in/one-on-one-session';
 
 /**
  * Shared "here's the link" line, reused by B7 · Book (Phase 7 —
@@ -88,13 +90,9 @@ function handleNode0Override(ctx, text) {
   const mergedProfile = mergeFlowV2Profile(currentProfile, {
     bookingStatus: 'link_sent',
     temperature: 'hot',
+    door: 'booking_intent',
   });
 
-  // TODO(Phase 4): once B1 (Goal) exists, add a handler for
-  // stage === 'node0_awaiting_backfill' that reads the tapped
-  // backfill button (flowv2_backfill_*) and merges it into
-  // profile.goalPriority, then hands off into B1 proper. This node
-  // deliberately stops at setting the stage + profile below.
   return {
     replyText: BOOKING_LINK_MESSAGE,
     replyParts: null,
@@ -112,13 +110,51 @@ function handleNode0Override(ctx, text) {
   };
 }
 
+const BACKFILL_CAPTURED_TEXT =
+  "Got it — I'll pass that on. Reply Done once you've submitted the form.";
+const BACKFILL_SKIPPED_TEXT =
+  "No problem — the form link is just above. Reply Done once you've submitted it.";
+
+/**
+ * NEW SCOPE in Master Flow Stage 3: the original Node 0 implementation
+ * stopped at `node0_awaiting_backfill`. This handler makes that optional
+ * question real. A recognized answer writes the same canonical
+ * `goalPriority` slot B1 uses, then moves to B7's existing
+ * `b7_awaiting_done` helper path without re-sending the URL. Any other
+ * response skips backfill (it is optional) and reaches the same waiting
+ * stage with the existing profile untouched.
+ */
+function handleNode0BackfillReply(ctx, text) {
+  const currentProfile = ctx?.flowV2?.profile || emptyFlowV2Profile();
+  const patch = extractFlowV2Slots(text, currentProfile);
+  const hasBackfill = Array.isArray(patch.goalPriority) && patch.goalPriority.length > 0;
+  const mergedProfile = hasBackfill
+    ? mergeFlowV2Profile(currentProfile, { goalPriority: patch.goalPriority })
+    : currentProfile;
+
+  return {
+    replyText: hasBackfill ? BACKFILL_CAPTURED_TEXT : BACKFILL_SKIPPED_TEXT,
+    replyParts: null,
+    interactive: null,
+    contextPatch: {
+      stage: 'b7_awaiting_done',
+      profile: mergedProfile,
+    },
+    nextState: 'career_counselling_flow_v2',
+    intent: 'career_counselling_flow_v2',
+  };
+}
+
 module.exports = {
   detectOverrideIntent,
   handleNode0Override,
+  handleNode0BackfillReply,
   OVERRIDE_PATTERNS,
   BOOKING_LINK_MESSAGE,
   BACKFILL_QUESTION,
   BACKFILL_BUTTONS,
+  BACKFILL_CAPTURED_TEXT,
+  BACKFILL_SKIPPED_TEXT,
   // exported (Phase 7) so B7 · Book can reuse the exact same booking-URL
   // line rather than hand-typing it a second time.
   BOOKING_URL,

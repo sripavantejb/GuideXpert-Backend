@@ -27,6 +27,7 @@ describe('flowV2 Node 0 override — detection', () => {
       'phone number',
       'connect me',
       'talk to a person',
+      'agent',
     ];
     for (const phrase of phrases) {
       assert.equal(detectOverrideIntent(phrase), true, `expected "${phrase}" to trigger override`);
@@ -229,17 +230,17 @@ describe('flowV2 Node 0 override — buildBookingUrlLine extraction (Phase 7, pu
   test('BOOKING_LINK_MESSAGE is byte-identical to its pre-extraction value (regression lock-in)', () => {
     assert.equal(
       BOOKING_LINK_MESSAGE,
-      'Absolutely \u2014 here\u2019s your booking form:\n\uD83D\uDC49 guidexpert.co.in/one-on-one-session\nOnce you submit, just reply Done here.'
+      'Absolutely \u2014 here\u2019s your booking form:\n\uD83D\uDC49 https://www.guidexpert.co.in/one-on-one-session\nOnce you submit, just reply Done here.'
     );
   });
 
   test('buildBookingUrlLine() returns the exact line BOOKING_LINK_MESSAGE was built from', () => {
-    assert.equal(buildBookingUrlLine(), '\uD83D\uDC49 guidexpert.co.in/one-on-one-session');
+    assert.equal(buildBookingUrlLine(), '\uD83D\uDC49 https://www.guidexpert.co.in/one-on-one-session');
     assert.ok(BOOKING_LINK_MESSAGE.includes(buildBookingUrlLine()));
   });
 
   test('BOOKING_URL is the bare URL, no emoji/prefix', () => {
-    assert.equal(BOOKING_URL, 'guidexpert.co.in/one-on-one-session');
+    assert.equal(BOOKING_URL, 'https://www.guidexpert.co.in/one-on-one-session');
   });
 });
 
@@ -255,6 +256,7 @@ describe('flowV2 Node 0 override — handler', () => {
     );
     assert.equal(result.contextPatch.profile.bookingStatus, 'link_sent');
     assert.equal(result.contextPatch.profile.temperature, 'hot');
+    assert.equal(result.contextPatch.profile.door, 'booking_intent');
     assert.equal(result.contextPatch.stage, 'node0_awaiting_backfill');
   });
 
@@ -285,5 +287,46 @@ describe('flowV2 Node 0 override — pre-empts stage routing at the dispatcher l
     // (greeting replies never set stage to 'node0_awaiting_backfill').
     assert.equal(result.contextPatch.stage, 'node0_awaiting_backfill');
     assert.match(result.replyText, /booking form/i);
+  });
+
+  test('NEW SCOPE: a backfill answer writes the canonical goalPriority slot and enters B7 awaiting-Done without re-sending the link', async () => {
+    const linkTurn = await processFlowV2Turn({}, 'book a session');
+    const backfillTurn = await processFlowV2Turn(
+      {
+        flowV2: {
+          stage: linkTurn.contextPatch.stage,
+          profile: linkTurn.contextPatch.profile,
+        },
+      },
+      'AI & future tech'
+    );
+
+    assert.deepEqual(backfillTurn.contextPatch.profile.goalPriority, ['ai_future_tech']);
+    assert.equal(backfillTurn.contextPatch.profile.bookingStatus, 'link_sent');
+    assert.equal(backfillTurn.contextPatch.stage, 'b7_awaiting_done');
+    assert.doesNotMatch(backfillTurn.replyText || '', /guidexpert\.co\.in\/one-on-one-session/);
+  });
+
+  test('optional backfill may be skipped with Done and reuses B7 completion/helper mode', async () => {
+    const linkTurn = await processFlowV2Turn({}, 'connect me');
+    const doneTurn = await processFlowV2Turn(
+      { flowV2: { stage: linkTurn.contextPatch.stage, profile: linkTurn.contextPatch.profile } },
+      'Done'
+    );
+
+    assert.equal(doneTurn.contextPatch.profile.bookingStatus, 'done');
+    assert.equal(doneTurn.contextPatch.stage, 'b7_post_booking');
+    assert.match(doneTurn.replyText, /request is in/i);
+  });
+
+  test('repeating booking language while awaiting optional backfill does not send the URL twice', async () => {
+    const linkTurn = await processFlowV2Turn({}, 'book');
+    const repeatTurn = await processFlowV2Turn(
+      { flowV2: { stage: linkTurn.contextPatch.stage, profile: linkTurn.contextPatch.profile } },
+      'book'
+    );
+
+    assert.equal(repeatTurn.contextPatch.stage, 'b7_awaiting_done');
+    assert.doesNotMatch(repeatTurn.replyText || '', /guidexpert\.co\.in\/one-on-one-session/);
   });
 });
