@@ -90,107 +90,87 @@ describe('b6TheCase — buildRecommendationText / buildVisionBubble', () => {
   });
 });
 
-describe('b6TheCase — handleB6Entry', () => {
-  test('compareMode = best_only skips the comparison message entirely (2 bubbles, not 3)', () => {
-    const result = handleB6Entry({ flowV2: { compareMode: 'best_only', profile: profileWithShortlist() } });
-    assert.equal(result.replyParts.length, 2);
-    assert.ok(!result.replyParts.some((p) => p.includes('top 3 stack up')));
-    assert.equal(result.contextPatch.profile.comparedColleges.length, 0);
-  });
-
-  test('compareMode = full includes the comparison table first (3 bubbles)', () => {
-    const result = handleB6Entry({ flowV2: { compareMode: 'full', profile: profileWithShortlist() } });
-    assert.equal(result.replyParts.length, 3);
-    assert.ok(result.replyParts[0].includes('top 3 stack up'));
-    assert.ok(result.replyParts[0].includes('●●●'));
-    assert.ok(result.contextPatch.profile.comparedColleges.length > 0);
-  });
-
-  test('3 bubbles / 0 gates: no interactive attached, no reply required between bubbles in the same turn', () => {
-    const result = handleB6Entry({ flowV2: { compareMode: 'full', profile: profileWithShortlist() } });
-    assert.equal(result.interactive, null);
-    assert.equal(result.replyText, null);
-    assert.ok(Array.isArray(result.replyParts));
+describe('b6TheCase — handleB6Entry (V3 delegates to B9 FIT)', () => {
+  test('shows FIT ask buttons', () => {
+    const result = handleB6Entry({ flowV2: { profile: profileWithShortlist() } });
+    assert.equal(result.interactive?.type, 'button');
+    assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
+    assert.match(result.interactive.body, /narrow it down/i);
   });
 
   test('no hesitation question exists anywhere in the output', () => {
-    const result = handleB6Entry({ flowV2: { compareMode: 'full', profile: profileWithShortlist() } });
-    for (const part of result.replyParts) {
-      assert.ok(!/hesitat/i.test(part), `unexpected hesitation copy: ${part}`);
-      assert.ok(!/any last/i.test(part));
-    }
-  });
-
-  test('sets stage to b7_awaiting_entry and writes profile.recommendation to the best-match college', () => {
-    const result = handleB6Entry({ flowV2: { compareMode: 'best_only', profile: profileWithShortlist() } });
-    assert.equal(result.contextPatch.stage, 'b7_awaiting_entry');
-    assert.equal(result.contextPatch.profile.recommendation, 'NIAT (NxtWave Institute of Advanced Technologies)');
+    const result = handleB6Entry({ flowV2: { profile: profileWithShortlist() } });
+    const text = [result.replyText, result.interactive?.body, ...(result.replyParts || [])]
+      .filter(Boolean)
+      .join('\n');
+    assert.ok(!/hesitat/i.test(text));
+    assert.ok(!/any last/i.test(text));
   });
 
   test('REGRESSION (propagation-bug shape): contextPatch carries an unrelated profile field forward', () => {
     const result = handleB6Entry({
-      flowV2: { compareMode: 'best_only', profile: profileWithShortlist(SAMPLE_SHORTLIST, { qualification: 'Class 12 (MPC)' }) },
+      flowV2: { profile: profileWithShortlist(SAMPLE_SHORTLIST, { qualification: 'Class 12 (MPC)' }) },
     });
     assert.equal(result.contextPatch.profile.qualification, 'Class 12 (MPC)');
   });
 
-  test('defensive: an empty shortlist (B6 reached without B5 ever running) does not crash', () => {
-    const result = handleB6Entry({ flowV2: { compareMode: 'best_only', profile: profileWithShortlist([]) } });
-    assert.equal(result.contextPatch.stage, 'b5_awaiting_entry');
-    assert.ok(typeof result.replyText === 'string');
+  test('defensive: an empty shortlist still shows FIT ask (does not crash)', () => {
+    const result = handleB6Entry({ flowV2: { profile: profileWithShortlist([]) } });
+    assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
+    assert.equal(result.interactive?.type, 'button');
   });
 
-  test('GUARDRAIL: throws when the real assembled recommendation text contains forbidden language injected via profile.shortlist data (not a mocked function)', () => {
-    const poisonedShortlist = [
-      { collegeName: 'Test University', tier: 'best_match', matchScore: 0.9, why: 'This college has guaranteed placement for every student.' },
-    ];
-    assert.throws(
-      () => handleB6Entry({ flowV2: { compareMode: 'best_only', profile: profileWithShortlist(poisonedShortlist) } }),
-      /Flow v2 guardrail violation/
-    );
-  });
-
-  test('GUARDRAIL: also fires in full compareMode (thrown before the vision bubble is ever built)', () => {
-    const poisonedShortlist = [
-      { collegeName: 'Test University', tier: 'best_match', matchScore: 0.9, why: 'We assure 100% admission here.' },
-      { collegeName: 'Plaksha University', tier: 'strong_alternative', matchScore: 0.7, why: 'Interdisciplinary tech education.' },
-    ];
-    assert.throws(
-      () => handleB6Entry({ flowV2: { compareMode: 'full', profile: profileWithShortlist(poisonedShortlist) } }),
-      /Flow v2 guardrail violation/
-    );
-  });
-
-  test('does not export a handleB6Reply — B6 has no student decision point of its own this phase', () => {
+  test('still exports handleB6Entry for dispatcher compatibility', () => {
     const mod = require('../services/chatbot/flowV2/nodes/b6TheCase');
-    assert.equal(mod.handleB6Reply, undefined);
+    assert.equal(typeof mod.handleB6Entry, 'function');
   });
 });
 
-describe('B5/B6 — full chained transition through the dispatcher (B5 -> B6 -> B7)', () => {
-  test('best_only path drains B6+B7 in the same turn after Just the best fit', async () => {
-    let profile = { ...emptyFlowV2Profile(), qualification: 'Class 12 (MPC)', goalPriority: ['placement'], branchInterest: 'cse_ai', budgetBand: '2_5l', cityPref: 'Hyderabad' };
+describe('B8/B9 — full chained transition through the dispatcher', () => {
+  test('flat shortlist drains to FIT; yes narrow lands on B10 booking', async () => {
+    let profile = {
+      ...emptyFlowV2Profile(),
+      qualification: 'Class 12 (MPC)',
+      goalPriority: ['placement'],
+      branchInterest: 'cse_ai',
+      interestCluster: 'software',
+      budgetBand: '2_5l',
+      cityPref: 'Hyderabad',
+    };
     let ctx = { flowV2: { stage: 'b5_awaiting_entry', profile } };
     let result = await processFlowV2Turn(ctx, 'hi');
-    assert.equal(result.contextPatch.stage, 'b5_awaiting_reply');
+    assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
+    const visible = [...(result.replyParts || []), result.replyText, result.interactive?.body]
+      .filter(Boolean)
+      .join('\n');
+    assert.doesNotMatch(visible, /\*Best Match\*/i);
 
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
-    result = await processFlowV2Turn(ctx, 'Just the best fit');
+    result = await processFlowV2Turn(ctx, 'Yes, narrow it down');
     assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
-    assert.equal(result.contextPatch.compareMode, 'best_only');
     assert.equal(result.contextPatch.profile.qualification, 'Class 12 (MPC)');
-    assert.ok(result.contextPatch.profile.recommendation);
     assert.ok(result.interactive || (result.replyParts && result.replyParts.length));
   });
 
-  test('full-compare path produces the case bubbles and lands on B7 booking in one turn', async () => {
-    let profile = { ...emptyFlowV2Profile(), goalPriority: ['ai_future_tech'], branchInterest: 'cse_ai', budgetBand: '2_5l', cityPref: 'Hyderabad' };
+  test('compare-on-tap stays on FIT then yes advances to booking', async () => {
+    let profile = {
+      ...emptyFlowV2Profile(),
+      goalPriority: ['ai_future_tech'],
+      branchInterest: 'cse_ai',
+      interestCluster: 'data_ai',
+      budgetBand: '2_5l',
+      cityPref: 'Hyderabad',
+    };
     let ctx = { flowV2: { stage: 'b5_awaiting_entry', profile } };
     let result = await processFlowV2Turn(ctx, 'hi');
 
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     result = await processFlowV2Turn(ctx, 'Compare them');
+    assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
+    assert.match(result.replyText || '', /stack up/i);
+
+    ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
+    result = await processFlowV2Turn(ctx, 'Yes, narrow it down');
     assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
-    assert.ok((result.replyParts || []).length >= 3);
   });
 });

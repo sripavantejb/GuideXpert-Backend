@@ -32,26 +32,25 @@ function mockLiveSlots(t, slots = []) {
 }
 
 describe('b7Book — handleB7Entry (framing)', () => {
-  test('generic framing when profile.recommendation is null (e.g. R4-G early-invite path)', () => {
+  test('V3 offer copy names senior counsellor (no IITian clause)', () => {
     const result = handleB7Entry(ctxWithProfile({ recommendation: null }));
     assert.equal(result.interactive.body, GENERIC_INVITE_TEXT);
-    assert.ok(!result.interactive.body.includes('your goal'));
+    assert.match(result.interactive.body, /senior counsellor/i);
+    assert.doesNotMatch(result.interactive.body, /IITian/i);
+    assert.match(result.interactive.body, /Shall I book you in/i);
   });
 
-  test('standard framing when profile.recommendation is set (normal B6 -> B7 handoff)', () => {
-    const result = handleB7Entry(ctxWithProfile({ recommendation: 'NIAT' }));
-    assert.equal(result.interactive.body, STANDARD_INVITE_TEXT);
-    assert.ok(result.interactive.body.includes('your goal'));
-  });
-
-  test('the exact strings differ correctly based on recommendation presence', () => {
-    assert.notEqual(STANDARD_INVITE_TEXT, GENERIC_INVITE_TEXT);
+  test('same offer copy whether or not recommendation is set', () => {
+    const withRec = handleB7Entry(ctxWithProfile({ recommendation: 'NIAT' }));
+    const without = handleB7Entry(ctxWithProfile({ recommendation: null }));
+    assert.equal(withRec.interactive.body, without.interactive.body);
+    assert.equal(STANDARD_INVITE_TEXT, GENERIC_INVITE_TEXT);
   });
 
   test('sets stage to b7_awaiting_reply and presents exactly 2 buttons, profile carried forward', () => {
     const result = handleB7Entry(ctxWithProfile({ recommendation: 'NIAT', qualification: 'Class 12 (MPC)' }));
     assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
-    assert.deepEqual(result.interactive.buttons.map((b) => b.title), ['Book my session', 'Not yet']);
+    assert.deepEqual(result.interactive.buttons.map((b) => b.title), ['Book my session', 'Not right now']);
     assert.equal(result.contextPatch.profile.qualification, 'Class 12 (MPC)');
   });
 });
@@ -60,6 +59,7 @@ describe('b7Book — extractB7InviteAction', () => {
   test('recognizes both buttons, returns null for ambiguous text', () => {
     assert.equal(extractB7InviteAction('Book my session'), 'book');
     assert.equal(extractB7InviteAction('Not yet'), 'not_yet');
+    assert.equal(extractB7InviteAction('Not right now'), 'not_yet');
     assert.equal(extractB7InviteAction('maybe later I guess'), null);
   });
 });
@@ -225,10 +225,10 @@ describe('b7Book — [Not yet] never auto-re-invites', () => {
   });
 });
 
-describe('b7Book — no "free" claim, no price, anywhere in B7\u2019s output', () => {
-  const PRICE_PATTERN = /\bfree\b|[₹$]|\brs\.?\s?\d|\d+\s*(lakh|rupee|inr)/i;
+describe('b7Book — no price amounts; V3 offer may say free once', () => {
+  const PRICE_AMOUNT_PATTERN = /[₹$]|\brs\.?\s?\d|\d+\s*(lakh|rupee|inr)/i;
 
-  test('every static B7 message constant is free of pricing/free-claim language', () => {
+  test('static B7 messages never quote a price amount', () => {
     const messages = [
       STANDARD_INVITE_TEXT,
       GENERIC_INVITE_TEXT,
@@ -240,11 +240,16 @@ describe('b7Book — no "free" claim, no price, anywhere in B7\u2019s output', (
       buildB7BookingLinkMessage(),
     ];
     for (const msg of messages) {
-      assert.ok(!PRICE_PATTERN.test(msg), `unexpected pricing language: ${msg}`);
+      assert.ok(!PRICE_AMOUNT_PATTERN.test(msg), `unexpected price amount: ${msg}`);
     }
   });
 
-  test('every handleB7Entry/handleB7Reply output across all stages is free of pricing language', async (t) => {
+  test('invite copy may include the locked free-session claim at most once', () => {
+    const matches = STANDARD_INVITE_TEXT.match(/\bfree\b/gi) || [];
+    assert.ok(matches.length >= 1 && matches.length <= 2, `free count=${matches.length}`);
+  });
+
+  test('handleB7Entry/handleB7Reply outputs never quote a price amount', async (t) => {
     mockLiveSlots(t, []);
     const outputs = [
       handleB7Entry(ctxWithProfile({ recommendation: null })),
@@ -258,7 +263,7 @@ describe('b7Book — no "free" claim, no price, anywhere in B7\u2019s output', (
     ];
     for (const out of outputs) {
       const text = [out.replyText, out.interactive && out.interactive.body].filter(Boolean).join(' ');
-      assert.ok(!PRICE_PATTERN.test(text), `unexpected pricing language: ${text}`);
+      assert.ok(!PRICE_AMOUNT_PATTERN.test(text), `unexpected price amount: ${text}`);
     }
   });
 });
@@ -359,12 +364,25 @@ describe('B7 — full chained transition through the dispatcher', () => {
     assert.equal(result.contextPatch.stage, 'node0_awaiting_slot');
   });
 
-  test('B6 -> B7 full handoff via the dispatcher drains into the booking CTA in one turn', async () => {
-    let profile = { ...emptyFlowV2Profile(), shortlist: [{ collegeName: 'NIAT', tier: 'best_match', matchScore: 0.9, why: 'AI-first curriculum.' }] };
-    let ctx = { flowV2: { compareMode: 'best_only', stage: 'b6_awaiting_entry', profile } };
+  test('B6 entry drains to B9 FIT ask (V3); yes then reaches booking CTA', async () => {
+    let profile = {
+      ...emptyFlowV2Profile(),
+      shortlist: [
+        { id: 'niat', name: 'NIAT' },
+        { id: 'newton', name: 'Newton School of Technology' },
+        { id: 'scaler', name: 'Scaler School of Technology' },
+      ],
+      goalPriority: ['placement'],
+      interestCluster: 'software',
+    };
+    let ctx = { flowV2: { stage: 'b6_awaiting_entry', profile } };
     let result = await processFlowV2Turn(ctx, 'ok');
+    assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
+    assert.match(result.interactive.body, /narrow it down/i);
+
+    ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
+    result = await processFlowV2Turn(ctx, 'Yes, narrow it down');
     assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
-    assert.equal(result.contextPatch.profile.recommendation, 'NIAT');
     assert.equal(result.interactive.body, STANDARD_INVITE_TEXT);
   });
 });

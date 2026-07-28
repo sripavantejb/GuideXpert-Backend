@@ -97,6 +97,9 @@ const { handleCoreForkExitReply } = require('./nodes/b2CoreForkExit');
 const { handleB3Entry, handleB3Reply } = require('./nodes/b3Constraints');
 const { handleB5ChecklistEntry } = require('./nodes/b5Checklist');
 const { handleB6PermissionEntry, handleB6PermissionReply } = require('./nodes/b6Permission');
+const { handleB7TwoModelsEntry } = require('./nodes/b7TwoModels');
+const { handleB8Entry, handleB8Reply } = require('./nodes/b8FlatShortlist');
+const { handleB9Entry, handleB9Reply } = require('./nodes/b9Fit');
 const { handleB5Entry, handleB5Reply } = require('./nodes/b5Shortlist');
 const { handleB6Entry } = require('./nodes/b6TheCase');
 const { handleB7Entry, handleB7Reply } = require('./nodes/b7Book');
@@ -155,7 +158,14 @@ const AWAITING_ENTRY_HANDLERS = Object.freeze({
   b4_awaiting_entry: (ctx) => handleB1Entry(ctx),
   b5_checklist_awaiting_entry: (ctx) => handleB5ChecklistEntry(ctx),
   b6_permission_awaiting_entry: (ctx) => handleB6PermissionEntry(ctx),
+  // V3 B6.5 constraints (also accept legacy b3_awaiting_entry park name).
+  b65_awaiting_entry: (ctx) => handleB3Entry(ctx),
   b3_awaiting_entry: (ctx) => handleB3Entry(ctx),
+  b7_two_models_awaiting_entry: (ctx) => handleB7TwoModelsEntry(ctx),
+  b8_awaiting_entry: (ctx) => handleB8Entry(ctx),
+  b9_awaiting_entry: (ctx) => handleB9Entry(ctx),
+  b10_awaiting_entry: (ctx) => handleB7Entry(ctx),
+  // Legacy aliases — still drain, but handlers now delegate to V3 B8/B9/B10.
   b5_awaiting_entry: (ctx) => handleB5Entry(ctx),
   b6_awaiting_entry: (ctx) => handleB6Entry(ctx),
   b7_awaiting_entry: (ctx) => handleB7Entry(ctx),
@@ -163,7 +173,7 @@ const AWAITING_ENTRY_HANDLERS = Object.freeze({
 
 async function drainAwaitingEntryStages(ctx, result) {
   let current = result;
-  for (let i = 0; i < 8; i += 1) {
+  for (let i = 0; i < 12; i += 1) {
     const stage = current?.contextPatch?.stage;
     const handler = stage ? AWAITING_ENTRY_HANDLERS[stage] : null;
     if (!handler) break;
@@ -270,7 +280,8 @@ async function runStageFallthrough(ctx, stage, text) {
     return await handleEntrySideTrackReply(ctx, text);
   }
   // V3 spine — B2 GOAL → B3 INTEREST (b2_*) → B3.2 core → B4 PRIORITY (b1_/b4_) →
-  // B5 checklist → B6 permission → interim legacy constraints (b3_*) → shortlist…
+  // B5 checklist → B6 permission → B6.5 constraints (b3_*/b65_*) → B7 two models →
+  // B8 flat shortlist → B9 FIT → B10 book (b7_* / b10_*).
   if (stage === 'greeting_captured_pending_b1') return await handleB2GoalEntry(ctx);
   if (stage === 'b2_awaiting_entry') return await handleB2GoalEntry(ctx);
   if (stage === 'b2_goal_awaiting_reply') return await handleB2GoalReply(ctx, text);
@@ -282,12 +293,19 @@ async function runStageFallthrough(ctx, stage, text) {
   if (stage === 'b5_checklist_awaiting_entry') return await handleB5ChecklistEntry(ctx);
   if (stage === 'b6_permission_awaiting_reply') return await handleB6PermissionReply(ctx, text);
   if (stage === 'b6_permission_declined') return await handleB6PermissionReply(ctx, text);
-  // Interim legacy constraints (V3 B6.5 placement later).
-  if (stage === 'b3_awaiting_entry') return await handleB3Entry(ctx);
+  // B6.5 constraints
+  if (stage === 'b65_awaiting_entry' || stage === 'b3_awaiting_entry') return await handleB3Entry(ctx);
   if (stage === 'b3_awaiting_budget') return await handleB3Reply(ctx, text);
   if (stage === 'b3_awaiting_location') return await handleB3Reply(ctx, text);
   if (stage === 'b3_awaiting_city') return await handleB3Reply(ctx, text);
-  // Legacy shortlist / case / book (Phase 2 will remap to B7–B10).
+  // B7 two models / B8 / B9
+  if (stage === 'b7_two_models_awaiting_entry') return await handleB7TwoModelsEntry(ctx);
+  if (stage === 'b8_awaiting_entry') return await handleB8Entry(ctx);
+  if (stage === 'b8_awaiting_reply') return await handleB8Reply(ctx, text);
+  if (stage === 'b9_awaiting_entry') return await handleB9Entry(ctx);
+  if (stage === 'b9_awaiting_reply' || stage === 'b9_parked_warm') return await handleB9Reply(ctx, text);
+  if (stage === 'b10_awaiting_entry') return await handleB7Entry(ctx);
+  // Legacy stage names (handlers delegate to V3)
   if (stage === 'b5_awaiting_entry') return await handleB5Entry(ctx);
   if (stage === 'b5_awaiting_reply') return await handleB5Reply(ctx, text);
   if (stage === 'b5_change_awaiting_slot') return await handleB5Reply(ctx, text);

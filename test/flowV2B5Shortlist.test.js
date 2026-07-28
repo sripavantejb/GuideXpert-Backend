@@ -116,16 +116,22 @@ describe('b5Shortlist — computeTiers (real reuse of scoreEligibleColleges/tier
   });
 });
 
-describe('b5Shortlist — handleB5Entry', () => {
-  test('produces a 3-button interactive with a tiered shortlist body, and writes profile.shortlist', () => {
+describe('b5Shortlist — handleB5Entry (V3 B8 flat shortlist)', () => {
+  test('produces FIT ask with 3-flat shortlist (no Best Match tiers)', () => {
     const result = handleB5Entry(ctxWithProfile(STANDARD_PROFILE_PATCH));
     assert.equal(result.interactive.type, 'button');
-    assert.deepEqual(result.interactive.buttons.map((b) => b.title), ['Compare them', 'Just the best fit', 'Change something']);
-    assert.ok(result.interactive.body.includes('*Best Match*'));
-    assert.equal(result.contextPatch.stage, 'b5_awaiting_reply');
+    assert.ok(
+      result.interactive.buttons.some((b) => /narrow/i.test(b.title)),
+      'expected B9 FIT buttons'
+    );
+    const visible = [...(result.replyParts || []), result.replyText, result.interactive?.body]
+      .filter(Boolean)
+      .join('\n');
+    assert.doesNotMatch(visible, /\*Best Match\*/i);
+    assert.match(visible, /GuideXpert works with/i);
+    assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
     assert.ok(Array.isArray(result.contextPatch.profile.shortlist));
-    assert.ok(result.contextPatch.profile.shortlist.length > 0);
-    assert.ok(result.contextPatch.profile.shortlist.every((c) => c.collegeName && c.tier && typeof c.matchScore === 'number'));
+    assert.equal(result.contextPatch.profile.shortlist.length, 3);
   });
 
   test('REGRESSION (Phase 4/5 propagation-bug shape): contextPatch always carries the profile forward', () => {
@@ -208,45 +214,88 @@ describe('b5Shortlist — extractB5Action / extractChangeSlotChoice', () => {
   });
 });
 
-describe('b5Shortlist — handleB5Reply (button branches)', () => {
-  test('[ Compare them ] advances to B6 with compareMode = full', () => {
-    const result = handleB5Reply(ctxWithProfile(STANDARD_PROFILE_PATCH), 'Compare them');
-    assert.equal(result.contextPatch.stage, 'b6_awaiting_entry');
-    assert.equal(result.contextPatch.compareMode, 'full');
-    assert.equal(result.contextPatch.profile.qualification, STANDARD_PROFILE_PATCH.qualification);
+describe('b5Shortlist — handleB5Reply (V3 B8/B9)', () => {
+  test('"compare them" shows on-tap compare table and stays on FIT ask', () => {
+    const seeded = handleB5Entry(ctxWithProfile(STANDARD_PROFILE_PATCH));
+    const result = handleB5Reply(
+      {
+        flowV2: {
+          stage: 'b9_awaiting_reply',
+          profile: seeded.contextPatch.profile,
+        },
+      },
+      'Compare them'
+    );
+    assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
+    assert.match(result.replyText || '', /stack up/i);
   });
 
-  test('[ Just the best fit ] advances to B6 with compareMode = best_only', () => {
-    const result = handleB5Reply(ctxWithProfile(STANDARD_PROFILE_PATCH), 'Just the best fit');
-    assert.equal(result.contextPatch.stage, 'b6_awaiting_entry');
-    assert.equal(result.contextPatch.compareMode, 'best_only');
-  });
-
-  test('[ Change something ] shows the 4-row change-slot menu', () => {
-    const result = handleB5Reply(ctxWithProfile(STANDARD_PROFILE_PATCH), 'Change something');
-    assert.equal(result.contextPatch.stage, 'b5_change_awaiting_slot');
-    assert.equal(result.interactive.type, 'list');
-    assert.deepEqual(
-      result.interactive.sections[0].rows.map((r) => r.title),
-      ['Budget', 'Location', 'Field', 'What matters']
+  test('"Yes, narrow it down" advances toward B10 booking', () => {
+    const seeded = handleB5Entry(ctxWithProfile(STANDARD_PROFILE_PATCH));
+    const result = handleB5Reply(
+      {
+        flowV2: {
+          stage: 'b9_awaiting_reply',
+          profile: seeded.contextPatch.profile,
+        },
+      },
+      'Yes, narrow it down'
+    );
+    assert.ok(
+      result.contextPatch.stage === 'b10_awaiting_entry' ||
+        result.contextPatch.stage === 'b7_awaiting_reply',
+      `expected B10/B7 book stage, got ${result.contextPatch.stage}`
     );
   });
 
-  test('ambiguous free text re-asks with the same 3 buttons, stage stays b5_awaiting_reply', () => {
-    const result = handleB5Reply(ctxWithProfile(STANDARD_PROFILE_PATCH), 'hmm not sure');
-    assert.equal(result.contextPatch.stage, 'b5_awaiting_reply');
-    assert.deepEqual(result.interactive.buttons.map((b) => b.title), B5_BUTTONS.map((b) => b.title));
+  test('wider catalog ask returns partner list without Best Match tiers', () => {
+    const seeded = handleB5Entry(ctxWithProfile(STANDARD_PROFILE_PATCH));
+    const result = handleB5Reply(
+      {
+        flowV2: {
+          stage: 'b9_awaiting_reply',
+          profile: seeded.contextPatch.profile,
+        },
+      },
+      'show me all options'
+    );
+    assert.match(result.replyText || '', /Plaksha|Kalvium/i);
+    assert.doesNotMatch(result.replyText || '', /\*Best Match\*/i);
+  });
+
+  test('ambiguous free text re-asks FIT buttons', () => {
+    const seeded = handleB5Entry(ctxWithProfile(STANDARD_PROFILE_PATCH));
+    const result = handleB5Reply(
+      {
+        flowV2: {
+          stage: 'b9_awaiting_reply',
+          profile: seeded.contextPatch.profile,
+        },
+      },
+      'hmm not sure'
+    );
+    assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
+    assert.equal(result.interactive?.type, 'button');
   });
 });
 
 describe('b5Shortlist — Change-something loop', () => {
   function changeSlotCtx(slot, profilePatch = {}) {
-    return { flowV2: { stage: 'b5_change_awaiting_value', changingSlot: slot, profile: { ...emptyFlowV2Profile(), ...STANDARD_PROFILE_PATCH, ...profilePatch } } };
+    return {
+      flowV2: {
+        stage: 'b5_change_awaiting_value',
+        changingSlot: slot,
+        profile: { ...emptyFlowV2Profile(), ...STANDARD_PROFILE_PATCH, ...profilePatch },
+      },
+    };
   }
 
-  test('changing Budget re-runs the matrix and stays on b5_awaiting_reply, never resets to b1_awaiting_reply', () => {
+  test('changing Budget re-runs into V3 flat shortlist/FIT, never resets to b1', () => {
     const result = handleB5Reply(changeSlotCtx('budgetBand'), 'Under \u20B92L');
-    assert.equal(result.contextPatch.stage, 'b5_awaiting_reply');
+    assert.ok(
+      result.contextPatch.stage === 'b9_awaiting_reply' || result.contextPatch.stage === 'b5_awaiting_reply',
+      result.contextPatch.stage
+    );
     assert.notEqual(result.contextPatch.stage, 'b1_awaiting_reply');
     assert.equal(result.contextPatch.profile.budgetBand, 'under_2l');
     assert.equal(result.contextPatch.profile.scholarshipFlag, true);
@@ -255,13 +304,9 @@ describe('b5Shortlist — Change-something loop', () => {
 
   test('changing Field to core engineering does NOT re-trigger the B2.2 fork', () => {
     const result = handleB5Reply(changeSlotCtx('branchInterest'), 'Core engineering (mech, civil, ECE)');
-    // Must land back on B5's own awaiting-reply stage, never a core-fork stage.
-    assert.equal(result.contextPatch.stage, 'b5_awaiting_reply');
     assert.notEqual(result.contextPatch.stage, 'b2_core_fork_awaiting_reply');
     assert.notEqual(result.contextPatch.stage, 'b2_core_exit_awaiting_reply');
-    // branchInterest resolves to 'ECE' per the documented BRANCH_KEYWORD_MAP order.
     assert.equal(result.contextPatch.profile.branchInterest, 'ECE');
-    // The fork's own bookkeeping flags must remain untouched by this path.
     assert.equal(result.contextPatch.profile.coreBridgeAttempted, null);
     assert.equal(result.contextPatch.profile.coreBridgeClosed, null);
   });
@@ -269,17 +314,24 @@ describe('b5Shortlist — Change-something loop', () => {
   test('changing "What matters" REPLACES goalPriority, does not accumulate onto the old list', () => {
     const result = handleB5Reply(changeSlotCtx('goalPriority', { goalPriority: ['placement'] }), 'Affordable fees');
     assert.ok(!result.contextPatch.profile.goalPriority.includes('placement'));
-    assert.ok(result.contextPatch.profile.goalPriority.includes('affordable') || result.contextPatch.profile.goalPriority.includes('fee'));
+    assert.ok(
+      result.contextPatch.profile.goalPriority.includes('affordable') ||
+        result.contextPatch.profile.goalPriority.includes('fee')
+    );
   });
 
   test('changing Location accepts a relocation-stance tap', () => {
     const result = handleB5Reply(changeSlotCtx('cityPref'), 'Open to move');
     assert.equal(result.contextPatch.profile.cityPref, 'open_to_move');
-    assert.equal(result.contextPatch.stage, 'b5_awaiting_reply');
   });
 
   test('an unrecognized slot choice at the menu re-shows the menu rather than defaulting', () => {
-    const ctx = { flowV2: { stage: 'b5_change_awaiting_slot', profile: { ...emptyFlowV2Profile(), ...STANDARD_PROFILE_PATCH } } };
+    const ctx = {
+      flowV2: {
+        stage: 'b5_change_awaiting_slot',
+        profile: { ...emptyFlowV2Profile(), ...STANDARD_PROFILE_PATCH },
+      },
+    };
     const result = handleB5Reply(ctx, 'I dunno');
     assert.equal(result.contextPatch.stage, 'b5_change_awaiting_slot');
   });
@@ -297,16 +349,20 @@ describe('b5Shortlist — Change-something loop', () => {
 });
 
 describe('B5 — end-to-end through the full dispatcher', () => {
-  test('B4 -> B5 -> [Compare them] continues through B6 into B7 in the same turn', async () => {
-    let ctx = { flowV2: { stage: 'b5_awaiting_entry', profile: { ...emptyFlowV2Profile(), ...STANDARD_PROFILE_PATCH } } };
+  test('B8 entry drains to FIT; yes narrow drains to B10 booking CTA', async () => {
+    let ctx = {
+      flowV2: { stage: 'b5_awaiting_entry', profile: { ...emptyFlowV2Profile(), ...STANDARD_PROFILE_PATCH } },
+    };
     let result = await processFlowV2Turn(ctx, 'hi');
-    assert.equal(result.contextPatch.stage, 'b5_awaiting_reply');
+    assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
+    const visible = [...(result.replyParts || []), result.replyText, result.interactive?.body]
+      .filter(Boolean)
+      .join('\n');
+    assert.doesNotMatch(visible, /\*Best Match\*/i);
 
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
-    result = await processFlowV2Turn(ctx, 'Compare them');
-    // Drain chains b6_awaiting_entry → B6 → b7_awaiting_entry → B7 booking CTA.
+    result = await processFlowV2Turn(ctx, 'Yes, narrow it down');
     assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
-    assert.equal(result.contextPatch.compareMode, 'full');
     assert.ok(result.interactive || (result.replyParts && result.replyParts.length));
   });
 });

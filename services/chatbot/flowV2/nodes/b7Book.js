@@ -37,17 +37,29 @@ const nodeZeroOverride = require('./node0Override');
 // Copy — verbatim per task spec.
 // ---------------------------------------------------------------------------
 
-const STANDARD_INVITE_TEXT =
-  "You're at the point where a 1-on-1 helps more than chat can \u2014 real placement data, scholarship options, and a plan built around your goal. Want me to book it?";
-const GENERIC_INVITE_TEXT =
-  "You're at the point where a 1-on-1 helps more than chat can \u2014 real placement data, scholarship options, and a plan built around what matters to you. Want me to book it?";
+const STANDARD_INVITE_TEXT = [
+  "You're at the point where one good decision saves a couple of years of backtracking.",
+  '',
+  'GuideXpert runs a free 1:1 session with a senior counsellor. It\'s 30 minutes, on a call, and in it you\'ll get:',
+  '',
+  '✅ Which of these colleges actually fits your marks and budget',
+  '✅ Which branch matches how you like to work',
+  '✅ What the career paths after it realistically look like',
+  "✅ Which scholarships you're eligible to apply for",
+  '',
+  'No fee, and no obligation to join anything.',
+  '',
+  'Shall I book you in?',
+].join('\n');
+const GENERIC_INVITE_TEXT = STANDARD_INVITE_TEXT;
 
 const B7_INVITE_BUTTONS = Object.freeze([
   Object.freeze({ id: 'flowv2_b7_book', title: 'Book my session' }),
-  Object.freeze({ id: 'flowv2_b7_not_yet', title: 'Not yet' }),
+  Object.freeze({ id: 'flowv2_b7_not_yet', title: 'Not right now' }),
 ]);
 
-const NOT_YET_TEXT = "Totally fine \u2014 no rush at all. \uD83D\uDE42 I'm here whenever. Anything you want to dig into meanwhile?";
+const NOT_YET_TEXT =
+  "Totally fine — no rush at all 🙂\nI'm here whenever. Anything you want to dig into meanwhile?";
 
 /**
  * IMPLEMENTATION NOTE (deliberate, not a spec deviation): the task lists
@@ -126,7 +138,7 @@ function handleB7Entry(ctx) {
 // ---------------------------------------------------------------------------
 
 const BOOK_PATTERN = /\bbook\b/i;
-const NOT_YET_PATTERN = /\bnot yet\b/i;
+const NOT_YET_PATTERN = /\bnot (yet|right now)\b/i;
 
 function extractB7InviteAction(text) {
   const t = String(text || '');

@@ -69,7 +69,7 @@ describe('b3Constraints — handleB3Entry (four skip-combination cases)', () => 
   test('case (a) both already filled: skips B3 entirely, advances straight to B4 in the same turn', () => {
     const result = handleB3Entry(ctxWithProfile({ budgetBand: 'under_2l', cityPref: 'Hyderabad' }));
     assert.equal(result.replyText, BRIDGE_TEXT);
-    assert.equal(result.contextPatch.stage, 'b5_awaiting_entry');
+    assert.equal(result.contextPatch.stage, 'b8_awaiting_entry');
     assert.equal(result.interactive, null);
   });
 
@@ -130,7 +130,7 @@ describe('b3Constraints — handleB3Reply (stage = b3_awaiting_budget)', () => {
   test('defensive: if cityPref is somehow already filled by the time the budget reply arrives, skips location and advances to B4', () => {
     const result = handleB3Reply(ctxWithProfile({ cityPref: 'Hyderabad' }), '\u20B95L+');
     assert.equal(result.replyText, BRIDGE_TEXT);
-    assert.equal(result.contextPatch.stage, 'b5_awaiting_entry');
+    assert.equal(result.contextPatch.stage, 'b8_awaiting_entry');
     assert.equal(result.contextPatch.profile.budgetBand, '5l_plus');
     assert.equal(result.contextPatch.profile.cityPref, 'Hyderabad');
   });
@@ -139,7 +139,7 @@ describe('b3Constraints — handleB3Reply (stage = b3_awaiting_budget)', () => {
     const result = handleB3Reply(ctxWithProfile(), 'under 2L is fine, I want to stay in Hyderabad');
     assert.equal(result.contextPatch.profile.budgetBand, 'under_2l');
     assert.equal(result.contextPatch.profile.cityPref, 'Hyderabad');
-    assert.equal(result.contextPatch.stage, 'b5_awaiting_entry');
+    assert.equal(result.contextPatch.stage, 'b8_awaiting_entry');
   });
 
   test('contextPatch carries profile forward on the sequential budget->location transition', () => {
@@ -168,7 +168,7 @@ describe('b3Constraints — handleB3Reply (stage = b3_awaiting_location)', () =>
     );
     assert.equal(result.contextPatch.profile.cityPref, 'near_home');
     assert.equal(result.contextPatch.profile.city, 'Hyderabad');
-    assert.equal(result.contextPatch.stage, 'b5_awaiting_entry');
+    assert.equal(result.contextPatch.stage, 'b8_awaiting_entry');
   });
 
   test('a real city name (free text, not a tap) also resolves correctly', () => {
@@ -200,14 +200,13 @@ describe('b3Constraints — handleB3Reply (stage = b3_awaiting_location)', () =>
 describe('b4Bridge — handleB4Entry', () => {
   const { handleB4Entry } = require('../services/chatbot/flowV2/nodes/b4Bridge');
 
-  test('sends the exact bridge text, sets stage to b5_awaiting_entry, no buttons/interactive', () => {
+  test('sends V3 two-models frame, sets stage to b8_awaiting_entry, no buttons/interactive', () => {
     const result = handleB4Entry(ctxWithProfile());
     assert.equal(result.replyText, BRIDGE_TEXT);
-    assert.equal(
-      result.replyText,
-      "Before I show you the list \u2014 one thing worth saying.\n\nMost students compare on brand and fees. What actually moves the needle is projects, mentorship and internships. That's what I'm weighting for you."
-    );
-    assert.equal(result.contextPatch.stage, 'b5_awaiting_entry');
+    assert.match(result.replyText, /two models/i);
+    assert.match(result.replyText, /Established colleges/i);
+    assert.equal(result.contextPatch.stage, 'b8_awaiting_entry');
+    assert.equal(result.contextPatch.profile.frameSent, true);
     assert.equal(result.interactive, null);
     assert.equal(result.replyParts, null);
   });
@@ -219,39 +218,39 @@ describe('b4Bridge — handleB4Entry', () => {
     assert.equal(result.contextPatch.profile.cityPref, 'Hyderabad');
   });
 
-  test('exports no reply handler for B4 — only handleB4Entry and BRIDGE_TEXT', () => {
+  test('exports no reply handler for B4 — only entry + two-models text aliases', () => {
     const mod = require('../services/chatbot/flowV2/nodes/b4Bridge');
-    assert.deepEqual(Object.keys(mod).sort(), ['BRIDGE_TEXT', 'handleB4Entry']);
+    assert.deepEqual(Object.keys(mod).sort(), ['BRIDGE_TEXT', 'TWO_MODELS_TEXT', 'handleB4Entry']);
     assert.equal(mod.handleB4Reply, undefined);
   });
 });
 
 describe('B3/B4 — end-to-end through the full dispatcher', () => {
-  test('B2 CSE tap continues into B4 priority in the SAME turn (no ack-only park)', async () => {
-    // V3: Coding/software/AI ack → B4 priority (may drain further to checklist/
-    // permission when the reply also extracts a goalPriority like ai_future_tech).
+  test('B3 interest tap stays multi-select; done continues into B4 priority', async () => {
     let ctx = { flowV2: { stage: 'b2_awaiting_reply', profile: emptyFlowV2Profile() } };
-    let result = await processFlowV2Turn(ctx, 'Coding / software / AI');
+    let result = await processFlowV2Turn(ctx, 'Computers & software');
+    assert.ok(result.contextPatch.profile.interests?.includes('computers_software'));
+    assert.equal(result.contextPatch.stage, 'b2_awaiting_reply');
+
+    ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
+    result = await processFlowV2Turn(ctx, 'done');
     assert.equal(result.contextPatch.profile.branchInterest, 'cse_ai');
     assert.ok(
       result.contextPatch.stage === 'b4_awaiting_reply' ||
         result.contextPatch.stage === 'b4_awaiting_entry' ||
         result.contextPatch.stage === 'b6_permission_awaiting_reply' ||
-        result.contextPatch.stage === 'b5_awaiting_reply' ||
+        result.contextPatch.stage === 'b9_awaiting_reply' ||
         result.contextPatch.stage === 'b5_checklist_awaiting_entry',
       `expected B4 priority or drained checklist/permission, got ${result.contextPatch.stage}`
     );
-    assert.match(
-      [...(result.replyParts || []), result.replyText, result.interactive?.body].filter(Boolean).join('\n'),
-      /most flexible base/i
-    );
-    assert.doesNotMatch(
-      [...(result.replyParts || []), result.replyText, result.interactive?.body].filter(Boolean).join('\n'),
-      /comfortable for your family/i
-    );
+    const visible = [...(result.replyParts || []), result.replyText, result.interactive?.body]
+      .filter(Boolean)
+      .join('\n');
+    assert.match(visible, /most flexible base/i);
+    assert.doesNotMatch(visible, /comfortable for your family/i);
   });
 
-  test('a full budget+location round trip continues through B4 bridge into B5 in the same turn', async () => {
+  test('a full budget+location round trip continues through B7 two-models into B8/B9 in the same turn', async () => {
     let ctx = { flowV2: { stage: 'b3_awaiting_budget', profile: emptyFlowV2Profile() } };
     let result = await processFlowV2Turn(ctx, 'Under \u20B92L');
     assert.equal(result.contextPatch.profile.budgetBand, 'under_2l');
@@ -260,7 +259,12 @@ describe('B3/B4 — end-to-end through the full dispatcher', () => {
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     result = await processFlowV2Turn(ctx, 'Open to move');
     assert.equal(result.contextPatch.profile.cityPref, 'open_to_move');
-    assert.equal(result.contextPatch.stage, 'b5_awaiting_reply');
+    assert.ok(
+      result.contextPatch.stage === 'b9_awaiting_reply' ||
+        result.contextPatch.stage === 'b8_awaiting_entry' ||
+        result.contextPatch.stage === 'b7_awaiting_reply',
+      `expected B8/B9/B10 stage, got ${result.contextPatch.stage}`
+    );
     const visible = [
       result.replyText,
       ...(result.replyParts || []),
@@ -268,7 +272,7 @@ describe('B3/B4 — end-to-end through the full dispatcher', () => {
     ]
       .filter(Boolean)
       .join('\n');
-    assert.match(visible, /Before I show you the list/i);
-    assert.ok(result.interactive);
+    assert.match(visible, /two models|Established colleges|GuideXpert works with/i);
+    assert.doesNotMatch(visible, /\*Best Match\*/i);
   });
 });

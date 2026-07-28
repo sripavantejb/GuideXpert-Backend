@@ -60,6 +60,7 @@ describe('Flow V3 Phase 1 — B5 CHECKLIST', () => {
     assert.doesNotMatch(parts, /When was the curriculum last updated/);
     assert.ok(
       result.contextPatch.stage === 'b6_permission_awaiting_reply' ||
+        result.contextPatch.stage === 'b65_awaiting_entry' ||
         result.contextPatch.stage === 'b3_awaiting_entry'
     );
   });
@@ -81,7 +82,7 @@ describe('Flow V3 Phase 1 — B6 PERMISSION', () => {
       'flowv2_b6_yes'
     );
     assert.equal(result.contextPatch.profile.permissionRecommend, true);
-    assert.equal(result.contextPatch.stage, 'b3_awaiting_entry');
+    assert.equal(result.contextPatch.stage, 'b65_awaiting_entry');
   });
 
   test('not right now soft-closes without looping', () => {

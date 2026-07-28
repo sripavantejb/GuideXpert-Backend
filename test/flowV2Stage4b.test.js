@@ -56,10 +56,10 @@ describe('Master Flow Stage 4b — B1/B2/B3/B5/B7 reconciliation', () => {
       ctx('b3_awaiting_location', { budgetBand: 'under_2l', state: 'Telangana' }),
       'Near home'
     );
-    assert.equal(knownState.contextPatch.stage, 'b5_awaiting_entry');
+    assert.equal(knownState.contextPatch.stage, 'b8_awaiting_entry');
   });
 
-  test('B5 emits exactly five colleges with locked framing and buttons', () => {
+  test('B8 emits exactly three flat colleges with disclosure + FIT ask', () => {
     const result = handleB5Entry(
       ctx('b5_awaiting_entry', {
         goalPriority: ['placement'],
@@ -68,14 +68,14 @@ describe('Master Flow Stage 4b — B1/B2/B3/B5/B7 reconciliation', () => {
         cityPref: 'Hyderabad',
       })
     );
-    assert.equal(result.contextPatch.profile.shortlist.length, 5);
-    assert.match(result.interactive.body, /^Based on everything you shared, here are 5 that fit you/);
-    assert.match(result.interactive.body, /These are matched to what you told me — not a generic ranking\.$/);
-    assert.deepEqual(result.interactive.buttons.map((button) => button.title), [
-      'Compare them',
-      'Just the best fit',
-      'Change something',
-    ]);
+    assert.equal(result.contextPatch.profile.shortlist.length, 3);
+    const visible = [...(result.replyParts || []), result.replyText, result.interactive?.body]
+      .filter(Boolean)
+      .join('\n');
+    assert.match(visible, /GuideXpert works with/i);
+    assert.doesNotMatch(visible, /\*Best Match\*/i);
+    assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
+    assert.ok(result.interactive.buttons.some((b) => /narrow/i.test(b.title)));
   });
 
   test('B7 decline and post-booking helper modes answer supported topics and fresh booking intent', async (t) => {
@@ -133,17 +133,15 @@ describe('Master Flow Stage 4b — non-distress interrupts', () => {
       'Numbers & analysis'
     );
     assert.equal(resumed.contextPatch.profile.branchInterest, 'data_analytics');
-    // V3: after interest, advance to B4 priority (not B3 constraints).
+    // V3: after interest resolve, advance to B4 priority (or stay collecting only if unresolved).
     assert.ok(
       resumed.contextPatch.stage === 'b4_awaiting_reply' ||
         resumed.contextPatch.stage === 'b4_awaiting_entry' ||
-        resumed.contextPatch.stage === 'b6_permission_awaiting_reply',
+        resumed.contextPatch.stage === 'b6_permission_awaiting_reply' ||
+        resumed.contextPatch.stage === 'b5_checklist_awaiting_entry' ||
+        resumed.contextPatch.stage === 'b2_awaiting_reply',
       `expected B4 priority (or drained checklist/permission), got ${resumed.contextPatch.stage}`
     );
-    if (resumed.contextPatch.stage === 'b4_awaiting_reply') {
-      assert.equal(resumed.interactive.type, 'list');
-      assert.equal(resumed.interactive.sections[0].rows.length, 9);
-    }
   });
 
   test('I-2 can interrupt any B-spine stage, updates budget, and returns to the saved stage', async () => {

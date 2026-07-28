@@ -1,15 +1,15 @@
 'use strict';
 
 /**
- * Flow V3 — B6 · PERMISSION (★ NEW).
+ * Flow V3 — B6 · PERMISSION.
  *
- * Only gate before shortlist. Yes → interim legacy constraints spine
- * (b3_awaiting_entry). No → soft-close, honour once.
+ * Only gate before shortlist. Yes → B6.5 constraints → B7–B10.
+ * No → soft-close, honour once.
  */
 
 const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
 const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingFlowV2Profile');
-const { advanceToB3 } = require('../flowV2NodeUtils');
+const { advanceToB65 } = require('../flowV2NodeUtils');
 
 const PERMISSION_BODY =
   'Want me to shortlist a few colleges that actually match this — instead of a random top-10 list?';
@@ -57,8 +57,7 @@ function handleB6PermissionEntry(ctx) {
       permissionRecommend: true,
       temperature: 'hot',
     });
-    // Interim Phase 1: drain into legacy constraints → bridge → shortlist.
-    return advanceToB3(merged, null);
+    return advanceToB65(merged, null);
   }
 
   if (profile.permissionRecommend === false) {
@@ -123,7 +122,7 @@ function handleB6PermissionReply(ctx, text) {
     permissionRecommend: true,
     temperature: 'hot',
   });
-  return advanceToB3(merged, null);
+  return advanceToB65(merged, null);
 }
 
 module.exports = {
