@@ -8,6 +8,9 @@ const {
   isCoreEngineeringBranch,
   isBusinessBranch,
   B2_ROWS,
+  DONE_ROW,
+  B2_LIST_SECTION_TITLE,
+  buildInterestRows,
 } = require('../services/chatbot/flowV2/nodes/b2Branch');
 const { OUT_OF_SCOPE_TEXT } = require('../services/chatbot/flowV2/router/handlers/r11Handler');
 const { emptyFlowV2Profile } = require('../constants/careerCounsellingFlowV2Profile');
@@ -33,14 +36,37 @@ describe('b2Branch — isCoreEngineeringBranch / isBusinessBranch', () => {
   });
 });
 
+describe('b2Branch — WhatsApp list shape', () => {
+  test('section title is short Interests (not instructional echo text)', () => {
+    assert.equal(B2_LIST_SECTION_TITLE, 'Interests');
+    assert.ok(B2_LIST_SECTION_TITLE.length <= 24);
+  });
+
+  test('every interest row title fits WhatsApp 24-char list limit', () => {
+    for (const row of B2_ROWS) {
+      assert.ok(row.title.length <= 24, `${row.title} is ${row.title.length} chars`);
+    }
+    assert.ok(DONE_ROW.title.length <= 24);
+  });
+
+  test('after first pick, list leads with Done and drops already-selected rows', () => {
+    const rows = buildInterestRows(['computers_software']);
+    assert.equal(rows[0].id, DONE_ROW.id);
+    assert.ok(!rows.some((r) => /computers/i.test(r.title)));
+    assert.ok(!rows.some((r) => /not sure/i.test(r.title)));
+  });
+});
+
 describe('b2Branch — handleB2Entry', () => {
   test('asks the V3 interest list (10 rows) when interests/branch empty', () => {
     const result = handleB2Entry(ctxWithProfile());
     assert.equal(result.interactive.type, 'list');
     assert.equal(result.interactive.sections[0].rows.length, 10);
+    assert.equal(result.interactive.sections[0].title, 'Interests');
     assert.equal(B2_ROWS.length, 10);
     assert.equal(result.contextPatch.stage, 'b2_awaiting_reply');
     assert.match(result.interactive.body, /actually interest you/i);
+    assert.ok(!result.interactive.sections[0].rows.some((r) => r.id === DONE_ROW.id));
   });
 
   test('REGRESSION (Phase 4 propagation bug): the "ask B2 question" branch still carries forward a profile mutated by an upstream caller (B1\'s chain), not just an unmutated pass-through', () => {
@@ -78,20 +104,54 @@ describe('b2Branch — handleB2Entry', () => {
 });
 
 describe('b2Branch — handleB2Reply (V3 multi-select)', () => {
-  test('"Computers & software" first tap stays collecting; done advances to B4 with cse_ai', () => {
+  test('first tap stays collecting and offers I\'m done; Done advances to B4', () => {
     const mid = handleB2Reply(ctxWithProfile(), 'Computers & software');
     assert.equal(mid.contextPatch.stage, 'b2_awaiting_reply');
     assert.ok(mid.contextPatch.profile.interests.includes('computers_software'));
     assert.match(mid.interactive.body, /Noted|done/i);
+    assert.equal(mid.interactive.sections[0].rows[0].id, DONE_ROW.id);
 
     const result = handleB2Reply(
       { flowV2: { profile: mid.contextPatch.profile, stage: 'b2_awaiting_reply' } },
-      'done'
+      "I'm done ✓"
     );
     assert.equal(result.contextPatch.profile.branchInterest, 'cse_ai');
     assert.equal(result.contextPatch.profile.interestCluster, 'software');
     assert.equal(result.contextPatch.stage, 'b4_awaiting_entry');
     assert.ok(result.replyText);
+  });
+
+  test('two picks then Done keeps both interests', () => {
+    let mid = handleB2Reply(ctxWithProfile(), 'Computers & software');
+    mid = handleB2Reply(
+      { flowV2: { profile: mid.contextPatch.profile, stage: 'b2_awaiting_reply' } },
+      'Artificial Intelligence'
+    );
+    assert.deepEqual(mid.contextPatch.profile.interests, [
+      'computers_software',
+      'artificial_intelligence',
+    ]);
+    const result = handleB2Reply(
+      { flowV2: { profile: mid.contextPatch.profile, stage: 'b2_awaiting_reply' } },
+      'flowv2_b3_done'
+    );
+    assert.equal(result.contextPatch.stage, 'b4_awaiting_entry');
+    assert.equal(result.contextPatch.profile.interestCluster, 'data_ai');
+  });
+
+  test('fourth pick auto-advances without another loop', () => {
+    let profile = emptyFlowV2Profile();
+    for (const title of ['Computers & software', 'Data Science', 'Cloud Computing']) {
+      const mid = handleB2Reply({ flowV2: { profile, stage: 'b2_awaiting_reply' } }, title);
+      profile = mid.contextPatch.profile;
+      assert.equal(mid.contextPatch.stage, 'b2_awaiting_reply');
+    }
+    const result = handleB2Reply(
+      { flowV2: { profile, stage: 'b2_awaiting_reply' } },
+      'Cyber Security'
+    );
+    assert.equal(result.contextPatch.stage, 'b4_awaiting_entry');
+    assert.equal(result.contextPatch.profile.interests.length, 4);
   });
 
   test('legacy "Design / product" free-text still advances to B4', () => {
@@ -113,7 +173,7 @@ describe('b2Branch — handleB2Reply (V3 multi-select)', () => {
   });
 
   test('"Core engineering" tap routes into the fork, does NOT advance to B4 directly', () => {
-    const result = handleB2Reply(ctxWithProfile(), 'Core engineering (Mech / Civil / ECE / EEE)');
+    const result = handleB2Reply(ctxWithProfile(), 'Core engineering');
     assert.equal(result.contextPatch.stage, 'b2_core_fork_awaiting_reply');
     assert.notEqual(result.contextPatch.stage, 'b4_awaiting_entry');
   });
@@ -125,7 +185,7 @@ describe('b2Branch — handleB2Reply (V3 multi-select)', () => {
   });
 
   test('"Not sure yet" is a legitimate answer — sets undecided and advances (no loop)', () => {
-    const result = handleB2Reply(ctxWithProfile(), 'Not sure yet — help me figure it out');
+    const result = handleB2Reply(ctxWithProfile(), 'Not sure yet');
     assert.equal(result.contextPatch.profile.branchInterest, null);
     assert.equal(result.contextPatch.profile.interestCluster, 'undecided');
     assert.equal(result.contextPatch.stage, 'b4_awaiting_entry');
