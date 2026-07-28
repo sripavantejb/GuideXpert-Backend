@@ -35,10 +35,16 @@ const QUALIFICATION_ROWS = Object.freeze([
 
 const QUALIFICATION_LIST_SECTION_TITLE = 'Where are you right now?';
 const QUALIFICATION_LIST_BUTTON_TEXT = 'Select';
+/** Exact Node E open when profile.name is unknown (Master Flow welcome). */
 const UNKNOWN_NAME_GREETING =
-  "Hi 😊 I'm Rithika from GuideXpert. I help students figure out the right path after Class 12. May I know your name?";
+  "Hi 😊\nI'm Rithika from GuideXpert. I help students figure out the right path after Class 12.\n\nMay I know your name?";
 const NAME_REASK = "Sorry, didn't catch that 😊 What should I call you?";
-const NEUTRAL_QUALIFICATION_LINE = 'Nice to meet you 😊 Quick one first — can I know your qualification?';
+const NEUTRAL_QUALIFICATION_LINE =
+  'Nice to meet you 😊\nQuick one first — can I know your qualification?';
+
+function buildNamedQualificationBody(firstName) {
+  return `Nice to meet you, ${firstName} 😊\nQuick one first — can I know your qualification?`;
+}
 const GUESS_CONFIRM_YES = Object.freeze({ id: 'flowv2_guess_confirm_yes', title: "Yes, that's right" });
 const GUESS_CONFIRM_NO = Object.freeze({ id: 'flowv2_guess_confirm_no', title: 'No, let me pick' });
 
@@ -57,9 +63,7 @@ function resolveGreetingName(ctx) {
 }
 
 function buildGreetingText(firstName) {
-  return firstName
-    ? `Nice to meet you, ${firstName} 😊 Quick one first — can I know your qualification?`
-    : UNKNOWN_NAME_GREETING;
+  return firstName ? buildNamedQualificationBody(firstName) : UNKNOWN_NAME_GREETING;
 }
 
 /**
@@ -266,7 +270,7 @@ function handleNameReply(ctx, text) {
   if (name) {
     const mergedProfile = mergeFlowV2Profile(profile, { name });
     if (mergedProfile.qualification) return qualificationRoute(mergedProfile, mergedProfile.qualification);
-    const body = `Nice to meet you, ${name} 😊 Quick one first — can I know your qualification?`;
+    const body = buildNamedQualificationBody(name);
     return qualificationPrompt(mergedProfile, body);
   }
   const attempts = Number(ctx?.flowV2?.nameAttempts || 0) + 1;

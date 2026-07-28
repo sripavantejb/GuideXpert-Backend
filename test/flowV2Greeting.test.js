@@ -20,7 +20,7 @@ describe('flowV2 greeting — entry', () => {
     assert.equal(result.replyText, null);
     assert.equal(
       result.interactive.body,
-      'Nice to meet you, Priya 😊 Quick one first — can I know your qualification?'
+      'Nice to meet you, Priya 😊\nQuick one first — can I know your qualification?'
     );
     assert.equal(result.contextPatch.stage, 'greeting_awaiting_qualification');
     assert.equal(result.interactive.type, 'list');
@@ -61,11 +61,51 @@ describe('flowV2 greeting — entry', () => {
     assert.equal(result.replyText, UNKNOWN_NAME_GREETING);
     assert.equal(
       result.replyText,
-      "Hi 😊 I'm Rithika from GuideXpert. I help students figure out the right path after Class 12. May I know your name?"
+      "Hi 😊\nI'm Rithika from GuideXpert. I help students figure out the right path after Class 12.\n\nMay I know your name?"
     );
     assert.equal(result.interactive, null);
     assert.equal(result.contextPatch.stage, 'greeting_awaiting_name');
     assert.equal(result.contextPatch.nameAttempts, 0);
+  });
+
+  test('hi with no listed name then a free-text name opens the 10-row qualification list', async () => {
+    const { processFlowV2Turn } = require('../services/chatbot/flowV2/flowV2Dispatcher');
+    const open = await processFlowV2Turn({ flowV2: { stage: null, profile: null } }, 'hi');
+    assert.equal(open.replyText, UNKNOWN_NAME_GREETING);
+    assert.equal(open.interactive, null);
+
+    const named = await processFlowV2Turn(
+      {
+        flowV2: {
+          stage: open.contextPatch.stage,
+          profile: open.contextPatch.profile,
+          nameAttempts: open.contextPatch.nameAttempts,
+        },
+      },
+      'My name is Arjun 😊'
+    );
+    assert.equal(named.contextPatch.profile.name, 'Arjun');
+    assert.equal(named.interactive.type, 'list');
+    assert.equal(named.interactive.sections[0].title, 'Where are you right now?');
+    assert.equal(
+      named.interactive.body,
+      'Nice to meet you, Arjun 😊\nQuick one first — can I know your qualification?'
+    );
+    assert.deepEqual(
+      named.interactive.sections[0].rows.map((row) => row.title),
+      [
+        '10th Completed',
+        '11th Studying',
+        '12th Completed (PCM)',
+        '12th Completed (PCB)',
+        '12th Completed (Commerce)',
+        '12th Completed (Arts)',
+        'Diploma',
+        'Degree',
+        'Drop Year',
+        'Other',
+      ]
+    );
   });
 
   test('is a defensive no-op if called with a stage already set (belt-and-suspenders; real guarantee is at dispatcher level)', () => {
@@ -91,7 +131,7 @@ describe('flowV2 greeting — deterministic name capture', () => {
       assert.equal(result.contextPatch.stage, 'greeting_awaiting_qualification');
       assert.equal(
         result.interactive.body,
-        `Nice to meet you, ${expected} 😊 Quick one first — can I know your qualification?`
+        `Nice to meet you, ${expected} 😊\nQuick one first — can I know your qualification?`
       );
     }
   });
@@ -106,7 +146,7 @@ describe('flowV2 greeting — deterministic name capture', () => {
     assert.equal(second.interactive.body, NEUTRAL_QUALIFICATION_LINE);
     assert.equal(
       second.interactive.body,
-      'Nice to meet you 😊 Quick one first — can I know your qualification?'
+      'Nice to meet you 😊\nQuick one first — can I know your qualification?'
     );
     assert.equal(second.contextPatch.stage, 'greeting_awaiting_qualification');
     assert.equal(second.contextPatch.nameAttempts, null);
