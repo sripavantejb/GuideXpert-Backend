@@ -193,7 +193,6 @@ function validateSection2Body(b) {
   const interestedBranch = (b.interestedBranch && String(b.interestedBranch).trim()) || '';
   const collegeBudget = (b.collegeBudget && String(b.collegeBudget).trim()) || '';
   const preferredLanguage = (b.preferredLanguage && String(b.preferredLanguage).trim()) || '';
-  const preferredTimeSlotKey = (b.preferredTimeSlot && String(b.preferredTimeSlot).trim()) || '';
 
   if (!CURRENT_CLASS_OPTIONS.includes(currentClass)) {
     return { error: 'Please select a valid current class.' };
@@ -210,6 +209,25 @@ function validateSection2Body(b) {
   if (!PREFERRED_LANGUAGE_OPTIONS.includes(preferredLanguage)) {
     return { error: 'Please select a valid language.' };
   }
+
+  return {
+    data: {
+      currentClass,
+      sessionAttendee,
+      interestedBranch,
+      collegeBudget,
+      preferredLanguage,
+      currentStep: 2,
+      formCompleted: false,
+    },
+  };
+}
+
+function validateSection3Body(b) {
+  const preferredTimeSlotKey = (b.preferredTimeSlot && String(b.preferredTimeSlot).trim()) || '';
+  const additionalQuestions =
+    (b.additionalQuestions && String(b.additionalQuestions).trim().slice(0, 2000)) || '';
+
   if (!isValidPreferredTimeSlot(preferredTimeSlotKey)) {
     return { error: 'Please select a valid session slot for the next 2 days.' };
   }
@@ -223,43 +241,10 @@ function validateSection2Body(b) {
 
   return {
     data: {
-      currentClass,
-      sessionAttendee,
-      interestedBranch,
-      collegeBudget,
-      preferredLanguage,
       preferredTimeSlot: slotMeta.label,
       preferredTimeSlotDate: slotMeta.slotDate,
       parentAttendanceConfirmed: true,
-      currentStep: 2,
-      formCompleted: true,
-    },
-  };
-}
-
-function validateSection3Body(b) {
-  const preferredLanguage = (b.preferredLanguage && String(b.preferredLanguage).trim()) || '';
-  const preferredTimeSlotKey = (b.preferredTimeSlot && String(b.preferredTimeSlot).trim()) || '';
-  const additionalQuestions =
-    (b.additionalQuestions && String(b.additionalQuestions).trim().slice(0, 2000)) || '';
-
-  if (!PREFERRED_LANGUAGE_OPTIONS.includes(preferredLanguage)) {
-    return { error: 'Please select a valid language.' };
-  }
-  if (!isValidPreferredTimeSlot(preferredTimeSlotKey)) {
-    return { error: 'Please select a valid session slot for the next 2 days.' };
-  }
-  const slotMeta = resolveSlotMeta(preferredTimeSlotKey);
-  if (!slotMeta) {
-    return { error: 'Please select a valid session slot for the next 2 days.' };
-  }
-
-  return {
-    data: {
-      preferredLanguage,
-      preferredTimeSlot: slotMeta.label,
-      preferredTimeSlotDate: slotMeta.slotDate,
-      additionalQuestions,
+      ...(additionalQuestions ? { additionalQuestions } : {}),
       currentStep: 3,
       formCompleted: true,
     },
@@ -417,7 +402,7 @@ exports.saveOneOnOneSection1 = async (req, res) => {
 };
 
 /**
- * POST /api/one-on-one-counseling/section2 — save step 2 and complete booking
+ * POST /api/one-on-one-counseling/section2 — save step 2 preferences (not complete)
  */
 exports.saveOneOnOneSection2 = async (req, res) => {
   try {
@@ -446,7 +431,7 @@ exports.saveOneOnOneSection2 = async (req, res) => {
     if (!existing.studentName || !existing.mobileNumber) {
       return res.status(400).json({
         success: false,
-        message: 'Please complete step 1 before submitting.',
+        message: 'Please complete step 1 before continuing.',
       });
     }
 
@@ -463,23 +448,10 @@ exports.saveOneOnOneSection2 = async (req, res) => {
       });
     }
 
-    const whatsappSubmit = await dispatchOneOnOneSubmitWhatsApp(doc);
-
-    recordStudentLiveActivity({
-      fullName: doc.studentName,
-      activity: {
-        type: 'counselling_booking',
-        tool: 'IITian counselling session',
-        title: 'Booked counselling session',
-        action: 'booked',
-      },
-    }).catch(() => {});
-
     return res.status(200).json({
       success: true,
-      message: 'Submitted successfully',
-      data: mapLeadToDTO(doc.toObject()),
-      whatsappSubmit,
+      message: 'Step 2 saved successfully.',
+      data: { leadId: doc._id.toString(), currentStep: 2, formCompleted: false },
     });
   } catch (err) {
     if (err.name === 'ValidationError') {
@@ -520,14 +492,20 @@ exports.saveOneOnOneSection3 = async (req, res) => {
       });
     }
 
-    if (!existing.studentName || !existing.mobileNumber || !existing.currentClass) {
+    if (!existing.studentName || !existing.mobileNumber) {
       return res.status(400).json({
         success: false,
         message: 'Please complete step 1 before submitting.',
       });
     }
 
-    if (!existing.sessionAttendee || !existing.interestedBranch || !existing.collegeBudget) {
+    if (
+      !existing.currentClass ||
+      !existing.sessionAttendee ||
+      !existing.interestedBranch ||
+      !existing.collegeBudget ||
+      !existing.preferredLanguage
+    ) {
       return res.status(400).json({
         success: false,
         message: 'Please complete step 2 before submitting.',

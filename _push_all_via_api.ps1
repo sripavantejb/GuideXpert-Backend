@@ -106,7 +106,7 @@ $newTree = & $gh api "repos/$repo/git/trees" --method POST --input $treePath | C
 Remove-Item $treePath -Force
 Write-Host ("new tree: {0}" -f $newTree.sha)
 
-$commitMsg = "Harden web chat intents and move counselling class to step 2.`n`nAdd a web-chat state machine so menu and FAQ commands are not treated as college names, and accept current class during section 2 booking save."
+$commitMsg = "Split one-on-one booking into three API steps.`n`nSection 2 saves preferences only; section 3 saves the slot and completes the booking."
 $commitPayload = (@{
   message = $commitMsg
   tree    = $newTree.sha
