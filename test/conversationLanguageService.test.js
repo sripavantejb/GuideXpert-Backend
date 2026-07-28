@@ -41,53 +41,15 @@ describe('conversationLanguageService', () => {
     assert.equal(result.resolutionReason, 'ambiguous_message_memory');
   });
 
-  test('Rule 2: ambiguous thanks keeps explicit English preference over lead Telugu', () => {
+  test('Rule 2: ambiguous thanks uses IIT lead when no stored preference', () => {
     const result = resolveConversationLanguage(
       { preferredLanguage: 'en' },
       { iit: { preferredLanguage: 'Telugu' } },
       { language: 'en', confidence: 0.4 },
       'thanks'
     );
-    assert.equal(result.language, 'en');
-    assert.equal(result.resolutionReason, 'ambiguous_message_memory');
-  });
-
-  test('Rule 2: ambiguous thanks uses IIT lead when conversation has no preferredLanguage', () => {
-    const result = resolveConversationLanguage(
-      {},
-      { iit: { preferredLanguage: 'Telugu' } },
-      { language: 'en', confidence: 0.4 },
-      'thanks'
-    );
     assert.equal(result.language, 'te');
     assert.equal(result.resolutionReason, 'ambiguous_message_memory');
-  });
-
-  test('counseling session language helper maps profile labels', () => {
-    const {
-      resolveCounselingSessionLanguage,
-    } = require('../services/chatbot/conversationLanguageService');
-    assert.equal(
-      resolveCounselingSessionLanguage({
-        counselingSessionLanguage: 'en',
-        profile: { preferredLanguage: 'Telugu' },
-      }),
-      'en'
-    );
-    assert.equal(
-      resolveCounselingSessionLanguage({
-        profile: { preferredLanguage: 'Hindi' },
-      }),
-      'hi'
-    );
-  });
-
-  test('placements token is guided-flow slot-like (not a language flip)', () => {
-    const {
-      isGuidedFlowSlotLikeToken,
-    } = require('../services/chatbot/conversationLanguageService');
-    assert.equal(isGuidedFlowSlotLikeToken('placements'), true);
-    assert.equal(isGuidedFlowSlotLikeToken('internships'), true);
   });
 
   test('uses detection when no stored preference', () => {
@@ -107,36 +69,6 @@ describe('conversationLanguageService', () => {
     assert.equal(isAmbiguousMessage('👍'), true);
     assert.equal(isAmbiguousMessage('How are you?'), false);
     assert.equal(isAmbiguousMessage('hi'), false);
-  });
-
-  test('AU/SVU and menu digits are not ambiguous language signals', () => {
-    assert.equal(isAmbiguousMessage('AU'), false);
-    assert.equal(isAmbiguousMessage('SVU'), false);
-    assert.equal(isAmbiguousMessage('1'), false);
-    assert.equal(isAmbiguousMessage('OC'), false);
-    assert.equal(isAmbiguousMessage('Female'), false);
-  });
-
-  test('AU does not inherit Telugu lead memory when detection is weak', () => {
-    const result = resolveConversationLanguage(
-      { preferredLanguage: 'te' },
-      { iit: { preferredLanguage: 'Telugu' } },
-      { language: 'en', confidence: 0.4 },
-      'AU'
-    );
-    assert.equal(result.language, 'en');
-    assert.equal(result.resolutionReason, 'guided_flow_slot_token');
-  });
-
-  test('SVU does not inherit Telugu conversation preference', () => {
-    const result = resolveConversationLanguage(
-      { preferredLanguage: 'te' },
-      {},
-      { language: 'te', confidence: 0.2 },
-      'SVU'
-    );
-    assert.equal(result.language, 'en');
-    assert.equal(result.resolutionReason, 'guided_flow_slot_token');
   });
 
   test('explicit English greeting hi switches to English over stored Telugu', () => {

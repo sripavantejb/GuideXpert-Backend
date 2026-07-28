@@ -16,8 +16,6 @@ const BOT_STATES = Object.freeze([
   'rank_predictor',
   'college_predictor',
   'career_counselling_journey',
-  'career_counselling_v2',
-  'career_counselling_flow_v2',
   'human_handoff',
   'idle',
 ]);
@@ -74,10 +72,6 @@ const HANDOFF_REASONS = Object.freeze([
   'keyword',
   'admin_initiated',
   'reopened',
-  // Added for Flow v2 Phase 3 — R7 Tier-2 crisis/self-harm escalation.
-  // Distinct from 'bot_escalation' so it is immediately identifiable on the
-  // admin dashboard as the highest-severity handoff reason.
-  'crisis_escalation',
 ]);
 
 const WEBHOOK_EVENT_KINDS = Object.freeze(['inbound', 'dlr', 'unknown']);
@@ -85,18 +79,8 @@ const WEBHOOK_EVENT_KINDS = Object.freeze(['inbound', 'dlr', 'unknown']);
 // menu: command words only; hi/hello/hey use whole-message matching in intentClassifierService
 const GLOBAL_KEYWORDS = Object.freeze({
   menu: ['menu', 'help', 'start'],
-  // Soft phrases only — explicit handoff uses humanHandoffIntent.js patterns.
-  agent: [
-    'talk to counsellor',
-    'talk to counselor',
-    'talk to agent',
-    'talk to someone',
-    'connect me to an agent',
-    'human support',
-    'real person',
-    'escalate',
-  ],
-  stop: ['unsubscribe', 'opt out', 'optout'],
+  agent: ['agent', 'human', 'person', 'talk to someone', 'counsellor', 'counselor', 'support'],
+  stop: ['stop', 'unsubscribe', 'opt out', 'optout'],
   cancel: ['cancel'],
 });
 

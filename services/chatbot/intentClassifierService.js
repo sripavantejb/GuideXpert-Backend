@@ -1,32 +1,11 @@
 const { GLOBAL_KEYWORDS } = require('../../constants/chatbotStates');
 const {
-  isExplicitHumanHandoffRequest,
-  isHumanHandoffMenuDigit,
-} = require('./foundationConversation/humanHandoffIntent');
-const {
   isIitCounsellingExpertEnabled,
 } = require('./iitCounsellingExpert/iitCounsellingFlags');
 const {
   isIitCounsellingExpertSessionActive,
   isIitCounsellingExpertQuestion,
-  isIitCounsellingEntryRequest,
-  isIitCounsellingInSessionTopic,
 } = require('./iitCounsellingExpert/iitCounsellingIntentService');
-const {
-  shouldBypassScopeFirewallForIit,
-  isIitSessionExitRequest,
-} = require('./iitCounsellingExpert/iitCounsellingSessionService');
-const {
-  isJeeCounsellingSessionActive,
-  isJeeSessionExitRequest,
-  isJeeAdvancedEntry,
-  isJeeMainEntry,
-  isJeeAmbiguousEntry,
-  isJeeInSessionTopic,
-  isCommerceOutOfScopeRequest,
-  shouldBypassScopeFirewallForJee,
-} = require('./jeeCounselling/jeeCounsellingSessionService');
-const { resolveBookingSupportIntent } = require('./bookingContext/bookingSupportIntentService');
 const {
   isIitCounsellingStrategyEnabled,
 } = require('./iitCounsellingStrategy/iitCounsellingStrategyFlags');
@@ -38,17 +17,12 @@ const {
 } = require('./iitCounsellingStrategy/iitCounsellingStrategyIntentService');
 const {
   getGuidedFlowByBotState,
-  shouldBypassScopeFirewall: shouldBypassScopeFirewallForGuided,
+  shouldBypassScopeFirewall,
 } = require('./guidedFlows/guidedFlowRegistry');
 const {
   isCareerCounsellingJourneyEntryQuery,
-  scoreCareerCounsellingGuidance,
 } = require('./careerCounselling/careerCounsellingIntentService');
 const { isCareerCounsellingJourneyEnabled } = require('../../constants/careerCounsellingJourney');
-const {
-  resolveCollegePredictorEntry,
-  isHighConfidenceCollegePredictorEntry,
-} = require('./whatsappCollegePredictor/collegePredictorIntentService');
 const {
   normalizeText,
   escapeRegExp,
@@ -64,10 +38,8 @@ const {
 
 const KNOWLEDGE_QUESTION_PATTERNS = [
   /\bwhat is\b/i,
-  /\bwhat exactly is\b/i,
   /\bwhat are\b/i,
   /\bwhat do\b/i,
-  /\bwhat does\b.{0,40}\bmean\b/i,
   /\bhow much\b/i,
   /\bhow does\b/i,
   /\bhow do\b/i,
@@ -90,18 +62,7 @@ const KNOWLEDGE_QUESTION_PATTERNS = [
   /\bwant to know\b/i,
   /\bknow about\b/i,
   /\b(tell me|want to know|know) about guidexpert\b/i,
-  /\bmeans?\b/i,
-  /\bmeaning of\b/i,
-  /\bdefine\b/i,
-  /\bdefinition\b/i,
-  /\bkya hai\b/i,
-  /\bkya hota hai\b/i,
 ];
-
-/** Brand / product definition queries that should hit the knowledge assistant. */
-const BRAND_KNOWLEDGE_PATTERN = /\b(niat|nat|guidexpert|new[- ]?age(?:\s+college)?)\b/i;
-const DEFINITION_SIGNAL_PATTERN =
-  /\b(means?|meaning|define|definition|exact(?:ly)?|kya hai|kya hota hai|about|tell me|what|know)\b/i;
 
 const CAPABILITY_QUESTION_PATTERNS = [
   /\bwhat can you do\b/i,
@@ -132,11 +93,8 @@ const COUNSELLOR_PROGRAM_PATTERNS = [
   /\b(program|package|counselling|counseling)\s+fees\b/i,
   /\bfees for (the )?(program|package|counselling|counseling)\b/i,
   /\b(career|admission) guidance\b/i,
-  // Program / service marketing only — not "I need IIT counselling" (ICE owns that).
-  /\b(college) counselling (program|package|service|support)\b/i,
-  /\b(college) counseling (program|package|service|support)\b/i,
-  /\biit counselling (program|package|service|services)\b/i,
-  /\biit counseling (program|package|service|services)\b/i,
+  /\b(iit|college) counselling\b/i,
+  /\b(iit|college) counseling\b/i,
   /\bcollege (prediction|predictor) support\b/i,
   /\b(do you (offer|provide)|what).*\bmentor(ship)?\b/i,
   /\bguidexpert (program|services|counselling|counseling)\b/i,
@@ -198,17 +156,7 @@ function isGuideXpertIdentityQuestion(text, originalText = null) {
 }
 
 function isCounsellorProgramQuestion(text, originalText = null) {
-  if (resolveBookingSupportIntent(text, originalText)) {
-    return false;
-  }
   if (isIitLeadSupportQuery(text) || isIitLeadSupportQuery(originalText)) {
-    return false;
-  }
-  // Priority 1: explicit IIT counselling entry / JoSAA process → ICE, not CPA.
-  if (isIitCounsellingExpertEnabled() && isIitCounsellingEntryRequest(text, originalText)) {
-    return false;
-  }
-  if (isIitCounsellingExpertEnabled() && isIitCounsellingExpertQuestion(text, originalText)) {
     return false;
   }
   if (isGuideXpertIdentityQuestion(text, originalText)) {
@@ -223,7 +171,6 @@ const SOCIAL_GREETING_PATTERNS = [
   /^(how are you|how are u|how r u)\s*[.!?]?$/,
   /^(kaise ho aap|kaise ho)\s*[.!?]?$/,
   /^(ela vunnav|ela vunnaru|ela unnaru|bagunnara|bagunnava)\s*[.!?]?$/,
-  /^(hi|hello|hey|hola|namaste|good\s*morning|good\s*evening|good\s*afternoon)(\s+(please|yaar|bro|urgently|ahora|there|friend))?\s*[.!?🙏]*$/,
 ];
 
 const ROMANIZED_TELUGU_GREETING_PATTERNS = [
@@ -300,20 +247,11 @@ function intentTextCandidates(text, originalText = null) {
  * General knowledge / exploratory questions routed to the Knowledge Assistant.
  * @param {string} text - normalized (lowercase, collapsed spaces)
  */
-function isBrandKnowledgeQuery(text) {
-  const t = String(text || '').trim();
-  if (!t || !BRAND_KNOWLEDGE_PATTERN.test(t)) return false;
-  // Bare brand name, or brand + definition / about phrasing.
-  if (/^(niat|nat|guidexpert|new[- ]?age(?:\s+college)?)\s*[?.!]*$/i.test(t)) return true;
-  return DEFINITION_SIGNAL_PATTERN.test(t) || KNOWLEDGE_QUESTION_PATTERNS.some((p) => p.test(t));
-}
-
 function isKnowledgeQuestion(text) {
   const t = String(text || '').trim();
   if (!t || /^\d+$/.test(t)) {
     return false;
   }
-  if (isBrandKnowledgeQuery(t)) return true;
   return KNOWLEDGE_QUESTION_PATTERNS.some((pattern) => pattern.test(t));
 }
 
@@ -341,11 +279,11 @@ const MARKS_SIGNAL_PATTERN =
   /\b(marks?|score|scored|percentile|vachayi|vachindi|aaye|hai|labh|labham|labhamu)\b/i;
 
 const EXAM_SIGNAL_PATTERN =
-  /\b(jee main|jee advanced|jee|kcet|keam|ap eamcet|ts eamcet|eamcet|tnea|wbjee|mht cet|mhtcet|neet|comedk)\b/i;
+  /\b(jee main|jee advanced|jee|kcet|keam|ap eamcet|ts eamcet|eamcet|tnea|wbjee|mht cet|mhtcet)\b/i;
 
 function hasRankSignal(text) {
   const t = String(text || '');
-  if (/\b(rank|percentile|ranku|rayank|rayanku|air)\b/i.test(t)) return true;
+  if (/\b(rank|percentile|ranku|rayank|rayanku)\b/i.test(t)) return true;
   if (/\u0c30\u0c4d\u0c2f\u0c3e\u0c02\u0c15/i.test(t)) return true;
   if (/\u0bb0\u0bc7\u0b99\u0bcd\u0b95/i.test(t)) return true;
   if (/\u0cb0\u0cc6\u0c82\u0c95/i.test(t)) return true;
@@ -378,26 +316,6 @@ function isMarksBasedRankPredictorQuery(text, originalText = null) {
 }
 
 /**
- * Explicit Rank Predictor entry (no marks required).
- * Must win over College Predictor entry and Knowledge Assistant.
- */
-function isExplicitRankPredictorEntryQuery(text, originalText = null) {
-  return intentTextCandidates(text, originalText).some((t) => {
-    if (!t) return false;
-    if (
-      /^(rank\s+predictor|rank\s+prediction|predict(?:\s+my)?\s+rank|estimate(?:\s+my)?\s+rank|can you predict(?:\s+my)?\s+rank)\s*[.!?]?$/i.test(
-        t
-      )
-    ) {
-      return true;
-    }
-    return /\b(rank\s+predictor|rank\s+prediction|predict(?:ing)?\s+(?:my\s+)?rank|estimate(?:ing)?\s+(?:my\s+)?rank|can you predict(?:\s+my)?\s+rank)\b/i.test(
-      t
-    );
-  });
-}
-
-/**
  * Rank + branch admission queries — route to College Predictor
  * even when a Knowledge Assistant session is active.
  */
@@ -405,75 +323,12 @@ function isRankBranchCollegePredictorQuery(text, originalText = null) {
   return intentTextCandidates(text, originalText).some((t) => {
     if (!t) return false;
     if (isMarksBasedRankPredictorQuery(t)) return false;
-    if (isExplicitRankPredictorEntryQuery(t)) return false;
     if (isRomanizedTeluguBranchGuidanceQuery(t)) return false;
     if (MIXED_RANK_BRANCH_PATTERNS.some((pattern) => pattern.test(t))) {
       return true;
     }
     return hasRankSignal(t) && hasBranchSignal(t);
   });
-}
-
-/**
- * Rank / AIR with optional exam — enter College Predictor and collect missing slots.
- * Never route these to Knowledge Assistant.
- */
-function isRankOnlyCollegePredictorQuery(text, originalText = null) {
-  return intentTextCandidates(text, originalText).some((t) => {
-    if (!t) return false;
-    if (isMarksBasedRankPredictorQuery(t)) return false;
-    if (isExplicitRankPredictorEntryQuery(t)) return false;
-    if (isRomanizedTeluguBranchGuidanceQuery(t)) return false;
-    if (/\bAIR\s*[#:]?\s*\d{1,9}\b/i.test(t)) return true;
-    if (/\brank\s*(?:is|:|=|-|in|of|around|near)?\s*\d{1,9}\b/i.test(t)) return true;
-    if (/\b(?:i\s+got|got)\s+rank\s+(?:in\s+|of\s+)?\d{1,9}\b/i.test(t)) return true;
-    if (/\b\d{1,9}\s*rank\b/i.test(t)) return true;
-    if (/\b(?:i\s+got|got|scored|secured)\s+\d{3,9}\b/i.test(t) && !/\b(marks|percentile|percent|score)\b/i.test(t)) {
-      return true;
-    }
-    if (hasRankSignal(t) && EXAM_SIGNAL_PATTERN.test(t) && /\d{2,}/.test(t)) return true;
-    return false;
-  });
-}
-
-/**
- * Explicit college-prediction entry (rank / which colleges / predict) must beat
- * the counseling-first gate — otherwise "rank 6000 which colleges" stalls in Discovery.
- */
-function resolveCollegePredictorIntentEarly(t, original, botState) {
-  if (isMarksBasedRankPredictorQuery(t, original)) {
-    return { intent: 'rank_predictor', confidence: 'high', intentReason: 'marks_based_rank_query' };
-  }
-  if (isExplicitRankPredictorEntryQuery(t, original)) {
-    return {
-      intent: 'rank_predictor',
-      confidence: 'high',
-      intentReason: 'explicit_rank_predictor_entry',
-    };
-  }
-  if (isRankBranchCollegePredictorQuery(t, original) || isRankOnlyCollegePredictorQuery(t, original)) {
-    return {
-      intent: 'college_predictor',
-      confidence: 'high',
-      intentReason: isRankBranchCollegePredictorQuery(t, original)
-        ? 'rank_branch_college_query'
-        : 'rank_only_college_query',
-    };
-  }
-  if (isHighConfidenceCollegePredictorEntry(t, original, botState)) {
-    const cpEntry = resolveCollegePredictorEntry({
-      englishText: t,
-      originalText: original,
-      botState,
-    });
-    return {
-      intent: 'college_predictor',
-      confidence: cpEntry.confidence === 'medium' ? 'medium' : 'high',
-      intentReason: cpEntry.reason || 'college_predictor_high_confidence',
-      preferredCollege: cpEntry.preferredCollege || null,
-    };
-  }
-  return null;
 }
 
 /** @deprecated Use isRankBranchCollegePredictorQuery */
@@ -489,29 +344,19 @@ function classifyIntent(text, botState, productLine, originalText = null) {
   const t = normalizeText(text);
   const original = String(originalText || text || '').trim();
 
-  if (isExplicitHumanHandoffRequest(t, original) || isHumanHandoffMenuDigit(t, productLine)) {
-    return { intent: 'human_handoff', confidence: 'high', intentReason: 'explicit_human_handoff' };
+  if (
+    matchesAny(t, GLOBAL_KEYWORDS.agent) &&
+    !isCounsellorProgramQuestion(t, original)
+  ) {
+    return { intent: 'human_handoff', confidence: 'high' };
   }
   if (matchesMainMenuTrigger(t)) {
     return { intent: 'main_menu', confidence: 'high' };
   }
-  // Soft greetings with trailing words/emoji (not exact MENU "hi"/"start")
-  if (isSocialGreeting(t, original) || isNativeSocialGreeting(original)) {
-    return {
-      intent: 'greeting',
-      confidence: 'high',
-      intentReason: 'soft_social_greeting',
-    };
-  }
   if (matchesAny(t, GLOBAL_KEYWORDS.cancel)) {
     return { intent: 'main_menu', confidence: 'high' };
   }
-  // Predictor / journey hard reset → main menu (clears subflows via orchestrator).
-  if (/^(restart|start over|start again|reset|new prediction)$/i.test(t)) {
-    return { intent: 'main_menu', confidence: 'high', intentReason: 'journey_restart' };
-  }
-  // Hard opt-out only (stop alone is farewell, handled by Foundation Router).
-  if (/\b(unsubscribe|opt[\s-]?out)\b/i.test(t) || matchesAny(t, ['unsubscribe', 'opt out', 'optout'])) {
+  if (matchesAny(t, GLOBAL_KEYWORDS.stop)) {
     return { intent: 'opt_out', confidence: 'high' };
   }
 
@@ -540,133 +385,6 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     return { intent: 'greeting', confidence: 'high', intentReason };
   }
 
-  // Commerce must never reach FAQ / guided flows — Scope Firewall owns denial.
-  if (isCommerceOutOfScopeRequest(t, original)) {
-    return { intent: 'unknown', confidence: 'low', intentReason: 'commerce_out_of_scope' };
-  }
-
-  // Explicit rank / college-prediction entry beats counseling-first (P0 production).
-  {
-    const predictorEarly = resolveCollegePredictorIntentEarly(t, original, botState);
-    if (predictorEarly) return predictorEarly;
-  }
-
-  // P0: Admissions / college / career uncertainty → Career Counselling V2 FIRST.
-  // Prefer counseling over booking-handoff soft matches, knowledge assistant, and unknown→guardrail.
-  // (Rank/college predictor already resolved above.)
-  if (isCareerCounsellingJourneyEnabled()) {
-    const counselingScore = scoreCareerCounsellingGuidance(t, original);
-    if (counselingScore.score >= 60) {
-      return {
-        intent: 'career_counselling_journey',
-        confidence: counselingScore.confidence === 'medium' ? 'medium' : 'high',
-        intentReason: counselingScore.reason || 'career_counselling_journey_entry',
-      };
-    }
-  }
-
-  const bookingSupportIntent = resolveBookingSupportIntent(t, original);
-  if (bookingSupportIntent) {
-    if (bookingSupportIntent.kind === 'human_handoff') {
-      return {
-        intent: 'human_handoff',
-        confidence: 'high',
-        intentReason: 'booking_support_handoff',
-      };
-    }
-    if (bookingSupportIntent.kind === 'booking_reschedule_cancel') {
-      return {
-        intent: 'booking_reschedule_cancel',
-        confidence: bookingSupportIntent.confidence,
-        intentReason: 'website_booking_manage',
-      };
-    }
-    if (bookingSupportIntent.kind === 'booking_create_check') {
-      return {
-        intent: 'booking_create_check',
-        confidence: bookingSupportIntent.confidence,
-        intentReason: 'website_booking_create_check',
-      };
-    }
-    if (bookingSupportIntent.kind === 'booking_deterministic') {
-      return {
-        intent: 'counselling_support',
-        confidence: bookingSupportIntent.confidence,
-        intentReason: 'booking_deterministic_support',
-        queryId: bookingSupportIntent.queryId,
-      };
-    }
-  }
-
-  // JEE / ICE ownership BEFORE rank/college predictors / CPA (Section C V2).
-  if (
-    isIitCounsellingExpertEnabled() &&
-    (isIitCounsellingExpertSessionActive(botState) || isJeeCounsellingSessionActive(botState))
-  ) {
-    if (isIitSessionExitRequest(t, original) || isJeeSessionExitRequest(t, original)) {
-      return { intent: 'main_menu', confidence: 'high', intentReason: 'iit_counselling_session_exit' };
-    }
-    return {
-      intent: 'iit_counselling_expert',
-      confidence: 'medium',
-      intentReason: 'jee_counselling_session_active',
-    };
-  }
-
-  if (isIitCounsellingExpertEnabled() && isJeeAmbiguousEntry(t, original)) {
-    return {
-      intent: 'jee_exam_clarify',
-      confidence: 'high',
-      intentReason: 'jee_exam_clarify',
-    };
-  }
-  if (isIitCounsellingExpertEnabled() && isJeeAdvancedEntry(t, original)) {
-    return {
-      intent: 'iit_counselling_expert',
-      confidence: 'high',
-      intentReason: 'jee_advanced_entry',
-    };
-  }
-  if (isIitCounsellingExpertEnabled() && isJeeMainEntry(t, original)) {
-    return {
-      intent: 'iit_counselling_expert',
-      confidence: 'high',
-      intentReason: 'jee_main_entry',
-    };
-  }
-
-  // Predictors (after ICE session/entry) — medium/low CP entry that missed the early gate.
-  {
-    const cpEntry = resolveCollegePredictorEntry({
-      englishText: t,
-      originalText: original,
-      botState,
-    });
-    if (cpEntry.enter) {
-      return {
-        intent: 'college_predictor',
-        confidence: cpEntry.confidence === 'medium' ? 'medium' : 'high',
-        intentReason: cpEntry.reason || 'college_predictor_entry',
-        preferredCollege: cpEntry.preferredCollege || null,
-      };
-    }
-  }
-
-  if (
-    isIitCounsellingExpertEnabled() &&
-    (isIitCounsellingInSessionTopic(t, original) ||
-      isIitCounsellingEntryRequest(t, original) ||
-      isJeeInSessionTopic(t, original) ||
-      isIitCounsellingExpertQuestion(t, original)) &&
-    !isIitCounsellingStrategySessionActive(botState)
-  ) {
-    return {
-      intent: 'iit_counselling_expert',
-      confidence: 'medium',
-      intentReason: 'iit_counselling_process_topic',
-    };
-  }
-
   if (isIitCounsellingExpertEnabled() && isFactualIceDelegation(t, original)) {
     const inStrategySession =
       isIitCounsellingStrategyEnabled() && isIitCounsellingStrategySessionActive(botState);
@@ -688,20 +406,26 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     };
   }
 
-  // Predictor entry already handled above (before ICE process topics).
+  if (isMarksBasedRankPredictorQuery(t, original)) {
+    return { intent: 'rank_predictor', confidence: 'high', intentReason: 'marks_based_rank_query' };
+  }
+
+  if (
+    isCareerCounsellingJourneyEnabled() &&
+    isCareerCounsellingJourneyEntryQuery(t, original)
+  ) {
+    return {
+      intent: 'career_counselling_journey',
+      confidence: 'high',
+      intentReason: 'career_counselling_journey_entry',
+    };
+  }
+
+  if (isRankBranchCollegePredictorQuery(t, original)) {
+    return { intent: 'college_predictor', confidence: 'high', intentReason: 'rank_branch_college_query' };
+  }
 
   if (isRomanizedTeluguBranchGuidanceQuery(original) || isRomanizedTeluguBranchGuidanceQuery(t)) {
-    // Prefer counseling when it also looks like decision guidance
-    if (isCareerCounsellingJourneyEnabled()) {
-      const counselingScore = scoreCareerCounsellingGuidance(t, original);
-      if (counselingScore.score >= 60) {
-        return {
-          intent: 'career_counselling_journey',
-          confidence: counselingScore.confidence === 'medium' ? 'medium' : 'high',
-          intentReason: counselingScore.reason || 'career_counselling_romanized',
-        };
-      }
-    }
     return {
       intent: 'knowledge_assistant',
       confidence: 'medium',
@@ -730,13 +454,19 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     };
   }
 
-  if (isIitCounsellingExpertQuestion(t, original) || isIitCounsellingEntryRequest(t, original)) {
+  if (isIitCounsellingExpertEnabled() && isIitCounsellingExpertSessionActive(botState)) {
     return {
       intent: 'iit_counselling_expert',
       confidence: 'medium',
-      intentReason: isIitCounsellingEntryRequest(t, original)
-        ? 'iit_counselling_entry'
-        : 'iit_counselling_question',
+      intentReason: 'iit_counselling_session_active',
+    };
+  }
+
+  if (isIitCounsellingExpertQuestion(t, original)) {
+    return {
+      intent: 'iit_counselling_expert',
+      confidence: 'medium',
+      intentReason: 'iit_counselling_question',
     };
   }
 
@@ -793,75 +523,46 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     if (/^3$/.test(t)) return { intent: 'assigned_expert', confidence: 'high' };
     if (/^4$/.test(t)) return { intent: 'rank_predictor', confidence: 'high' };
     if (/^5$/.test(t)) return { intent: 'college_predictor', confidence: 'high' };
-    // 6 = handoff handled above via isHumanHandoffMenuDigit
+    if (/^6$/.test(t)) return { intent: 'human_handoff', confidence: 'high' };
   }
 
   if (productLine === 'guidexpert') {
     if (/^[1-5]$/.test(t)) return { intent: 'faq', confidence: 'high' };
+    if (/^6$/.test(t)) return { intent: 'human_handoff', confidence: 'high' };
   }
 
   if (productLine === 'unknown') {
     if (/^1$/.test(t)) return { intent: 'counselling_support', confidence: 'high' };
     if (/^2$/.test(t)) return { intent: 'demo_support', confidence: 'high' };
     if (/^3$/.test(t)) return { intent: 'rank_predictor', confidence: 'high' };
+    if (/^4$/.test(t)) return { intent: 'human_handoff', confidence: 'high' };
   }
 
-  if (isKnowledgeQuestion(t) || isBrandKnowledgeQuery(t)) {
-    return {
-      intent: 'knowledge_assistant',
-      confidence: isBrandKnowledgeQuery(t) ? 'high' : 'medium',
-      intentReason: isBrandKnowledgeQuery(t) ? 'brand_knowledge_query' : 'knowledge_question',
-    };
+  if (isKnowledgeQuestion(t)) {
+    return { intent: 'knowledge_assistant', confidence: 'medium' };
   }
 
   if (/^1$|my details|my booking|my slot|profile/.test(t)) {
     return { intent: 'lead_lookup', confidence: 'high' };
   }
-  // Menu-style FAQ only — never match "help me shop on Amazon".
-  if (/^2$|^(faq|question)$|^help me\s*[.!?]?$/.test(t)) {
+  if (/^2$|faq|question|help me/.test(t)) {
     return { intent: 'faq', confidence: 'high' };
   }
-  if (isExplicitRankPredictorEntryQuery(t, original)) {
+  if (/\b(predict rank|rank predictor)\b/i.test(t)) {
     return { intent: 'rank_predictor', confidence: 'high', intentReason: 'explicit_rank_predictor_entry' };
   }
-  // Avoid bare "college" hijacking definition questions (e.g. "new age college means").
-  if (/^4$/.test(t) || isRankOnlyCollegePredictorQuery(t, original)) {
-    return {
-      intent: 'college_predictor',
-      confidence: 'medium',
-      intentReason: isRankOnlyCollegePredictorQuery(t, original)
-        ? 'rank_only_college_query'
-        : 'college_predictor_entry',
-    };
+  if (/^4$|college|which college|colleges/.test(t)) {
+    return { intent: 'college_predictor', confidence: 'medium' };
   }
-  {
-    const cpEntry = resolveCollegePredictorEntry({
-      englishText: t,
-      originalText: original,
-      botState,
-    });
-    if (cpEntry.enter && cpEntry.score >= 70) {
-      return {
-        intent: 'college_predictor',
-        confidence: 'medium',
-        intentReason: cpEntry.reason || 'college_predictor_entry',
-        preferredCollege: cpEntry.preferredCollege || null,
-      };
-    }
-  }
-  if (isExplicitHumanHandoffRequest(t, original)) {
-    return { intent: 'human_handoff', confidence: 'high', intentReason: 'explicit_human_handoff_fallback' };
+  if (/^5$|agent|human|talk/.test(t)) {
+    return { intent: 'human_handoff', confidence: 'high' };
   }
 
   if (productLine === 'iit_counselling') {
     if (/assigned expert|my counsellor|my bda|who is my expert/.test(t)) {
       return { intent: 'assigned_expert', confidence: 'high' };
     }
-    // Session / booking summary only — not JoSAA expertise ("IIT counselling", choice filling, etc.).
-    if (
-      /\b(my session|my slot|meeting link|when is my|assigned)\b/i.test(t) ||
-      /\b(telugu|hindi)\s*(session|slot)\b/i.test(t)
-    ) {
+    if (/iit|counselling|counseling|session|slot|telugu|hindi|bda/.test(t)) {
       return { intent: 'counselling_support', confidence: 'medium' };
     }
   }
@@ -879,28 +580,7 @@ function classifyIntent(text, botState, productLine, originalText = null) {
     return { intent: 'demo_support', confidence: 'medium' };
   }
 
-  // Absolute last resort before unknown → LLM/guardrail: still prefer counseling
-  // when there is any reasonable admissions-guidance confidence.
-  if (isCareerCounsellingJourneyEnabled()) {
-    const lateScore = scoreCareerCounsellingGuidance(t, original);
-    if (lateScore.score >= 50) {
-      return {
-        intent: 'career_counselling_journey',
-        confidence: 'medium',
-        intentReason: lateScore.reason || 'career_counselling_late_rescue',
-      };
-    }
-  }
-
   return { intent: 'unknown', confidence: 'low' };
-}
-
-function shouldBypassScopeFirewall(botState, intent, text = null, originalText = null) {
-  // Commerce never bypasses — even if mis-routed to FAQ.
-  if (isCommerceOutOfScopeRequest(text, originalText)) return false;
-  if (shouldBypassScopeFirewallForGuided(botState, intent)) return true;
-  if (shouldBypassScopeFirewallForJee(botState, text, originalText, intent)) return true;
-  return shouldBypassScopeFirewallForIit(botState, text, originalText, intent);
 }
 
 module.exports = {
@@ -908,7 +588,6 @@ module.exports = {
   normalizeText,
   shouldBypassScopeFirewall,
   isKnowledgeQuestion,
-  isBrandKnowledgeQuery,
   isCapabilityQuestion,
   isCounsellorProgramQuestion,
   isGuideXpertIdentityQuestion,
@@ -921,16 +600,10 @@ module.exports = {
   isRomanizedTeluguSocialGreeting,
   isRomanizedTeluguBranchGuidanceQuery,
   isMarksBasedRankPredictorQuery,
-  isExplicitRankPredictorEntryQuery,
   isRankBranchCollegePredictorQuery,
-  isRankOnlyCollegePredictorQuery,
   isRankBranchRecommendationQuery,
   isCareerCounsellingJourneyEntryQuery,
-  scoreCareerCounsellingGuidance,
-  isExplicitHumanHandoffRequest,
   hasRankSignal,
   hasBranchSignal,
   intentTextCandidates,
-  resolveCollegePredictorEntry,
-  isHighConfidenceCollegePredictorEntry,
 };

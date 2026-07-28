@@ -97,8 +97,8 @@ function isStateExpired(botState, now = new Date()) {
   return expiresAt <= now.getTime();
 }
 
-const DEEP_MERGE_CONTEXT_KEYS = new Set(['rank']);
-const ATOMIC_REPLACE_CONTEXT_KEYS = new Set(['predictionIdempotency', 'college']);
+const DEEP_MERGE_CONTEXT_KEYS = new Set(['college', 'rank']);
+const ATOMIC_REPLACE_CONTEXT_KEYS = new Set(['predictionIdempotency']);
 
 function mergeContext(existingContext, contextPatch) {
   const base =

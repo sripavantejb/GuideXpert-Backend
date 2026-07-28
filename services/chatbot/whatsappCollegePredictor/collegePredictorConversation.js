@@ -5,6 +5,8 @@ const {
   EXAM_DISPLAY,
   EXAM_MHT,
 } = require('../../../constants/whatsappCollegePredictor');
+const { AP_REGION_OPTIONS } = require('./apTs');
+const { WBJEE_QUOTA_OPTIONS } = require('./wbjee');
 const {
   SLOT_EXAM,
   SLOT_RANK,
@@ -18,142 +20,145 @@ const {
   admissionOptionsForExam,
 } = require('./collegePredictorSlots');
 
-const MAX_NON_RESULT_LINES = 5;
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-function clampReplyLines(text, maxLines = MAX_NON_RESULT_LINES) {
-  const lines = String(text || '')
-    .split('\n')
-    .map((l) => l.trimEnd());
-  // Drop trailing empties but keep short body
-  while (lines.length && lines[lines.length - 1] === '') lines.pop();
-  if (lines.length <= maxLines) return lines.join('\n');
-  return lines.slice(0, maxLines).join('\n');
+function examList() {
+  return EXAM_OPTIONS.map((o) => o.label).join(', ');
 }
 
-function examExamples() {
-  return 'TS EAMCET, JEE Main, KCET, AP EAMCET';
+function categoryList(ctx) {
+  return categoryOptionsForExam(ctx)
+    .map((o) => o.label)
+    .join(', ');
 }
 
-function shortCategoryHint(ctx) {
-  const opts = categoryOptionsForExam(ctx) || [];
-  const labels = opts.slice(0, 4).map((o) => o.label);
-  if (!labels.length) return 'OC, BC-A, SC, ST';
-  const more = opts.length > 4 ? ' (or type yours)' : '';
-  return `${labels.join(', ')}${more}`;
+// ---------------------------------------------------------------------------
+// Welcome / exam prompt — conversational, no numbered list
+// ---------------------------------------------------------------------------
+
+function buildConversationalWelcome() {
+  return [
+    'Sure! I can help you predict colleges.',
+    '',
+    'Which entrance exam did you write?',
+    '',
+    `You can type the exam name — for example: TS EAMCET, JEE Main, KCET.`,
+    '',
+    `Supported exams: ${examList()}.`,
+  ].join('\n');
 }
 
-function buildConversationalWelcome(ctx = {}) {
-  const rank = ctx && ctx.rank != null ? Number(ctx.rank) : null;
-  if (Number.isFinite(rank) && rank >= 1) {
-    return clampReplyLines(
-      [
-        'Absolutely! I can help you predict colleges.',
-        `I already have your rank (${rank}).`,
-        'Which entrance exam is this rank from?',
-        '',
-        `e.g. ${examExamples()}`,
-      ].join('\n')
-    );
-  }
-  return clampReplyLines(
-    [
-      'Sure! I can help you predict colleges.',
-      'Which entrance exam did you write?',
-      '',
-      `e.g. ${examExamples()}`,
-    ].join('\n')
-  );
-}
+// ---------------------------------------------------------------------------
+// Per-slot natural language questions
+// ---------------------------------------------------------------------------
 
 function buildQuestionForSlot(slot, ctx) {
   switch (slot) {
     case SLOT_EXAM:
-      return buildConversationalWelcome(ctx || {});
+      return buildConversationalWelcome();
 
     case SLOT_RANK:
-      return clampReplyLines(['Thanks!', "What's your rank?", '', 'Example: 18453'].join('\n'));
+      return [
+        'What is your rank?',
+        '',
+        'Example: 18453',
+      ].join('\n');
 
     case SLOT_PERCENTILE:
-      return clampReplyLines(
-        ['Got it!', "What's your percentile (1–100)?", '', 'Example: 92.5'].join('\n')
-      );
+      return [
+        'What is your percentile? (1 to 100)',
+        '',
+        'Example: 92.5',
+      ].join('\n');
 
     case SLOT_ADMISSION_TYPE: {
       const options = admissionOptionsForExam(ctx.exam);
-      const labels = (options || []).map((o) => o.label).join(' / ');
-      return clampReplyLines(
-        ['Thanks!', 'Which admission type?', '', labels || 'Type your admission type'].join('\n')
-      );
+      const labels = options.map((o) => o.label).join(', ');
+      return `Which admission type applies to you?\n\nOptions: ${labels}`;
     }
 
-    case SLOT_CATEGORY:
-      return clampReplyLines(
-        ['Thanks!', "What's your category?", '', `e.g. ${shortCategoryHint(ctx)}`].join('\n')
-      );
+    case SLOT_CATEGORY: {
+      const cats = categoryList(ctx);
+      return `Which reservation category do you belong to?\n\nYou can simply type your category — for example: ${cats}.`;
+    }
 
     case SLOT_GENDER:
-      return clampReplyLines(['Got it!', 'Male or Female?'].join('\n'));
+      return 'What is your gender? (Male / Female)';
 
     case SLOT_QUOTA:
-      return clampReplyLines(
-        ['Thanks!', 'Which quota?', '', 'All India or Home State (WB)'].join('\n')
-      );
+      return [
+        'Which quota applies to you?',
+        '',
+        'Options: All India, Home State (West Bengal).',
+      ].join('\n');
 
     case SLOT_REGION:
-      return clampReplyLines(
-        ['Almost done!', 'AU or SVU region?', '', 'AU = Andhra University, SVU = Sri Venkateswara'].join(
-          '\n'
-        )
-      );
+      return [
+        'Which university region do you belong to for AP EAMCET?',
+        '',
+        'Type AU (Andhra University) or SVU (Sri Venkateswara University).',
+      ].join('\n');
 
     default:
       return buildConversationalWelcome();
   }
 }
 
+// ---------------------------------------------------------------------------
+// Clarification / invalid input messages — natural, no numbered lists
+// ---------------------------------------------------------------------------
+
 function buildInvalidMessage(slot, ctx) {
   switch (slot) {
     case SLOT_EXAM:
-      return clampReplyLines(
-        [`Couldn't catch that exam.`, `Try: ${examExamples()}`].join('\n')
-      );
+      return `I couldn't identify that exam. Please type the exam name — for example: TS EAMCET, JEE Main, KCET.\n\nSupported exams: ${examList()}.`;
 
     case SLOT_RANK:
-      return clampReplyLines(['Please send rank as a number.', 'Example: 15000'].join('\n'));
+      return 'Please enter your rank as a number.\n\nExample: 15000';
 
     case SLOT_PERCENTILE:
-      return clampReplyLines(['Percentile should be 1–100.', 'Example: 92.5'].join('\n'));
+      return 'Please enter your percentile as a number between 1 and 100.\n\nExample: 92.5';
 
     case SLOT_ADMISSION_TYPE: {
       const options = admissionOptionsForExam(ctx.exam);
-      const labels = (options || []).map((o) => o.label).join(' / ');
-      return clampReplyLines([`Please type: ${labels || 'your admission type'}`].join('\n'));
+      const labels = options.map((o) => o.label).join(', ');
+      return `I couldn't identify your admission type. Please type one of: ${labels}.`;
     }
 
-    case SLOT_CATEGORY:
-      return clampReplyLines(
-        ['Please type your category.', `e.g. ${shortCategoryHint(ctx)}`].join('\n')
-      );
+    case SLOT_CATEGORY: {
+      const cats = categoryList(ctx);
+      return `I couldn't identify your reservation category. Could you tell me whether you're ${cats}?`;
+    }
 
     case SLOT_GENDER:
-      return clampReplyLines(['Please reply Male or Female.'].join('\n'));
+      return 'Please tell me your gender — Male or Female.';
 
     case SLOT_QUOTA:
-      return clampReplyLines(['Please reply All India or Home State.'].join('\n'));
+      return 'Please tell me your quota — All India or Home State (West Bengal).';
 
     case SLOT_REGION:
-      return clampReplyLines(['Please type AU or SVU.'].join('\n'));
+      return 'Please type your region — AU (Andhra University) or SVU (Sri Venkateswara University).';
 
     default:
-      return clampReplyLines(['Please send a valid answer.'].join('\n'));
+      return 'Please provide a valid answer.';
   }
 }
+
+// ---------------------------------------------------------------------------
+// Prediction header
+// ---------------------------------------------------------------------------
 
 function buildPredictingMessage(ctx) {
   const examLabel = EXAM_DISPLAY[ctx.exam] || ctx.exam;
   const score = ctx.exam === EXAM_MHT ? `percentile ${ctx.percentile}` : `rank ${ctx.rank}`;
-  return `Perfect — predicting for your ${examLabel} ${score}…`;
+  return `Perfect. Let me predict colleges for your ${examLabel} ${score}...`;
 }
+
+// ---------------------------------------------------------------------------
+// Kept for compatibility (used in a few places that still need the exam list)
+// ---------------------------------------------------------------------------
 
 function buildExamListHint() {
   return EXAM_OPTIONS.map((o) => o.label).join(', ');
@@ -165,6 +170,4 @@ module.exports = {
   buildInvalidMessage,
   buildPredictingMessage,
   buildExamListHint,
-  clampReplyLines,
-  MAX_NON_RESULT_LINES,
 };

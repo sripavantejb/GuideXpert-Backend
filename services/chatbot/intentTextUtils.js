@@ -4,8 +4,6 @@ const MENU_COMMAND_WORDS = ['menu', 'help', 'start'];
 
 function normalizeText(text) {
   return String(text || '')
-    .replace(/[\u200B-\u200D\uFEFF\u2060\u00A0]/g, '')
-    .normalize('NFKC')
     .trim()
     .toLowerCase()
     .replace(/\s+/g, ' ');
@@ -28,16 +26,9 @@ function matchesHelpMenuCommand(text) {
   return /^(help|help menu)\s*[.!?]?$/.test(String(text || '').trim());
 }
 
-function matchesStartMenuCommand(text) {
-  return /^(start|menu)\s*[.!?]?$/.test(String(text || '').trim());
-}
-
 function matchesMenuWord(text, word) {
   if (word === 'help') {
     return matchesHelpMenuCommand(text);
-  }
-  if (word === 'start' || word === 'menu') {
-    return matchesStartMenuCommand(text);
   }
   return matchesWordBoundary(text, word);
 }

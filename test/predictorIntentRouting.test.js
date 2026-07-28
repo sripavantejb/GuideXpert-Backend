@@ -45,27 +45,6 @@ function loadOrchestratorWithMocks({ prepareMultilingualInbound, finalizeMultili
 }
 
 describe('predictor intent routing', () => {
-  test('rank + which colleges routes to college_predictor (beats counseling)', () => {
-    const cases = [
-      "i got rank in 6000 can i know about which colleges i'll get ?",
-      'I got rank 6000. Can I know which colleges I\'ll get?',
-      'my rank is 6000 which colleges can I get',
-    ];
-    for (const text of cases) {
-      const r = classifyIntent(text, null, PRODUCT_LINE);
-      assert.equal(r.intent, 'college_predictor', text);
-      assert.equal(r.confidence, 'high', text);
-    }
-  });
-
-  test('vague college choice still routes to career counselling', () => {
-    const cases = ['help me choose a college', 'which college should I join'];
-    for (const text of cases) {
-      const r = classifyIntent(text, null, PRODUCT_LINE);
-      assert.equal(r.intent, 'career_counselling_journey', text);
-    }
-  });
-
   test('rank + branch routes to college_predictor', () => {
     const cases = [
       'Can I get CSE with rank 15000?',
@@ -141,7 +120,7 @@ describe('predictor intent orchestrator college rank+branch routing', () => {
     [orchestratorPath, middlewarePath, conversationLangPath].forEach((p) => delete require.cache[p]);
   });
 
-  async function runCase({ text, mockInbound, expectedSnippet, allowFinalize = false }) {
+  async function runCase({ text, mockInbound, expectedSnippet }) {
     let finalizeCalls = 0;
     setCollegePredictionIdempotencyDeps({
       getInboundPredictionCompletion: async () => null,
@@ -189,9 +168,7 @@ describe('predictor intent orchestrator college rank+branch routing', () => {
 
     orchestrator.setChatbotOrchestratorTestHooks(null);
     setCollegePredictionIdempotencyDeps({});
-    if (!allowFinalize) {
-      assert.equal(finalizeCalls, 0);
-    }
+    assert.equal(finalizeCalls, 0);
     assert.ok(outbound.length >= 1);
     assert.match(String(outbound[0]), expectedSnippet);
   }
@@ -208,7 +185,7 @@ describe('predictor intent orchestrator college rank+branch routing', () => {
         translationApplied: false,
         resolvedLanguage: 'en',
       },
-      expectedSnippet: /Absolutely! I can help you predict colleges[\s\S]*already have your rank \(15000\)/i,
+      expectedSnippet: /Sure! I can help you predict colleges/,
     });
   });
 
@@ -224,24 +201,7 @@ describe('predictor intent orchestrator college rank+branch routing', () => {
         translationApplied: true,
         resolvedLanguage: 'te',
       },
-      expectedSnippet: /Absolutely! I can help you predict colleges|already have your rank \(15000\)|Which entrance exam/i,
-      allowFinalize: true,
-    });
-  });
-
-  test('rank-in-6000 which colleges seeds rank and asks exam', async () => {
-    await runCase({
-      text: "i got rank in 6000 can i know about which colleges i'll get ?",
-      mockInbound: {
-        originalMessage: "i got rank in 6000 can i know about which colleges i'll get ?",
-        englishMessage: "i got rank in 6000 can i know about which colleges i'll get ?",
-        language: 'en',
-        detectedLanguage: 'en',
-        confidence: 0.95,
-        translationApplied: false,
-        resolvedLanguage: 'en',
-      },
-      expectedSnippet: /Absolutely! I can help you predict colleges[\s\S]*already have your rank \(6000\)[\s\S]*entrance exam/i,
+      expectedSnippet: /Sure! I can help you predict colleges|Which entrance exam did you write/,
     });
   });
 });

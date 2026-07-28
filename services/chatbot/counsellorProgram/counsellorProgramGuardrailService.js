@@ -46,8 +46,6 @@ function validateCounsellorProgramResponse({
   faqHits = [],
   userMessage = '',
   englishUserMessage = '',
-  leadContext = null,
-  resolvedLanguage = 'en',
 } = {}) {
   const text = String(response || '').trim();
   const identityQuestion = isGuideXpertIdentityQuestion(userMessage, englishUserMessage);
@@ -90,8 +88,6 @@ function validateCounsellorProgramResponse({
     knowledgeResults,
     userMessage,
     englishUserMessage,
-    leadContext,
-    resolvedLanguage,
   });
 
   if (identityQuestion && isUnsupportedFallbackText(validated.text)) {

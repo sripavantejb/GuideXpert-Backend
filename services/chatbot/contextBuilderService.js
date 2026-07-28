@@ -14,41 +14,18 @@ function buildCrmContext(leadContext) {
 
   const iit = leadContext.iit || {};
   const gx = leadContext.gx || {};
-  const booking = leadContext.bookingContext || leadContext.booking || {};
 
   const crmContext = {
-    name: cleanValue(booking.fullName) || cleanValue(iit.fullName) || cleanValue(gx.fullName),
+    name: cleanValue(iit.fullName) || cleanValue(gx.fullName),
     productLine: cleanValue(leadContext.productLine),
-    hasActiveBooking: booking.exists || leadContext.hasBooking ? 'true' : 'false',
-    bookingId: cleanValue(booking.bookingId),
-    bookingStatus: cleanValue(booking.bookingStatus),
-    sessionSlot: cleanValue(booking.sessionSlotLabel) || cleanValue(iit.slotBooking),
-    sessionDate: cleanValue(booking.sessionDate),
-    sessionTime: cleanValue(booking.sessionTime),
-    sessionDateTime:
-      cleanValue(booking.sessionInstantLabel) || cleanValue(iit.slotInstantLabel),
-    meetingLink: cleanValue(booking.meetingLink) || cleanValue(leadContext.meetingLink),
     counsellingStatus:
-      cleanValue(booking.demoStatusLabel) ||
       cleanValue(iit.callStatusLabel) ||
       cleanValue(iit.demoStatusLabel) ||
       cleanValue(iit.currentStep) ||
       cleanValue(gx.currentStep),
-    assignedCounsellor:
-      cleanValue(booking.assignedCounsellor) || cleanValue(iit.assignedBdaName),
-    lifecycleStage:
-      cleanValue(booking.lifecycleStage) || cleanValue(booking.leadStatusLabel),
-    preferredCollege: cleanValue(booking.preferredCollege),
-    preferredBranch: cleanValue(booking.preferredBranch),
-    state: cleanValue(booking.state) || cleanValue(booking.city),
-    examRegistration: cleanValue(booking.exam),
-    rankSubmitted: cleanValue(booking.rank),
-    categorySelected: cleanValue(booking.category),
-    humanCopilotActive: booking.humanCopilot?.active ? 'true' : 'false',
+    assignedCounsellor: cleanValue(iit.assignedBdaName),
     rankPredictorStatus: gx.rankPredictorLead ? 'available' : null,
     collegePredictorStatus: leadContext.collegePredictorStatus ? 'available' : null,
-    websiteBookingOnly:
-      'Counselling bookings are created on the GuideXpert website only. Never confirm or create bookings in chat unless hasActiveBooking is true.',
   };
 
   const filtered = Object.fromEntries(

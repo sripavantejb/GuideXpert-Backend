@@ -165,7 +165,6 @@ function validateSubmitBody(b) {
 function validateSection1Body(b) {
   const studentName = (b.studentName && String(b.studentName).trim()) || '';
   const mobileNumber = to10Digits(b.mobileNumber);
-  const currentClass = (b.currentClass && String(b.currentClass).trim()) || '';
 
   if (studentName.length < 2 || studentName.length > 100) {
     return { error: 'Student name must be 2–100 characters.' };
@@ -173,15 +172,11 @@ function validateSection1Body(b) {
   if (!INDIAN_MOBILE_REGEX.test(mobileNumber)) {
     return { error: 'Enter a valid 10-digit Indian mobile number for the student.' };
   }
-  if (!CURRENT_CLASS_OPTIONS.includes(currentClass)) {
-    return { error: 'Please select a valid current class.' };
-  }
 
   return {
     data: {
       studentName,
       mobileNumber,
-      currentClass,
       currentStep: 1,
       formCompleted: false,
       utm_source: (b.utm_source && String(b.utm_source).trim().slice(0, 120)) || undefined,
@@ -193,12 +188,16 @@ function validateSection1Body(b) {
 }
 
 function validateSection2Body(b) {
+  const currentClass = (b.currentClass && String(b.currentClass).trim()) || '';
   const sessionAttendee = (b.sessionAttendee && String(b.sessionAttendee).trim()) || '';
   const interestedBranch = (b.interestedBranch && String(b.interestedBranch).trim()) || '';
   const collegeBudget = (b.collegeBudget && String(b.collegeBudget).trim()) || '';
   const preferredLanguage = (b.preferredLanguage && String(b.preferredLanguage).trim()) || '';
   const preferredTimeSlotKey = (b.preferredTimeSlot && String(b.preferredTimeSlot).trim()) || '';
 
+  if (!CURRENT_CLASS_OPTIONS.includes(currentClass)) {
+    return { error: 'Please select a valid current class.' };
+  }
   if (!SESSION_ATTENDEE_OPTIONS.includes(sessionAttendee)) {
     return { error: 'Please select who will attend the session.' };
   }
@@ -224,6 +223,7 @@ function validateSection2Body(b) {
 
   return {
     data: {
+      currentClass,
       sessionAttendee,
       interestedBranch,
       collegeBudget,
@@ -443,7 +443,7 @@ exports.saveOneOnOneSection2 = async (req, res) => {
       });
     }
 
-    if (!existing.studentName || !existing.mobileNumber || !existing.currentClass) {
+    if (!existing.studentName || !existing.mobileNumber) {
       return res.status(400).json({
         success: false,
         message: 'Please complete step 1 before submitting.',

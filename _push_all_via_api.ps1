@@ -106,7 +106,7 @@ $newTree = & $gh api "repos/$repo/git/trees" --method POST --input $treePath | C
 Remove-Item $treePath -Force
 Write-Host ("new tree: {0}" -f $newTree.sha)
 
-$commitMsg = "Sync all local backend files to main.`n`nUpload every source file that differed from remote (excluding secrets and node_modules)."
+$commitMsg = "Harden web chat intents and move counselling class to step 2.`n`nAdd a web-chat state machine so menu and FAQ commands are not treated as college names, and accept current class during section 2 booking save."
 $commitPayload = (@{
   message = $commitMsg
   tree    = $newTree.sha

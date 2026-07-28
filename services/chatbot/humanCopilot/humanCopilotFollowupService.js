@@ -3,7 +3,7 @@
 const WhatsAppAgentHandoff = require('../../../models/WhatsAppAgentHandoff');
 const WhatsAppLeadScore = require('../../../models/WhatsAppLeadScore');
 const { OpenAiCompatibleProvider } = require('../../ai/providers/OpenAiCompatibleProvider');
-const { buildLeadContextWithBooking } = require('../bookingContext/bookingContextResolver');
+const { buildLeadContext } = require('../leadContextService');
 const { getLeadDetails } = require('../leadInsights/leadInsightsService');
 const { getConversationTranscript } = require('../chatbotAdminService');
 const { buildAuditEntry } = require('./humanCopilotAuditService');
@@ -360,16 +360,11 @@ function getPendingFollowup(handoff) {
 async function loadHandoffContext(handoff, inactiveDays) {
   const [transcript, leadContext, leadDetails, scoreDoc] = await Promise.all([
     getConversationTranscript(handoff.conversationId, 80),
-    buildLeadContextWithBooking({
+    buildLeadContext({
       phone10: handoff.phone,
       productLine: handoff.productLine,
       formSubmissionId: handoff.formSubmissionId,
       iitCounsellingSubmissionId: handoff.iitCounsellingSubmissionId,
-    }, handoff.conversationId, {
-      _id: handoff.conversationId,
-      currentHandoffId: handoff._id,
-      status: 'handoff',
-      botPaused: true,
     }),
     getLeadDetails(handoff.phone),
     WhatsAppLeadScore.findOne({ phone: handoff.phone })

@@ -32,12 +32,8 @@ const LLM_MAX_ATTEMPTS = 2;
 const DIRECT_FACTUAL_ICE_PATTERN =
   /\bwhat is (jos+a+a?|csab|crl rank|obc-?ncl rank|home state quota|other state quota|float|slide|freeze)\b/i;
 
-const ABOUT_FACTUAL_ICE_PATTERN =
-  /\b(tell me about|know about|want to know about|about)\b.{0,60}\b(jos+a+a?|csab|float|slide|freeze|crl|obc-?ncl|home state|other state)\b/i;
-
 function isDirectFactualIceQuery(text) {
-  const value = String(text || '').trim();
-  return DIRECT_FACTUAL_ICE_PATTERN.test(value) || ABOUT_FACTUAL_ICE_PATTERN.test(value);
+  return DIRECT_FACTUAL_ICE_PATTERN.test(String(text || '').trim());
 }
 
 function isUnsupportedIceFallbackText(text) {
@@ -186,8 +182,6 @@ async function answer({
       knowledgeResults,
       userMessage: languageMetadata?.originalMessage || text,
       englishUserMessage: languageMetadata?.translatedQuery || text,
-      leadContext,
-      resolvedLanguage: languageMetadata?.resolvedLanguage || 'en',
     });
 
     if (
@@ -224,35 +218,6 @@ async function answer({
     };
   } catch (e) {
     console.warn('[chatbot] iit_counselling_expert error', e.message);
-    const grounded = await resolveGroundedAnswerOnly(text);
-    if (grounded) return grounded;
-    return null;
-  }
-}
-
-async function resolveGroundedAnswerOnly(inboundText) {
-  const text = String(inboundText || '').trim();
-  if (!text) return null;
-  try {
-    const retrieval = await searchIitCounsellingKnowledge(text, { limit: 5 });
-    const groundedAnswer = resolveGroundedKbFallback(retrieval.kbResults, text);
-    if (!groundedAnswer) return null;
-    return {
-      text: groundedAnswer,
-      model: 'grounded_kb',
-      guardrailModified: false,
-      guardrailReason: 'grounded_kb_last_resort',
-      languageLog: {
-        englishResponse: groundedAnswer,
-        resultIds: (retrieval.kbResults || []).map((entry) => String(entry.id || '')),
-        retrievalMode: retrieval.metrics?.mode || null,
-        retrievalFallback: retrieval.metrics?.retrievalFallback || null,
-        answerSource: 'grounded_kb',
-        llmAttempts: 0,
-      },
-    };
-  } catch (error) {
-    console.warn('[chatbot] iit_counselling_expert grounded_last_resort_failed', error.message);
     return null;
   }
 }
@@ -280,7 +245,7 @@ async function runAnswerWithTimeout(params, timeoutMs) {
   } catch (e) {
     const reason = /timeout/i.test(e.message) ? 'timeout' : 'provider_error';
     console.warn('[chatbot] iit_counselling_expert_fallback', { reason, error: e.message });
-    return resolveGroundedAnswerOnly(params?.inboundText);
+    return null;
   }
 }
 
@@ -300,7 +265,7 @@ async function answerWithTimeout(params, timeoutMs = ICE_ANSWER_TIMEOUT_MS) {
     }
   }
 
-  return resolveGroundedAnswerOnly(params?.inboundText);
+  return null;
 }
 
 module.exports = {

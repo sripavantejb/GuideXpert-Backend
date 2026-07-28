@@ -6,10 +6,10 @@ const {
 } = require('../../../constants/careerCounsellingJourney');
 
 const BLOCKED_ANSWER_TERMS =
-  /\b(scaler|newton|admission test|nat exam|scholarship|register now|sign up)\b/i;
+  /\b(niat|scaler|newton|admission test|nat exam|scholarship|register now|sign up)\b/i;
 
 const QUESTION_SIGNAL =
-  /\?\s*$|\b(what|how|why|when|where|which|who|can i|should i|is it|are there|tell me|explain|difference between|meaning of|means?)\b/i;
+  /\?\s*$|\b(what|how|why|when|where|which|who|can i|should i|is it|are there|tell me|explain|difference between|meaning of)\b/i;
 
 function isCounsellingQuestion(text) {
   const t = String(text || '').trim();
