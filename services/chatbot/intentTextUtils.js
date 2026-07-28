@@ -1,6 +1,6 @@
 'use strict';
 
-const MENU_COMMAND_WORDS = ['menu', 'help', 'start'];
+const MENU_COMMAND_WORDS = ['menu', 'help'];
 
 function normalizeText(text) {
   return String(text || '')
@@ -42,8 +42,12 @@ function matchesStandaloneGreeting(text) {
   return /^(hi|hello|hey|hola|namaste|start)$/.test(text);
 }
 
+/**
+ * Explicit MENU / HELP only. Standalone greetings (hi/hello/start) must NOT
+ * open the legacy IIT/GX main-menu — they enter Master Flow v2 instead.
+ */
 function matchesMainMenuTrigger(text) {
-  return matchesMenuCommands(text) || matchesStandaloneGreeting(text);
+  return matchesMenuCommands(text);
 }
 
 module.exports = {

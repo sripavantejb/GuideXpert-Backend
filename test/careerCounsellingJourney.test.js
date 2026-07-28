@@ -49,7 +49,8 @@ describe('careerCounsellingIntentService', () => {
     test(`entry: "${text}"`, () => {
       assert.equal(isCareerCounsellingJourneyEntryQuery(text), true);
       const result = classifyIntent(text, null, 'unknown', text);
-      assert.equal(result.intent, 'career_counselling_journey');
+      // Live door is Master Flow v2; frozen journey entry classifier still matches.
+      assert.equal(result.intent, 'career_counselling_flow_v2');
     });
   }
 
@@ -228,11 +229,17 @@ describe('career counselling guided flow orchestration', () => {
       updateConversationIntent: async () => {},
       outbound: {
         sendBotTextReply: async (args) => {
-          outboundCalls.push(args);
+          outboundCalls.push({ channel: 'text', ...args });
           return { success: true };
         },
-        sendBotButtonReply: async () => ({ success: true }),
-        sendBotListReply: async () => ({ success: true }),
+        sendBotButtonReply: async (args) => {
+          outboundCalls.push({ channel: 'button', ...args });
+          return { success: true };
+        },
+        sendBotListReply: async (args) => {
+          outboundCalls.push({ channel: 'list', ...args });
+          return { success: true };
+        },
       },
       ...overrides,
     };
@@ -284,7 +291,7 @@ describe('career counselling guided flow orchestration', () => {
     assert.equal(isGuidedFlowInterrupt('menu'), true);
   });
 
-  test('new entry starts journey from intent routing', async () => {
+  test('new entry starts Master Flow v2 from intent routing (legacy journey door retired)', async () => {
     setChatbotOrchestratorTestHooks(
       makeHooks({
         getBotState: async () => ({ state: 'main_menu', context: {} }),
@@ -302,7 +309,9 @@ describe('career counselling guided flow orchestration', () => {
     });
 
     assert.equal(outboundCalls.length, 1);
-    assert.match(outboundCalls[0].text || '', /important decisions/i);
-    assert.ok(transitionLog.some((t) => t.state === 'career_counselling_journey'));
+    const body = outboundCalls[0].body || outboundCalls[0].text || '';
+    assert.match(body, /Rithika/i);
+    assert.doesNotMatch(body, /important decisions/i);
+    assert.ok(transitionLog.some((t) => t.state === 'career_counselling_flow_v2'));
   });
 });

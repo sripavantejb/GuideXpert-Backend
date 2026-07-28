@@ -4,7 +4,7 @@ const {
   isCounsellorProgramQuestion,
   shouldBypassScopeFirewall,
 } = require('./intentClassifierService');
-const { tryRouteActiveGuidedFlow, applyGuidedFlowSwitchTurn } = require('./guidedFlows/guidedFlowOrchestrator');
+const { tryRouteActiveGuidedFlow, applyGuidedFlowSwitchTurn, executeActiveGuidedFlowTurn } = require('./guidedFlows/guidedFlowOrchestrator');
 const { getGuidedFlowByIntent } = require('./guidedFlows/guidedFlowRegistry');
 const { isSupportedLanguage, normalizeLanguageCode } = require('../../constants/languageConstants');
 const botStateService = require('./botStateService');
@@ -94,6 +94,7 @@ function localizationTierForIntent(intent) {
     case 'counselling_support':
     case 'college_predictor':
     case 'career_counselling_journey':
+    case 'career_counselling_flow_v2':
     case 'faq':
       return 'static';
     default:
@@ -766,6 +767,41 @@ async function processInboundCore({
     return result;
   }
 
+  // Master Flow v2 live entry / continue — use the interactive-capable
+  // guided-flow executor (list/button replies), not the text-only switch path.
+  if (
+    intentResult.intent === 'career_counselling_flow_v2' ||
+    intentResult.intent === 'career_counselling_flow_v2_continue'
+  ) {
+    const flow = getGuidedFlowByIntent(intentResult.intent);
+    if (flow) {
+      const priorContext = botState?.context || {};
+      const seededContext = {
+        ...emptySubflows(),
+        flowV2: priorContext.flowV2 || { stage: null, profile: null },
+      };
+      await transitionState(
+        activeConversation._id,
+        activeConversation.phone,
+        flow.botState,
+        seededContext
+      );
+      return executeActiveGuidedFlowTurn({
+        flow,
+        activeConversation,
+        inbound,
+        botState: { state: flow.botState, context: seededContext },
+        multilingualInbound,
+        startedAt,
+        transitionState,
+        deliverOutboundReply,
+        logInboundResult,
+        h,
+        resolvedLanguageFrom,
+      });
+    }
+  }
+
   // Scope Firewall: runs after control-intent early returns and before assistant
   // routing. Every message (including sticky KA sessions) is re-checked so
   // out-of-domain topics never reach any LLM path.
@@ -938,7 +974,9 @@ async function processInboundCore({
     case 'college_predictor':
     case 'college_predictor_continue':
     case 'career_counselling_journey':
-    case 'career_counselling_journey_continue': {
+    case 'career_counselling_journey_continue':
+    case 'career_counselling_flow_v2':
+    case 'career_counselling_flow_v2_continue': {
       const flow = getGuidedFlowByIntent(intentResult.intent);
       if (!flow) break;
       const applied = await applyGuidedFlowSwitchTurn({
