@@ -231,7 +231,7 @@ describe('r10Handler — sub-case copy + silent PCM/PCB save', () => {
     assert.equal(result.contextPatch.stage, 'b2_goal_awaiting_reply');
     assert.equal(result.interactive.type, 'button');
     assert.equal(result.interactive.buttons.length, 3);
-    assert.match(result.interactive.body, /What are you mainly trying to figure out/i);
+    assert.match(result.interactive.body, /main thing you want clarity on/i);
   });
   test('pcb -> silent save and enters the required medical/tech split without a confirm prompt', () => {
     const result = handleR10(ctxWithProfile(), 'pcb', { subCase: 'pcb' });

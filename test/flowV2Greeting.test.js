@@ -73,7 +73,7 @@ describe('flowV2 greeting — Node E entry', () => {
     assert.equal(result.contextPatch.stage, 'b2_goal_awaiting_reply');
     assert.equal(result.interactive.type, 'button');
     assert.equal(result.interactive.buttons.length, 3);
-    assert.match(result.interactive.body, /What are you mainly trying to figure out/i);
+    assert.match(result.interactive.body, /main thing you want clarity on/i);
   });
 
   test('unknown name still opens qualification list immediately (never asks for name)', () => {
@@ -170,7 +170,7 @@ describe('flowV2 greeting — qualification routes', () => {
     assert.equal(result.contextPatch.stage, 'b2_goal_awaiting_reply');
     assert.equal(result.interactive.type, 'button');
     assert.equal(result.interactive.buttons.length, 3);
-    assert.match(result.interactive.body, /What are you mainly trying to figure out/i);
+    assert.match(result.interactive.body, /main thing you want clarity on/i);
   });
 
   test('all non-PCM list rows enter their required side tracks', () => {
