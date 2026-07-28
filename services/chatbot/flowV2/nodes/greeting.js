@@ -254,7 +254,9 @@ function qualificationRoute(mergedProfile, qualification) {
       replyText: "No problem — tell me in your own words where you're at and I'll take it from there.",
     });
   }
-  return resultWithProfile(mergedProfile, 'greeting_captured_pending_b1', { replyText: 'Got it.' });
+  // Default eng path (12th PCM and any unhandled row) — Master Flow: fire B1
+  // in the same turn, not a dead-end "Got it." park on greeting_captured_pending_b1.
+  return continueToB1(mergedProfile);
 }
 
 function acceptQualification(ctx, qualification, extraPatch = {}) {
@@ -430,27 +432,27 @@ function handleGreetingReply(ctx, text, options = {}) {
     const accepted = acceptQualification(ctx, qualification, { ...rest, temperature });
     if (isR3) {
       const reflection = r3Reflection(text, options.classification.extractedSlots || patch);
-      if (accepted.contextPatch.stage === 'greeting_captured_pending_b1') {
-        const b1 = handleB1Entry(withMergedProfile(ctx, accepted.contextPatch.profile));
-        if (b1.contextPatch.stage === 'b3_awaiting_entry') {
-          return combineNodeResults(
-            [reflection],
-            handleB3Entry(withMergedProfile(ctx, b1.contextPatch.profile))
-          );
-        }
-        const combined = combineNodeResults([reflection], b1);
-        const hasFullConstraintSkip =
-          Boolean(accepted.contextPatch.profile.branchInterest) &&
-          Boolean(accepted.contextPatch.profile.budgetBand) &&
-          Boolean(accepted.contextPatch.profile.cityPref);
-        return hasFullConstraintSkip
-          ? {
-              ...combined,
-              contextPatch: { ...combined.contextPatch, r3OverAnswerPending: true },
-            }
-          : combined;
+      let next = accepted;
+      if (next.contextPatch.stage === 'greeting_captured_pending_b1') {
+        next = handleB1Entry(withMergedProfile(ctx, accepted.contextPatch.profile));
       }
-      return combineNodeResults([reflection], accepted);
+      if (next.contextPatch.stage === 'b3_awaiting_entry') {
+        return combineNodeResults(
+          [reflection],
+          handleB3Entry(withMergedProfile(ctx, next.contextPatch.profile))
+        );
+      }
+      const combined = combineNodeResults([reflection], next);
+      const hasFullConstraintSkip =
+        Boolean(accepted.contextPatch.profile.branchInterest) &&
+        Boolean(accepted.contextPatch.profile.budgetBand) &&
+        Boolean(accepted.contextPatch.profile.cityPref);
+      return hasFullConstraintSkip
+        ? {
+            ...combined,
+            contextPatch: { ...combined.contextPatch, r3OverAnswerPending: true },
+          }
+        : combined;
     }
     return accepted;
   }
@@ -462,7 +464,7 @@ function handleGreetingReply(ctx, text, options = {}) {
 }
 
 function continueToB1(profile) {
-  return resultWithProfile(profile, 'greeting_captured_pending_b1');
+  return handleB1Entry({ flowV2: { profile } });
 }
 
 function handleEntrySideTrackReply(ctx, text) {
