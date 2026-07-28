@@ -58,8 +58,9 @@ describe('flowV2 greeting — entry', () => {
       stream: 'PCM',
     };
     const result = handleGreetingEntry({ flowV2: { profile } });
-    assert.equal(result.contextPatch.stage, 'greeting_captured_pending_b1');
-    assert.equal(result.interactive, null);
+    assert.equal(result.contextPatch.stage, 'b1_awaiting_reply');
+    assert.equal(result.interactive.type, 'list');
+    assert.match(result.interactive.body, /What matters most to you right now/i);
   });
 
   test('unknown name gets the exact Rithika greeting and no qualification list yet', () => {
@@ -184,7 +185,10 @@ describe('flowV2 greeting — qualification routes', () => {
     assert.equal(result.contextPatch.profile.qualification, '12th Completed (PCM)');
     assert.equal(result.contextPatch.profile.stream, 'PCM');
     assert.equal(result.contextPatch.profile.cityPref, 'Hyderabad');
-    assert.equal(result.contextPatch.stage, 'greeting_captured_pending_b1');
+    assert.equal(result.contextPatch.stage, 'b1_awaiting_reply');
+    assert.equal(result.interactive.type, 'list');
+    assert.match(result.interactive.body, /Perfect — MPC keeps engineering/i);
+    assert.match(result.interactive.body, /What matters most to you right now/i);
   });
 
   test('all non-PCM rows enter their required side tracks', () => {
@@ -227,7 +231,8 @@ describe('flowV2 greeting — qualification routes', () => {
     ];
     for (const [stage, profile, answer] of cases) {
       const result = handleEntrySideTrackReply({ flowV2: { stage, profile } }, answer);
-      assert.equal(result.contextPatch.stage, 'greeting_captured_pending_b1', stage);
+      assert.equal(result.contextPatch.stage, 'b1_awaiting_reply', stage);
+      assert.equal(result.interactive.type, 'list', stage);
     }
     const diploma = handleEntrySideTrackReply(
       { flowV2: { stage: 'entry_diploma_awaiting_reply', profile: cases[2][1] } },
@@ -293,7 +298,8 @@ describe('flowV2 greeting — qualification routes', () => {
       { flowV2: { stage: 'entry_arts_honest_scope', profile: artsProfile } },
       'Tell me about tech anyway'
     );
-    assert.equal(tech.contextPatch.stage, 'greeting_captured_pending_b1');
+    assert.equal(tech.contextPatch.stage, 'b1_awaiting_reply');
+    assert.equal(tech.interactive.type, 'list');
 
     const class10 = handleEntrySideTrackReply(
       {

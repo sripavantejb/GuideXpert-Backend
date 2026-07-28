@@ -18,7 +18,8 @@
  *
  * "SILENT" save (PCM/PCB, per spec guard rail) means: no interactive
  * Yes/No confirmation prompt is shown — NOT that zero reply is sent.
- * `acceptQualification`'s own short acknowledgment ("Got it — ...") is
+ * `acceptQualification` now chains into B1 for PCM (Master Flow happy path),
+ * so the student sees the goal list in the same turn — no dead-end "Got it."
  * used, since it is an acknowledgment, not a "right?" confirmation
  * question.
  */
