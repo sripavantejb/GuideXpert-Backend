@@ -77,8 +77,9 @@
  *   pendingSideEffect?: { type: string, execute: () => Promise<object> },
  * }
  *
- * ROUTING ORDER (Phase 3, unchanged since): crisis-lock short-circuit >
- * Node 0 pre-empt > classifyReply() > 8 fully-wired bucket handlers (R5,
+ * ROUTING ORDER (Master Flow Stage 1): persisted crisis-lock short-circuit >
+ * I-10 distress pre-check > Node 0 pre-empt > classifyReply() >
+ * 8 fully-wired bucket handlers (R5,
  * R6, R7 both tiers, R8, R9, R10, R11, R12) > R1-R4 fallthrough
  * (stage-based routing, now covering B1/B2/the core-fork and its exit
  * sub-flow as of Phase 4, B3 as of Phase 5, B5/B6 as of Phase 6, and B7 as
@@ -97,6 +98,7 @@ const { handleB5Entry, handleB5Reply } = require('./nodes/b5Shortlist');
 const { handleB6Entry } = require('./nodes/b6TheCase');
 const { handleB7Entry, handleB7Reply } = require('./nodes/b7Book');
 const { classifyReply } = require('./router/classifyReply');
+const { isTier2Crisis } = require('./router/crisisClassifier');
 const { mergeFlowV2Profile } = require('./flowV2ProfileMerge');
 const { emptyFlowV2Profile } = require('../../../constants/careerCounsellingFlowV2Profile');
 
@@ -273,6 +275,16 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
     return crisisLockedReply();
   }
 
+  // I-10 genuine distress is a PIPELINE PRE-CHECK, not an ordinary
+  // router branch. It must run before Node 0, slot extraction, and
+  // classifyReply — a message such as "book a session, my life is over"
+  // is a crisis escalation, never a booking conversion. classifyReply
+  // retains the same check as defense in depth for direct callers, but
+  // every real Flow v2 turn reaches this check first.
+  if (isTier2Crisis(text)) {
+    return handleR7Tier2(ctx, text);
+  }
+
   // Node 0 is a pre-empt, not a stage: checked next, on every turn,
   // regardless of context.flowV2.stage — EXCEPT once the student is
   // already inside B7 · Book (Phase 7). Node 0's OVERRIDE_PATTERNS
@@ -295,7 +307,9 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
   });
   const { bucket } = classification;
 
-  // R7 Tier-2 — hard stop, checked before any other bucket dispatch.
+  // R7 Tier-2 — defensive fallback for a future/direct classifier path.
+  // The normal dispatcher path was already intercepted by the I-10
+  // pipeline pre-check above before Node 0.
   if (bucket === 'R7' && classification.tier === 2) {
     return handleR7Tier2(ctx, text);
   }

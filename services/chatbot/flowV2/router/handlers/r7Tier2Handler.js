@@ -26,17 +26,15 @@
  * future live pipeline, in any context — with no external plumbing
  * required.
  *
- * HOW this stays synchronous without blocking: `processFlowV2Turn`'s
- * contract (plain-object return, not a Promise) is unchanged — Node 0 and
- * Greeting remain fully synchronous. `executeCrisisHandoff()` (an async
- * function) is invoked here WITHOUT `await` ("fire and forget") — the
- * Node.js event loop runs it to completion in the background regardless
- * of whether the caller awaits it, as long as the process stays alive
- * (true for a running server). A `.catch()` prevents an unhandled-
- * rejection crash and logs failures. `createHandoff()` is itself
- * idempotent (returns the existing open/claimed ticket for this
+ * HOW this returns without blocking: `processFlowV2Turn` is async, but
+ * this handler is called before the dispatcher's first `await`.
+ * `executeCrisisHandoff()` is invoked here without awaiting the database
+ * write, so ticket creation begins immediately and an outage cannot
+ * suppress the safety reply or persisted lock patch. A `.catch()` prevents
+ * an unhandled-rejection crash and logs failures. `createHandoff()` is
+ * itself idempotent (returns the existing open/claimed ticket for this
  * conversation if one already exists), so firing it eagerly is safe even
- * if this handler were somehow invoked more than once.
+ * if a webhook retry reaches this handler again before the lock is saved.
  *
  * `handoffService` and `WhatsAppAgentHandoff` are required as-is (not
  * modified) — swap them via `deps` (2nd arg to `buildCrisisHandoffSideEffect`,
@@ -103,8 +101,8 @@ function handleR7Tier2(ctx, text, deps = {}) {
   const executeCrisisHandoff = buildCrisisHandoffSideEffect(ctx, text, deps);
 
   // Fire it NOW — do not wait for some future caller to remember to.
-  // Errors are caught and logged, never thrown into the synchronous
-  // caller (processFlowV2Turn must never become a Promise).
+  // Errors are caught and logged, never thrown into the async dispatcher's
+  // response path — the safety reply and lock must not depend on DB health.
   const onSideEffectError =
     deps.onSideEffectError ||
     ((err) => {

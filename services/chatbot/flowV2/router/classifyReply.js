@@ -27,6 +27,7 @@
  */
 
 const { extractFlowV2Slots } = require('../flowV2SlotExtractor');
+const { isTier2Crisis, R7_TIER2_CRISIS_PATTERNS } = require('./crisisClassifier');
 
 /** All 13 bucket ids, for reference/validation elsewhere. R13 is never
  * returned by classifyReply — see module docstring. */
@@ -58,21 +59,6 @@ const BUCKETS = Object.freeze({
  * instead) would also misroute a student into an unrecoverable crisis lock —
  * so this list is intentionally NOT expanded with broad/ambiguous phrasing.
  */
-const R7_TIER2_CRISIS_PATTERNS = Object.freeze([
-  /\bmy life is over\b/i,
-  /\bno point (in )?living\b/i,
-  /\bno point (in )?going on\b/i,
-  /\beveryone( would| will)? be better off without me\b/i,
-  /\bi want to (die|end it all|end my life)\b/i,
-  /\b(want|going) to kill myself\b/i,
-  /\bsuicid(e|al)\b/i,
-  /\bcan'?t (take it anymore|go on anymore|do this anymore)\b/i,
-  /\bi('m| am) done with (life|everything)\b/i,
-  /\bnothing matters anymore\b/i,
-  /\bi don'?t want to (live|be alive) anymore\b/i,
-  /\bself[- ]harm\b/i,
-]);
-
 /** R7 TIER-1 — disappointment / pressure. Does NOT overlap with Tier-2 —
  * checked second, only after Tier-2 has already failed to match. */
 const R7_TIER1_PATTERNS = Object.freeze([
@@ -213,12 +199,16 @@ function classifyReply(text, profile = {}, ctx = {}) {
   const raw = String(text || '');
   const t = raw.toLowerCase();
   const messageType = ctx.messageType || 'text';
-  const extractedSlots = extractFlowV2Slots(raw, profile);
 
-  // R7 TIER-2 — checked FIRST, always, unconditionally. No exceptions.
-  if (matchAny(R7_TIER2_CRISIS_PATTERNS, t)) {
+  // Defense in depth: the dispatcher already performs this exact I-10
+  // check before Node 0 and before entering the router at all. Keep the
+  // router-level check too for direct callers, and keep it before slot
+  // extraction so even those callers preserve the same safety ordering.
+  if (isTier2Crisis(raw)) {
     return { bucket: BUCKETS.R7, tier: 2, confidence: 0.98, extractedSlots: {}, subCase: 'tier2' };
   }
+
+  const extractedSlots = extractFlowV2Slots(raw, profile);
 
   // R7 TIER-1 — checked second.
   if (matchAny(R7_TIER1_PATTERNS, t)) {
