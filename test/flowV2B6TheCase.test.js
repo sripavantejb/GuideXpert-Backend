@@ -148,8 +148,13 @@ describe('B8/B9 — full chained transition through the dispatcher', () => {
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     result = await processFlowV2Turn(ctx, 'Yes, narrow it down');
     assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
+    assert.equal(result.contextPatch.profile.fitCollege, 'niat');
     assert.equal(result.contextPatch.profile.qualification, 'Class 12 (MPC)');
     assert.ok(result.interactive || (result.replyParts && result.replyParts.length));
+    const afterYes = [...(result.replyParts || []), result.replyText, result.interactive?.body]
+      .filter(Boolean)
+      .join('\n');
+    assert.match(afterYes, /\*NIAT\*/i);
   });
 
   test('compare-on-tap stays on FIT then yes advances to booking', async () => {

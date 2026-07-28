@@ -59,7 +59,7 @@ describe('Master Flow Stage 4b — B1/B2/B3/B5/B7 reconciliation', () => {
     assert.equal(knownState.contextPatch.stage, 'b8_awaiting_entry');
   });
 
-  test('B8 emits exactly three flat colleges with disclosure + FIT ask', () => {
+  test('B8 emits exactly five flat colleges with disclosure + FIT ask', () => {
     const result = handleB5Entry(
       ctx('b5_awaiting_entry', {
         goalPriority: ['placement'],
@@ -68,11 +68,12 @@ describe('Master Flow Stage 4b — B1/B2/B3/B5/B7 reconciliation', () => {
         cityPref: 'Hyderabad',
       })
     );
-    assert.equal(result.contextPatch.profile.shortlist.length, 3);
+    assert.equal(result.contextPatch.profile.shortlist.length, 5);
     const visible = [...(result.replyParts || []), result.replyText, result.interactive?.body]
       .filter(Boolean)
       .join('\n');
     assert.match(visible, /GuideXpert works with/i);
+    assert.match(visible, /these five are worth looking at/i);
     assert.doesNotMatch(visible, /\*Best Match\*/i);
     assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
     assert.ok(result.interactive.buttons.some((b) => /narrow/i.test(b.title)));

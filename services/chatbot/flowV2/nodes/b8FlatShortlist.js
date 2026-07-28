@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Flow V3 — B8 · SHORTLIST (3 flat + mandatory disclosure).
+ * Flow V3 — B8 · SHORTLIST (5 flat new-age + mandatory disclosure).
  *
  * DEFAULTED PENDING BUSINESS CONFIRMATION — ◆ DIFF-1 differentiator lines
  * are provisional until content fact-checks them.
@@ -12,7 +12,7 @@
 const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
 const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingFlowV2Profile');
 const { assertGuardrails } = require('../../../../constants/careerCounsellingFlowV2Guardrails');
-const { withMergedProfile, combineNodeResults, advanceToB9 } = require('../flowV2NodeUtils');
+const { withMergedProfile, combineNodeResults } = require('../flowV2NodeUtils');
 
 /** DEFAULTED PENDING BUSINESS CONFIRMATION — ◆ DIFF-1 */
 const FLAT_CATALOG = Object.freeze([
@@ -37,13 +37,27 @@ const FLAT_CATALOG = Object.freeze([
     differentiator:
       'software engineering with industry mentorship emphasis — strongest when mentorship and career scope matter',
   }),
+  Object.freeze({
+    id: 'plaksha',
+    name: 'Plaksha University',
+    // DEFAULTED PENDING BUSINESS CONFIRMATION — ◆ DIFF-1
+    differentiator:
+      'interdisciplinary tech education with a research-leaning campus — strongest when breadth across tech domains matters',
+  }),
+  Object.freeze({
+    id: 'kalvium',
+    name: 'Kalvium',
+    // DEFAULTED PENDING BUSINESS CONFIRMATION — ◆ DIFF-1
+    differentiator:
+      'work-integrated engineering model with early industry exposure — strongest when earning-while-learning structure matters',
+  }),
 ]);
 
 const WIDER_CATALOG_LINE =
-  "Wider options people often ask about: Plaksha · Scaler · Newton · Kalvium · NIAT · Masters' Union · Krea · Ahmedabad Univ · UPES · SRM AP.\n\nSame caveat: these are colleges GuideXpert works with, so we know them well — and you should weigh that.";
+  "Wider options people often ask about: Masters' Union · Krea · Ahmedabad Univ · UPES · SRM AP.\n\nSame caveat: these are colleges GuideXpert works with, so we know them well — and you should weigh that.";
 
 const DISCLOSURE =
-  'Straight up: these are colleges GuideXpert works with, so we know them well — and you should weigh that. Run all three through the seven checks above, and run any other college you\'re considering through the same list.\n\nThey\'re different from each other in learning style, fees and location, so the right one depends on you.';
+  "Straight up: these are colleges GuideXpert works with, so we know them well — and you should weigh that. Run all five through the seven checks above, and run any other college you're considering through the same list.\n\nThey're different from each other in learning style, fees and location, so the right one depends on you.";
 
 function interestPhrase(profile) {
   const cluster = profile?.interestCluster;
@@ -66,7 +80,6 @@ function priorityPhrase(profile) {
 function orderCatalog(profile) {
   const list = [...FLAT_CATALOG];
   const primary = String((profile?.goalPriority && profile.goalPriority[0]) || '').toLowerCase();
-  // Fees priority: lead with fee reality note on lines (all three still shown flat).
   if (primary === 'fees' || primary === 'affordable' || primary === 'fee') {
     return list.map((c) => ({
       ...c,
@@ -95,7 +108,7 @@ function orderCatalog(profile) {
 
 function buildShortlistBody(profile, colleges) {
   const lines = [
-    `From what you've told me — ${interestPhrase(profile)}, and ${priorityPhrase(profile)} — these three are worth looking at:`,
+    `From what you've told me — ${interestPhrase(profile)}, and ${priorityPhrase(profile)} — these five are worth looking at:`,
     '',
   ];
   for (const c of colleges) {
@@ -117,7 +130,6 @@ function handleB8Entry(ctx) {
     profile.status === 'out_of_scope_core' ||
     (profile.coreBridgeClosed === true && !profile.branchInterest)
   ) {
-    // Pure-core exit should not reach B8; soft hold.
     return {
       replyText: "We're parked on the honest core-engineering path — message anytime if you want to revisit.",
       replyParts: null,
@@ -133,13 +145,8 @@ function handleB8Entry(ctx) {
   assertGuardrails(body);
 
   const shortlist = colleges.map((c) => ({ id: c.id, name: c.name, differentiator: c.differentiator }));
-  const merged = mergeFlowV2Profile(profile, {
-    shortlist,
-  });
-  // Persist delivery markers on profile via known slots when present.
-  if ('checklistSent' in merged) {
-    merged.shortlist = shortlist;
-  }
+  const merged = mergeFlowV2Profile(profile, { shortlist });
+  merged.shortlist = shortlist;
 
   const fit = require('./b9Fit');
   const next = fit.handleB9Entry(withMergedProfile(ctx, merged));
@@ -170,4 +177,6 @@ module.exports = {
   FLAT_CATALOG,
   DISCLOSURE,
   WIDER_CATALOG_LINE,
+  interestPhrase,
+  priorityPhrase,
 };

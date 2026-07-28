@@ -1838,14 +1838,16 @@ B8  ·  SHORTLIST   (was: v2 B5 · LIST)
 ├── 🤖 COPY
 │
 │      From what you've told me — {interest_phrase},
-│      {priority_phrase} — these three are worth looking at:
+│      {priority_phrase} — these five are worth looking at:
 │
 │      *Newton School of Technology* — {differentiator_1}
 │      *NIAT* — {differentiator_2}
 │      *Scaler School of Technology* — {differentiator_3}
+│      *Plaksha University* — {differentiator_4}
+│      *Kalvium* — {differentiator_5}
 │
 │      Straight up: these are colleges GuideXpert works with, so we
-│      know them well — and you should weigh that. Run all three
+│      know them well — and you should weigh that. Run all five
 │      through the seven checks above, and run any other college
 │      you're considering through the same list.
 │
@@ -1886,72 +1888,54 @@ B8  ·  SHORTLIST   (was: v2 B5 · LIST)
 ├── 8.4 · THE WIDER CATALOG — on tap only
 │      👤 "show me all" / "what are the other options" / "full list"
 │      🤖 the wider institution list —
-│         Plaksha · Scaler · Newton · Kalvium · NIAT · Masters' Union ·
-│         Krea · Ahmedabad Univ · UPES · SRM AP
-│      ⚠ same disclosure line applies. ⚠ NIAT stays mid-list here and
-│        appears first in the shortlist ONLY when the weights genuinely
-│        put it there — never forced.
+│         Masters' Union · Krea · Ahmedabad Univ · UPES · SRM AP
+│      ⚠ same disclosure line applies.
 │
 ├── ▣ SAVES
 │      shortlist_shown[] (in display order) · shortlist_timestamp
 │
 ├── ⚠ GUARDS
 │   ├── B8.1  ✂ NO RANKING. The company flow ranked these 🥇🥈🥉.
-│   │         Delete the medals. We are not in a position to rank
-│   │         three colleges for a student we have known for seven
-│   │         minutes, and a ranking we cannot defend is a claim under
-│   │         L9. Three options, presented flat. B9 narrows — from the
-│   │         student's stated priority, not from our preference.
+│   │         Delete the medals. Five options, presented flat. B9
+│   │         narrows with a counsellor-style recommendation — reason
+│   │         stated first — not medals.
 │   ├── B8.2  ✂ DISCLOSURE IS MANDATORY (L13). Not optional, not moved
-│   │         to the end, not softened. It is also the single strongest
-│   │         trust signal in the flow — most competitors won't say it,
-│   │         and students notice.
-│   │         ⚠ If money affects the ORDER and not just membership, the
-│   │           line must say so.
-│   ├── B8.3  Exactly three by default. Two looks thin; five means
-│   │         nobody looks at any of them.
+│   │         to the end, not softened.
+│   ├── B8.3  Exactly five by default (Newton · NIAT · Scaler ·
+│   │         Plaksha · Kalvium). Flat. No Best Match tiers.
 │   ├── B8.4  ONE sentence per college, tied to THEIR priority.
-│   │         ❌ NEVER the old three-part block:
-│   │              Strengths: … / Ideal for: … / Notable: …
-│   │            That reads as a brochure, not a counsellor.
 │   ├── B8.5  Only list colleges you can describe HONESTLY.
 │   └── B8.6  No claim about salary, placement percentage or
-│             "guaranteed placement". Those belong in the human
-│             session where they can be sourced. The Phase 10 guardrail
-│             regex stays live here.
+│             "guaranteed placement".
 │
 └── ✎ CHANGED
        ✂ Removed the 🥇🥈🥉 ranking from the company flow.
-       ✎ ★ Added the disclosure line — the biggest single change in
-         this document.
-       ✅ Kept the three colleges and "the right one depends on you",
-         already the right instinct in the original.
+       ✎ ★ Added the disclosure line.
+       ✎ Happy-path product update: shortlist is FIVE flat new-age
+         colleges (not three). Polar is not in catalog — use Plaksha
+         / Kalvium until a verified Polar partner row exists.
        ✎ Moved "Would you like me to help you find the best fit?" out
-         of this beat into B9, so B8 delivers without immediately
-         asking for something back.
-       🟪 ✂ v2 showed 5 colleges in Best Match / Strong Alternatives /
-          Worth Exploring tiers. Collapsed to 3 flat; the wider list
-          moves behind 8.4. See conflict 1 in PART 2.4.
+         of this beat into B9.
 
 ►► B9
 ```
 
 ---
 
-## B9 · FIT — narrowing honestly
+## B9 · FIT — counsellor narrowing (NIAT pitch on yes)
 
 ```
 B9  ·  FIT   (was: v2 B6 · THE CASE)
    fires immediately after B8, same turn, separate bubble · 1 tap
 
 ├── 🟧 PURPOSE
-│   Take the student from three options to one clear next step, using
-│   THEIR stated priority as the reason — and pass honestly when none
-│   of the three actually fits.
+│   Take the student from five flat options to one clear next step,
+│   using THEIR stated priority as the reason — senior-counsellor
+│   narrative leaning *NIAT* when the catalog fits — and pass honestly
+│   when the profile is clearly out of catalog.
 │
-├── SKIP THE ASK IF  student has already named one of the three —
-│                    "tell me about NIAT" → go straight to the fit
-│                    paragraph for that college.
+├── SKIP THE ASK IF  student has already named one of the five —
+│                    "tell me about NIAT" → go straight to that path.
 │
 ├── 🤖 COPY — the ask
 │
@@ -1961,130 +1945,50 @@ B9  ·  FIT   (was: v2 B6 · THE CASE)
 │
 │      [ Yes, narrow it down ]      [ I'll look them up myself ]
 │
-├── 🤖 COPY — the answer (if yes) · ONE college, REASON STATED FIRST
+├── 🤖 COPY — the answer (if yes) · NIAT, REASON STATED FIRST
 │
 │      Sure 😊
 │
 │      You said {priority_phrase} matters most, and you're interested
 │      in {interest_phrase}. On that specific basis, I'd look at
-│      *{best_fit_college}* first — {reason_tied_to_priority}.
+│      *NIAT* first — {reason_tied_to_priority}.
 │
-│      {core_interest_line, if set — see 3.2-P4}
+│      Here is how I usually explain it:
+│      • Curriculum — industry-linked, refreshed often, coding early
+│      • Internships — real work exposure, not certificate theatre
+│      • Industry ties — mentors / partner ecosystems (named on call)
+│      • Environment — applied learning and peer building
 │
-│      That's my read from four answers, though. It's not a verdict.
-│      The other two may suit you better once someone's seen your
-│      marks, your budget and where you can actually study.
+│      That's my read from what you've shared — not a verdict.
+│      The other four may suit you better once someone has seen your
+│      marks, budget and where you can actually study.
 │
-│      Which is exactly what the next step is for.
+│      Which is exactly what a short counsellor call is for.
 │
 ├── 🤖 COPY — ★ THE HONEST PASS
-│      (fires when no catalog college scores above threshold)
+│      (fires when profile is clearly out-of-catalog)
 │
 │      Being straight with you — from what you've shared, I'm not
-│      sure any of these three is the obvious fit. Your interests
-│      point somewhere our catalog doesn't cover well, and I'd rather
-│      say that than talk you into one.
-│
-│      The seven checks above still work on whatever you're
-│      considering.
-│
-│      If it'd help, I can put you in front of a counsellor who'll
-│      talk through the options that *do* fit — including ones we
-│      have nothing to do with.
+│      sure any of these five is the obvious fit…
 │
 ├── 9.1 · [ I'll look them up myself ] — honoured immediately, no re-pitch
-│
-│      🤖 Good — that's the right instinct 👍 Take the seven checks
-│         with you.
-│
-│         If you want a second opinion after you've looked, I'm here.
-│
-│      ►► EXIT 2 · parked warm. B10-F fires (they DID get a shortlist).
-│
-├── 9.2 · THE COMPARISON TABLE — on tap, not by default
-│      Retained from v2's B6.1. Fires only on "compare them" or a
-│      direct ask.
-│
-│      🤖 Here's how the three stack up on what you care about 👇
-│
-│         Factor           NIAT    Scaler   Newton
-│         Placements       ●●●     ●●●      ●●●
-│         AI focus         ●●●     ●●●      ●●
-│         Projects         ●●●     ●●●      ●●●
-│         Mentorship       ●●●     ●●●      ●●
-│
-│      🟥 ⚠ 4 ROWS MAX on WhatsApp. Pick the 4 dimensions that match
-│         THEIR priority — a placements-first student gets placement
-│         rows, an AI-first student gets AI rows.
-│      🟥 ⚠ If it would exceed 4 rows, send it as an IMAGE.
-│      🟪 ✂ DELETED from v2: "Which colleges should we compare? Reply
-│         1 and 2, names, or 'first two'." Nobody wants to specify,
-│         and asking costs a turn. Compare the three automatically.
+├── 9.2 · Compare-on-tap — compact 4-row factor block across the five
 │
 ├── ▣ SAVES
-│      fit_college (id | null) · fit_reason (the priority dimension
-│      used) · honest_pass_fired (bool)
-│
-│      ★ honest_pass_fired is an INTEGRITY METRIC. Watch it. If it
-│        never fires, the threshold is set dishonestly.
+│      fit_college · fit_reason · honest_pass_fired
 │
 ├── ⚠ GUARDS
-│   ├── B9.1  ⚠⚠ The fit is COMPUTED from priority + interests[]
-│   │         against the weights matrix. It is NOT hardcoded to one
-│   │         college. If the same college is returned for every
-│   │         profile, the matrix is decoration and the beat is a lie
-│   │         with extra steps. Testable: run 20 synthetic profiles in
-│   │         QA and check the spread.
-│   ├── B9.2  "It's not a verdict" STAYS. It is what makes the human
-│   │         session the next step rather than an upsell — the bot has
-│   │         openly reached the limit of what four answers can tell
-│   │         it, which is TRUE.
-│   ├── B9.3  The honest pass is a REAL path with a real threshold, not
-│   │         a comment in the code. A student pushed into a bad-fit
-│   │         booking costs more than they earn. (L7 in the happy-flow
-│   │         doc; folded into L9 and L13 here.)
-│   ├── B9.4  Justify from THEIR OWN WORDS. Never just "NIAT is best."
-│   │         Name it, then give the reason tied to what they said.
-│   ├── B9.5  ✅ KEEP the weak-confidence line where signals are thin:
-│   │         "Some profile signals are still thin — treat this as
-│   │          decision support, not certainty."
-│   └── B9.6  Possibility language ONLY: could · can · often.
-│             Never "will". The Phase 10 guardrail stays live.
-│
-├── 🟪 ✂ WHAT IS DELETED HERE
-│   ├── ✂ The company Stage 9 soft-nudge-toward-NIAT structure,
-│   │      ENTIRELY. Giving three names and steering to one
-│   │      predetermined college one bubble later is visible from the
-│   │      student's side, and it undoes the credibility B5 and B7
-│   │      spent four beats building. It is also the mechanism that
-│   │      produces low-quality leads — students who book while
-│   │      unconvinced don't show up.
-│   ├── ✂ v2's third "vision" bubble ("picture your first semester
-│   │      there…"). The least earned copy in either document, and it
-│   │      sits between the recommendation and the booking where every
-│   │      extra bubble costs.
-│   ├── ✂ v2's Phase 9 → Phase 10 permission gate.
-│   ├── ✂ v2's "Reply *Continue* when ready."
-│   └── ✂ ★ v2's Phase 11: "Before the next step — any last hesitation
-│          about deciding?"
-│          🟧 WHY THIS ONE MATTERS MOST: it fires at the moment of
-│             MAXIMUM intent and asks a ready-to-book student to go
-│             find a doubt. Some percentage will find one. You then
-│             classify it, answer it, ask "does that help?", and
-│             escalate on a second no. You have built a machine that
-│             MANUFACTURES objections and then handles them.
-│             The 5 hesitation classifiers STAY — they fire when
-│             hesitation ARRIVES on its own. See ⚡ I-5.
+│   ├── B9.1  Reason is stated FIRST from their priority / interests.
+│   ├── B9.2  "It's not a verdict" STAYS.
+│   ├── B9.3  Honest pass remains a real path for out-of-catalog leads.
+│   ├── B9.4  Possibility language ONLY. No salary / placement guarantees.
+│   └── B9.5  Self-lookup is honoured once — no same-turn re-pitch.
 │
 └── ✎ CHANGED
-       ✅ KEPT the company copy's best instinct, which was already
-         there: "But I don't want you to choose a college just because
-         I suggested it." That sentence was right — it just
-         contradicted the beat it was sitting in. Here it is
-         structurally true.
-       ✅ KEPT v2's dynamic why-bullet builder (catalog tags + profile).
-         This is what makes the recommendation feel EARNED.
-       ✎ Added the honest pass as a first-class path.
+       ✎ Happy-path product update: on yes, deliver a senior-counsellor
+         NIAT case (curriculum / internships / industry ties /
+         environment) then hand to B10 hybrid book.
+       ✂ Still no medals, no vision bubble, no manufactured hesitation.
 
 ►► B10
 ```
@@ -2111,7 +2015,7 @@ B10  ·  BOOK   (was: v2 B7 · BOOK — now actually completes a booking)
 │      counsellor{credential_clause}. It's 30 minutes, on a call, and
 │      in it you'll get:
 │
-│      ✅ Which of these colleges actually fits your marks and budget
+│      ✅ Whether NIAT — or one of the other four — actually fits your marks and budget
 │      ✅ Which branch matches how you like to work
 │      ✅ What the career paths after it realistically look like
 │      ✅ Which scholarships you're eligible to apply for

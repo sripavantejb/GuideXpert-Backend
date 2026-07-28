@@ -40,9 +40,9 @@ const nodeZeroOverride = require('./node0Override');
 const STANDARD_INVITE_TEXT = [
   "You're at the point where one good decision saves a couple of years of backtracking.",
   '',
-  'GuideXpert runs a free 1:1 session with a senior counsellor. It\'s 30 minutes, on a call, and in it you\'ll get:',
+  "GuideXpert runs a free 1:1 session with a senior counsellor. It's 30 minutes, on a call, and in it you'll get:",
   '',
-  '✅ Which of these colleges actually fits your marks and budget',
+  '✅ Whether NIAT — or one of the other four — actually fits your marks and budget',
   '✅ Which branch matches how you like to work',
   '✅ What the career paths after it realistically look like',
   "✅ Which scholarships you're eligible to apply for",
