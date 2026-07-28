@@ -46,17 +46,18 @@ async function executeActiveGuidedFlowTurn({
   leadContext = null,
 }) {
   let contextPatch = botState?.context || {};
-  const inboundText =
-    (inbound?.messageType === 'list_reply' || inbound?.messageType === 'button_reply') &&
-    (inbound?.interactivePayload?.postbackText ||
-      inbound?.interactivePayload?.id ||
-      inbound?.interactivePayload?.reply?.id)
-      ? String(
-          inbound.interactivePayload.postbackText ||
-            inbound.interactivePayload.id ||
-            inbound.interactivePayload.reply.id
-        ).trim()
-      : multilingualInbound?.englishMessage || String(inbound.text || '').trim();
+  let inboundText =
+    multilingualInbound?.englishMessage || String(inbound.text || '').trim();
+  if (inbound?.messageType === 'list_reply' || inbound?.messageType === 'button_reply') {
+    const payload = inbound.interactivePayload || {};
+    const id = String(payload.id || payload.reply?.id || '').trim();
+    const postback = String(payload.postbackText || '').trim();
+    const title = String(payload.title || payload.reply?.title || '').trim();
+    // Prefer stable flowv2_* ids over display titles / curly-apostrophe labels.
+    if (/^flowv2_/i.test(id)) inboundText = id;
+    else if (/^flowv2_/i.test(postback)) inboundText = postback;
+    else inboundText = postback || id || title || inboundText;
+  }
 
   await transitionState(
     activeConversation._id,

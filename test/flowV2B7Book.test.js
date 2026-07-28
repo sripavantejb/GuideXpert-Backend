@@ -385,11 +385,8 @@ describe('B7 — full chained transition through the dispatcher', () => {
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     result = await processFlowV2Turn(ctx, "Yes, I'm interested");
     assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
-    assert.equal(result.interactive.body, STANDARD_INVITE_TEXT);
-    assert.match(
-      [...(result.replyParts || []), result.replyText].filter(Boolean).join('\n'),
-      /FREE 1:1|IITian counsellor/i
-    );
+    assert.match(result.interactive.body, /book.*session|IITian|FREE 1:1/i);
+    assert.ok(result.interactive.buttons.some((b) => /Book My Session/i.test(b.title)));
 
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     result = await processFlowV2Turn(ctx, '📅 Book My Session');

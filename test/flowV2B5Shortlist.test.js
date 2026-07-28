@@ -384,21 +384,27 @@ describe('B5 — end-to-end through the full dispatcher', () => {
     assert.match(result.replyText || '', /guidexpert\.co\.in\/one-on-one-session/i);
   });
 
-  test('NIAT interest yes accepts button id and curly apostrophe; never routes to R4', async () => {
-    const baseProfile = {
+  test('stuck b9_awaiting_reply after NIAT pitch still advances interest → book invite → link', async () => {
+    const profile = {
       ...emptyFlowV2Profile(),
       ...STANDARD_PROFILE_PATCH,
       fitCollege: 'niat',
       recommendation: 'niat',
+      niatInterest: null,
     };
-    for (const tap of ['flowv2_b9_niat_yes', "Yes, I\u2019m interested"]) {
-      const result = await processFlowV2Turn(
-        { flowV2: { stage: 'b9_niat_interest_awaiting_reply', profile: { ...baseProfile } } },
-        tap
-      );
-      assert.equal(result.contextPatch.stage, 'b7_awaiting_reply', tap);
-      assert.ok(result.interactive?.buttons?.some((b) => /Book My Session/i.test(b.title)), tap);
-      assert.notEqual(result.contextPatch.stage, 'r4_college_awaiting_reply', tap);
-    }
+    let result = await processFlowV2Turn(
+      { flowV2: { stage: 'b9_awaiting_reply', profile } },
+      'flowv2_b9_niat_yes'
+    );
+    assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
+    assert.equal(result.contextPatch.profile.niatInterest, true);
+    assert.match(result.interactive.body, /book.*session|IITian/i);
+
+    result = await processFlowV2Turn(
+      { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } },
+      'flowv2_b7_book'
+    );
+    assert.equal(result.contextPatch.stage, 'b7_awaiting_done');
+    assert.match(result.replyText || '', /guidexpert\.co\.in\/one-on-one-session/i);
   });
 });

@@ -10,7 +10,7 @@ const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
 const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingFlowV2Profile');
 const { assertGuardrails } = require('../../../../constants/careerCounsellingFlowV2Guardrails');
 const { withMergedProfile, combineNodeResults } = require('../flowV2NodeUtils');
-const { handleB7Entry } = require('./b7Book');
+const { handleB7Entry, B7_INVITE_BUTTONS } = require('./b7Book');
 const { FIT_ASK_BODY: SHORTLIST_FIT_ASK, FIT_BUTTONS: SHORTLIST_FIT_BUTTONS } = require('./b8FlatShortlist');
 
 const FIT_ASK_BODY = SHORTLIST_FIT_ASK || 'Would you like me to help you find the best fit?';
@@ -337,8 +337,10 @@ function handleB9Entry(ctx) {
 
 const NIAT_TO_BOOKING_BRIDGE = [
   'Great 👍',
-  'Since NIAT looks interesting, the best next step is a FREE 1:1 Career Guidance Session with an IITian.',
-  "In that session you'll verify curriculum, partner campus, internships, fees and whether NIAT is actually the right fit — before you decide.",
+  'Since NIAT looks interesting, I recommend booking a FREE 1:1 Career Guidance Session with an IITian.',
+  "They'll help you verify curriculum, partner campus, internships, fees and whether NIAT is the right fit — before you decide.",
+  '',
+  'Would you like to book your session now?',
 ].join('\n');
 
 function handleB9NiatInterestReply(ctx, text) {
@@ -359,9 +361,19 @@ function handleB9NiatInterestReply(ctx, text) {
   if (looksLikeNiatInterested(text)) {
     const merged = mergeFlowV2Profile(profile, { niatInterest: true });
     assertGuardrails(NIAT_TO_BOOKING_BRIDGE);
-    const book = handleB7Entry(withMergedProfile(ctx, merged));
-    // Same turn: bridge + Stage 10 booking invite (Book → link).
-    return combineNodeResults([NIAT_TO_BOOKING_BRIDGE], book);
+    // Stage 10 invite only — Book My Session then sends the link.
+    return {
+      replyText: null,
+      replyParts: null,
+      interactive: {
+        type: 'button',
+        body: NIAT_TO_BOOKING_BRIDGE,
+        buttons: B7_INVITE_BUTTONS,
+      },
+      contextPatch: { stage: 'b7_awaiting_reply', profile: merged },
+      nextState: 'career_counselling_flow_v2',
+      intent: 'career_counselling_flow_v2',
+    };
   }
 
   return {
@@ -378,11 +390,23 @@ function handleB9NiatInterestReply(ctx, text) {
   };
 }
 
+function alreadyPitchedNiat(profile) {
+  const fit = String(profile?.fitCollege || '').toLowerCase();
+  const rec = String(profile?.recommendation || '').toLowerCase();
+  return fit === 'niat' || rec === 'niat';
+}
+
 function handleB9Reply(ctx, text) {
   const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
   const stage = ctx?.flowV2?.stage;
 
-  if (stage === 'b9_niat_interest_awaiting_reply') {
+  // Interest gate owns these taps — including when stage was stuck on
+  // b9_awaiting_reply after NIAT was already pitched (live recovery).
+  if (
+    stage === 'b9_niat_interest_awaiting_reply' ||
+    (alreadyPitchedNiat(profile) && looksLikeNiatInterested(text) && !looksLikeSelf(text)) ||
+    (alreadyPitchedNiat(profile) && looksLikeNiatNotInterested(text) && !looksLikeYes(text))
+  ) {
     return handleB9NiatInterestReply(ctx, text);
   }
 
@@ -417,6 +441,22 @@ function handleB9Reply(ctx, text) {
 
   if (looksLikeYes(text)) {
     return deliverNiatPitch(ctx, profile);
+  }
+
+  // If NIAT was already pitched, re-show interest ask — never the FIT ask again.
+  if (alreadyPitchedNiat(profile)) {
+    return {
+      replyText: null,
+      replyParts: null,
+      interactive: {
+        type: 'button',
+        body: NIAT_INTEREST_BODY,
+        buttons: NIAT_INTEREST_BUTTONS,
+      },
+      contextPatch: { stage: 'b9_niat_interest_awaiting_reply', profile },
+      nextState: 'career_counselling_flow_v2',
+      intent: 'career_counselling_flow_v2',
+    };
   }
 
   return {

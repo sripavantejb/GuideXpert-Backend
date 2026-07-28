@@ -96,7 +96,7 @@ describe('Full Flow V3 — happy path PCM spine (company Option 3)', () => {
     result = await processFlowV2Turn(ctx, "Yes, I'm interested");
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     text = visible(result);
-    assert.match(text, /IITian|book your session|FREE 1:1/i);
+    assert.match(text, /book.*session|IITian|FREE 1:1/i);
     assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
     assert.equal(result.contextPatch.profile.niatInterest, true);
     assert.ok(result.interactive?.buttons?.some((b) => /Book My Session/i.test(b.title)));
