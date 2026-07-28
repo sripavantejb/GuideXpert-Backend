@@ -141,6 +141,7 @@ function startNonDistressInterrupt(ctx, interruptId) {
     return result({
       interactive: {
         type: 'button',
+        // DEFAULTED PENDING BUSINESS CONFIRMATION — Assumption 2 / medical·law·MBA scope · ENGINEERING_TECH_SCOPE_ONLY
         body:
           "Honest answer — my depth is engineering and tech in India. Our counsellors do cover this — want me to book you with the right person?",
         buttons: I6_BUTTONS,
@@ -153,6 +154,7 @@ function startNonDistressInterrupt(ctx, interruptId) {
 
   if (interruptId === 'I-7') {
     return result({
+      // DEFAULTED PENDING BUSINESS CONFIRMATION — Assumption 1 / Part 18 · FREE_SESSION
       replyText:
         'This chat is completely free, and so is the 1-on-1 session. Nothing to pay at any point here.',
       stage,

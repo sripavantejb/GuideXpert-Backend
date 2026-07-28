@@ -170,6 +170,9 @@ function qualificationRoute(mergedProfile, qualification) {
     });
   }
   if (qualification === '12th Completed (Arts)') {
+    // DEFAULTED PENDING BUSINESS CONFIRMATION — Assumption 2 / medical·law·MBA &
+    // non-eng streams (Part 2.3 / 18) · ENGINEERING_TECH_SCOPE_ONLY.
+    // See careerCounsellingFlowV2BusinessDefaults.js.
     const result = handleR11();
     return {
       ...result,
@@ -459,6 +462,9 @@ function handleEntrySideTrackReply(ctx, text) {
     if (/\bdesign\b/.test(t)) branchInterest = 'design';
     else if (/\bbusiness\b|\bmgmt\b|\bmanagement\b|\bfinance\b/.test(t)) branchInterest = 'Business/Commerce';
     const mergedProfile = mergeFlowV2Profile(profile, { stream: 'Commerce', branchInterest });
+    // DEFAULTED PENDING BUSINESS CONFIRMATION — Assumption 2 / CAT-1 no mixed
+    // catalogs (Part 2.3 / 18) · ENGINEERING_TECH_SCOPE_ONLY + NO_MIXED_CATALOGS.
+    // See careerCounsellingFlowV2BusinessDefaults.js.
     const result = handleR11();
     return {
       ...result,

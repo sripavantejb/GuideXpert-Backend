@@ -284,11 +284,13 @@ const GOAL_FRAME_LINE = Object.freeze({
 /**
  * ★ CORE-INTEREST PAYOFF — Stage 7 conservative Variant B.
  *
- * OPEN ITEM ◆ NIAT-2 was answered by product default: NIAT is framed as
- * CSE/AI only, with NO unverified robotics/automation curriculum claim.
- * Payoff lines may acknowledge the student's inbound core interest and
- * the wider software door — they must NEVER invent NIAT project-work
- * facts (robotics, automation, BIM labs, etc.).
+ * DEFAULTED PENDING BUSINESS CONFIRMATION — open items ◆ NIAT-1 and ◆ NIAT-2
+ * (Part 2.3 / Part 18). NIAT is framed as CSE/AI only, with NO unverified
+ * robotics/automation curriculum claim. Payoff lines may acknowledge the
+ * student's inbound core interest and the wider software door — they must
+ * NEVER invent NIAT project-work facts (robotics, automation, BIM labs, etc.).
+ * See constants/careerCounsellingFlowV2BusinessDefaults.js · NIAT_CSE_ONLY /
+ * NIAT_NO_ROBOTICS_CLAIM.
  */
 const CORE_INTEREST_PAYOFF = Object.freeze({
   mechanical:

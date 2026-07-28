@@ -698,6 +698,10 @@ const BRIDGE_BUTTONS = Object.freeze([
 ]);
 
 const BRIDGE_TEXT = [
+  // DEFAULTED PENDING BUSINESS CONFIRMATION — open item ◆ CAT-2 (Part 2.3 / 18).
+  // Two catalogs named honestly; "Show me both" seeds B1 (curated path) and
+  // never merges rank-gated results into the B5 shortlist. See
+  // careerCounsellingFlowV2BusinessDefaults.js · NO_MIXED_CATALOGS.
   'That list is what your rank opens up — worth keeping.',
   '',
   "There's a second route most students don't know about: newer colleges that admit on aptitude and interviews rather than rank, and are built around projects and placements. Different door, sometimes a better fit.",

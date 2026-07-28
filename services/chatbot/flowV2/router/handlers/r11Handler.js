@@ -3,6 +3,10 @@
 /**
  * Flow v2 — R11 handler (out of scope).
  *
+ * DEFAULTED PENDING BUSINESS CONFIRMATION — Assumption 2 / medical·law·MBA
+ * scope (Part 2.3 / 18). Chatbot depth is engineering/tech in India only.
+ * See careerCounsellingFlowV2BusinessDefaults.js · ENGINEERING_TECH_SCOPE_ONLY.
+ *
  * Single verbatim message + Book/Tell-me-anyway buttons, per spec.
  */
 

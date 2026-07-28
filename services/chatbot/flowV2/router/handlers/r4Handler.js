@@ -43,6 +43,8 @@ const R4_VS_BUTTONS = Object.freeze([
 ]);
 
 const UNKNOWN_COLLEGE_CHECKLIST = [
+  // DEFAULTED PENDING BUSINESS CONFIRMATION — open item ◆ CAT-3 (Part 2.3 / 18).
+  // Checklist fallback for colleges outside the verified catalog — never invent facts.
   "I don't have reliable detail on that one — I won't guess.",
   "Here's what I'd ask them directly:",
   '• Placement report for your exact branch, last 3 years — not an overall %.',

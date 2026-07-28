@@ -3,6 +3,13 @@
 /**
  * Flow v2 — B2.2 core-engineering fork, honest-exit sub-flow (F2).
  *
+ * DEFAULTED PENDING BUSINESS CONFIRMATION — open items ◆ CORE-1 / Variant B
+ * and ◆ CAT-1 (Part 2.3 / Part 18). No verified CORE-branch college catalog
+ * exists yet, so pure-core F2 is a warm terminal `parked_core` exit with
+ * checklist gift — no invented CORE shortlist, no B3–B7 re-entry, no nudges.
+ * See careerCounsellingFlowV2BusinessDefaults.js · VARIANT_B_PURE_CORE_EXIT
+ * and CORE_BRANCH_CATALOG_UNKNOWN.
+ *
  * Fires when a student explicitly says "I want pure mechanical" after the
  * core-fork offer (`b2CoreFork.js`'s `handleCoreForkReply`). Kept as its
  * own file/state (not folded into `b2CoreFork.js`) because it has its own

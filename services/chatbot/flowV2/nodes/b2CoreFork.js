@@ -37,6 +37,8 @@ const OFFER_MESSAGE_2 =
 const OFFER_MESSAGE_3 =
   "The flip side is the bit people miss. A CS student can work in almost any INDUSTRY \u2014 automotive, aerospace, healthcare, finance \u2014 because all of them run on software now. What they can't do is sign off a bridge \uD83D\uDE04 So it's not that core is weaker. It's that the software door is wider, and it opens from both sides.";
 const OFFER_MESSAGE_4 =
+  // DEFAULTED PENDING BUSINESS CONFIRMATION — ◆ NIAT-2 / NIAT_NO_ROBOTICS_CLAIM +
+  // ◆ CORE-1 Variant B pitch stays CSE/AI door language without unverified robotics claims.
   "So here's what I'd actually suggest. Let me show you colleges where you learn AI and coding properly \u2014 GuideXpert's depth is CSE and AI careers, and that's the wider door I can shortlist honestly. You keep the interest; you just get more industries to apply it in. Want to see those?";
 
 const PARENT_VARIANT_TEXT =

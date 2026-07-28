@@ -87,6 +87,8 @@ describe('flowV2 Node 0 override — detection', () => {
  */
 describe('flowV2 Node 0 override — general invariant: no beat\u2019s button/row vocabulary may ever collide with OVERRIDE_PATTERNS', () => {
   const NODES_DIR = path.join(__dirname, '..', 'services', 'chatbot', 'flowV2', 'nodes');
+  const HANDLERS_DIR = path.join(__dirname, '..', 'services', 'chatbot', 'flowV2', 'router', 'handlers');
+  const INTERRUPTS_FILE = path.join(__dirname, '..', 'services', 'chatbot', 'flowV2', 'nonDistressInterrupts.js');
 
   function deepCollectTitles(value, source, out, depth = 0) {
     if (depth > 6 || value === null || value === undefined) return;
@@ -113,12 +115,10 @@ describe('flowV2 Node 0 override — general invariant: no beat\u2019s button/ro
     deepCollectTitles(interactive, source, out);
   }
 
-  /** Known entry-point functions across the B1-B7 spine, called directly
-   * with a minimal representative ctx so this test satisfies the literal
-   * ask (feed what "that stage's own entry function generates"), in
-   * addition to the auto-discovering export scan above. New entry
-   * functions should be added here too, but the export-scan layer above
-   * already catches new button constants even if this list is forgotten. */
+  /** Known entry-point functions across the B1-B7 spine + Stage 6–8 leaves,
+   * called directly with a minimal representative ctx so this test satisfies
+   * the literal ask (feed what "that stage's own entry function generates"),
+   * in addition to the auto-discovering export scan above. */
   function callKnownEntryFunctions(out) {
     const freshCtx = () => ({ flowV2: { stage: null, profile: emptyFlowV2Profile() } });
 
@@ -132,6 +132,9 @@ describe('flowV2 Node 0 override — general invariant: no beat\u2019s button/ro
       { name: 'b5Shortlist.handleB5Entry', load: () => require('../services/chatbot/flowV2/nodes/b5Shortlist').handleB5Entry(freshCtx()) },
       { name: 'b6TheCase.handleB6Entry', load: () => require('../services/chatbot/flowV2/nodes/b6TheCase').handleB6Entry(freshCtx()) },
       { name: 'b7Book.handleB7Entry', load: () => require('../services/chatbot/flowV2/nodes/b7Book').handleB7Entry(freshCtx()) },
+      { name: 'r4pPredictor.handleR4PEntry', load: () => require('../services/chatbot/flowV2/nodes/r4pPredictor').handleR4PEntry(freshCtx()) },
+      { name: 'r5Handler.handleR5', load: () => require('../services/chatbot/flowV2/router/handlers/r5Handler').handleR5(freshCtx(), 'is this a bot') },
+      { name: 'r11Handler.handleR11', load: () => require('../services/chatbot/flowV2/router/handlers/r11Handler').handleR11() },
     ];
 
     for (const { name, load } of entryPoints) {
@@ -139,11 +142,6 @@ describe('flowV2 Node 0 override — general invariant: no beat\u2019s button/ro
       try {
         result = load();
       } catch (err) {
-        // A node legitimately throwing on a bare/empty profile (e.g. a
-        // guardrail) isn't this test's concern — it just means that entry
-        // point contributes no titles from this call. Swallowed
-        // intentionally, not hidden: still visible via low total count if
-        // it ever causes every entry point to fail (see count guard below).
         continue;
       }
       titlesFromInteractive(result && result.interactive, name, out);
@@ -151,57 +149,54 @@ describe('flowV2 Node 0 override — general invariant: no beat\u2019s button/ro
   }
 
   /**
-   * The ONLY titles in the entire spine allowed to collide with
-   * OVERRIDE_PATTERNS today. Two entries, two DIFFERENT reasons — do not
-   * conflate them:
+   * Closed allowlist of titles that MAY collide with OVERRIDE_PATTERNS.
+   * Two classes — do not conflate them:
    *
-   * - "Book my session" (B7 · Book, Phase 7): B7 IS the booking beat, so
-   *   it necessarily says "book". This collision is a FIX: mitigated by
-   *   exempting every `b7_*` stage from Node 0's pre-empt at the
-   *   dispatcher level (flowV2Dispatcher.js) so B7's own button survives
-   *   and runs B7's own flow, independently regression-tested
-   *   (test/flowV2B7Book.test.js, "REGRESSION: tapping [Book my session]
-   *   while inside B7 is NOT hijacked...").
+   * CLASS A — dispatcher-mitigated (B7 owns its own booking button):
+   * - "Book my session" (B7): exempted via `b7_*` stage skip in
+   *   flowV2Dispatcher.js so B7's own flow runs. See flowV2B7Book.test.js
+   *   "REGRESSION: tapping [Book my session] while inside B7 is NOT hijacked".
    *
-   * - "Connect me" (R4-P · College Predictor's blocked-demographic case,
-   *   Stage 1): the OPPOSITE of a fix — this collision is INTENTIONALLY
-   *   LEFT UNMITIGATED at the dispatcher level. Unlike B7, R4-P's
-   *   blocked case WANTS Node 0's pre-empt to intercept this button tap
-   *   and run Node 0's real booking-link handoff — that IS the desired
-   *   behavior, not a bug to route around. No `r4p_*` stage exemption
-   *   exists (and none should be added for this reason). See
-   *   r4pPredictor.js's module doc ("NODE 0 HANDOFF, NOT A DUPLICATE
-   *   PATH") and test/flowV2R4PPredictor.test.js's end-to-end test
-   *   proving this handoff already works correctly with zero changes to
-   *   flowV2Dispatcher.js.
+   * CLASS B — intentional Node 0 handoffs (collision IS the product):
+   * Tapping these SHOULD fire Node 0's booking-link path. No stage
+   * exemption. Same pattern as R4-P "Connect me".
+   * - "Connect me" (R4-P blocked demographic)
+   * - "Book a session" (R11 / I-6 out-of-scope CTAs)
+   * - "Book the session" (R4-F admission CTA)
+   * - "Get me a human" (R5 identity CTA → Node 0 / counsellor handoff)
    *
-   * This is a closed, explicit allowlist, not a general escape hatch:
-   * any OTHER title colliding, anywhere in the spine, still fails this
-   * test.
+   * Any OTHER colliding title anywhere in Stages 1–8 still fails this test.
    */
-  const KNOWN_MITIGATED_COLLISION_TITLES = new Set(['Book my session', 'Connect me']);
+  const KNOWN_MITIGATED_COLLISION_TITLES = new Set([
+    'Book my session',
+    'Connect me',
+    'Book a session',
+    'Book the session',
+    'Get me a human',
+  ]);
 
-  test('every discoverable button/list-row title across the whole B1-B7 node spine passes detectOverrideIntent() as false, except the one closed, already-mitigated exception', () => {
+  test('every discoverable button/list-row title across Stages 1-8 (nodes + handlers + interrupts) passes detectOverrideIntent() as false, except the closed allowlist', () => {
     const collected = [];
 
-    // Layer 1 — auto-discovering export scan (new files/constants need no
-    // update to this test).
+    // Layer 1 — auto-discovering export scan across nodes + router handlers + interrupts.
     const nodeFiles = fs.readdirSync(NODES_DIR).filter((f) => f.endsWith('.js'));
     for (const file of nodeFiles) {
       const mod = require(path.join(NODES_DIR, file));
-      deepCollectTitles(mod, file, collected);
+      deepCollectTitles(mod, `nodes/${file}`, collected);
     }
+    const handlerFiles = fs.readdirSync(HANDLERS_DIR).filter((f) => f.endsWith('.js'));
+    for (const file of handlerFiles) {
+      const mod = require(path.join(HANDLERS_DIR, file));
+      deepCollectTitles(mod, `handlers/${file}`, collected);
+    }
+    deepCollectTitles(require(INTERRUPTS_FILE), 'nonDistressInterrupts.js', collected);
 
     // Layer 2 — direct entry-function invocation (the literal ask).
     callKnownEntryFunctions(collected);
 
-    // Guard against the discovery mechanism silently rotting (e.g. a
-    // future refactor changes how buttons are shaped and this walker stops
-    // finding anything — a test that always vacuously passes is worse than
-    // no test).
     assert.ok(
-      collected.length >= 15,
-      `expected to discover a substantial number of button/row titles across the node spine, found ${collected.length} — the discovery heuristic in this test may need updating`
+      collected.length >= 20,
+      `expected to discover a substantial number of button/row titles across Stages 1-8, found ${collected.length} — the discovery heuristic in this test may need updating`
     );
 
     const allCollisions = collected.filter((entry) => detectOverrideIntent(entry.title));
@@ -212,10 +207,6 @@ describe('flowV2 Node 0 override — general invariant: no beat\u2019s button/ro
       `found NEW, unvetted button/list-row title(s) colliding with OVERRIDE_PATTERNS (must be exempted at the dispatcher level, regression-tested, and added to KNOWN_MITIGATED_COLLISION_TITLES if intentional): ${JSON.stringify(unexpectedCollisions)}`
     );
 
-    // The inverse check matters just as much: if "Book my session" is ever
-    // renamed/removed such that it STOPS colliding, this allowlist entry
-    // (and the dispatcher exemption it documents) becomes dead and should
-    // be consciously revisited, not silently left in place.
     const foundKnownTitles = new Set(allCollisions.map((entry) => entry.title));
     for (const knownTitle of KNOWN_MITIGATED_COLLISION_TITLES) {
       assert.ok(
