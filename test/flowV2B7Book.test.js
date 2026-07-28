@@ -386,5 +386,15 @@ describe('B7 — full chained transition through the dispatcher', () => {
     result = await processFlowV2Turn(ctx, "Yes, I'm interested");
     assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
     assert.equal(result.interactive.body, STANDARD_INVITE_TEXT);
+    assert.match(
+      [...(result.replyParts || []), result.replyText].filter(Boolean).join('\n'),
+      /FREE 1:1|IITian counsellor/i
+    );
+
+    ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
+    result = await processFlowV2Turn(ctx, '📅 Book My Session');
+    assert.equal(result.contextPatch.stage, 'b7_awaiting_done');
+    assert.equal(result.contextPatch.profile.bookingStatus, 'link_sent');
+    assert.match(result.replyText || '', /guidexpert\.co\.in\/one-on-one-session/i);
   });
 });

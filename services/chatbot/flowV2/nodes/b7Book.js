@@ -142,8 +142,15 @@ const NOT_YET_PATTERN = /\bnot (yet|right now)\b|\bmaybe later\b/i;
 
 function extractB7InviteAction(text) {
   const t = String(text || '');
-  if (BOOK_PATTERN.test(t)) return 'book';
-  if (NOT_YET_PATTERN.test(t)) return 'not_yet';
+  const lower = t.trim().toLowerCase();
+  if (
+    lower === 'flowv2_b7_book' ||
+    BOOK_PATTERN.test(t) ||
+    /book my session/i.test(t)
+  ) {
+    return 'book';
+  }
+  if (lower === 'flowv2_b7_not_yet' || NOT_YET_PATTERN.test(t)) return 'not_yet';
   return null;
 }
 
@@ -186,6 +193,17 @@ async function handleB7InviteReply(ctx, text) {
   const action = extractB7InviteAction(text);
 
   if (action === 'book') {
+    // After NIAT interest yes: go straight to the booking link (company last
+    // phase — suggest session, then send link). Skip hybrid slot picker.
+    if (profile.niatInterest === true) {
+      const mergedProfile = mergeFlowV2Profile(profile, { bookingStatus: 'link_sent' });
+      return nodeResult({
+        replyText: buildB7BookingLinkMessage(),
+        stage: 'b7_awaiting_done',
+        profile: mergedProfile,
+        extraPatch: { hybridSlotOffers: null },
+      });
+    }
     // HYBRID_BOOKING_WEBSITE_CREATE — live slots first, then website URL.
     return nodeZeroOverride.buildHybridSlotPickerResult(ctx, {
       stage: 'b7_awaiting_slot',

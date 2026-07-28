@@ -187,8 +187,15 @@ function looksLikeCompare(text) {
   return /\bcompare\b|\bstack up\b|\bvs\b|\bversus\b/.test(t);
 }
 
+function normalizeReplyText(text) {
+  return String(text || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\u2018\u2019\u02bc\u0060\u00b4]/g, "'");
+}
+
 function looksLikeNiatNotInterested(text) {
-  const t = String(text || '').trim().toLowerCase();
+  const t = normalizeReplyText(text);
   return (
     t === 'flowv2_b9_niat_no' ||
     t.includes('not for me') ||
@@ -200,13 +207,14 @@ function looksLikeNiatNotInterested(text) {
 }
 
 function looksLikeNiatInterested(text) {
-  const t = String(text || '').trim().toLowerCase();
+  const t = normalizeReplyText(text);
   if (looksLikeNiatNotInterested(t)) return false;
   return (
     t === 'flowv2_b9_niat_yes' ||
     t.includes("yes, i'm interested") ||
     t.includes('yes im interested') ||
     t.includes("i'm interested") ||
+    t.includes('yes interested') ||
     t.includes('yes, book') ||
     t === 'yes' ||
     t.includes('tell me more') ||
@@ -327,6 +335,12 @@ function handleB9Entry(ctx) {
   };
 }
 
+const NIAT_TO_BOOKING_BRIDGE = [
+  'Great 👍',
+  'Since NIAT looks interesting, the best next step is a FREE 1:1 Career Guidance Session with an IITian.',
+  "In that session you'll verify curriculum, partner campus, internships, fees and whether NIAT is actually the right fit — before you decide.",
+].join('\n');
+
 function handleB9NiatInterestReply(ctx, text) {
   const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
 
@@ -344,7 +358,10 @@ function handleB9NiatInterestReply(ctx, text) {
 
   if (looksLikeNiatInterested(text)) {
     const merged = mergeFlowV2Profile(profile, { niatInterest: true });
-    return handleB7Entry(withMergedProfile(ctx, merged));
+    assertGuardrails(NIAT_TO_BOOKING_BRIDGE);
+    const book = handleB7Entry(withMergedProfile(ctx, merged));
+    // Same turn: bridge + Stage 10 booking invite (Book → link).
+    return combineNodeResults([NIAT_TO_BOOKING_BRIDGE], book);
   }
 
   return {
@@ -423,6 +440,7 @@ module.exports = {
   FIT_BUTTONS,
   NIAT_INTEREST_BODY,
   NIAT_INTEREST_BUTTONS,
+  NIAT_TO_BOOKING_BRIDGE,
   HONEST_PASS_TEXT,
   COMPARE_TABLE,
   SELF_LOOKUP_TEXT,

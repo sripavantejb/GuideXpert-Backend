@@ -96,29 +96,15 @@ describe('Full Flow V3 — happy path PCM spine (company Option 3)', () => {
     result = await processFlowV2Turn(ctx, "Yes, I'm interested");
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     text = visible(result);
-    assert.match(text, /IITian/i);
+    assert.match(text, /IITian|book your session|FREE 1:1/i);
     assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
     assert.equal(result.contextPatch.profile.niatInterest, true);
     assert.ok(result.interactive?.buttons?.some((b) => /Book My Session/i.test(b.title)));
 
     result = await processFlowV2Turn(ctx, 'Book My Session');
-    assert.ok(
-      result.contextPatch.stage === 'b7_awaiting_slot' || result.contextPatch.stage === 'b7_awaiting_done',
-      result.contextPatch.stage
-    );
-
-    if (result.contextPatch.stage === 'b7_awaiting_slot') {
-      ctx = {
-        flowV2: {
-          stage: result.contextPatch.stage,
-          profile: result.contextPatch.profile,
-          hybridSlotOffers: result.contextPatch.hybridSlotOffers,
-        },
-      };
-      result = await processFlowV2Turn(ctx, "Some other time — I'll tell you");
-    }
     text = visible(result);
     assert.match(text, /guidexpert\.co\.in\/one-on-one-session/i);
+    assert.equal(result.contextPatch.stage, 'b7_awaiting_done');
     assert.equal(result.contextPatch.profile.bookingStatus, 'link_sent');
   });
 });

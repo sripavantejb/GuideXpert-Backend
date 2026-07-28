@@ -31,8 +31,10 @@ Ask: *Would you like me to help you find the best fit?*
 
 ## B10 · Hybrid book (IITian copy)
 
-Only after NIAT interest yes: FREE 1:1 with an **IITian** → live slots → website URL.
+Only after NIAT interest yes:
 
-Buttons: **📅 Book My Session** / **Maybe Later**.
+1. Bridge: free 1:1 IITian session suggestion  
+2. Stage 10 invite buttons: **📅 Book My Session** / **Maybe Later**  
+3. **Book My Session** → booking link sent immediately (no slot picker on this path)
 
 Maybe Later schedules +30m / +1h / +3h via `GET /cron/process-booking-followups`.

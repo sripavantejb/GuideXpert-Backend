@@ -571,9 +571,19 @@ async function processFlowV2TurnRaw(ctx, inboundMessage, meta = {}) {
     return handlePendingInterrupt(turnCtx, text);
   }
 
-  // Core-fork / exit button stages own their replies — R4 must not steal
-  // "I want pure mechanical" (which matches R4-D goal) away from F2.
-  if (stage === 'b2_core_fork_awaiting_reply' || stage === 'b2_core_exit_awaiting_reply') {
+  // Core-fork / exit + late-spine button stages own their replies — R4/Node
+  // classification must not steal postback IDs like flowv2_b9_niat_yes or
+  // "Yes, I'm interested" away from the NIAT interest / shortlist gates.
+  if (
+    stage === 'b2_core_fork_awaiting_reply' ||
+    stage === 'b2_core_exit_awaiting_reply' ||
+    stage === 'b6_permission_awaiting_reply' ||
+    stage === 'b8_shortlist_ask_awaiting_reply' ||
+    stage === 'b8_shortlist_ask_declined' ||
+    stage === 'b9_awaiting_reply' ||
+    stage === 'b9_niat_interest_awaiting_reply' ||
+    stage === 'b9_parked_warm'
+  ) {
     return withDoorHistory(await runStageFallthrough(turnCtx, stage, text), turnCtx, 'R1', stage);
   }
 

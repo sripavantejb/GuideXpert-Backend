@@ -373,5 +373,32 @@ describe('B5 — end-to-end through the full dispatcher', () => {
     result = await processFlowV2Turn(ctx, "Yes, I'm interested");
     assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
     assert.ok(result.interactive || (result.replyParts && result.replyParts.length));
+    const afterInterest = [...(result.replyParts || []), result.replyText, result.interactive?.body]
+      .filter(Boolean)
+      .join('\n');
+    assert.match(afterInterest, /IITian|book your session/i);
+
+    ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
+    result = await processFlowV2Turn(ctx, 'flowv2_b7_book');
+    assert.equal(result.contextPatch.stage, 'b7_awaiting_done');
+    assert.match(result.replyText || '', /guidexpert\.co\.in\/one-on-one-session/i);
+  });
+
+  test('NIAT interest yes accepts button id and curly apostrophe; never routes to R4', async () => {
+    const baseProfile = {
+      ...emptyFlowV2Profile(),
+      ...STANDARD_PROFILE_PATCH,
+      fitCollege: 'niat',
+      recommendation: 'niat',
+    };
+    for (const tap of ['flowv2_b9_niat_yes', "Yes, I\u2019m interested"]) {
+      const result = await processFlowV2Turn(
+        { flowV2: { stage: 'b9_niat_interest_awaiting_reply', profile: { ...baseProfile } } },
+        tap
+      );
+      assert.equal(result.contextPatch.stage, 'b7_awaiting_reply', tap);
+      assert.ok(result.interactive?.buttons?.some((b) => /Book My Session/i.test(b.title)), tap);
+      assert.notEqual(result.contextPatch.stage, 'r4_college_awaiting_reply', tap);
+    }
   });
 });
