@@ -337,8 +337,18 @@ function isRankBranchRecommendationQuery(text) {
 }
 
 /**
- * Rule-based intent classification (Phase 1).
- * @returns {{ intent: string, confidence: 'high'|'medium'|'low' }}
+ * Rule-based intent classification.
+ *
+ * Live product contract (Master Flow sole door):
+ * - Explicit AGENT / human handoff → human_handoff
+ * - Explicit STOP → opt_out
+ * - Already inside career_counselling_flow_v2 → continue
+ * - Everything else (MENU, hi, college questions, predictors, ICE/CPA/KA,
+ *   legacy digits, unknown) → career_counselling_flow_v2
+ *
+ * Legacy IIT/GX numbered menus, frozen journey entry, and assistant
+ * divert narratives are retired as live WhatsApp doors.
+ * @returns {{ intent: string, confidence: 'high'|'medium'|'low', intentReason?: string }}
  */
 function classifyIntent(text, botState, productLine, originalText = null) {
   const t = normalizeText(text);
@@ -350,246 +360,57 @@ function classifyIntent(text, botState, productLine, originalText = null) {
   ) {
     return { intent: 'human_handoff', confidence: 'high' };
   }
-  if (matchesMainMenuTrigger(t)) {
-    return { intent: 'main_menu', confidence: 'high' };
-  }
-  if (matchesAny(t, GLOBAL_KEYWORDS.cancel)) {
-    return { intent: 'main_menu', confidence: 'high' };
-  }
   if (matchesAny(t, GLOBAL_KEYWORDS.stop)) {
     return { intent: 'opt_out', confidence: 'high' };
   }
 
   const activeGuidedFlow = getGuidedFlowByBotState(botState?.state);
-  if (activeGuidedFlow) {
+  if (activeGuidedFlow?.id === 'career_counselling_flow_v2') {
     return { intent: activeGuidedFlow.continueIntent, confidence: 'high' };
   }
 
+  // MENU / cancel / greetings / college talk / leftover sticky legacy flows
+  // all enter (or re-enter) Master Flow v2. Predictor/ICE/CPA/KA cold starts
+  // are owned by Flow v2 router buckets (R4-P, R5, etc.), not separate apps.
   const standaloneGreeting = matchesStandaloneGreeting(t);
   const nativeGreeting = isNativeSocialGreeting(original);
   const socialGreeting = isSocialGreeting(t, original);
   const romanizedTeluguGreeting =
     isRomanizedTeluguSocialGreeting(original) || isRomanizedTeluguSocialGreeting(t);
+  const menuOrCancel =
+    matchesMainMenuTrigger(t) || matchesAny(t, GLOBAL_KEYWORDS.cancel);
+  const migratingLegacyFlow = Boolean(
+    activeGuidedFlow && activeGuidedFlow.id !== 'career_counselling_flow_v2'
+  );
+
+  let intentReason = 'master_flow_v2_sole_door';
+  if (romanizedTeluguGreeting) intentReason = 'romanized_telugu_greeting_flow_v2';
+  else if (standaloneGreeting) intentReason = 'standalone_greeting_flow_v2';
+  else if (nativeGreeting || socialGreeting) intentReason = 'social_greeting_flow_v2';
+  else if (menuOrCancel) intentReason = 'menu_to_flow_v2';
+  else if (migratingLegacyFlow) intentReason = 'migrate_legacy_guided_flow';
+  else if (
+    isCareerCounsellingJourneyEnabled() &&
+    isCareerCounsellingJourneyEntryQuery(t, original)
+  ) {
+    intentReason = 'career_counselling_flow_v2_entry';
+  }
 
   logIntentDebug({
     stage: 'classifyIntent',
     message: original,
     intentText: t,
-    isSocialGreeting: socialGreeting,
-    isNativeSocialGreeting: nativeGreeting,
-    romanizedTeluguGreeting,
-    standaloneGreeting,
+    productLine: productLine || null,
+    intent: 'career_counselling_flow_v2',
+    reason: intentReason,
+    priorGuidedFlow: activeGuidedFlow?.id || null,
   });
 
-  // Master Flow v2 is the live counselling entry. "hi" / "hello" / "start"
-  // must open Rithika Node E — never the legacy IIT/GX numbered main menu.
-  if (standaloneGreeting || nativeGreeting || socialGreeting) {
-    const intentReason = romanizedTeluguGreeting
-      ? 'romanized_telugu_greeting_flow_v2'
-      : standaloneGreeting
-        ? 'standalone_greeting_flow_v2'
-        : 'social_greeting_flow_v2';
-    logIntentDebug({ message: original, intent: 'career_counselling_flow_v2', reason: intentReason });
-    return { intent: 'career_counselling_flow_v2', confidence: 'high', intentReason };
-  }
-
-  if (isIitCounsellingExpertEnabled() && isFactualIceDelegation(t, original)) {
-    const inStrategySession =
-      isIitCounsellingStrategyEnabled() && isIitCounsellingStrategySessionActive(botState);
-    const inIceSession = isIitCounsellingExpertSessionActive(botState);
-    if (inStrategySession || !inIceSession) {
-      return {
-        intent: 'iit_counselling_expert',
-        confidence: 'medium',
-        intentReason: 'iit_counselling_factual_delegation',
-      };
-    }
-  }
-
-  if (isGuideXpertIdentityQuestion(t, original)) {
-    return {
-      intent: 'counsellor_program_assistant',
-      confidence: 'medium',
-      intentReason: 'guidexpert_identity_question',
-    };
-  }
-
-  if (isMarksBasedRankPredictorQuery(t, original)) {
-    return { intent: 'rank_predictor', confidence: 'high', intentReason: 'marks_based_rank_query' };
-  }
-
-  if (
-    isCareerCounsellingJourneyEnabled() &&
-    isCareerCounsellingJourneyEntryQuery(t, original)
-  ) {
-    // Past frozen journey is retired as the live door — Master Flow v2 owns entry.
-    return {
-      intent: 'career_counselling_flow_v2',
-      confidence: 'high',
-      intentReason: 'career_counselling_flow_v2_entry',
-    };
-  }
-
-  if (isRankBranchCollegePredictorQuery(t, original)) {
-    return { intent: 'college_predictor', confidence: 'high', intentReason: 'rank_branch_college_query' };
-  }
-
-  if (isRomanizedTeluguBranchGuidanceQuery(original) || isRomanizedTeluguBranchGuidanceQuery(t)) {
-    return {
-      intent: 'knowledge_assistant',
-      confidence: 'medium',
-      intentReason: 'romanized_telugu_branch_guidance',
-    };
-  }
-
-  if (
-    isIitCounsellingStrategyEnabled() &&
-    isIitCounsellingStrategySessionActive(botState) &&
-    (isIitCounsellingStrategyQuestion(t, original) ||
-      isIitCounsellingStrategyShortFollowUp(t, original))
-  ) {
-    return {
-      intent: 'iit_counselling_strategy',
-      confidence: 'medium',
-      intentReason: 'iit_counselling_strategy_session_active',
-    };
-  }
-
-  if (isIitCounsellingStrategyQuestion(t, original)) {
-    return {
-      intent: 'iit_counselling_strategy',
-      confidence: 'medium',
-      intentReason: 'iit_counselling_strategy_question',
-    };
-  }
-
-  if (isIitCounsellingExpertEnabled() && isIitCounsellingExpertSessionActive(botState)) {
-    return {
-      intent: 'iit_counselling_expert',
-      confidence: 'medium',
-      intentReason: 'iit_counselling_session_active',
-    };
-  }
-
-  if (isIitCounsellingExpertQuestion(t, original)) {
-    return {
-      intent: 'iit_counselling_expert',
-      confidence: 'medium',
-      intentReason: 'iit_counselling_question',
-    };
-  }
-
-  if (isCounsellorProgramSessionActive(botState)) {
-    const programTopicSignal =
-      /\b(fees?|benefits?|mentorship|counsell?ing|counseling|programs?|packages?|duration|join|iit|guidexpert)\b/i;
-    if (
-      isKnowledgeQuestion(t) &&
-      !isCounsellorProgramQuestion(t, original) &&
-      !isGuideXpertIdentityQuestion(t, original) &&
-      !programTopicSignal.test(t) &&
-      !programTopicSignal.test(original)
-    ) {
-      return {
-        intent: 'knowledge_assistant',
-        confidence: 'medium',
-        intentReason: 'knowledge_breakout_from_cpa_session',
-      };
-    }
-    return {
-      intent: 'counsellor_program_assistant',
-      confidence: 'medium',
-      intentReason: 'counsellor_program_session_active',
-    };
-  }
-
-  if (isCounsellorProgramQuestion(t, original)) {
-    return {
-      intent: 'counsellor_program_assistant',
-      confidence: 'medium',
-      intentReason: 'counsellor_program_question',
-    };
-  }
-
-  if (isKnowledgeSessionActive(botState)) {
-    return { intent: 'knowledge_assistant', confidence: 'medium' };
-  }
-
-  if (isCapabilityQuestion(t, original)) {
-    return {
-      intent: 'knowledge_assistant',
-      confidence: 'medium',
-      intentReason: 'capability_question',
-    };
-  }
-
-  if (/^again$/.test(t)) {
-    return { intent: 'college_predictor', confidence: 'high' };
-  }
-
-  if (productLine === 'iit_counselling') {
-    if (/^1$/.test(t)) return { intent: 'lead_lookup', confidence: 'high' };
-    if (/^2$/.test(t)) return { intent: 'counselling_support', confidence: 'high' };
-    if (/^3$/.test(t)) return { intent: 'assigned_expert', confidence: 'high' };
-    if (/^4$/.test(t)) return { intent: 'rank_predictor', confidence: 'high' };
-    if (/^5$/.test(t)) return { intent: 'college_predictor', confidence: 'high' };
-    if (/^6$/.test(t)) return { intent: 'human_handoff', confidence: 'high' };
-  }
-
-  if (productLine === 'guidexpert') {
-    if (/^[1-5]$/.test(t)) return { intent: 'faq', confidence: 'high' };
-    if (/^6$/.test(t)) return { intent: 'human_handoff', confidence: 'high' };
-  }
-
-  if (productLine === 'unknown') {
-    if (/^1$/.test(t)) return { intent: 'counselling_support', confidence: 'high' };
-    if (/^2$/.test(t)) return { intent: 'demo_support', confidence: 'high' };
-    if (/^3$/.test(t)) return { intent: 'rank_predictor', confidence: 'high' };
-    if (/^4$/.test(t)) return { intent: 'human_handoff', confidence: 'high' };
-  }
-
-  if (isKnowledgeQuestion(t)) {
-    return { intent: 'knowledge_assistant', confidence: 'medium' };
-  }
-
-  if (/^1$|my details|my booking|my slot|profile/.test(t)) {
-    return { intent: 'lead_lookup', confidence: 'high' };
-  }
-  if (/^2$|faq|question|help me/.test(t)) {
-    return { intent: 'faq', confidence: 'high' };
-  }
-  if (/\b(predict rank|rank predictor)\b/i.test(t)) {
-    return { intent: 'rank_predictor', confidence: 'high', intentReason: 'explicit_rank_predictor_entry' };
-  }
-  if (/^4$|college|which college|colleges/.test(t)) {
-    return { intent: 'college_predictor', confidence: 'medium' };
-  }
-  if (/^5$|agent|human|talk/.test(t)) {
-    return { intent: 'human_handoff', confidence: 'high' };
-  }
-
-  if (productLine === 'iit_counselling') {
-    if (/assigned expert|my counsellor|my bda|who is my expert/.test(t)) {
-      return { intent: 'assigned_expert', confidence: 'high' };
-    }
-    if (/iit|counselling|counseling|session|slot|telugu|hindi|bda/.test(t)) {
-      return { intent: 'counselling_support', confidence: 'medium' };
-    }
-  }
-
-  if (productLine === 'guidexpert' || productLine === 'unknown') {
-    if (/demo|meet|meeting|slot|register/.test(t)) {
-      return { intent: 'demo_support', confidence: 'medium' };
-    }
-  }
-
-  if (/when|what time|meeting link|reminder|whatsapp/.test(t)) {
-    if (productLine === 'iit_counselling') {
-      return { intent: 'counselling_support', confidence: 'medium' };
-    }
-    return { intent: 'demo_support', confidence: 'medium' };
-  }
-
-  return { intent: 'unknown', confidence: 'low' };
+  return {
+    intent: 'career_counselling_flow_v2',
+    confidence: 'high',
+    intentReason,
+  };
 }
 
 module.exports = {

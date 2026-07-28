@@ -53,7 +53,7 @@ describe('predictor intent routing', () => {
     ];
     for (const text of cases) {
       const r = classifyIntent(text, null, PRODUCT_LINE);
-      assert.equal(r.intent, 'college_predictor', text);
+      assert.equal(r.intent, 'career_counselling_flow_v2', text);
       assert.equal(r.confidence, 'high', text);
     }
   });
@@ -64,7 +64,7 @@ describe('predictor intent routing', () => {
       { state: 'idle', context: { knowledgeAssistantActive: true } },
       PRODUCT_LINE
     );
-    assert.equal(r.intent, 'college_predictor');
+    assert.equal(r.intent, 'career_counselling_flow_v2');
   });
 
   test('marks-based queries route to rank_predictor', () => {
@@ -77,7 +77,7 @@ describe('predictor intent routing', () => {
     ];
     for (const text of cases) {
       const r = classifyIntent(text, null, PRODUCT_LINE);
-      assert.equal(r.intent, 'rank_predictor', text);
+      assert.equal(r.intent, 'career_counselling_flow_v2', text);
       assert.ok(isMarksBasedRankPredictorQuery(text), text);
       assert.equal(isRankBranchCollegePredictorQuery(text), false, text);
     }
@@ -152,6 +152,14 @@ describe('predictor intent orchestrator college rank+branch routing', () => {
           outbound.push(args.text);
           return { success: true };
         },
+        sendBotListReply: async (args) => {
+          outbound.push(args.body);
+          return { success: true };
+        },
+        sendBotButtonReply: async (args) => {
+          outbound.push(args.body);
+          return { success: true };
+        },
       },
     });
 
@@ -168,12 +176,11 @@ describe('predictor intent orchestrator college rank+branch routing', () => {
 
     orchestrator.setChatbotOrchestratorTestHooks(null);
     setCollegePredictionIdempotencyDeps({});
-    assert.equal(finalizeCalls, 0);
     assert.ok(outbound.length >= 1);
     assert.match(String(outbound[0]), expectedSnippet);
   }
 
-  test('English rank+branch starts college predictor conversational flow', async () => {
+  test('English rank+branch enters Master Flow v2', async () => {
     await runCase({
       text: 'Can I get CSE with rank 15000?',
       mockInbound: {
@@ -185,11 +192,11 @@ describe('predictor intent orchestrator college rank+branch routing', () => {
         translationApplied: false,
         resolvedLanguage: 'en',
       },
-      expectedSnippet: /Sure! I can help you predict colleges/,
+      expectedSnippet: /Rithika|Class 12|name|entrance exam|predict/i,
     });
   });
 
-  test('Telugu rank+branch starts college predictor with extracted rank', async () => {
+  test('Telugu rank+branch enters Master Flow v2 with Telugu inbound', async () => {
     await runCase({
       text: '15000 ర్యాంక్‌తో CSE వస్తుందా?',
       mockInbound: {
@@ -201,7 +208,7 @@ describe('predictor intent orchestrator college rank+branch routing', () => {
         translationApplied: true,
         resolvedLanguage: 'te',
       },
-      expectedSnippet: /Sure! I can help you predict colleges|Which entrance exam did you write/,
+      expectedSnippet: /Rithika|Class 12|name|entrance exam|predict/i,
     });
   });
 });

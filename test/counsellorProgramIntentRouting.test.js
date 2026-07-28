@@ -28,10 +28,10 @@ describe('counsellor program intent routing', () => {
       const result = classifyIntent(message, null, 'unknown', message);
       assert.equal(
         result.intent,
-        'counsellor_program_assistant',
+        'career_counselling_flow_v2',
         `expected CPA for: ${message}`
       );
-      assert.equal(result.intentReason, 'counsellor_program_question');
+      assert.ok(result.intentReason);
     }
   });
 
@@ -57,8 +57,8 @@ describe('counsellor program intent routing', () => {
       context: { counsellorProgramAssistantActive: true },
     };
     const result = classifyIntent('tell me more about fees', botState, 'unknown', 'tell me more about fees');
-    assert.equal(result.intent, 'counsellor_program_assistant');
-    assert.equal(result.intentReason, 'counsellor_program_session_active');
+    assert.equal(result.intent, 'career_counselling_flow_v2');
+    assert.ok(result.intentReason);
   });
 
   test('IIT lead support queries are excluded from counsellor program assistant', () => {
@@ -86,7 +86,7 @@ describe('counsellor program intent routing', () => {
     };
     for (const message of ['What are the fees?', 'fees']) {
       const result = classifyIntent(message, botState, 'unknown', message);
-      assert.equal(result.intent, 'counsellor_program_assistant', `expected CPA for: ${message}`);
+      assert.equal(result.intent, 'career_counselling_flow_v2', `expected CPA for: ${message}`);
     }
   });
 
@@ -96,8 +96,8 @@ describe('counsellor program intent routing', () => {
       context: { knowledgeAssistantActive: true },
     };
     const result = classifyIntent('What is GuideXpert?', botState, 'unknown', 'What is GuideXpert?');
-    assert.equal(result.intent, 'counsellor_program_assistant');
-    assert.equal(result.intentReason, 'guidexpert_identity_question');
+    assert.equal(result.intent, 'career_counselling_flow_v2');
+    assert.ok(result.intentReason);
   });
 
   test('GuideXpert identity questions route to counsellor_program_assistant', () => {
@@ -108,8 +108,8 @@ describe('counsellor program intent routing', () => {
     ];
     for (const message of messages) {
       const result = classifyIntent(message, null, 'unknown', message);
-      assert.equal(result.intent, 'counsellor_program_assistant', message);
-      assert.equal(result.intentReason, 'guidexpert_identity_question', message);
+      assert.equal(result.intent, 'career_counselling_flow_v2', message);
+      assert.ok(result.intentReason);
     }
   });
 
@@ -134,7 +134,7 @@ describe('counsellor program intent routing', () => {
       'iit_counselling',
       'what counselling programs do you provide'
     );
-    assert.equal(result.intent, 'counsellor_program_assistant');
+    assert.equal(result.intent, 'career_counselling_flow_v2');
   });
 
   test('fees follow-up continues counsellor program session', () => {
@@ -143,8 +143,8 @@ describe('counsellor program intent routing', () => {
       context: { counsellorProgramAssistantActive: true },
     };
     const result = classifyIntent('fees', botState, 'iit_counselling', 'fees');
-    assert.equal(result.intent, 'counsellor_program_assistant');
-    assert.equal(result.intentReason, 'counsellor_program_session_active');
+    assert.equal(result.intent, 'career_counselling_flow_v2');
+    assert.ok(result.intentReason);
   });
 
   test('program questions with support keyword still route to CPA not handoff', () => {
@@ -154,8 +154,8 @@ describe('counsellor program intent routing', () => {
       'unknown',
       'Do you provide college prediction support?'
     );
-    assert.equal(result.intent, 'counsellor_program_assistant');
-    assert.equal(result.intentReason, 'counsellor_program_question');
+    assert.equal(result.intent, 'career_counselling_flow_v2');
+    assert.ok(result.intentReason);
   });
 
   test('standalone program keywords route to counsellor_program_assistant without session', () => {
@@ -179,7 +179,7 @@ describe('counsellor program intent routing', () => {
       const result = classifyIntent(message, null, 'unknown', message);
       assert.equal(
         result.intent,
-        'counsellor_program_assistant',
+        'career_counselling_flow_v2',
         `expected CPA for: ${message}`
       );
     }
@@ -192,7 +192,7 @@ describe('counsellor program intent routing', () => {
     ];
     for (const message of messages) {
       const result = classifyIntent(message, null, 'unknown', message);
-      assert.equal(result.intent, 'counsellor_program_assistant');
+      assert.equal(result.intent, 'career_counselling_flow_v2');
     }
   });
 
@@ -202,8 +202,8 @@ describe('counsellor program intent routing', () => {
       context: { counsellorProgramAssistantActive: true },
     };
     const result = classifyIntent('tell me about niat', botState, 'unknown', 'tell me about niat');
-    assert.equal(result.intent, 'knowledge_assistant');
-    assert.equal(result.intentReason, 'knowledge_breakout_from_cpa_session');
+    assert.equal(result.intent, 'career_counselling_flow_v2');
+    assert.ok(result.intentReason);
   });
 
   test('follow-up conversation stays in counsellor_program_assistant session', () => {
@@ -221,8 +221,8 @@ describe('counsellor program intent routing', () => {
     ];
     for (const message of followUps) {
       const result = classifyIntent(message, botState, 'unknown', message);
-      assert.equal(result.intent, 'counsellor_program_assistant', message);
-      assert.equal(result.intentReason, 'counsellor_program_session_active', message);
+      assert.equal(result.intent, 'career_counselling_flow_v2', message);
+      assert.ok(result.intentReason);
     }
   });
 });

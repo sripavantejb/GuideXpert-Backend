@@ -133,16 +133,15 @@ const IIT_MENU_BODIES = {
   ],
 };
 
+/**
+ * Localized IIT numbered welcome — RETIRED as a live door.
+ * Master Flow v2 owns WhatsApp entry; always returns null so callers
+ * cannot reintroduce the old IIT 1–6 narrative.
+ */
 function buildLocalizedWelcomeMenu(resolvedLanguage, leadContext = {}) {
-  const lang = normalizeLanguageCode(resolvedLanguage) || 'en';
-  const line = leadContext?.productLine || 'unknown';
-  if (line !== 'iit_counselling') {
-    return null;
-  }
-
-  const firstName = extractFirstName(leadContext?.iit?.fullName);
-  const body = IIT_MENU_BODIES[lang] || IIT_MENU_BODIES.en;
-  return [salutation(lang, firstName), '', ...body].join('\n');
+  void resolvedLanguage;
+  void leadContext;
+  return null;
 }
 
 module.exports = {

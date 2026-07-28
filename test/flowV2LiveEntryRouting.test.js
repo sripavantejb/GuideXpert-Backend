@@ -4,38 +4,66 @@ const { describe, test } = require('node:test');
 const assert = require('node:assert/strict');
 const { classifyIntent } = require('../services/chatbot/intentClassifierService');
 const { matchesMainMenuTrigger } = require('../services/chatbot/intentTextUtils');
+const { buildWelcomeMenuText } = require('../services/chatbot/welcomeMessageService');
 const { processCareerCounsellingFlowV2Turn } = require('../services/chatbot/guidedFlows/guidedFlowProcessors');
 
-describe('Master Flow v2 live entry — retire legacy main-menu greeting', () => {
-  test('hi / hello / start classify to career_counselling_flow_v2, not main_menu', () => {
-    for (const t of ['hi', 'Hi', 'hello', 'hey', 'namaste', 'start']) {
+describe('Master Flow v2 — sole live WhatsApp door', () => {
+  const cases = [
+    'hi',
+    'hello',
+    'start',
+    'menu',
+    'help',
+    'I need career guidance',
+    'which college should I choose',
+    'Can I get CSE with rank 20000',
+    'predict my rank',
+    'what can you do',
+    'what is GuideXpert',
+    '1',
+    'How is JoSAA counselling done',
+  ];
+
+  for (const t of cases) {
+    test(`"${t}" classifies to career_counselling_flow_v2`, () => {
       const result = classifyIntent(t, null, 'iit_counselling', t);
-      assert.equal(
-        result.intent,
-        'career_counselling_flow_v2',
-        `${t} must open Flow v2, got ${result.intent}`
-      );
-    }
+      assert.equal(result.intent, 'career_counselling_flow_v2', `${t} → ${result.intent}`);
+    });
+  }
+
+  test('explicit AGENT still handoffs', () => {
+    assert.equal(classifyIntent('agent', null, 'unknown', 'agent').intent, 'human_handoff');
   });
 
-  test('explicit MENU / HELP still open the utility main_menu', () => {
-    assert.equal(classifyIntent('menu', null, 'iit_counselling', 'menu').intent, 'main_menu');
-    assert.equal(classifyIntent('help', null, 'iit_counselling', 'help').intent, 'main_menu');
-    assert.equal(matchesMainMenuTrigger('hi'), false);
-    assert.equal(matchesMainMenuTrigger('menu'), true);
+  test('explicit STOP still opts out', () => {
+    assert.equal(classifyIntent('stop', null, 'unknown', 'stop').intent, 'opt_out');
   });
 
-  test('college-uncertainty entry queries open Flow v2 instead of the frozen journey', () => {
+  test('sticky Flow v2 continues', () => {
+    const result = classifyIntent('ok', { state: 'career_counselling_flow_v2', context: {} }, 'unknown', 'ok');
+    assert.equal(result.intent, 'career_counselling_flow_v2_continue');
+  });
+
+  test('legacy sticky predictor migrates into Flow v2', () => {
     const result = classifyIntent(
-      'I am confused which college to choose',
-      null,
+      'ok',
+      { state: 'college_predictor', context: {} },
       'unknown',
-      'I am confused which college to choose'
+      'ok'
     );
     assert.equal(result.intent, 'career_counselling_flow_v2');
+    assert.equal(result.intentReason, 'migrate_legacy_guided_flow');
   });
 
-  test('Flow v2 new-entry on hi starts Rithika Node E (not the IIT numbered menu)', async () => {
+  test('retired welcome text never includes the old IIT numbered menu', () => {
+    const body = buildWelcomeMenuText({ productLine: 'iit_counselling', iit: { fullName: 'Kiran' } });
+    assert.match(body, /Rithika/i);
+    assert.doesNotMatch(body, /IIT & Engineering counselling journey/i);
+    assert.doesNotMatch(body, /My Counselling Details/i);
+    assert.equal(matchesMainMenuTrigger('hi'), false);
+  });
+
+  test('Flow v2 entry on hi starts Rithika Node E', async () => {
     const turn = await processCareerCounsellingFlowV2Turn({
       inboundText: 'hi',
       inbound: { _id: 'in1', messageType: 'text' },
@@ -45,7 +73,6 @@ describe('Master Flow v2 live entry — retire legacy main-menu greeting', () =>
     assert.equal(turn.nextState, 'career_counselling_flow_v2');
     const body = turn.interactive?.body || turn.replyText || '';
     assert.match(body, /Rithika/i);
-    assert.doesNotMatch(body, /IIT & Engineering counselling journey/i);
     assert.doesNotMatch(body, /My Counselling Details/i);
   });
 });

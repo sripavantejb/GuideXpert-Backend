@@ -198,7 +198,7 @@ describe('chatbotOrchestrator menu mapping', () => {
   });
 
   test('mapMenuIdToIntent menu_5 is college_predictor for IIT', () => {
-    assert.equal(mapMenuIdToIntent('menu_5', 'iit_counselling'), 'college_predictor');
+    assert.equal(mapMenuIdToIntent('menu_5', 'iit_counselling'), 'career_counselling_flow_v2');
   });
 });
 

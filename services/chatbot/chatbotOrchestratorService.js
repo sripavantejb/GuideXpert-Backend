@@ -242,57 +242,31 @@ function buildMainMenuListSections() {
 
 function mapMenuIdToIntent(menuId, productLine = 'unknown') {
   const id = String(menuId || '');
-  const line = productLine || 'unknown';
-
-  if (line === 'iit_counselling') {
-    if (id === 'menu_1') return 'lead_lookup';
-    if (id === 'menu_2') return 'counselling_support';
-    if (id === 'menu_3') return 'assigned_expert';
-    if (id === 'menu_4') return 'rank_predictor';
-    if (id === 'menu_5') return 'college_predictor';
-    if (id === 'menu_6' || id === 'menu_agent') return 'human_handoff';
-    return 'main_menu';
+  // Legacy IIT/GX/organic numbered menus are retired. Interactive taps
+  // either hand off to a human or re-enter Master Flow v2.
+  if (
+    id === 'menu_6' ||
+    id === 'menu_agent' ||
+    (id === 'menu_5' && String(productLine || '') !== 'iit_counselling')
+  ) {
+    return 'human_handoff';
   }
-
-  if (line === 'guidexpert') {
-    if (id === 'menu_1' || id === 'menu_2' || id === 'menu_faq') return 'faq';
-    if (id === 'menu_agent' || id === 'menu_5') return 'human_handoff';
-    return 'main_menu';
-  }
-
-  if (id === 'menu_1') return 'counselling_support';
-  if (id === 'menu_3') return 'rank_predictor';
-  if (id === 'menu_agent' || id === 'menu_5') return 'human_handoff';
-  return 'main_menu';
+  return 'career_counselling_flow_v2';
 }
 
 async function sendMainMenu(conversation, leadContext, inReplyToInboundId, multilingualInbound = null) {
+  // RETIRED: legacy IIT/GX/organic numbered welcome narratives are no longer
+  // sent. Callers that still invoke sendMainMenu get a short bridge into
+  // Master Flow v2 rather than the old product-line menus.
   const h = hooks();
-  const lang = resolvedLanguageFrom(multilingualInbound);
-  let body = buildLocalizedWelcomeMenu(lang, leadContext);
-  let tier = 'static';
-  let preLocalized = Boolean(body);
-  if (!body) {
-    body = buildMainMenuText(leadContext);
-    tier = 'translate';
-    preLocalized = false;
-  }
-
-  const outboundTrace = {};
-  body = await deliverOutboundReply({
-    replyText: body,
-    multilingualInbound,
-    intent: 'main_menu',
-    localizationTier: tier,
-    preLocalized,
-    outboundTrace,
-  });
-
+  const body =
+    "I'm Rithika from GuideXpert — I'll help you figure out the right path after Class 12. Tell me your name to begin, or just share what you need help with.";
   logChatbotEvent('main_menu_sent', {
     conversationId: conversation._id,
     phone10: conversation.phone,
     productLine: leadContext?.productLine || conversation.productLine || null,
     textLength: String(body || '').length,
+    retiredLegacyMenu: true,
   });
   return h.outbound.sendBotTextReply({
     conversationId: conversation._id,
@@ -496,7 +470,7 @@ async function processInboundCore({
       activeConversation.productLine,
       inbound.text
     );
-    if (menuIntent.intent === 'main_menu') {
+    if (menuIntent.intent === 'main_menu' || menuIntent.intent === 'career_counselling_flow_v2') {
       await h.cancelActiveHandoffForUser(activeConversation);
       activeConversation =
         (await WhatsAppConversation.findById(activeConversation._id).lean()) ||
@@ -754,21 +728,15 @@ async function processInboundCore({
   }
 
   if (intentResult.intent === 'main_menu') {
-    await transitionState(activeConversation._id, activeConversation.phone, 'main_menu', emptySubflows());
-    const result = await sendMainMenu(activeConversation, leadContext, inbound._id, multilingualInbound);
-    logInboundResult({
-      event: 'inbound_processed',
-      conversation: activeConversation,
-      botState,
-      intent: intentResult.intent,
-      contextPatch: emptySubflows(),
-      durationMs: Date.now() - startedAt,
-    });
-    return result;
+    // Legacy numbered menus are retired. MENU / cancel re-enter Master Flow v2.
+    intentResult = {
+      intent: 'career_counselling_flow_v2',
+      confidence: 'high',
+      intentReason: 'main_menu_redirect_flow_v2',
+    };
   }
 
-  // Master Flow v2 live entry / continue — use the interactive-capable
-  // guided-flow executor (list/button replies), not the text-only switch path.
+  // Master Flow v2 — sole live WhatsApp counselling experience.
   if (
     intentResult.intent === 'career_counselling_flow_v2' ||
     intentResult.intent === 'career_counselling_flow_v2_continue'
@@ -776,9 +744,15 @@ async function processInboundCore({
     const flow = getGuidedFlowByIntent(intentResult.intent);
     if (flow) {
       const priorContext = botState?.context || {};
+      const restart =
+        intentResult.intentReason === 'menu_to_flow_v2' ||
+        intentResult.intentReason === 'main_menu_redirect_flow_v2' ||
+        intentResult.intentReason === 'migrate_legacy_guided_flow';
       const seededContext = {
         ...emptySubflows(),
-        flowV2: priorContext.flowV2 || { stage: null, profile: null },
+        flowV2: restart
+          ? { stage: null, profile: priorContext.flowV2?.profile || null }
+          : priorContext.flowV2 || { stage: null, profile: null },
       };
       await transitionState(
         activeConversation._id,

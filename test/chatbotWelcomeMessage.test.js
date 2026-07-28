@@ -8,8 +8,9 @@ const {
   buildWelcomeMenuText,
 } = require('../services/chatbot/welcomeMessageService');
 const { classifyIntent } = require('../services/chatbot/intentClassifierService');
+const { mapMenuIdToIntent } = require('../services/chatbot/chatbotOrchestratorService');
 
-describe('welcomeMessageService', () => {
+describe('welcomeMessageService — legacy menus retired', () => {
   test('extractFirstName returns first token', () => {
     assert.equal(extractFirstName('Ravi Kumar'), 'Ravi');
     assert.equal(extractFirstName('  Priya  '), 'Priya');
@@ -17,67 +18,42 @@ describe('welcomeMessageService', () => {
     assert.equal(extractFirstName(null), null);
   });
 
-  test('IIT welcome uses first name and menu options', () => {
-    const text = buildWelcomeMenuText({
-      productLine: 'iit_counselling',
-      iit: { fullName: 'Priya Sharma' },
-    });
-    assert.match(text, /🎓 Hi Priya!/);
-    assert.match(text, /My Counselling Details/);
-    assert.match(text, /Talk to My Counsellor/);
-    assert.match(text, /When is my counselling session/);
+  test('welcome text is Rithika bridge for every product line', () => {
+    for (const line of ['iit_counselling', 'guidexpert', 'unknown']) {
+      const text = buildWelcomeMenuText({
+        productLine: line,
+        iit: { fullName: 'Priya Sharma' },
+        gx: { fullName: 'Amit Verma' },
+      });
+      assert.match(text, /Rithika/i);
+      assert.doesNotMatch(text, /My Counselling Details/);
+      assert.doesNotMatch(text, /Certified Career Counsellor/);
+      assert.doesNotMatch(text, /IIT \/ College Counselling/);
+    }
   });
 
-  test('IIT welcome without name uses Hi there', () => {
-    const text = buildWelcomeMenuText({
-      productLine: 'iit_counselling',
-      iit: { fullName: '' },
-    });
-    assert.match(text, /🎓 Hi there!/);
-    assert.doesNotMatch(text, /Hi !/);
-  });
-
-  test('GuideXpert lead welcome', () => {
-    const text = buildWelcomeMenuText({
-      productLine: 'guidexpert',
-      gx: { fullName: 'Amit Verma' },
-    });
-    assert.match(text, /💼 Hi Amit!/);
-    assert.match(text, /Certified Career Counsellor/);
-    assert.match(text, /Program Overview/);
-    assert.match(text, /Talk to Our Team/);
-  });
-
-  test('GX welcome without name uses Hi there', () => {
+  test('GX salutation helper still works for non-menu uses', () => {
     assert.match(
       formatWelcomeSalutation({ productLine: 'guidexpert', gx: {} }),
       /Hi there!/
     );
   });
-
-  test('organic visitor welcome', () => {
-    const text = buildWelcomeMenuText({ productLine: 'unknown' });
-    assert.match(text, /👋 Hi! This is GuideXpert\./);
-    assert.match(text, /IIT \/ College Counselling/);
-    assert.match(text, /Become a Career Counsellor/);
-    assert.match(text, /Talk to an Expert/);
-  });
 });
 
-describe('welcome menu digit routing', () => {
-  test('IIT menu 3 is assigned expert', () => {
-    assert.equal(classifyIntent('3', null, 'iit_counselling').intent, 'assigned_expert');
+describe('digit / menu routing — Master Flow v2 sole door', () => {
+  test('legacy digit taps classify to Flow v2', () => {
+    assert.equal(classifyIntent('3', null, 'iit_counselling').intent, 'career_counselling_flow_v2');
+    assert.equal(classifyIntent('2', null, 'guidexpert').intent, 'career_counselling_flow_v2');
+    assert.equal(classifyIntent('1', null, 'unknown').intent, 'career_counselling_flow_v2');
   });
 
-  test('IIT menu 6 is human handoff', () => {
-    assert.equal(classifyIntent('6', null, 'iit_counselling').intent, 'human_handoff');
+  test('interactive agent row still handoffs', () => {
+    assert.equal(mapMenuIdToIntent('menu_6', 'iit_counselling'), 'human_handoff');
+    assert.equal(mapMenuIdToIntent('menu_agent', 'unknown'), 'human_handoff');
   });
 
-  test('GX menu 2 is faq', () => {
-    assert.equal(classifyIntent('2', null, 'guidexpert').intent, 'faq');
-  });
-
-  test('organic menu 1 is counselling_support', () => {
-    assert.equal(classifyIntent('1', null, 'unknown').intent, 'counselling_support');
+  test('interactive counselling rows enter Flow v2', () => {
+    assert.equal(mapMenuIdToIntent('menu_1', 'iit_counselling'), 'career_counselling_flow_v2');
+    assert.equal(mapMenuIdToIntent('menu_5', 'iit_counselling'), 'career_counselling_flow_v2');
   });
 });

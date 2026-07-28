@@ -36,85 +36,51 @@ describe('romanized Telugu greeting routing', () => {
   });
 });
 
-describe('romanized Telugu branch guidance routing', () => {
-  test('naaku cse kavali routes to knowledge_assistant not college_predictor', () => {
-    const r = classifyIntent('I want CSE', null, PRODUCT_LINE, 'naaku cse kavali');
-    assert.equal(r.intent, 'knowledge_assistant');
-    assert.equal(r.intentReason, 'romanized_telugu_branch_guidance');
+describe('romanized Telugu student talk routes to Master Flow v2', () => {
+  test('naaku cse kavali routes to Flow v2', () => {
+    assertIntent('naaku cse kavali', 'career_counselling_flow_v2', 'I want CSE');
   });
 
-  test('naaku e branch manchidi routes to knowledge_assistant', () => {
-    assertIntent('naaku e branch manchidi', 'knowledge_assistant', 'Which branch is good?');
+  test('naaku e branch manchidi routes to Flow v2', () => {
+    assertIntent('naaku e branch manchidi', 'career_counselling_flow_v2', 'Which branch is good?');
   });
 
-  test('software jobs kosam branch enti routes to knowledge_assistant', () => {
+  test('software jobs kosam branch enti routes to Flow v2', () => {
     assertIntent(
       'software jobs kosam branch enti',
-      'knowledge_assistant',
+      'career_counselling_flow_v2',
       'Which branch for software jobs?'
     );
   });
 
-  test('nenu software engineer avvali routes to knowledge_assistant', () => {
+  test('nenu software engineer avvali routes to Flow v2', () => {
     assertIntent(
       'nenu software engineer avvali',
-      'knowledge_assistant',
+      'career_counselling_flow_v2',
       'I want to become a software engineer'
     );
   });
-});
 
-describe('romanized Telugu college predictor routing', () => {
-  test('15000 rank ki cse vastunda routes to college_predictor', () => {
+  test('15000 rank ki cse vastunda routes to Flow v2', () => {
     assertIntent(
       '15000 rank ki cse vastunda',
-      'college_predictor',
+      'career_counselling_flow_v2',
       'Can I get CSE with rank 15000?'
     );
   });
 
-  test('15000 rank tho cse vastunda routes to college_predictor', () => {
-    assertIntent(
-      '15000 rank tho cse vastunda',
-      'college_predictor',
-      'Can I get CSE with rank 15000?'
-    );
-  });
-});
-
-describe('romanized Telugu rank predictor routing', () => {
-  test('ts eamcet 85 marks routes to rank_predictor', () => {
-    assertIntent('ts eamcet 85 marks', 'rank_predictor');
+  test('ts eamcet 85 marks routes to Flow v2', () => {
+    assertIntent('ts eamcet 85 marks', 'career_counselling_flow_v2');
   });
 
-  test('ap eamcet 90 marks routes to rank_predictor', () => {
-    assertIntent('ap eamcet 90 marks', 'rank_predictor');
-  });
-
-  test('jee mains 120 score routes to rank_predictor', () => {
-    assertIntent('jee mains 120 score', 'rank_predictor');
-  });
-
-  test('branch-only romanized text does not route to rank_predictor', () => {
-    const cases = [
-      'naaku cse kavali',
-      'naaku e branch manchidi',
-      'software jobs kosam branch enti',
-      'ela unnaru',
-    ];
-    for (const text of cases) {
-      const r = classifyIntent(text, null, PRODUCT_LINE, text);
-      assert.notEqual(r.intent, 'rank_predictor', text);
-    }
-  });
-
-  test('active rank predictor session continues without marks in message', () => {
+  test('legacy rank_predictor sticky migrates into Flow v2', () => {
     const r = classifyIntent(
       'naaku cse kavali',
       { state: 'rank_predictor', context: {} },
       PRODUCT_LINE,
       'naaku cse kavali'
     );
-    assert.equal(r.intent, 'rank_predictor_continue');
+    assert.equal(r.intent, 'career_counselling_flow_v2');
+    assert.equal(r.intentReason, 'migrate_legacy_guided_flow');
   });
 });
