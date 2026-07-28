@@ -26,7 +26,13 @@ describe('flowV2 greeting — entry', () => {
     assert.equal(result.interactive.type, 'list');
     assert.equal(result.interactive.sections[0].title, 'Where are you right now?');
     assert.equal(result.interactive.sections[0].rows.length, 10);
-    assert.deepEqual(result.interactive.sections[0].rows, QUALIFICATION_ROWS);
+    assert.deepEqual(
+      result.interactive.sections[0].rows,
+      QUALIFICATION_ROWS.map((row) => ({
+        id: row.id,
+        title: row.waTitle || row.title,
+      }))
+    );
     assert.deepEqual(
       QUALIFICATION_ROWS.map((row) => row.title),
       [
@@ -98,7 +104,7 @@ describe('flowV2 greeting — entry', () => {
         '11th Studying',
         '12th Completed (PCM)',
         '12th Completed (PCB)',
-        '12th Completed (Commerce)',
+        '12th Commerce',
         '12th Completed (Arts)',
         'Diploma',
         'Degree',

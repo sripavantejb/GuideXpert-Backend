@@ -8,6 +8,7 @@ const {
   buildTextMessageField,
   buildInteractiveButtonMessageField,
   buildInteractiveListMessageField,
+  listMessageNeedsEncode,
 } = require('../../utils/gupshupSessionPayload');
 const { isWhatsAppEnabled } = require('../gupshupService');
 
@@ -60,6 +61,9 @@ async function sendSessionMessageRaw(phone10, messageFieldJson, opts = {}) {
   body.append('destination', String(destination).replace(/\D/g, ''));
   body.append('channel', 'whatsapp');
   body.append('message', messageFieldJson);
+  if (opts.encode) {
+    body.append('encode', 'true');
+  }
   if (process.env.GUPSHUP_SRC_NAME) {
     body.append('src.name', process.env.GUPSHUP_SRC_NAME);
   }
@@ -119,7 +123,9 @@ async function sendButtonMessage(phone10, body, buttons, opts = {}) {
 
 async function sendListMessage(phone10, body, buttonText, sections, opts = {}) {
   const field = buildInteractiveListMessageField({ body, buttonText, sections });
-  return sendSessionMessageRaw(phone10, field, opts);
+  const encode =
+    opts.encode != null ? Boolean(opts.encode) : listMessageNeedsEncode(body, sections);
+  return sendSessionMessageRaw(phone10, field, { ...opts, encode });
 }
 
 module.exports = {
