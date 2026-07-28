@@ -69,8 +69,9 @@ describe('b3Constraints — handleB3Entry (four skip-combination cases)', () => 
   test('case (a) both already filled: skips B3 entirely, advances straight to B4 in the same turn', () => {
     const result = handleB3Entry(ctxWithProfile({ budgetBand: 'under_2l', cityPref: 'Hyderabad' }));
     assert.equal([...(result.replyParts || []), result.replyText].filter(Boolean).join('\n\n'), BRIDGE_TEXT);
-    assert.equal(result.contextPatch.stage, 'b8_awaiting_entry');
-    assert.equal(result.interactive, null);
+    assert.equal(result.contextPatch.stage, 'b8_shortlist_ask_awaiting_reply');
+    assert.equal(result.interactive?.type, 'button');
+    assert.match(result.interactive.body, /top 5 colleges/i);
   });
 
   test('REGRESSION (Phase 4 propagation-bug shape): every entry branch carries a profile mutated by an upstream caller', () => {
@@ -130,7 +131,7 @@ describe('b3Constraints — handleB3Reply (stage = b3_awaiting_budget)', () => {
   test('defensive: if cityPref is somehow already filled by the time the budget reply arrives, skips location and advances to B4', () => {
     const result = handleB3Reply(ctxWithProfile({ cityPref: 'Hyderabad' }), '\u20B95L+');
     assert.equal([...(result.replyParts || []), result.replyText].filter(Boolean).join('\n\n'), BRIDGE_TEXT);
-    assert.equal(result.contextPatch.stage, 'b8_awaiting_entry');
+    assert.equal(result.contextPatch.stage, 'b8_shortlist_ask_awaiting_reply');
     assert.equal(result.contextPatch.profile.budgetBand, '5l_plus');
     assert.equal(result.contextPatch.profile.cityPref, 'Hyderabad');
   });
@@ -139,7 +140,7 @@ describe('b3Constraints — handleB3Reply (stage = b3_awaiting_budget)', () => {
     const result = handleB3Reply(ctxWithProfile(), 'under 2L is fine, I want to stay in Hyderabad');
     assert.equal(result.contextPatch.profile.budgetBand, 'under_2l');
     assert.equal(result.contextPatch.profile.cityPref, 'Hyderabad');
-    assert.equal(result.contextPatch.stage, 'b8_awaiting_entry');
+    assert.equal(result.contextPatch.stage, 'b8_shortlist_ask_awaiting_reply');
   });
 
   test('contextPatch carries profile forward on the sequential budget->location transition', () => {
@@ -168,7 +169,7 @@ describe('b3Constraints — handleB3Reply (stage = b3_awaiting_location)', () =>
     );
     assert.equal(result.contextPatch.profile.cityPref, 'near_home');
     assert.equal(result.contextPatch.profile.city, 'Hyderabad');
-    assert.equal(result.contextPatch.stage, 'b8_awaiting_entry');
+    assert.equal(result.contextPatch.stage, 'b8_shortlist_ask_awaiting_reply');
   });
 
   test('a real city name (free text, not a tap) also resolves correctly', () => {
@@ -184,13 +185,14 @@ describe('b3Constraints — handleB3Reply (stage = b3_awaiting_location)', () =>
     assert.notEqual([...(result.replyParts || []), result.replyText].filter(Boolean).join('\n\n'), BRIDGE_TEXT);
   });
 
-  test('this is the LAST question of the beat: no additional question is ever appended after a location answer', () => {
+  test('this is the LAST question of the beat: no additional B3 question is appended after a location answer', () => {
     const result = handleB3Reply(locationCtx(), 'Open to move');
-    assert.equal(result.interactive, null);
-    // Company two-models may arrive as replyParts (two bubbles) — still no question UI.
+    // Framing + top-5 ask buttons (not another B3 budget/location question).
+    assert.equal(result.interactive?.type, 'button');
+    assert.match(result.interactive.body, /top 5 colleges/i);
     const text = [...(result.replyParts || []), result.replyText].filter(Boolean).join('\n');
     assert.match(text, /Traditional Colleges|New-Age Colleges|biggest difference/i);
-    assert.doesNotMatch(text, /\?$/m);
+    assert.doesNotMatch(result.interactive.body, /comfortable for your family|near home/i);
   });
 
   test('contextPatch carries profile forward on the location->B4 transition', () => {
@@ -203,14 +205,15 @@ describe('b3Constraints — handleB3Reply (stage = b3_awaiting_location)', () =>
 describe('b4Bridge — handleB4Entry', () => {
   const { handleB4Entry } = require('../services/chatbot/flowV2/nodes/b4Bridge');
 
-  test('sends V3 two-models frame, sets stage to b8_awaiting_entry, no buttons/interactive', () => {
+  test('sends V3 two-models frame then asks before top-5 shortlist', () => {
     const result = handleB4Entry(ctxWithProfile());
     const text = [...(result.replyParts || []), result.replyText].filter(Boolean).join('\n\n');
     assert.equal(text, BRIDGE_TEXT);
     assert.match(text, /Traditional Colleges|New-Age Colleges/i);
-    assert.equal(result.contextPatch.stage, 'b8_awaiting_entry');
+    assert.equal(result.contextPatch.stage, 'b8_shortlist_ask_awaiting_reply');
     assert.equal(result.contextPatch.profile.frameSent, true);
-    assert.equal(result.interactive, null);
+    assert.equal(result.interactive?.type, 'button');
+    assert.match(result.interactive.body, /top 5 colleges/i);
   });
 
   test('carries profile forward (Phase 4 propagation-bug shape)', () => {
@@ -263,7 +266,8 @@ describe('B3/B4 — end-to-end through the full dispatcher', () => {
     assert.equal(result.contextPatch.profile.cityPref, 'open_to_move');
     assert.ok(
       result.contextPatch.stage === 'b9_awaiting_reply' ||
-        result.contextPatch.stage === 'b8_awaiting_entry' ||
+        result.contextPatch.stage === 'b8_shortlist_ask_awaiting_reply' ||
+        result.contextPatch.stage === 'b8_shortlist_ask_awaiting_reply' ||
         result.contextPatch.stage === 'b7_awaiting_reply',
       `expected B8/B9/B10 stage, got ${result.contextPatch.stage}`
     );
@@ -274,7 +278,7 @@ describe('B3/B4 — end-to-end through the full dispatcher', () => {
     ]
       .filter(Boolean)
       .join('\n');
-    assert.match(visible, /Traditional Colleges|New-Age Colleges|Newton School|best fit/i);
+    assert.match(visible, /Traditional Colleges|New-Age Colleges|top 5 colleges|Newton School|best fit/i);
     assert.doesNotMatch(visible, /\*Best Match\*/i);
   });
 });

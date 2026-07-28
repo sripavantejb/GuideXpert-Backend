@@ -1,10 +1,9 @@
 'use strict';
 
 /**
- * Flow V3 — B9 · FIT (Company Stage 8 ask + Stage 9 NIAT soft nudge).
+ * Flow V3 — B9 · FIT + Stage 9 NIAT pitch + interest gate (then B10).
  *
- * Ask → on yes: company NIAT pitch → B10.
- * Self-explore honoured once.
+ * Fit ask → rich NIAT pitch → "interested?" → only then booking invite.
  */
 
 const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
@@ -14,12 +13,24 @@ const { withMergedProfile, combineNodeResults } = require('../flowV2NodeUtils');
 const { handleB7Entry } = require('./b7Book');
 const { FIT_ASK_BODY: SHORTLIST_FIT_ASK, FIT_BUTTONS: SHORTLIST_FIT_BUTTONS } = require('./b8FlatShortlist');
 
-// Prefer B8's shared fit copy so Stage 8 + Stage 9 stay consistent.
 const FIT_ASK_BODY = SHORTLIST_FIT_ASK || 'Would you like me to help you find the best fit?';
 const FIT_BUTTONS = SHORTLIST_FIT_BUTTONS || Object.freeze([
   Object.freeze({ id: 'flowv2_b9_yes', title: 'Yes, help me' }),
   Object.freeze({ id: 'flowv2_b9_self', title: "I'll explore myself" }),
 ]);
+
+const NIAT_INTEREST_BODY = 'Does exploring NIAT further sound interesting to you?';
+const NIAT_INTEREST_BUTTONS = Object.freeze([
+  Object.freeze({ id: 'flowv2_b9_niat_yes', title: "Yes, I'm interested" }),
+  Object.freeze({ id: 'flowv2_b9_niat_no', title: 'Not for me' }),
+]);
+
+const NIAT_INTEREST_DECLINE = [
+  'Totally fair 👍',
+  'There are other strong options on that shortlist too — Newton, Scaler, Polar and Plaksha each have a different style.',
+  '',
+  "If you want a second opinion later, or a free chat with an IITian counsellor, I'm here.",
+].join('\n');
 
 const SELF_LOOKUP_TEXT = [
   'Good — take your time exploring 👍',
@@ -35,14 +46,13 @@ const HONEST_PASS_TEXT = [
   "If it'd help, I can put you in front of a counsellor who'll talk through the options that *do* fit — including ones we have nothing to do with.",
 ].join('\n');
 
-/** Compact compare — Stage 8 catalog. */
 const COMPARE_TABLE = [
   "Here's how they stack up on what you care about 👇",
   '',
-  'Focus           Newton · NIAT · Scaler · Polar · Plaksha · Kalvium',
-  'AI / curriculum ●●     · ●●●  · ●●●    · ●●    · ●●●     · ●●',
-  'Projects        ●●●    · ●●●  · ●●●    · ●●●   · ●●      · ●●●',
-  'Internships     ●●     · ●●●  · ●●●    · ●●    · ●●      · ●●●',
+  'Focus           Newton · NIAT · Scaler · Polar · Plaksha',
+  'AI / curriculum ●●     · ●●●  · ●●●    · ●●    · ●●●',
+  'Projects        ●●●    · ●●●  · ●●●    · ●●●   · ●●',
+  'Internships     ●●     · ●●●  · ●●●    · ●●    · ●●',
 ].join('\n');
 
 const NIAT_NAME = 'NIAT';
@@ -95,9 +105,6 @@ function priorityTiedReason(profile) {
   return 'it balances modern curriculum, real internships and an industry-linked environment better than a brochure ranking can';
 }
 
-/**
- * Honest pass only when catalog clearly does not fit — not a silent always-NIAT lie.
- */
 function shouldHonestPass(profile) {
   const cluster = String(profile?.interestCluster || '').toLowerCase();
   const status = String(profile?.status || '').toLowerCase();
@@ -114,17 +121,35 @@ function shouldHonestPass(profile) {
 }
 
 /**
- * Company Stage 9 — soft NIAT nudge (verbatim).
+ * Rich NIAT pitch — curriculum, partner campuses, internships, placement support.
+ * Sourced from public NIAT/NxtWave materials; no outcome guarantees.
  */
-function buildNiatCounsellorPitch(_profile) {
+function buildNiatCounsellorPitch(profile) {
+  const why = priorityTiedReason(profile);
+  const interest = interestPhrase(profile);
   return [
     'Sure 😊',
-    'From your interests, NIAT looks like one of the strongest options to explore.',
-    'It focuses on:',
-    '✅ AI & Tech skills',
-    '✅ Practical learning',
-    '✅ Industry projects',
-    '✅ Strong placement support',
+    `From what you shared about ${interest}, NIAT (NxtWave Institute of Advanced Technologies) is one of the strongest options to explore — ${why}.`,
+    '',
+    '📚 Curriculum',
+    '• AI-first B.Tech-style path with 4 phases: Decode → Develop → Architect → Ship',
+    '• Focus on full-stack, AI/ML and shipping real projects — not only semester exams',
+    '• Industry-oriented syllabus that refreshes with tools students actually use',
+    '',
+    '🏫 Degree + tied-up colleges',
+    '• NIAT is an industry upskilling layer by NxtWave (not a standalone degree university)',
+    '• You study on partner university campuses; the UGC-recognised degree comes from that university',
+    '• Partner network spans multiple cities — examples include campuses linked with Chaitanya, DY Patil, Yenepoya, Crescent, S-VYASA, Aurora and others',
+    '',
+    '🛠️ Internships & real work',
+    '• Internships can start early in the journey — not only in the final year',
+    '• Multiple hands-on projects across the 4 years',
+    '• Many students also get stipend-based internship opportunities (amounts vary by role)',
+    '',
+    '💼 Placement support',
+    '• Mock interviews, mentoring and hiring-partner access through the NxtWave network',
+    '• Strong placement support culture — results still depend on your effort and performance',
+    '',
     "But I don't want you to choose a college just because I suggested it.",
     "Let's make sure it's actually the right fit for you.",
   ].join('\n');
@@ -162,6 +187,34 @@ function looksLikeCompare(text) {
   return /\bcompare\b|\bstack up\b|\bvs\b|\bversus\b/.test(t);
 }
 
+function looksLikeNiatNotInterested(text) {
+  const t = String(text || '').trim().toLowerCase();
+  return (
+    t === 'flowv2_b9_niat_no' ||
+    t.includes('not for me') ||
+    t.includes('not interested') ||
+    t.includes('no thanks') ||
+    t.includes('maybe later') ||
+    t === 'no'
+  );
+}
+
+function looksLikeNiatInterested(text) {
+  const t = String(text || '').trim().toLowerCase();
+  if (looksLikeNiatNotInterested(t)) return false;
+  return (
+    t === 'flowv2_b9_niat_yes' ||
+    t.includes("yes, i'm interested") ||
+    t.includes('yes im interested') ||
+    t.includes("i'm interested") ||
+    t.includes('yes, book') ||
+    t === 'yes' ||
+    t.includes('tell me more') ||
+    t.includes('book session') ||
+    t.includes('book my')
+  );
+}
+
 function namedCollegeFromText(text, profile) {
   const t = String(text || '').toLowerCase();
   const list = Array.isArray(profile?.shortlist) ? profile.shortlist : [];
@@ -179,6 +232,30 @@ function namedCollegeFromText(text, profile) {
   return null;
 }
 
+function deliverNiatInterestAsk(ctx, profile, pitchText) {
+  assertGuardrails(pitchText);
+  assertGuardrails(NIAT_INTEREST_BODY);
+  const merged = mergeFlowV2Profile(profile, {
+    fitCollege: 'niat',
+    fitReason: priorityTiedReason(profile),
+    recommendation: 'niat',
+    honestPassFired: false,
+    niatInterest: null,
+  });
+  return {
+    replyText: null,
+    replyParts: [pitchText],
+    interactive: {
+      type: 'button',
+      body: NIAT_INTEREST_BODY,
+      buttons: NIAT_INTEREST_BUTTONS,
+    },
+    contextPatch: { stage: 'b9_niat_interest_awaiting_reply', profile: merged },
+    nextState: 'career_counselling_flow_v2',
+    intent: 'career_counselling_flow_v2',
+  };
+}
+
 function deliverNiatPitch(ctx, profile) {
   if (shouldHonestPass(profile)) {
     const merged = mergeFlowV2Profile(profile, {
@@ -187,24 +264,25 @@ function deliverNiatPitch(ctx, profile) {
       recommendation: null,
     });
     assertGuardrails(HONEST_PASS_TEXT);
-    const book = handleB7Entry(withMergedProfile(ctx, merged));
-    return combineNodeResults([HONEST_PASS_TEXT], book);
+    // Soft counsellor invite only — still ask before hard booking push.
+    const askBody = 'Would a free chat with an IITian counsellor help you sort this?';
+    const buttons = Object.freeze([
+      Object.freeze({ id: 'flowv2_b9_niat_yes', title: 'Yes, book session' }),
+      Object.freeze({ id: 'flowv2_b9_niat_no', title: 'Maybe Later' }),
+    ]);
+    return {
+      replyText: null,
+      replyParts: [HONEST_PASS_TEXT],
+      interactive: { type: 'button', body: askBody, buttons },
+      contextPatch: { stage: 'b9_niat_interest_awaiting_reply', profile: merged },
+      nextState: 'career_counselling_flow_v2',
+      intent: 'career_counselling_flow_v2',
+    };
   }
 
-  const body = buildNiatCounsellorPitch(profile);
-  assertGuardrails(body);
-  const merged = mergeFlowV2Profile(profile, {
-    fitCollege: 'niat',
-    fitReason: priorityTiedReason(profile),
-    recommendation: 'niat',
-    honestPassFired: false,
-  });
-  // Same turn: Stage 9 pitch + Stage 10 booking invite (do not rely on drain alone).
-  const book = handleB7Entry(withMergedProfile(ctx, merged));
-  return combineNodeResults([body], book);
+  return deliverNiatInterestAsk(ctx, profile, buildNiatCounsellorPitch(profile));
 }
 
-/** If student named a non-NIAT college, acknowledge it then still offer counsellor depth. */
 function deliverNamedCollege(ctx, profile, college) {
   const id = String(college.id || '').toLowerCase();
   if (id === 'niat') return deliverNiatPitch(ctx, profile);
@@ -212,9 +290,9 @@ function deliverNamedCollege(ctx, profile, college) {
   const body = [
     `Got it — *${college.name}* is on your shortlist.`,
     '',
-    `You said ${priorityPhrase(profile)} matters most. I can walk you through how it compares on curriculum, internships and fees on a short counsellor call — that's cleaner than me guessing from four answers.`,
+    `You said ${priorityPhrase(profile)} matters most. I can walk you through how it compares on curriculum, internships and fees — including how it stacks next to NIAT — on a short counsellor call.`,
     '',
-    'Shall I book you in?',
+    'Would that be useful?',
   ].join('\n');
   assertGuardrails(body);
   const merged = mergeFlowV2Profile(profile, {
@@ -223,8 +301,18 @@ function deliverNamedCollege(ctx, profile, college) {
     recommendation: college.id,
     honestPassFired: false,
   });
-  const book = handleB7Entry(withMergedProfile(ctx, merged));
-  return combineNodeResults([body], book);
+  return {
+    replyText: null,
+    replyParts: [body],
+    interactive: {
+      type: 'button',
+      body: 'Want me to book a free IITian session to dig into this?',
+      buttons: NIAT_INTEREST_BUTTONS,
+    },
+    contextPatch: { stage: 'b9_niat_interest_awaiting_reply', profile: merged },
+    nextState: 'career_counselling_flow_v2',
+    intent: 'career_counselling_flow_v2',
+  };
 }
 
 function handleB9Entry(ctx) {
@@ -239,8 +327,47 @@ function handleB9Entry(ctx) {
   };
 }
 
+function handleB9NiatInterestReply(ctx, text) {
+  const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
+
+  if (looksLikeNiatNotInterested(text)) {
+    const merged = mergeFlowV2Profile(profile, { niatInterest: false });
+    return {
+      replyText: NIAT_INTEREST_DECLINE,
+      replyParts: null,
+      interactive: null,
+      contextPatch: { stage: 'b9_parked_warm', profile: merged },
+      nextState: 'career_counselling_flow_v2',
+      intent: 'career_counselling_flow_v2',
+    };
+  }
+
+  if (looksLikeNiatInterested(text)) {
+    const merged = mergeFlowV2Profile(profile, { niatInterest: true });
+    return handleB7Entry(withMergedProfile(ctx, merged));
+  }
+
+  return {
+    replyText: null,
+    replyParts: null,
+    interactive: {
+      type: 'button',
+      body: NIAT_INTEREST_BODY,
+      buttons: NIAT_INTEREST_BUTTONS,
+    },
+    contextPatch: { stage: 'b9_niat_interest_awaiting_reply', profile },
+    nextState: 'career_counselling_flow_v2',
+    intent: 'career_counselling_flow_v2',
+  };
+}
+
 function handleB9Reply(ctx, text) {
   const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
+  const stage = ctx?.flowV2?.stage;
+
+  if (stage === 'b9_niat_interest_awaiting_reply') {
+    return handleB9NiatInterestReply(ctx, text);
+  }
 
   if (looksLikeCompare(text)) {
     assertGuardrails(COMPARE_TABLE);
@@ -288,11 +415,14 @@ function handleB9Reply(ctx, text) {
 module.exports = {
   handleB9Entry,
   handleB9Reply,
+  handleB9NiatInterestReply,
   buildNiatCounsellorPitch,
   shouldHonestPass,
   priorityTiedReason,
   FIT_ASK_BODY,
   FIT_BUTTONS,
+  NIAT_INTEREST_BODY,
+  NIAT_INTEREST_BUTTONS,
   HONEST_PASS_TEXT,
   COMPARE_TABLE,
   SELF_LOOKUP_TEXT,

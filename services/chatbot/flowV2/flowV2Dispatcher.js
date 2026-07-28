@@ -98,7 +98,7 @@ const { handleB3Entry, handleB3Reply } = require('./nodes/b3Constraints');
 const { handleB5ChecklistEntry } = require('./nodes/b5Checklist');
 const { handleB6PermissionEntry, handleB6PermissionReply } = require('./nodes/b6Permission');
 const { handleB7TwoModelsEntry } = require('./nodes/b7TwoModels');
-const { handleB8Entry, handleB8Reply } = require('./nodes/b8FlatShortlist');
+const { handleB8Entry, handleB8Reply, handleB8ShortlistAskEntry, handleB8ShortlistAskReply } = require('./nodes/b8FlatShortlist');
 const { handleB9Entry, handleB9Reply } = require('./nodes/b9Fit');
 const { handleB5Entry, handleB5Reply } = require('./nodes/b5Shortlist');
 const { handleB6Entry } = require('./nodes/b6TheCase');
@@ -162,6 +162,7 @@ const AWAITING_ENTRY_HANDLERS = Object.freeze({
   b65_awaiting_entry: (ctx) => handleB3Entry(ctx),
   b3_awaiting_entry: (ctx) => handleB3Entry(ctx),
   b7_two_models_awaiting_entry: (ctx) => handleB7TwoModelsEntry(ctx),
+  b8_shortlist_ask_awaiting_entry: (ctx) => handleB8ShortlistAskEntry(ctx),
   b8_awaiting_entry: (ctx) => handleB8Entry(ctx),
   b9_awaiting_entry: (ctx) => handleB9Entry(ctx),
   b10_awaiting_entry: (ctx) => handleB7Entry(ctx),
@@ -301,10 +302,20 @@ async function runStageFallthrough(ctx, stage, text) {
   if (stage === 'b3_awaiting_city') return await handleB3Reply(ctx, text);
   // B7 two models / B8 / B9
   if (stage === 'b7_two_models_awaiting_entry') return await handleB7TwoModelsEntry(ctx);
+  if (stage === 'b8_shortlist_ask_awaiting_entry') return await handleB8ShortlistAskEntry(ctx);
+  if (stage === 'b8_shortlist_ask_awaiting_reply' || stage === 'b8_shortlist_ask_declined') {
+    return await handleB8ShortlistAskReply(ctx, text);
+  }
   if (stage === 'b8_awaiting_entry') return await handleB8Entry(ctx);
   if (stage === 'b8_awaiting_reply') return await handleB8Reply(ctx, text);
   if (stage === 'b9_awaiting_entry') return await handleB9Entry(ctx);
-  if (stage === 'b9_awaiting_reply' || stage === 'b9_parked_warm') return await handleB9Reply(ctx, text);
+  if (
+    stage === 'b9_awaiting_reply' ||
+    stage === 'b9_parked_warm' ||
+    stage === 'b9_niat_interest_awaiting_reply'
+  ) {
+    return await handleB9Reply(ctx, text);
+  }
   if (stage === 'b10_awaiting_entry') return await handleB7Entry(ctx);
   // Legacy stage names (handlers delegate to V3)
   if (stage === 'b5_awaiting_entry') return await handleB5Entry(ctx);

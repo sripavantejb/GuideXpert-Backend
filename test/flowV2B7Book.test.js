@@ -362,7 +362,7 @@ describe('B7 — full chained transition through the dispatcher', () => {
     assert.equal(result.contextPatch.stage, 'node0_awaiting_slot');
   });
 
-  test('B6 entry drains to B9 FIT ask (V3); yes then reaches booking CTA', async () => {
+  test('B6 entry drains to B9 FIT ask (V3); yes then NIAT interest then booking CTA', async () => {
     let profile = {
       ...emptyFlowV2Profile(),
       shortlist: [
@@ -380,6 +380,10 @@ describe('B7 — full chained transition through the dispatcher', () => {
 
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     result = await processFlowV2Turn(ctx, 'Yes, help me');
+    assert.equal(result.contextPatch.stage, 'b9_niat_interest_awaiting_reply');
+
+    ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
+    result = await processFlowV2Turn(ctx, "Yes, I'm interested");
     assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
     assert.equal(result.interactive.body, STANDARD_INVITE_TEXT);
   });

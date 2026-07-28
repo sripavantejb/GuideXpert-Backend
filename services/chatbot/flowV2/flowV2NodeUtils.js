@@ -51,7 +51,7 @@ function advanceToB7TwoModels(mergedProfile, ackLine = null) {
 }
 
 function advanceToB8(mergedProfile, ackLine = null) {
-  return park('b8_awaiting_entry', mergedProfile, ackLine);
+  return park('b8_shortlist_ask_awaiting_entry', mergedProfile, ackLine);
 }
 
 function advanceToB9(mergedProfile, ackLine = null) {

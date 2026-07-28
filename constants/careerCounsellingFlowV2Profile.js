@@ -328,6 +328,18 @@ const LEAD_PROFILE_SCHEMA = Object.freeze({
     readBeats: ['B9', 'B10'],
     description: 'B9 FIT reason line for the named college.',
   }),
+  shortlistAskDeclined: Object.freeze({
+    type: 'boolean',
+    writeBeats: ['B8'],
+    readBeats: ['B8', 'system'],
+    description: 'Student deferred the top-5 shortlist ask after Stage 7.',
+  }),
+  niatInterest: Object.freeze({
+    type: 'boolean',
+    writeBeats: ['B9'],
+    readBeats: ['B9', 'B10'],
+    description: 'Student said yes/no to exploring NIAT further before booking invite.',
+  }),
   examType: Object.freeze({
     type: 'string',
     writeBeats: ['B4'],

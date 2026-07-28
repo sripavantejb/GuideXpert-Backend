@@ -3,9 +3,8 @@
 /**
  * Flow V3 — B8 · SHORTLIST (Company Stage 8).
  *
- * Medals for Newton / NIAT / Scaler, then Polar + two more new-age colleges.
- * Shortlist + fit ask ship as ONE interactive button message so WhatsApp
- * never drops the college list (separate text + fit-only body was losing B8).
+ * After Stage 7 framing, ask before showing colleges, then ship top 5
+ * + fit ask in ONE interactive so WhatsApp never drops the list.
  */
 
 const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
@@ -18,13 +17,25 @@ const FLAT_CATALOG = Object.freeze([
   Object.freeze({ id: 'scaler', name: 'Scaler', medal: '🥉' }),
   Object.freeze({ id: 'polar', name: 'Polar School of Technology', medal: null }),
   Object.freeze({ id: 'plaksha', name: 'Plaksha University', medal: null }),
-  Object.freeze({ id: 'kalvium', name: 'Kalvium', medal: null }),
 ]);
 
 const WIDER_CATALOG_LINE =
-  "Wider options people often ask about: Masters' Union · Krea · Ahmedabad Univ · UPES · SRM AP.\n\nRun them through the same checklist before you decide.";
+  "Wider options people often ask about: Kalvium · Masters' Union · Krea · Ahmedabad Univ · UPES · SRM AP.\n\nRun them through the same checklist before you decide.";
 
 const DISCLOSURE = '';
+
+/** Explicit gate after Stage 7 — before the top-5 list. */
+const SHORTLIST_ASK_BODY =
+  'Would you like me to show you the top 5 colleges that match your interests and goals?';
+const SHORTLIST_ASK_BUTTONS = Object.freeze([
+  Object.freeze({ id: 'flowv2_b8_show', title: 'Yes, show me' }),
+  Object.freeze({ id: 'flowv2_b8_later', title: 'Maybe Later' }),
+]);
+
+const SHORTLIST_ASK_DECLINE = [
+  'No problem 😊',
+  "Whenever you're ready for the shortlist, just say the word.",
+].join('\n');
 
 const FIT_ASK_BODY = 'Would you like me to help you find the best fit?';
 const FIT_BUTTONS = Object.freeze([
@@ -75,6 +86,75 @@ function looksLikeWiderAsk(text) {
   return /\bshow me all\b|\bfull list\b|\bother options\b|\bwhat are the other\b/.test(t);
 }
 
+function looksLikeShowShortlist(text) {
+  const t = String(text || '').trim().toLowerCase();
+  return (
+    t === 'flowv2_b8_show' ||
+    t.includes('yes, show') ||
+    t === 'yes' ||
+    t.includes('show me') ||
+    t.includes('top 5') ||
+    t.includes('suggest')
+  );
+}
+
+function looksLikeDeferShortlist(text) {
+  const t = String(text || '').trim().toLowerCase();
+  return (
+    t === 'flowv2_b8_later' ||
+    t.includes('maybe later') ||
+    t.includes('not now') ||
+    t.includes('not right now') ||
+    t === 'no'
+  );
+}
+
+/** After Stage 7 — ask before dumping the college list. */
+function handleB8ShortlistAskEntry(ctx) {
+  const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
+  if (Array.isArray(profile.shortlist) && profile.shortlist.length > 0) {
+    return handleB8Entry(ctx);
+  }
+  return {
+    replyText: null,
+    replyParts: null,
+    interactive: {
+      type: 'button',
+      body: SHORTLIST_ASK_BODY,
+      buttons: SHORTLIST_ASK_BUTTONS,
+    },
+    contextPatch: { stage: 'b8_shortlist_ask_awaiting_reply', profile },
+    nextState: 'career_counselling_flow_v2',
+    intent: 'career_counselling_flow_v2',
+  };
+}
+
+function handleB8ShortlistAskReply(ctx, text) {
+  const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
+
+  if (looksLikeDeferShortlist(text)) {
+    const merged = mergeFlowV2Profile(profile, { shortlistAskDeclined: true });
+    return {
+      replyText: SHORTLIST_ASK_DECLINE,
+      replyParts: null,
+      interactive: null,
+      contextPatch: { stage: 'b8_shortlist_ask_declined', profile: merged },
+      nextState: 'career_counselling_flow_v2',
+      intent: 'career_counselling_flow_v2',
+    };
+  }
+
+  if (!looksLikeShowShortlist(text)) {
+    return handleB8ShortlistAskEntry(ctx);
+  }
+
+  return handleB8Entry(withProfile(ctx, profile));
+}
+
+function withProfile(ctx, profile) {
+  return { ...(ctx || {}), flowV2: { ...((ctx && ctx.flowV2) || {}), profile } };
+}
+
 function handleB8Entry(ctx) {
   const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
   if (
@@ -106,10 +186,9 @@ function handleB8Entry(ctx) {
     name: c.name,
     medal: c.medal,
   }));
-  const merged = mergeFlowV2Profile(profile, { shortlist });
+  const merged = mergeFlowV2Profile(profile, { shortlist, shortlistAskDeclined: false });
   merged.shortlist = shortlist;
 
-  // One WhatsApp button message: colleges + fit question (avoids dropped text bubble).
   return {
     replyText: null,
     replyParts: null,
@@ -148,10 +227,15 @@ function handleB8Reply(ctx, text) {
 module.exports = {
   handleB8Entry,
   handleB8Reply,
+  handleB8ShortlistAskEntry,
+  handleB8ShortlistAskReply,
   buildShortlistBody,
   FLAT_CATALOG,
   DISCLOSURE,
   WIDER_CATALOG_LINE,
+  SHORTLIST_ASK_BODY,
+  SHORTLIST_ASK_BUTTONS,
+  SHORTLIST_ASK_DECLINE,
   FIT_ASK_BODY,
   FIT_BUTTONS,
   interestPhrase,

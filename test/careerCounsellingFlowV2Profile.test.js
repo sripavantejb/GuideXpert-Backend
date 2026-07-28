@@ -24,6 +24,8 @@ const EXPECTED_NEW_SLOTS = [
   'honestPassFired',
   'fitCollege',
   'fitReason',
+  'shortlistAskDeclined',
+  'niatInterest',
 ];
 
 describe('careerCounsellingFlowV2Profile schema (V3)', () => {

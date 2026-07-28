@@ -127,7 +127,7 @@ describe('b6TheCase — handleB6Entry (V3 delegates to B9 FIT)', () => {
 });
 
 describe('B8/B9 — full chained transition through the dispatcher', () => {
-  test('flat shortlist drains to FIT; yes narrow lands on B10 booking', async () => {
+  test('flat shortlist drains to FIT; yes narrow lands on NIAT interest ask', async () => {
     let profile = {
       ...emptyFlowV2Profile(),
       qualification: 'Class 12 (MPC)',
@@ -147,7 +147,7 @@ describe('B8/B9 — full chained transition through the dispatcher', () => {
 
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     result = await processFlowV2Turn(ctx, 'Yes, help me');
-    assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
+    assert.equal(result.contextPatch.stage, 'b9_niat_interest_awaiting_reply');
     assert.equal(result.contextPatch.profile.fitCollege, 'niat');
     assert.equal(result.contextPatch.profile.qualification, 'Class 12 (MPC)');
     assert.ok(result.interactive || (result.replyParts && result.replyParts.length));
@@ -157,7 +157,7 @@ describe('B8/B9 — full chained transition through the dispatcher', () => {
     assert.match(afterYes, /\bNIAT\b/i);
   });
 
-  test('compare-on-tap stays on FIT then yes advances to booking', async () => {
+  test('compare-on-tap stays on FIT then yes advances to NIAT interest', async () => {
     let profile = {
       ...emptyFlowV2Profile(),
       goalPriority: ['ai_future_tech'],
@@ -176,6 +176,6 @@ describe('B8/B9 — full chained transition through the dispatcher', () => {
 
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     result = await processFlowV2Turn(ctx, 'Yes, help me');
-    assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
+    assert.equal(result.contextPatch.stage, 'b9_niat_interest_awaiting_reply');
   });
 });

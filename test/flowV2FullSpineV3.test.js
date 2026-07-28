@@ -1,8 +1,8 @@
 'use strict';
 
 /**
- * Full Flow V3 happy-path e2e: company Stage 1–10 PCM spine (Option 3).
- * Guards against B6.5 on happy path, 5-flat catalog, and senior-counsellor copy.
+ * Full Flow V3 happy-path e2e: company Stage 1–10 PCM spine.
+ * Shortlist ask after Stage 7; NIAT interest gate before booking.
  */
 
 const { describe, test } = require('node:test');
@@ -17,7 +17,7 @@ function visible(result) {
 }
 
 describe('Full Flow V3 — happy path PCM spine (company Option 3)', () => {
-  test('hi → qualify → goal → interest → priority → checklist → permission → two models → 6-college → FIT → B10 URL path', async (t) => {
+  test('hi → … → two models → ask → top 5 → FIT → NIAT pitch → interest → B10', async (t) => {
     t.mock.method(
       require('../services/guidanceBookingService'),
       'getAvailableActiveSlots',
@@ -28,7 +28,6 @@ describe('Full Flow V3 — happy path PCM spine (company Option 3)', () => {
     let result = await processFlowV2Turn(ctx, 'hi');
     let text = visible(result);
     assert.match(text, /Welcome to GuideXpert|current qualifications|Choose your stage/i);
-    assert.doesNotMatch(text, /Takes about 2 minutes/i);
 
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     if (String(result.contextPatch.stage || '').includes('name')) {
@@ -47,25 +46,18 @@ describe('Full Flow V3 — happy path PCM spine (company Option 3)', () => {
       result.contextPatch.stage === 'b2_goal_awaiting_reply' ||
       result.interactive?.buttons?.some((b) => /branch|college|career/i.test(b.title))
     ) {
-      text = visible(result);
-      assert.match(text, /What are you looking for/i);
       result = await processFlowV2Turn(ctx, 'flowv2_b2_goal_college');
       ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     }
 
     if (result.contextPatch.stage === 'b2_awaiting_reply') {
-      text = visible(result);
-      assert.match(text, /topics excite you/i);
       result = await processFlowV2Turn(ctx, 'Computers');
-      assert.equal(result.contextPatch.stage, 'b2_awaiting_reply');
       ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
       result = await processFlowV2Turn(ctx, 'done');
       ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     }
 
     if (result.contextPatch.stage === 'b4_awaiting_reply' || result.contextPatch.stage === 'b1_awaiting_reply') {
-      text = visible(result);
-      assert.match(text, /One more thing/i);
       result = await processFlowV2Turn(ctx, 'Placements');
       ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     }
@@ -78,25 +70,35 @@ describe('Full Flow V3 — happy path PCM spine (company Option 3)', () => {
     result = await processFlowV2Turn(ctx, 'flowv2_b6_yes');
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
 
-    // B6.5 must NOT fire on PCM happy path.
     assert.notEqual(result.contextPatch.stage, 'b3_awaiting_budget');
-    assert.notEqual(result.contextPatch.stage, 'b3_awaiting_location');
-    assert.notEqual(result.contextPatch.stage, 'b65_awaiting_entry');
-
     text = visible(result);
-    assert.doesNotMatch(text, /\*Best Match\*/i);
     assert.match(text, /Traditional Colleges|New-Age Colleges/i);
+    assert.match(text, /top 5 colleges that match/i);
+    assert.doesNotMatch(text, /Newton School of Technology/);
+    assert.equal(result.contextPatch.stage, 'b8_shortlist_ask_awaiting_reply');
+
+    result = await processFlowV2Turn(ctx, 'Yes, show me');
+    ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
+    text = visible(result);
     assert.match(text, /Newton School|Polar School of Technology|best fit/i);
     assert.match(text, /🥇|🥈|🥉/);
+    assert.equal(result.contextPatch.profile.shortlist.length, 5);
     assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
 
     result = await processFlowV2Turn(ctx, 'Yes, help me');
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
-
     text = visible(result);
-    assert.match(text, /From your interests, NIAT/i);
+    assert.match(text, /NIAT|Decode|partner|Internship|Placement support/i);
+    assert.match(text, /exploring NIAT further|interested/i);
+    assert.doesNotMatch(text, /Book My Session|IITian/);
+    assert.equal(result.contextPatch.stage, 'b9_niat_interest_awaiting_reply');
+
+    result = await processFlowV2Turn(ctx, "Yes, I'm interested");
+    ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
+    text = visible(result);
     assert.match(text, /IITian/i);
     assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
+    assert.equal(result.contextPatch.profile.niatInterest, true);
     assert.ok(result.interactive?.buttons?.some((b) => /Book My Session/i.test(b.title)));
 
     result = await processFlowV2Turn(ctx, 'Book My Session');

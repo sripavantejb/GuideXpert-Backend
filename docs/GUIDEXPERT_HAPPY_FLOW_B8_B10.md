@@ -1,36 +1,38 @@
 # GuideXpert · Happy Flow B8–B10 (product overlay)
 
-**Option 3 (company Stage 1–10):** PCM happy path uses company verbatim copy and stage order. B6.5 budget/location is **skipped** after permission Yes.
+PCM happy path: company Stages 5–10 with an explicit shortlist ask and NIAT interest gate before booking.
 
-Scope note: B1–B7 company copy lives in `flowV2/nodes/*` (greeting → b7TwoModels). This overlay covers B8–B10 product shape.
+## After Stage 7 · Ask before top 5
 
-## B8 · Shortlist (6 colleges, one WhatsApp bubble)
+After Traditional vs New-Age framing, ask:
 
-Shows new-age colleges with medal framing + two more peers, **in the same button interactive** as the fit ask (so WhatsApp never drops the college list):
+*Would you like me to show you the top 5 colleges that match your interests and goals?*
+
+Buttons: **Yes, show me** / **Maybe Later**.
+
+## B8 · Shortlist (top 5, one WhatsApp bubble)
 
 1. 🥇 Newton School of Technology  
 2. 🥈 NIAT  
 3. 🥉 Scaler  
 4. Polar School of Technology  
 5. Plaksha University  
-6. Kalvium  
 
-Company Stage 8 body (no partnership disclosure pitch on the happy path). Wider catalog available on typed ask.
+Shortlist + fit ask ship in **one** button interactive. Wider catalog (Kalvium etc.) on typed ask.
 
-## B9 · Fit ask → NIAT soft nudge
+## B9 · Fit ask → rich NIAT pitch → interest gate
 
 Ask: *Would you like me to help you find the best fit?*
 
-- **Yes, help me** → company Stage 9 NIAT soft nudge (AI & Tech / practical / projects / placements) → **same turn** Stage 10 booking invite.  
-- **I'll explore myself** → honour once, warm park.  
-- Honest pass only for clearly out-of-catalog profiles.
+- **Yes, help me** → detailed NIAT pitch (curriculum phases, partner universities, internships, placement support) + *Does exploring NIAT further sound interesting?*  
+- **Yes, I'm interested** → Stage 10 booking invite  
+- **Not for me** → honour, warm park  
+- **I'll explore myself** → honour once, warm park  
 
 ## B10 · Hybrid book (IITian copy)
 
-Company Stage 10 offer (FREE 1:1 with an **IITian**) → live slots in chat → official website URL only. WhatsApp never creates CRM bookings (`HYBRID_BOOKING_WEBSITE_CREATE`).
+Only after NIAT interest yes: FREE 1:1 with an **IITian** → live slots → website URL.
 
 Buttons: **📅 Book My Session** / **Maybe Later**.
 
-### Maybe Later follow-ups (+30m / +1h / +3h)
-
-Scheduled on `profile.bookingFollowup` when the student taps Maybe Later. Cron: `GET /cron/process-booking-followups` (see `bookingFollowupService.js` + `processBookingFollowups.js`).
+Maybe Later schedules +30m / +1h / +3h via `GET /cron/process-booking-followups`.

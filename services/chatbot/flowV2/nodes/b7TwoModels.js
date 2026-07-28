@@ -2,12 +2,13 @@
 
 /**
  * Flow V3 — B7 · TWO MODELS (Company Stage 7).
- * Two bubbles (company script); sets frameSent; advances to B8 same-turn via drain.
+ * Framing bubbles, then ask before showing the top-5 shortlist (no auto-dump).
  */
 
 const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
 const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingFlowV2Profile');
-const { advanceToB8 } = require('../flowV2NodeUtils');
+const { handleB8ShortlistAskEntry } = require('./b8FlatShortlist');
+const { withMergedProfile, combineNodeResults } = require('../flowV2NodeUtils');
 
 const TWO_MODELS_PART_1 = [
   'Great! 👍',
@@ -37,17 +38,11 @@ const TWO_MODELS_TEXT = `${TWO_MODELS_PART_1}\n\n${TWO_MODELS_PART_2}`;
 function handleB7TwoModelsEntry(ctx) {
   const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
   if (profile.frameSent === true) {
-    return advanceToB8(profile, null);
+    return handleB8ShortlistAskEntry(withMergedProfile(ctx, profile));
   }
   const merged = mergeFlowV2Profile(profile, { frameSent: true });
-  return {
-    replyText: null,
-    replyParts: [TWO_MODELS_PART_1, TWO_MODELS_PART_2],
-    interactive: null,
-    contextPatch: { stage: 'b8_awaiting_entry', profile: merged },
-    nextState: 'career_counselling_flow_v2',
-    intent: 'career_counselling_flow_v2',
-  };
+  const ask = handleB8ShortlistAskEntry(withMergedProfile(ctx, merged));
+  return combineNodeResults([TWO_MODELS_PART_1, TWO_MODELS_PART_2], ask);
 }
 
 module.exports = {

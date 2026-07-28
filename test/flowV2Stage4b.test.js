@@ -56,10 +56,10 @@ describe('Master Flow Stage 4b — B1/B2/B3/B5/B7 reconciliation', () => {
       ctx('b3_awaiting_location', { budgetBand: 'under_2l', state: 'Telangana' }),
       'Near home'
     );
-    assert.equal(knownState.contextPatch.stage, 'b8_awaiting_entry');
+    assert.equal(knownState.contextPatch.stage, 'b8_shortlist_ask_awaiting_reply');
   });
 
-  test('B8 emits exactly three medal colleges with FIT ask', () => {
+  test('B8 emits top 5 colleges with FIT ask', () => {
     const { handleB8Entry } = require('../services/chatbot/flowV2/nodes/b8FlatShortlist');
     const result = handleB8Entry(
       ctx('b8_awaiting_entry', {
@@ -69,7 +69,7 @@ describe('Master Flow Stage 4b — B1/B2/B3/B5/B7 reconciliation', () => {
         cityPref: 'Hyderabad',
       })
     );
-    assert.equal(result.contextPatch.profile.shortlist.length, 6);
+    assert.equal(result.contextPatch.profile.shortlist.length, 5);
     const visible = [...(result.replyParts || []), result.replyText, result.interactive?.body]
       .filter(Boolean)
       .join('\n');

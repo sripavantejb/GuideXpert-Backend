@@ -61,7 +61,9 @@ describe('Flow V3 Phase 1 — B5 CHECKLIST', () => {
     assert.ok(
       result.contextPatch.stage === 'b6_permission_awaiting_reply' ||
         result.contextPatch.stage === 'b7_two_models_awaiting_entry' ||
-        result.contextPatch.stage === 'b8_awaiting_entry'
+        result.contextPatch.stage === 'b8_awaiting_entry' ||
+        result.contextPatch.stage === 'b8_shortlist_ask_awaiting_entry' ||
+        result.contextPatch.stage === 'b8_shortlist_ask_awaiting_reply'
     );
   });
 
