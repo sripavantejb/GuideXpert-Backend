@@ -297,14 +297,16 @@ describe('b5Shortlist — Change-something loop', () => {
 });
 
 describe('B5 — end-to-end through the full dispatcher', () => {
-  test('B4 -> B5 -> [Compare them] -> B6 stage handoff, driven entirely through processFlowV2Turn', async () => {
+  test('B4 -> B5 -> [Compare them] continues through B6 into B7 in the same turn', async () => {
     let ctx = { flowV2: { stage: 'b5_awaiting_entry', profile: { ...emptyFlowV2Profile(), ...STANDARD_PROFILE_PATCH } } };
     let result = await processFlowV2Turn(ctx, 'hi');
     assert.equal(result.contextPatch.stage, 'b5_awaiting_reply');
 
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     result = await processFlowV2Turn(ctx, 'Compare them');
-    assert.equal(result.contextPatch.stage, 'b6_awaiting_entry');
+    // Drain chains b6_awaiting_entry → B6 → b7_awaiting_entry → B7 booking CTA.
+    assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
     assert.equal(result.contextPatch.compareMode, 'full');
+    assert.ok(result.interactive || (result.replyParts && result.replyParts.length));
   });
 });

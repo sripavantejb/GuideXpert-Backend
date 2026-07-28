@@ -120,7 +120,8 @@ describe('Master Flow Stage 4b — non-distress interrupts', () => {
       'Numbers & analysis'
     );
     assert.equal(resumed.contextPatch.profile.branchInterest, 'data_analytics');
-    assert.equal(resumed.contextPatch.stage, 'b3_awaiting_entry');
+    assert.equal(resumed.contextPatch.stage, 'b3_awaiting_budget');
+    assert.equal(resumed.interactive.type, 'button');
   });
 
   test('I-2 can interrupt any B-spine stage, updates budget, and returns to the saved stage', async () => {

@@ -40,7 +40,7 @@ describe('Flow v2 Part 13 data layer — extraction at every inbound boundary', 
       },
       'Strong placements'
     );
-    assert.equal(b1Reply.contextPatch.stage, 'b5_awaiting_entry');
+    assert.equal(b1Reply.contextPatch.stage, 'b5_awaiting_reply');
     const allVisibleText = [
       b1Reply.replyText,
       ...(b1Reply.replyParts || []),
@@ -50,6 +50,7 @@ describe('Flow v2 Part 13 data layer — extraction at every inbound boundary', 
       .join('\n');
     assert.doesNotMatch(allVisibleText, /which field|comfortable for your family|near home|open to moving/i);
     assert.doesNotMatch(allVisibleText, /12th MPC, CSE, around ₹3L, Hyderabad/i);
+    assert.ok(b1Reply.interactive);
   });
 
   test('facts survive a leaf-router interception because extraction precedes classification', async () => {

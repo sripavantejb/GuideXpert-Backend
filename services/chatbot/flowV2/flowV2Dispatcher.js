@@ -140,6 +140,58 @@ const WIRED_HANDLERS = Object.freeze({
 const CRISIS_LOCKED_REPLY_TEXT =
   "You're already connected with one of our counsellors — they'll reply here as soon as they can.";
 
+/**
+ * Master Flow beats must never end on a silent/ack-only `*_awaiting_entry`
+ * park. Those stages were historically "wait for the next inbound" bridges
+ * while later beats were unbuilt; once B3–B7 exist, parking leaves WhatsApp
+ * looking stuck ("Solid — ..." then nothing). Drain them in the SAME turn.
+ */
+const AWAITING_ENTRY_HANDLERS = Object.freeze({
+  greeting_captured_pending_b1: (ctx) => handleB1Entry(ctx),
+  b3_awaiting_entry: (ctx) => handleB3Entry(ctx),
+  b5_awaiting_entry: (ctx) => handleB5Entry(ctx),
+  b6_awaiting_entry: (ctx) => handleB6Entry(ctx),
+  b7_awaiting_entry: (ctx) => handleB7Entry(ctx),
+});
+
+async function drainAwaitingEntryStages(ctx, result) {
+  let current = result;
+  for (let i = 0; i < 8; i += 1) {
+    const stage = current?.contextPatch?.stage;
+    const handler = stage ? AWAITING_ENTRY_HANDLERS[stage] : null;
+    if (!handler) break;
+
+    const nextCtx = {
+      ...(ctx || {}),
+      flowV2: {
+        ...((ctx && ctx.flowV2) || {}),
+        ...(current.contextPatch || {}),
+        profile: current.contextPatch?.profile || ctx?.flowV2?.profile,
+        stage,
+      },
+    };
+    const entryResult = await handler(nextCtx);
+    if (!entryResult || entryResult.contextPatch?.stage === stage) break;
+
+    const prefixes = [
+      ...(current.replyText ? [current.replyText] : []),
+      ...(current.replyParts || []),
+    ];
+    const combined = prefixes.length ? combineNodeResults(prefixes, entryResult) : entryResult;
+    if (current.pendingSideEffect && !combined.pendingSideEffect) {
+      combined.pendingSideEffect = current.pendingSideEffect;
+    }
+    current = {
+      ...combined,
+      contextPatch: {
+        ...(current.contextPatch || {}),
+        ...(combined.contextPatch || {}),
+      },
+    };
+  }
+  return current;
+}
+
 function crisisLockedReply() {
   return {
     replyText: CRISIS_LOCKED_REPLY_TEXT,
@@ -307,6 +359,15 @@ function withDoorHistory(result, ctx, bucket, stage) {
  * @returns {Promise<object>} standard Flow v2 return shape
  */
 async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
+  const result = await processFlowV2TurnRaw(ctx, inboundMessage, meta);
+  return drainAwaitingEntryStages(ctx, result);
+}
+
+/**
+ * Inner turn router. Prefer `processFlowV2Turn` — it drains `*_awaiting_entry`
+ * parks so the student always receives the next real question in-turn.
+ */
+async function processFlowV2TurnRaw(ctx, inboundMessage, meta = {}) {
   const text = String(inboundMessage || '');
   const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
   const stage = ctx?.flowV2?.stage || null;
@@ -544,4 +605,6 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
 
 module.exports = {
   processFlowV2Turn,
+  // exported for focused unit tests of the drain contract
+  drainAwaitingEntryStages,
 };
