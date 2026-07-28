@@ -345,6 +345,12 @@ function buildShortlistBody(shortlistArray, profile) {
     sections.push('');
   }
   sections.push('These are matched to what you told me \u2014 not a generic ranking.');
+  if (profile.scholarshipFlag) {
+    sections.push('');
+    sections.push(
+      'Since you flagged a tighter budget, several of these also offer scholarships or fee support \u2014 worth asking about on a counsellor call.'
+    );
+  }
   return sections.filter((line, i, arr) => !(line === '' && arr[i - 1] === '')).join('\n').trim();
 }
 

@@ -9,9 +9,10 @@ const {
   buildWhyBullets,
   buildRecommendationText,
   buildVisionBubble,
+  WEAK_CONFIDENCE_LINE,
+  VISION_BUBBLE,
 } = require('../services/chatbot/flowV2/nodes/b6TheCase');
 const { emptyFlowV2Profile } = require('../constants/careerCounsellingFlowV2Profile');
-const { handleB5Entry } = require('../services/chatbot/flowV2/nodes/b5Shortlist');
 const { processFlowV2Turn } = require('../services/chatbot/flowV2/flowV2Dispatcher');
 
 const SAMPLE_SHORTLIST = [
@@ -41,10 +42,17 @@ describe('b6TheCase — buildComparisonMessage', () => {
     assert.equal(text, null);
   });
 
-  test('produces a "*How they compare*" body reusing the real comparison engine', () => {
+  test('produces an MD factor ●●● table for the top 3', () => {
     const { text, comparedNames } = buildComparisonMessage(profileWithShortlist());
-    assert.ok(text.includes('*How they compare*'));
-    assert.deepEqual(comparedNames, ['NIAT (NxtWave Institute of Advanced Technologies)', 'Plaksha University', 'Scaler School of Technology']);
+    assert.ok(text.includes("Here's how your top 3 stack up on what you care about"));
+    assert.ok(text.includes('Factor'));
+    assert.ok(text.includes('●●●'));
+    assert.ok(!text.includes('*How they compare*'));
+    assert.deepEqual(comparedNames, [
+      'NIAT (NxtWave Institute of Advanced Technologies)',
+      'Plaksha University',
+      'Scaler School of Technology',
+    ]);
   });
 });
 
@@ -63,16 +71,22 @@ describe('b6TheCase — buildWhyBullets', () => {
 });
 
 describe('b6TheCase — buildRecommendationText / buildVisionBubble', () => {
-  test('recommendation text names the college and lists bullets', () => {
-    const text = buildRecommendationText(SAMPLE_SHORTLIST[0], { goalPriority: ['placement'], budgetBand: '2_5l' });
-    assert.ok(text.includes('NIAT'));
+  test('recommendation uses pick-one copy, name, weak-confidence, and bullets', () => {
+    const text = buildRecommendationText(SAMPLE_SHORTLIST[0], {
+      name: 'Rahul',
+      goalPriority: ['placement'],
+      budgetBand: '2_5l',
+    });
+    assert.ok(text.includes('If I had to pick one for you, Rahul — *NIAT'));
     assert.ok(text.includes('\u2022'));
+    assert.ok(text.includes(WEAK_CONFIDENCE_LINE));
   });
 
-  test('vision bubble is present-tense and names the college', () => {
-    const text = buildVisionBubble(SAMPLE_SHORTLIST[0], { goalPriority: ['placement'] });
+  test('vision bubble is MD possibility copy without naming a college', () => {
+    const text = buildVisionBubble();
+    assert.equal(text, VISION_BUBBLE);
     assert.ok(text.includes('Picture your first semester'));
-    assert.ok(text.includes('NIAT'));
+    assert.ok(!text.includes('NIAT'));
   });
 });
 
@@ -80,14 +94,15 @@ describe('b6TheCase — handleB6Entry', () => {
   test('compareMode = best_only skips the comparison message entirely (2 bubbles, not 3)', () => {
     const result = handleB6Entry({ flowV2: { compareMode: 'best_only', profile: profileWithShortlist() } });
     assert.equal(result.replyParts.length, 2);
-    assert.ok(!result.replyParts.some((p) => p.includes('*How they compare*')));
+    assert.ok(!result.replyParts.some((p) => p.includes('top 3 stack up')));
     assert.equal(result.contextPatch.profile.comparedColleges.length, 0);
   });
 
-  test('compareMode = full includes the comparison message first (3 bubbles)', () => {
+  test('compareMode = full includes the comparison table first (3 bubbles)', () => {
     const result = handleB6Entry({ flowV2: { compareMode: 'full', profile: profileWithShortlist() } });
     assert.equal(result.replyParts.length, 3);
-    assert.ok(result.replyParts[0].includes('*How they compare*'));
+    assert.ok(result.replyParts[0].includes('top 3 stack up'));
+    assert.ok(result.replyParts[0].includes('●●●'));
     assert.ok(result.contextPatch.profile.comparedColleges.length > 0);
   });
 

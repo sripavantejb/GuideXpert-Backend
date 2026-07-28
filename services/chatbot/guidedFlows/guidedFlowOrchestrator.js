@@ -43,6 +43,7 @@ async function executeActiveGuidedFlowTurn({
   logInboundResult,
   h,
   resolvedLanguageFrom,
+  leadContext = null,
 }) {
   let contextPatch = botState?.context || {};
   const inboundText =
@@ -72,6 +73,8 @@ async function executeActiveGuidedFlowTurn({
     isNewEntry: false,
     resolvedLanguage: resolvedLanguageFrom(multilingualInbound),
     intent: flow.continueIntent,
+    leadContext,
+    phone: activeConversation?.phone || null,
   });
 
   if (turn.predictionIdempotency && turn.persistIdempotencyBeforeComplete) {
@@ -90,6 +93,20 @@ async function executeActiveGuidedFlowTurn({
 
   let replyText = turn.replyText;
   const flowV2Interactive = flow?.id === 'career_counselling_flow_v2' ? turn.interactive : null;
+  // Master Flow v2 is English-only: never translate Rithika copy even if
+  // inbound language detection resolved to Telugu/Hindi/etc.
+  const flowV2EnglishOnly = flow?.id === 'career_counselling_flow_v2';
+  const outboundLanguageInbound = flowV2EnglishOnly
+    ? {
+        ...(multilingualInbound || {}),
+        resolvedLanguage: 'en',
+        language: 'en',
+      }
+    : multilingualInbound;
+  const outboundLocalizationTier = flowV2EnglishOnly
+    ? 'static'
+    : turn.localizationTier || flow.localizationTier || 'translate';
+  const outboundPreLocalized = flowV2EnglishOnly ? true : Boolean(turn.preLocalized);
   if (
     !replyText &&
     !flowV2Interactive &&
@@ -112,10 +129,10 @@ async function executeActiveGuidedFlowTurn({
       if (partText) {
         partText = await deliverOutboundReply({
           replyText: partText,
-          multilingualInbound,
+          multilingualInbound: outboundLanguageInbound,
           intent: turn.intent,
-          localizationTier: turn.localizationTier || flow.localizationTier || 'translate',
-          preLocalized: Boolean(turn.preLocalized),
+          localizationTier: outboundLocalizationTier,
+          preLocalized: outboundPreLocalized,
         });
       }
       result = await h.outbound.sendBotTextReply({
@@ -131,10 +148,10 @@ async function executeActiveGuidedFlowTurn({
   if (flowV2Interactive && flowV2Interactive.type === 'list') {
     const body = await deliverOutboundReply({
       replyText: flowV2Interactive.body,
-      multilingualInbound,
+      multilingualInbound: outboundLanguageInbound,
       intent: turn.intent,
-      localizationTier: turn.localizationTier || flow.localizationTier || 'translate',
-      preLocalized: Boolean(turn.preLocalized),
+      localizationTier: outboundLocalizationTier,
+      preLocalized: outboundPreLocalized,
     });
     result = await h.outbound.sendBotListReply({
       conversationId: activeConversation._id,
@@ -148,10 +165,10 @@ async function executeActiveGuidedFlowTurn({
   } else if (flowV2Interactive && flowV2Interactive.type === 'button') {
     const body = await deliverOutboundReply({
       replyText: flowV2Interactive.body,
-      multilingualInbound,
+      multilingualInbound: outboundLanguageInbound,
       intent: turn.intent,
-      localizationTier: turn.localizationTier || flow.localizationTier || 'translate',
-      preLocalized: Boolean(turn.preLocalized),
+      localizationTier: outboundLocalizationTier,
+      preLocalized: outboundPreLocalized,
     });
     result = await h.outbound.sendBotButtonReply({
       conversationId: activeConversation._id,
@@ -165,10 +182,10 @@ async function executeActiveGuidedFlowTurn({
     if (replyText) {
       replyText = await deliverOutboundReply({
         replyText,
-        multilingualInbound,
+        multilingualInbound: outboundLanguageInbound,
         intent: turn.intent,
-        localizationTier: turn.localizationTier || flow.localizationTier || 'translate',
-        preLocalized: Boolean(turn.preLocalized),
+        localizationTier: outboundLocalizationTier,
+        preLocalized: outboundPreLocalized,
       });
     }
 
@@ -248,6 +265,7 @@ async function applyGuidedFlowSwitchTurn({
   multilingualInbound,
   transitionState,
   resolvedLanguageFrom,
+  leadContext = null,
 }) {
   await transitionState(
     activeConversation._id,
@@ -264,6 +282,8 @@ async function applyGuidedFlowSwitchTurn({
     isNewEntry: flow.entryIntents.includes(intentResult.intent),
     resolvedLanguage: resolvedLanguageFrom(multilingualInbound),
     intent: intentResult.intent,
+    leadContext,
+    phone: activeConversation?.phone || null,
   });
 
   if (turn.predictionIdempotency && turn.persistIdempotencyBeforeComplete) {

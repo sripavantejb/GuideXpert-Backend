@@ -114,6 +114,7 @@ describe('Stage 8 — live wiring + Rithika rename', () => {
     assert.ok(flow);
     assert.equal(flow.id, 'career_counselling_flow_v2');
     assert.equal(flow.contextKey, 'flowV2');
+    assert.equal(flow.localizationTier, 'static');
   });
 
   test('processor persists context.flowV2 from processFlowV2Turn', async () => {
@@ -126,6 +127,8 @@ describe('Stage 8 — live wiring + Rithika rename', () => {
     assert.equal(turn.nextState, 'career_counselling_flow_v2');
     assert.ok(turn.contextPatch.flowV2);
     assert.ok(turn.contextPatch.flowV2.stage);
+    assert.equal(turn.localizationTier, 'static');
+    assert.equal(turn.preLocalized, true);
   });
 
   test('Flow v2 runtime copy has no I\'m Guide bot identity (Rithika rename)', () => {

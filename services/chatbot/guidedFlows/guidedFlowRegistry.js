@@ -56,7 +56,7 @@ const GUIDED_FLOW_DEFINITIONS = Object.freeze([
     entryIntents: Object.freeze(['career_counselling_flow_v2']),
     slotFilling: false,
     completeBotState: 'career_counselling_flow_v2',
-    localizationTier: 'translate',
+    localizationTier: 'static',
   }),
 ]);
 

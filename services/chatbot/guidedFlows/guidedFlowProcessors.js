@@ -179,12 +179,15 @@ async function processCareerCounsellingFlowV2Turn({
   inbound,
   contextPatch,
   isNewEntry = false,
+  leadContext = null,
+  phone = null,
 }) {
   const { processFlowV2Turn } = require('../flowV2/flowV2Dispatcher');
   const flowV2 = contextPatch.flowV2 || { stage: null, profile: null };
   const ctx = {
     conversationId: inbound?.conversationId || null,
-    phone: null,
+    phone: phone || null,
+    leadContext: leadContext || null,
     flowV2: {
       ...flowV2,
       inboundId: inbound?._id ? String(inbound._id) : null,
@@ -224,7 +227,9 @@ async function processCareerCounsellingFlowV2Turn({
     }),
     intent: result.intent || 'career_counselling_flow_v2',
     pendingSideEffect: result.pendingSideEffect || null,
-    localizationTier: 'translate',
+    // Master Flow v2 is English-only — never translate Rithika copy.
+    localizationTier: 'static',
+    preLocalized: true,
   };
 }
 
@@ -236,6 +241,8 @@ async function processGuidedFlowTurn({
   isNewEntry = false,
   resolvedLanguage = 'en',
   intent = null,
+  leadContext = null,
+  phone = null,
 }) {
   switch (flow.id) {
     case 'college_predictor':
@@ -271,6 +278,8 @@ async function processGuidedFlowTurn({
         inbound,
         contextPatch,
         isNewEntry,
+        leadContext,
+        phone,
       });
     case 'faq':
       return processFaqTurn({

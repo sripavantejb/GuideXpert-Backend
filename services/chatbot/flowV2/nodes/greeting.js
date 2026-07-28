@@ -1,11 +1,11 @@
 'use strict';
 
 /**
- * Flow v2 — Greeting (first live beat).
+ * Flow v2 — Greeting / Node E (first live beat).
  *
  * `handleGreetingEntry` fires when `context.flowV2.stage` is falsy (first
- * turn). Replies move through name, qualification, and entry-side-track
- * stages before rejoining B1.
+ * turn). Never asks for name — seed from profile/CRM if present, open the
+ * 10-row qualification list immediately, then entry side-tracks → B1.
  * Both are only ever invoked by `flowV2Dispatcher.processFlowV2Turn` — see
  * that file for the actual routing guarantee (this is the source of the
  * "never send the full greeting twice" contract, not node-file discipline
@@ -25,12 +25,7 @@ const QUALIFICATION_ROWS = Object.freeze([
   Object.freeze({ id: 'flowv2_qual_11_studying', title: '11th Studying' }),
   Object.freeze({ id: 'flowv2_qual_12_pcm', title: '12th Completed (PCM)' }),
   Object.freeze({ id: 'flowv2_qual_12_pcb', title: '12th Completed (PCB)' }),
-  // waTitle: WhatsApp list row titles max 24 chars; canonical title stays longer.
-  Object.freeze({
-    id: 'flowv2_qual_12_commerce',
-    title: '12th Completed (Commerce)',
-    waTitle: '12th Commerce',
-  }),
+  Object.freeze({ id: 'flowv2_qual_12_commerce', title: '12th Completed (Commerce)' }),
   Object.freeze({ id: 'flowv2_qual_12_arts', title: '12th Completed (Arts)' }),
   Object.freeze({ id: 'flowv2_qual_diploma', title: 'Diploma' }),
   Object.freeze({ id: 'flowv2_qual_degree', title: 'Degree' }),
@@ -43,25 +38,30 @@ function findQualificationRow(text) {
   if (!t) return null;
   return (
     QUALIFICATION_ROWS.find(
-      (row) =>
-        row.id.toLowerCase() === t ||
-        row.title.toLowerCase() === t ||
-        (row.waTitle && row.waTitle.toLowerCase() === t)
+      (row) => row.id.toLowerCase() === t || row.title.toLowerCase() === t
     ) || null
   );
 }
-const QUALIFICATION_LIST_SECTION_TITLE = 'Where are you right now?';
+const QUALIFICATION_LIST_SECTION_TITLE = 'Your qualification';
 const QUALIFICATION_LIST_BUTTON_TEXT = 'Select';
-/** Exact Node E open when profile.name is unknown (Master Flow welcome). */
-const UNKNOWN_NAME_GREETING =
-  "Hi 😊\nI'm Rithika from GuideXpert. I help students figure out the right path after Class 12.\n\nMay I know your name?";
+/** Qualification prompt line — never asks for name on entry. */
+const NEUTRAL_QUALIFICATION_LINE = 'Can I know your qualifications?';
 const NAME_REASK = "Sorry, didn't catch that 😊 What should I call you?";
-const NEUTRAL_QUALIFICATION_LINE =
-  'Nice to meet you 😊\nQuick one first — can I know your qualification?';
+
+function buildNodeEOpenBody(firstName) {
+  const hello = firstName ? `Hey ${firstName}! 👋` : 'Hi! 👋';
+  return (
+    `${hello}\n\n` +
+    "I'm Rithika, from GuideXpert's counselling desk. We help students find a college that actually fits them — not just the ones with the biggest ads.\n\n" +
+    NEUTRAL_QUALIFICATION_LINE
+  );
+}
 
 function buildNamedQualificationBody(firstName) {
-  return `Nice to meet you, ${firstName} 😊\nQuick one first — can I know your qualification?`;
+  return buildNodeEOpenBody(firstName);
 }
+
+const UNKNOWN_NAME_GREETING = buildNodeEOpenBody(null);
 const GUESS_CONFIRM_YES = Object.freeze({ id: 'flowv2_guess_confirm_yes', title: "Yes, that's right" });
 const GUESS_CONFIRM_NO = Object.freeze({ id: 'flowv2_guess_confirm_no', title: 'No, let me pick' });
 
@@ -75,19 +75,26 @@ function buildQualificationListInteractive(body) {
         title: QUALIFICATION_LIST_SECTION_TITLE,
         rows: QUALIFICATION_ROWS.map((row) => ({
           id: row.id,
-          title: row.waTitle || row.title,
+          title: row.title,
         })),
       },
     ],
   };
 }
-/** Only an already-accepted Flow v2 profile name may skip the name ask. */
+
+/** Prefer profile name, then CRM/lead context — never block Node E on a name ask. */
 function resolveGreetingName(ctx) {
-  return extractName(ctx?.flowV2?.profile?.name);
+  return (
+    extractName(ctx?.flowV2?.profile?.name) ||
+    extractName(ctx?.leadContext?.gx?.fullName) ||
+    extractName(ctx?.leadContext?.iit?.fullName) ||
+    extractName(ctx?.leadContext?.booking?.fullName) ||
+    null
+  );
 }
 
 function buildGreetingText(firstName) {
-  return firstName ? buildNamedQualificationBody(firstName) : UNKNOWN_NAME_GREETING;
+  return buildNodeEOpenBody(firstName || null);
 }
 
 /**
@@ -109,23 +116,17 @@ function handleGreetingEntry(ctx) {
   }
 
   const firstName = resolveGreetingName(ctx);
-  if (!firstName) {
-    return {
-      replyText: UNKNOWN_NAME_GREETING,
-      replyParts: null,
-      interactive: null,
-      contextPatch: { stage: 'greeting_awaiting_name', nameAttempts: 0 },
-      nextState: 'career_counselling_flow_v2',
-      intent: 'career_counselling_flow_v2',
-    };
+  let profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
+  if (firstName && !profile.name) {
+    profile = mergeFlowV2Profile(profile, { name: firstName });
   }
-  const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
   if (profile.qualification) return qualificationRoute(profile, profile.qualification);
+  // Master Flow Node E: never ask for name — go straight to the stage list.
   return {
     replyText: null,
     replyParts: null,
-    interactive: buildQualificationListInteractive(buildGreetingText(firstName)),
-    contextPatch: { stage: 'greeting_awaiting_qualification', nameAttempts: null },
+    interactive: buildQualificationListInteractive(buildNodeEOpenBody(firstName)),
+    contextPatch: { stage: 'greeting_awaiting_qualification', profile, nameAttempts: null },
     nextState: 'career_counselling_flow_v2',
     intent: 'career_counselling_flow_v2',
   };
@@ -179,7 +180,7 @@ function qualificationRoute(mergedProfile, qualification) {
   if (qualification === '12th Completed (PCB)') {
     return resultWithProfile(mergedProfile, 'entry_pcb_awaiting_reply', {
       interactive: interactiveButtons(
-        'Got it. PCB usually points toward medical or life sciences — are you set on that, or open to tech too? Plenty of PCB students move into bioinformatics or AI in healthcare.',
+        'Got it. BiPC usually points toward medical or life sciences — are you set on that, or open to tech too? Plenty of BiPC students move into bioinformatics or AI in healthcare.',
         [button('flowv2_entry_pcb_medical', 'Medical'), button('flowv2_entry_pcb_tech', 'Open to tech'), button('flowv2_entry_pcb_unsure', 'Not sure')]
       ),
     });
@@ -569,6 +570,7 @@ module.exports = {
   NEUTRAL_QUALIFICATION_LINE,
   GUESS_CONFIRM_YES,
   GUESS_CONFIRM_NO,
+  buildNodeEOpenBody,
   // Reused by R10's deterministic PCM/PCB resolution.
   acceptQualification,
   findQualificationRow,
