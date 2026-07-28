@@ -185,12 +185,30 @@ function extractCityPref(t) {
   return null;
 }
 
+/**
+ * R4-P Stage 2 addition — TNEA/KEAM/WBJEE/MHT_CET were entirely missing
+ * before this phase (only AP/TS EAMCET, JEE Main/Advanced, and KCET had
+ * patterns). Canonical values ('TNEA', 'KEAM') were kept identical to
+ * `constants/whatsappCollegePredictor.js`'s own `EXAM_TNEA`/`EXAM_KEAM`
+ * constants (no adapter needed there), but 'WBJEE' and 'MHT_CET' were
+ * deliberately kept as clean, unversioned Flow v2 canonical values rather
+ * than copying that file's year-tagged `EXAM_WBJEE = 'WBJEE_2024'` /
+ * `EXAM_MHT = 'MHTCET'` — those look like an implementation detail of the
+ * OLD predictor flow's own yearly exam-cycle bookkeeping, not something
+ * Flow v2's schema should bind to directly. `r4pPredictor.js`'s
+ * `LEGACY_EXAM_BY_FLOWV2_EXAM` adapter bridges the two, the same pattern
+ * Stage 1 already established for `resolveApTsCategoryId`.
+ */
 const EXAM_TYPE_PATTERNS = Object.freeze([
   Object.freeze({ re: /\bjee\s*adv/i, value: 'JEE_ADVANCED' }),
   Object.freeze({ re: /\bjee\b/i, value: 'JEE_MAIN' }),
   Object.freeze({ re: /\bap\s*eamcet\b|\beapcet\b/i, value: 'AP_EAMCET' }),
   Object.freeze({ re: /\bts\s*eamcet\b/i, value: 'TS_EAMCET' }),
   Object.freeze({ re: /\bkcet\b/i, value: 'KCET' }),
+  Object.freeze({ re: /\btnea\b/i, value: 'TNEA' }),
+  Object.freeze({ re: /\bkeam\b/i, value: 'KEAM' }),
+  Object.freeze({ re: /\bwbjee\b/i, value: 'WBJEE' }),
+  Object.freeze({ re: /\bmht[\s-]?cet\b|\bmhtcet\b/i, value: 'MHT_CET' }),
 ]);
 
 function extractExamType(t) {
@@ -206,6 +224,49 @@ function extractRank(t) {
   if (!/\brank\b|\bair\b/.test(t)) return null;
   const match = t.replace(/,/g, '').match(/(\d{1,7})/);
   return match ? parseInt(match[1], 10) : null;
+}
+
+/**
+ * R4-P Stage 2 addition (percentile-based exams, e.g. MHT-CET). Same
+ * conservative discipline as `extractRank` above — only fires with an
+ * explicit "percentile" keyword, and only accepts a value inside the
+ * genuinely valid 0-100 range, so it never mistakes an unrelated number
+ * for a percentile. NOTE: this keyword-gated behavior is intentionally
+ * NOT enough on its own to answer a directly-asked "what's your
+ * percentile?" question with a bare number reply (e.g. "91.5") — see
+ * `r4pPredictor.js`'s own stage-scoped bare-number fallback for why that
+ * narrower exception belongs at the node level, not here.
+ */
+function extractPercentile(t) {
+  if (!/\bpercentile\b/.test(t)) return null;
+  const match = t.match(/(\d{1,3}(?:\.\d+)?)/);
+  if (!match) return null;
+  const value = parseFloat(match[1]);
+  return value >= 0 && value <= 100 ? value : null;
+}
+
+/**
+ * R4-P Stage 2 addition (WBJEE quota). Generic phrasing, not literally
+ * coupled to WBJEE's own option labels — "all india" / "home state" are
+ * plain English quota stances, matching the same self-contained,
+ * no-exam-specific-coupling spirit as every other extractor in this file.
+ */
+function extractQuota(t) {
+  if (/\ball india\b/.test(t)) return 'all_india';
+  if (/\bhome state\b|\bwest bengal\b/.test(t)) return 'home_state_wb';
+  return null;
+}
+
+/**
+ * R4-P Stage 2 addition (AP EAMCET region). Values match
+ * `whatsappCollegePredictor/apTs.js`'s `AP_REGION_OPTIONS` (`AU`/`SVU`) —
+ * imported live by `r4pPredictor.js` for the button UI, so this extractor
+ * only needs to recognize the same two short codes/names as free text.
+ */
+function extractRegion(t) {
+  if (/\bau\b|\bandhra university\b/.test(t)) return 'AU';
+  if (/\bsvu\b|\bsri venkateswara\b/.test(t)) return 'SVU';
+  return null;
 }
 
 const CATEGORY_KEYWORDS = Object.freeze(['bc-a', 'bc-b', 'bc-c', 'bc-d', 'bc-e', 'oc', 'sc', 'st', 'ews', 'general']);
@@ -294,8 +355,11 @@ function extractFlowV2Slots(text, profile = {}) {
   maybeSet('cityPref', extractCityPref(t));
   maybeSet('examType', extractExamType(t));
   maybeSet('rank', extractRank(t));
+  maybeSet('percentile', extractPercentile(t));
   maybeSet('category', extractCategory(t));
   maybeSet('gender', extractGender(t));
+  maybeSet('quota', extractQuota(t));
+  maybeSet('region', extractRegion(t));
   maybeSet('goalPriority', extractGoalPriority(t));
   maybeSet('scholarshipFlag', extractScholarshipFlag(t));
   maybeSet('isParent', extractIsParent(t));
@@ -312,8 +376,11 @@ module.exports = {
   extractCityPref,
   extractExamType,
   extractRank,
+  extractPercentile,
   extractCategory,
   extractGender,
+  extractQuota,
+  extractRegion,
   extractGoalPriority,
   extractScholarshipFlag,
   extractIsParent,

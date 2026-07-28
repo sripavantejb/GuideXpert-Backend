@@ -13,11 +13,18 @@ const {
   RECONNECT_BUTTONS,
   RECONNECT_PROMPT_TEXT,
   CHECKLIST_TEXT,
+  // Stage 2
+  R4P_SLOT_STAGE,
+  R4P_AWAITING_PREDICTION_STAGE,
+  resolveLegacyExam,
+  getR4PMissingSlots,
+  extractR4PAdmissionTypeTap,
 } = require('../services/chatbot/flowV2/nodes/r4pPredictor');
 const { emptyFlowV2Profile } = require('../constants/careerCounsellingFlowV2Profile');
 const { detectOverrideIntent } = require('../services/chatbot/flowV2/nodes/node0Override');
 const { processFlowV2Turn } = require('../services/chatbot/flowV2/flowV2Dispatcher');
-const { AP_TS_CATEGORY_OPTIONS } = require('../services/chatbot/whatsappCollegePredictor/apTs');
+const { AP_TS_CATEGORY_OPTIONS, EXAM_AP, EXAM_TS } = require('../services/chatbot/whatsappCollegePredictor/apTs');
+const { EXAM_KCET, EXAM_MHT } = require('../constants/whatsappCollegePredictor');
 
 function profileWith(patch) {
   return { ...emptyFlowV2Profile(), ...patch };
@@ -92,9 +99,14 @@ describe('R4-P \u2460 blocked case \u2014 fires first, before any slot question,
   ];
 
   for (const { name, profile } of notBlockedShapes) {
-    test(`NOT blocked (negative control): ${name} \u2014 correctly falls through past the gate (and only then hits Stage 2's not-yet-built stub)`, () => {
+    test(`NOT blocked (negative control): ${name} \u2014 correctly falls through past the gate into Stage 2's real slot-filling (never the blocked reply)`, () => {
       const ctx = { flowV2: { profile: profileWith(profile) } };
-      assert.throws(() => handleR4PEntry(ctx), /Stage 2 of this node.s staged build.*not implemented yet/);
+      let result;
+      assert.doesNotThrow(() => {
+        result = handleR4PEntry(ctx);
+      });
+      assert.notEqual(result.contextPatch.stage, R4P_BLOCKED_STAGE);
+      assert.notEqual(result.interactive && result.interactive.body, BLOCKED_REPLY_TEXT);
     });
   }
 });
@@ -223,5 +235,224 @@ describe('R4-P \u2460 blocked case \u2014 [Connect me] routes through Node 0\u20
     const ctx = { flowV2: { stage: 'r4p_some_future_stage_name', profile: emptyFlowV2Profile() } };
     const result = await processFlowV2Turn(ctx, 'Connect me');
     assert.equal(result.contextPatch.stage, 'node0_awaiting_backfill');
+  });
+});
+
+/**
+ * STAGE 2 of R4-P's staged build \u2014 \u2461 exam-specific slot filling. Ends
+ * with "all required slots known"; does NOT call the prediction API and
+ * does NOT resolve reservation codes (both Stage 3). See r4pPredictor.js's
+ * module doc for the full staging plan and the scope decisions made here
+ * (category's shared 10-option list, admissionType's node-local tap).
+ */
+
+describe('R4-P \u2461 slot filling \u2014 ORDERING GUARANTEE: the blocked check still runs first, even mid-slot-filling, even when the SAME reply would otherwise complete every AP EAMCET slot', () => {
+  test('a reply that fills the LAST missing AP EAMCET slot (gender) AND makes the profile OC+male must return the blocked-case response, never "ready to predict"', () => {
+    const almostCompleteBlockedProfile = { examType: EXAM_AP, rank: 45000, category: 'OC', region: 'AU' };
+    const ctx = {
+      flowV2: {
+        stage: R4P_SLOT_STAGE,
+        r4pPendingSlot: 'gender',
+        profile: profileWith(almostCompleteBlockedProfile),
+      },
+    };
+    const result = handleR4PReply(ctx, 'Male');
+
+    assert.equal(result.contextPatch.stage, R4P_BLOCKED_STAGE);
+    assert.notEqual(result.contextPatch.stage, R4P_AWAITING_PREDICTION_STAGE);
+    assert.equal(result.interactive.body, BLOCKED_REPLY_TEXT);
+    assert.deepEqual(
+      result.interactive.buttons.map((b) => b.title),
+      ['Connect me', 'What should I look for meanwhile?']
+    );
+    // The facts that made it blocked are still on the profile handed back
+    // \u2014 additive merge, same guarantee as every other beat.
+    assert.equal(result.contextPatch.profile.gender, 'male');
+    assert.equal(result.contextPatch.profile.category, 'OC');
+  });
+
+  test('a single message that both fills every remaining AP EAMCET slot (category+gender in one shot) AND matches OC+Male is caught the SAME way, proving this does not depend on gender specifically being the last slot asked', () => {
+    const ctx = {
+      flowV2: {
+        stage: R4P_SLOT_STAGE,
+        r4pPendingSlot: 'category',
+        profile: profileWith({ examType: EXAM_AP, rank: 45000, region: 'AU' }),
+      },
+    };
+    const result = handleR4PReply(ctx, 'OC Male');
+    assert.equal(result.contextPatch.stage, R4P_BLOCKED_STAGE);
+    assert.equal(result.interactive.body, BLOCKED_REPLY_TEXT);
+  });
+
+  test('negative control \u2014 the exact same slot-completing shape for a NON-blocked combination (OC + female) correctly reaches "all slots known", proving the ordering test above is actually exercising the blocked path and not just always winning', () => {
+    const ctx = {
+      flowV2: {
+        stage: R4P_SLOT_STAGE,
+        r4pPendingSlot: 'gender',
+        profile: profileWith({ examType: EXAM_AP, rank: 45000, category: 'OC', region: 'AU' }),
+      },
+    };
+    const result = handleR4PReply(ctx, 'Female');
+    assert.equal(result.contextPatch.stage, R4P_AWAITING_PREDICTION_STAGE);
+    assert.equal(result.contextPatch.profile.gender, 'female');
+  });
+});
+
+describe('R4-P \u2461 slot filling \u2014 multi-slot single message fills everything an exam needs in one pass, for at least two exams with different slot orders', () => {
+  test('TS EAMCET: "TS EAMCET rank 18453 OC Male" fills exam+rank+category+gender in one reply and asks nothing further (TS needs no region)', () => {
+    const entry = handleR4PEntry({ flowV2: { profile: emptyFlowV2Profile() } });
+    assert.equal(entry.contextPatch.r4pPendingSlot, 'exam');
+
+    const replyCtx = { flowV2: { stage: R4P_SLOT_STAGE, r4pPendingSlot: 'exam', profile: entry.contextPatch.profile } };
+    const result = handleR4PReply(replyCtx, 'TS EAMCET rank 18453 OC Male');
+
+    assert.equal(result.contextPatch.stage, R4P_AWAITING_PREDICTION_STAGE);
+    assert.equal(result.interactive, null);
+    assert.equal(result.replyText, null);
+    const p = result.contextPatch.profile;
+    assert.equal(p.examType, 'TS_EAMCET');
+    assert.equal(p.rank, 18453);
+    assert.equal(p.category, 'OC');
+    assert.equal(p.gender, 'male');
+  });
+
+  test('JEE Main: "JEE Main AIR 5000 Male General" fills exam+rank+gender+category in one reply and asks nothing further', () => {
+    const entry = handleR4PEntry({ flowV2: { profile: emptyFlowV2Profile() } });
+    const replyCtx = { flowV2: { stage: R4P_SLOT_STAGE, r4pPendingSlot: 'exam', profile: entry.contextPatch.profile } };
+    const result = handleR4PReply(replyCtx, 'JEE Main AIR 5000 Male General');
+
+    assert.equal(result.contextPatch.stage, R4P_AWAITING_PREDICTION_STAGE);
+    assert.equal(result.interactive, null);
+    const p = result.contextPatch.profile;
+    assert.equal(p.examType, 'JEE_MAIN');
+    assert.equal(p.rank, 5000);
+    assert.equal(p.gender, 'male');
+    assert.equal(p.category, 'GENERAL');
+  });
+});
+
+describe('R4-P \u2461 slot filling \u2014 never re-asks a known slot, proven across a multi-turn sequence', () => {
+  test('turn 1 gives exam, turn 2 gives rank \u2014 turn 2\u2019s question is for the NEXT missing slot (category), not a re-ask of exam or rank', () => {
+    const entry = handleR4PEntry({ flowV2: { profile: emptyFlowV2Profile() } });
+    assert.equal(entry.contextPatch.r4pPendingSlot, 'exam');
+
+    const turn2 = handleR4PReply(
+      { flowV2: { stage: R4P_SLOT_STAGE, r4pPendingSlot: 'exam', profile: entry.contextPatch.profile } },
+      'TS EAMCET'
+    );
+    assert.equal(turn2.contextPatch.r4pPendingSlot, 'rank');
+    assert.equal(turn2.contextPatch.profile.examType, 'TS_EAMCET');
+
+    const turn3 = handleR4PReply(
+      { flowV2: { stage: R4P_SLOT_STAGE, r4pPendingSlot: 'rank', profile: turn2.contextPatch.profile } },
+      'rank 18453'
+    );
+    assert.equal(turn3.contextPatch.r4pPendingSlot, 'category');
+    assert.notEqual(turn3.contextPatch.r4pPendingSlot, 'exam');
+    assert.notEqual(turn3.contextPatch.r4pPendingSlot, 'rank');
+    // Earlier turns' facts survive \u2014 additive merge, not overwritten.
+    assert.equal(turn3.contextPatch.profile.examType, 'TS_EAMCET');
+    assert.equal(turn3.contextPatch.profile.rank, 18453);
+  });
+});
+
+describe('R4-P \u2461 slot filling \u2014 exam-specific ordering actually branches on the exam (3 distinct exam types, 3 distinct next-slot outcomes)', () => {
+  test('AP EAMCET with rank already known asks CATEGORY next (order: exam, rank, category, gender, region)', () => {
+    const result = handleR4PEntry({ flowV2: { profile: profileWith({ examType: 'AP_EAMCET', rank: 12345 }) } });
+    assert.equal(result.contextPatch.r4pPendingSlot, 'category');
+    assert.equal(result.interactive.type, 'list');
+    assert.equal(result.interactive.body, 'Which category?\nWhy I ask: category changes the cutoff you need to clear.');
+  });
+
+  test('JEE Main with rank already known asks GENDER next (order: exam, rank, gender, category \u2014 gender BEFORE category, unlike AP)', () => {
+    const result = handleR4PEntry({ flowV2: { profile: profileWith({ examType: 'JEE_MAIN', rank: 12345 }) } });
+    assert.equal(result.contextPatch.r4pPendingSlot, 'gender');
+    assert.equal(result.interactive.type, 'button');
+    assert.deepEqual(result.interactive.buttons.map((b) => b.title), ['Male', 'Female']);
+  });
+
+  test('KCET with rank already known asks ADMISSION TYPE next (order: exam, rank, admission_type, category \u2014 a slot AP/JEE never ask at all)', () => {
+    const result = handleR4PEntry({ flowV2: { profile: profileWith({ examType: 'KCET', rank: 12345 }) } });
+    assert.equal(result.contextPatch.r4pPendingSlot, 'admission_type');
+    assert.equal(result.interactive.type, 'button');
+    assert.deepEqual(result.interactive.buttons.map((b) => b.title), ['General', 'HK']);
+  });
+});
+
+describe('R4-P \u2461 slot filling \u2014 "all slots known" correctly transitions to the Stage-3 placeholder, without erroring or hanging', () => {
+  test('TNEA (default order: exam, rank, category) with all three already known transitions cleanly, no question asked', () => {
+    const profile = profileWith({ examType: 'TNEA', rank: 5000, category: 'SC' });
+    let result;
+    assert.doesNotThrow(() => {
+      result = handleR4PEntry({ flowV2: { profile } });
+    });
+    assert.equal(result.contextPatch.stage, R4P_AWAITING_PREDICTION_STAGE);
+    assert.equal(result.contextPatch.r4pPendingSlot, null);
+    assert.equal(result.interactive, null);
+    assert.equal(result.replyText, null);
+    assert.equal(result.replyParts, null);
+    assert.equal(getR4PMissingSlots(result.contextPatch.profile).length, 0);
+  });
+
+  test('MHT CET (percentile-based, needs admission_type before category) reaching completeness via handleR4PReply, not just handleR4PEntry', () => {
+    const ctx = {
+      flowV2: {
+        stage: R4P_SLOT_STAGE,
+        r4pPendingSlot: 'category',
+        profile: profileWith({ examType: 'MHT_CET', percentile: 91.5, admissionType: 'STATE_LEVEL' }),
+      },
+    };
+    const result = handleR4PReply(ctx, 'General');
+    assert.equal(result.contextPatch.stage, R4P_AWAITING_PREDICTION_STAGE);
+    assert.equal(result.contextPatch.profile.category, 'GENERAL');
+  });
+});
+
+describe('R4-P \u2461 slot filling \u2014 the Stage-3 placeholder stage falls through to the dispatcher\u2019s safeFallbackReply cleanly, with ZERO changes to flowV2Dispatcher.js (Stage 3 does not exist yet)', () => {
+  test('a neutral message sent while stage is r4p_awaiting_prediction produces the dispatcher\u2019s generic fallback, not an error and not an R4-P-shaped reply', async () => {
+    const ctx = { flowV2: { stage: R4P_AWAITING_PREDICTION_STAGE, profile: emptyFlowV2Profile() } };
+    const result = await processFlowV2Turn(ctx, 'ok');
+
+    assert.equal(result.replyText, "Let's continue from where we left off.");
+    assert.equal(result.interactive, null);
+    assert.equal(result.nextState, 'career_counselling_flow_v2');
+    assert.notEqual(result.replyText, BLOCKED_REPLY_TEXT);
+  });
+});
+
+describe('R4-P \u2461 slot filling \u2014 supporting unit coverage', () => {
+  test('resolveLegacyExam bridges Flow v2\u2019s canonical examType values to the OLD flow\u2019s own EXAM_* constants', () => {
+    assert.equal(resolveLegacyExam('AP_EAMCET'), EXAM_AP);
+    assert.equal(resolveLegacyExam('TS_EAMCET'), EXAM_TS);
+    assert.equal(resolveLegacyExam('KCET'), EXAM_KCET);
+    assert.equal(resolveLegacyExam('MHT_CET'), EXAM_MHT);
+    assert.equal(resolveLegacyExam(null), null);
+  });
+
+  test('getR4PMissingSlots returns just ["exam"] when examType is not yet known, regardless of anything else already filled', () => {
+    assert.deepEqual(getR4PMissingSlots(profileWith({ rank: 5000, category: 'OC' })), ['exam']);
+  });
+
+  test('extractR4PAdmissionTypeTap resolves KCET\u2019s "HK" / "General" and MHT-CET\u2019s three options, including the "other than home university" vs "home university" ambiguity', () => {
+    assert.equal(extractR4PAdmissionTypeTap('HK', EXAM_KCET), 'HK');
+    assert.equal(extractR4PAdmissionTypeTap('General', EXAM_KCET), 'GENERAL');
+    assert.equal(extractR4PAdmissionTypeTap('State Level', EXAM_MHT), 'STATE_LEVEL');
+    assert.equal(extractR4PAdmissionTypeTap('Home University', EXAM_MHT), 'HOME_UNIVERSITY');
+    assert.equal(extractR4PAdmissionTypeTap('Other than Home University', EXAM_MHT), 'OTHER_THAN_HOME_UNIVERSITY');
+    assert.equal(extractR4PAdmissionTypeTap('Other than Home', EXAM_MHT), 'OTHER_THAN_HOME_UNIVERSITY');
+  });
+
+  test('a KCET admission-type reply of "General" does not silently pre-fill category before category is actually asked', () => {
+    const ctx = {
+      flowV2: {
+        stage: R4P_SLOT_STAGE,
+        r4pPendingSlot: 'admission_type',
+        profile: profileWith({ examType: 'KCET', rank: 5000 }),
+      },
+    };
+    const result = handleR4PReply(ctx, 'General');
+    assert.equal(result.contextPatch.profile.admissionType, 'GENERAL');
+    assert.equal(result.contextPatch.profile.category, null);
+    assert.equal(result.contextPatch.r4pPendingSlot, 'category');
   });
 });

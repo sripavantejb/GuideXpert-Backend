@@ -187,6 +187,13 @@ const LEAD_PROFILE_SCHEMA = Object.freeze({
     readBeats: ['B4'],
     description: 'Region selection (e.g. AP AU/SVU). Old profile equivalent: profile.region.',
   }),
+  admissionType: Object.freeze({
+    type: 'string',
+    writeBeats: ['B4'],
+    readBeats: ['B4'],
+    description:
+      "R4-P Stage 2 addition (not in the original Phase 1 schema — KCET/MHT-CET's slot order needs it as its own gated question before category, discovered while implementing slotOrderForExam()'s SLOT_ADMISSION_TYPE step; added additively, no existing field repurposed). Admission-type selection (e.g. KCET 'GENERAL'/'HK'; MHT-CET 'STATE_LEVEL'/'HOME_UNIVERSITY'/'OTHER_THAN_HOME_UNIVERSITY'). Old profile equivalent: profile.admissionType (collegePredictorSlots.js ctx.admissionType).",
+  }),
   predictorBridgeShown: Object.freeze({
     type: 'boolean',
     writeBeats: ['B4'],

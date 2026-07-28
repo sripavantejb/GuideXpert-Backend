@@ -28,6 +28,10 @@ const EXPECTED_SLOTS = [
   'gender',
   'quota',
   'region',
+  // Added in R4-P Stage 2 (college predictor slot-filling) — KCET/MHT-CET's
+  // slot order needs it as its own gated question before category. See
+  // careerCounsellingFlowV2Profile.js's own description for provenance.
+  'admissionType',
   'predictorBridgeShown',
   'predictorBridgeChoice',
   'predictedColleges',
