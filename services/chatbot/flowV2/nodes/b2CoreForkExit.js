@@ -44,7 +44,7 @@ const EXIT_MESSAGE_3 = [
   "Ask any college those five and you'll learn more than a brochure will ever tell you.",
 ].join('\n');
 const EXIT_MESSAGE_4 =
-  "And if you ever want to look at the AI-plus-mechanical route \u2014 robotics, automation, EV \u2014 I'm right here. No pressure at all. All the best, genuinely. \uD83D\uDC4D";
+  "And if you ever want to look at CSE or AI routes that keep a wider industry door open, I'm right here. No pressure at all. All the best, genuinely. \uD83D\uDC4D";
 
 const EXIT_BUTTONS = Object.freeze([
   Object.freeze({ id: 'flowv2_core_exit_thanks', title: 'Thanks, that helps' }),
@@ -53,7 +53,7 @@ const EXIT_BUTTONS = Object.freeze([
 
 const WARM_CLOSE_TEXT = "Good luck with it \u2014 and if a friend's looking at CSE or AI, send them my way \uD83D\uDE42";
 const TRANSITION_TEXT =
-  "Happy to. Two quick taps and I'll show you programs where you build AI and coding properly, with project work that runs into robotics and automation.";
+  "Happy to. Two quick taps and I'll show you CSE and AI programs I can shortlist honestly \u2014 project-heavy, placement-focused, without claiming a pure-mechanical campus.";
 const APOLOGY_TEXT =
   "That's fair, and I'm sorry \u2014 I should have flagged my scope earlier. The checklist above is the same one I'd give a student who paid for a session, so at least take that with you. Genuinely wishing you well with it.";
 const NEUTRAL_CLOSE_TEXT = "No worries \u2014 I'll leave it there. All the best! \uD83D\uDC4D";

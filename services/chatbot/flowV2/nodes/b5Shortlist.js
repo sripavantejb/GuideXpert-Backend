@@ -282,20 +282,20 @@ const GOAL_FRAME_LINE = Object.freeze({
 });
 
 /**
- * ★ CORE-INTEREST PAYOFF — verbatim per task spec. Only ever appended to
- * NIAT's line, and only when NIAT is specifically the best-match college.
+ * ★ CORE-INTEREST PAYOFF — Stage 7 conservative Variant B.
  *
- * ⚠ UNVERIFIED ASSUMPTION, restated from the task (not silently shipped):
- * this makes a factual claim about NIAT's actual curriculum (robotics/
- * automation/BIM/embedded project work) that has not been confirmed against
- * any source in this codebase. Confirm before this ships to real students.
+ * OPEN ITEM ◆ NIAT-2 was answered by product default: NIAT is framed as
+ * CSE/AI only, with NO unverified robotics/automation curriculum claim.
+ * Payoff lines may acknowledge the student's inbound core interest and
+ * the wider software door — they must NEVER invent NIAT project-work
+ * facts (robotics, automation, BIM labs, etc.).
  */
 const CORE_INTEREST_PAYOFF = Object.freeze({
   mechanical:
-    'Their project work runs into robotics and automation, which is exactly where your mechanical interest points.',
+    'You came in leaning mechanical \u2014 this keeps a wider CSE/AI door open without pretending it replaces pure mechanical college work.',
   civil:
-    'Their project and simulation work lines up with the BIM and smart-infrastructure direction civil is heading.',
-  ece: 'Their embedded and hardware-adjacent project work keeps your ECE interest genuinely in play.',
+    'You came in leaning civil \u2014 this keeps a wider CSE/AI door open, without inventing civil-lab claims we cannot verify.',
+  ece: 'You came in leaning ECE \u2014 this keeps a wider CSE/AI door open from a software-first base I can shortlist honestly.',
 });
 
 /** The core-interest payoff (see `appendCoreInterestPayoff` below) is
