@@ -169,6 +169,8 @@ module.exports = {
   goalPriorityAckLine,
   buildB1ListInteractive,
   B1_ROWS,
+  B1_LIST_SECTION_TITLE,
+  B1_LIST_BUTTON_TEXT,
   B1_QUESTION_TAIL,
   B1_REASK_BODY,
 };

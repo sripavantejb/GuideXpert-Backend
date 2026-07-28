@@ -235,6 +235,13 @@ const LEAD_PROFILE_SCHEMA = Object.freeze({
     description:
       'Whether the student indicated scholarship / financial-aid need. No direct old-profile equivalent.',
   }),
+  parentConstraints: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['system', 'B5'],
+    description:
+      "I-3 family interrupt: 'nearby' | 'known_brand' | 'student_call' — only set when the student raises parents.",
+  }),
   isParent: Object.freeze({
     type: 'boolean',
     writeBeats: ['B3'],
@@ -372,6 +379,13 @@ const LEAD_PROFILE_SCHEMA = Object.freeze({
     readBeats: ['B6', 'B7'],
     description:
       "Which exit path ('door') the student is routed through at decision time (e.g. 'book_now', 'one_on_one', 'information_only'). New Flow v2 concept — no old-profile equivalent.",
+  }),
+  jumpType: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['system'],
+    description:
+      "R4 jump-ahead subtype when door = jumps_ahead: 'rank' | 'college' | 'money' | 'goal' | 'best' | 'admission' | 'vs'.",
   }),
   bookingStatus: Object.freeze({
     type: 'string',

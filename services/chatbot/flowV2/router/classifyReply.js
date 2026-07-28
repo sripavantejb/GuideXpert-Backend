@@ -141,7 +141,9 @@ const R10_KNOWN_TERMS = Object.freeze([
 ]);
 
 /** R4 — jumps ahead. Sub-case patterns, checked in this order. */
-const R4_RANK_PATTERN = /\b(rank|percentile|air)\b/i;
+const R4_RANK_PATTERN =
+  /\b((my|the|eamcet|jee|ts|ap|wbjee|kcet|mht)\s+)?(rank|percentile|air)\b|\brank\s*(is|=|:)?\s*\d|\b\d{2,7}\s*(rank|percentile|%ile)/i;
+const R4_STICK_RANK_LIST_PATTERN = /\bstick to my rank list\b/i;
 const R4_KNOWN_COLLEGES = Object.freeze([
   'plaksha',
   'scaler',
@@ -159,6 +161,10 @@ const R4_MONEY_PATTERN = /\b(fees?|cost|budget|scholarship)\b/i;
 const R4_BEST_PATTERN = /\bbest college\b/i;
 const R4_ADMISSION_PATTERN = /\b(admission|deadline|apply by)\b/i;
 const R4_VS_PATTERN = /\b\w+\s+vs\s+\w+/i;
+const R4_GOAL_PATTERN =
+  /\b(i want|want to (become|do|study)|interested in|looking (at|for))\b.{0,40}\b(cse|ai|software|coding|mechanical|civil|ece|eee|engineer|engineering|data|design)\b/i;
+const R4_UNKNOWN_COLLEGE_ASK_PATTERN =
+  /\b(is|about|tell me about|what('?s| is)|how (is|good is))\b.{0,60}\b(any good|worth it|good\??|placements?|fees?)\b/i;
 
 function levenshteinAtMost2(a, b) {
   if (Math.abs(a.length - b.length) > 2) return false;
@@ -182,10 +188,13 @@ function matchAny(patterns, t) {
 }
 
 function classifyR4SubCase(t) {
+  if (R4_STICK_RANK_LIST_PATTERN.test(t)) return null;
   if (R4_RANK_PATTERN.test(t)) return 'rank';
+  if (R4_VS_PATTERN.test(t)) return 'vs';
   if (R4_KNOWN_COLLEGES.some((name) => t.includes(name))) return 'college';
   if (R4_MONEY_PATTERN.test(t)) return 'money';
-  if (R4_VS_PATTERN.test(t)) return 'vs';
+  if (R4_UNKNOWN_COLLEGE_ASK_PATTERN.test(t)) return 'college';
+  if (R4_GOAL_PATTERN.test(t)) return 'goal';
   if (R4_BEST_PATTERN.test(t)) return 'best';
   if (R4_ADMISSION_PATTERN.test(t)) return 'admission';
   return null;

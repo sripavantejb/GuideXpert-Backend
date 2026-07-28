@@ -172,6 +172,7 @@ const {
   EXAM_JEE_ADV,
   EXAM_MHT,
   mapById,
+  formatPredictionReply,
 } = require('../../../../constants/whatsappCollegePredictor');
 const { isApOcMaleBlocked, AP_TS_CATEGORY_OPTIONS, AP_REGION_OPTIONS, EXAM_AP, EXAM_TS } = require('../../whatsappCollegePredictor/apTs');
 const { WBJEE_QUOTA_OPTIONS } = require('../../whatsappCollegePredictor/wbjee');
@@ -179,6 +180,8 @@ const { KCET_ADMISSION_OPTIONS } = require('../../whatsappCollegePredictor/kcet'
 const { MHT_CET_ADMISSION_OPTIONS } = require('../../whatsappCollegePredictor/mhtCet');
 const {
   slotOrderForExam,
+  buildPredictionContext,
+  categoryOptionsForExam,
   SLOT_EXAM,
   SLOT_RANK,
   SLOT_PERCENTILE,
@@ -188,9 +191,30 @@ const {
   SLOT_QUOTA,
   SLOT_REGION,
 } = require('../../whatsappCollegePredictor/collegePredictorSlots');
+const {
+  buildPredictionHash,
+  buildPredictionCompletion,
+  findCompletedPrediction,
+} = require('../../whatsappCollegePredictor/predictionIdempotency');
+const {
+  PAGE_SIZE,
+  filterCollegesLocally,
+  slicePage,
+  resolveBranchFilter,
+  resolveOwnershipFilter,
+  resolveGirlsFilter,
+} = require('../../whatsappCollegePredictor/collegePredictorSessionService');
+const { fetchCollegeDostColleges } = require('../../../collegePredictorCore');
 const { extractFlowV2Slots } = require('../flowV2SlotExtractor');
 const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
 const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingFlowV2Profile');
+const { withMergedProfile } = require('../flowV2NodeUtils');
+const { handleB1Entry } = require('./b1Goal');
+
+let fetchCollegeDostCollegesFn = fetchCollegeDostColleges;
+function setR4PDeps(deps = {}) {
+  fetchCollegeDostCollegesFn = deps.fetchCollegeDostColleges || fetchCollegeDostColleges;
+}
 
 // PROVENANCE (same discipline as resolveApTsCategoryId below) \u2014 these
 // module-load-time assertions prove the value strings
@@ -642,15 +666,480 @@ function askForSlot(profile, legacySlot) {
   }
 }
 
-function slotCompleteResult(mergedProfile) {
+// ---------------------------------------------------------------------------
+// \u2462–\u2464 Prediction + sticky results + honest bridge (Stages 3–5)
+// ---------------------------------------------------------------------------
+
+const R4P_RESULTS_STAGE = 'r4p_awaiting_results';
+const R4P_FILTER_STAGE = 'r4p_awaiting_filter';
+const R4P_BRIDGE_STAGE = 'r4p_awaiting_bridge';
+const R4P_PARKED_STAGE = 'r4p_parked_rank_list';
+
+const RESULTS_BUTTONS = Object.freeze([
+  Object.freeze({ id: 'flowv2_r4p_show_more', title: 'Show more' }),
+  Object.freeze({ id: 'flowv2_r4p_filter', title: 'Filter these' }),
+  Object.freeze({ id: 'flowv2_r4p_help_choose', title: 'Help me choose' }),
+]);
+
+const FILTER_ROWS = Object.freeze([
+  Object.freeze({ id: 'flowv2_r4p_f_cse', title: 'CSE' }),
+  Object.freeze({ id: 'flowv2_r4p_f_ece', title: 'ECE' }),
+  Object.freeze({ id: 'flowv2_r4p_f_mech', title: 'Mechanical' }),
+  Object.freeze({ id: 'flowv2_r4p_f_civil', title: 'Civil' }),
+  Object.freeze({ id: 'flowv2_r4p_f_govt', title: 'Government only' }),
+  Object.freeze({ id: 'flowv2_r4p_f_private', title: 'Private only' }),
+  Object.freeze({ id: 'flowv2_r4p_f_girls', title: 'Girls colleges' }),
+  Object.freeze({ id: 'flowv2_r4p_f_restart', title: 'Start again' }),
+]);
+
+const BRIDGE_BUTTONS = Object.freeze([
+  Object.freeze({ id: 'flowv2_r4p_show_both', title: 'Show me both' }),
+  Object.freeze({ id: 'flowv2_r4p_stick_rank', title: 'Stick to my rank list' }),
+]);
+
+const BRIDGE_TEXT = [
+  'That list is what your rank opens up — worth keeping.',
+  '',
+  "There's a second route most students don't know about: newer colleges that admit on aptitude and interviews rather than rank, and are built around projects and placements. Different door, sometimes a better fit.",
+  '',
+  'Want me to shortlist those against your goals too, so you can compare both routes?',
+].join('\n');
+
+const STICK_RANK_CLOSE =
+  "Fair enough — that list is saved right here. If you want help choosing between them later, just say the word. \uD83D\uDC4D";
+
+const API_ERROR_TEXT =
+  "I couldn't fetch live predictions right now — I won't guess a list. Want me to connect you with a counsellor who can pull the current data, or try again in a moment?";
+
+const API_ERROR_BUTTONS = Object.freeze([
+  Object.freeze({ id: 'flowv2_r4p_blocked_connect_me', title: 'Connect me' }),
+  Object.freeze({ id: 'flowv2_r4p_retry', title: 'Try again' }),
+]);
+
+const QUALIFICATION_FROM_EXAM = Object.freeze({
+  AP_EAMCET: '12th Completed (PCM)',
+  TS_EAMCET: '12th Completed (PCM)',
+  JEE_MAIN: '12th Completed (PCM)',
+  JEE_ADVANCED: '12th Completed (PCM)',
+  KCET: '12th Completed (PCM)',
+  MHT_CET: '12th Completed (PCM)',
+  WBJEE: '12th Completed (PCM)',
+  TNEA: '12th Completed (PCM)',
+  KEAM: '12th Completed (PCM)',
+});
+
+function resolveCategoryFields(legacyExam, categoryLabel) {
+  if (!categoryLabel) return {};
+  const options = categoryOptionsForExam({ exam: legacyExam, admissionType: null }) || [];
+  const normalized = String(categoryLabel).trim().toUpperCase();
+  const matched =
+    options.find((opt) => String(opt.label || '').toUpperCase() === normalized) ||
+    options.find((opt) => String(opt.value || '').toUpperCase() === normalized) ||
+    null;
+  if (matched) {
+    return {
+      categoryLabel: matched.label,
+      categoryN: matched.id,
+      baseCategory: matched.value || matched.label,
+    };
+  }
+  // AP/TS shared table fallback (Stage 2 captures these labels even when
+  // categoryOptionsForExam is empty for incomplete ctx).
+  const apTs = AP_TS_CATEGORY_OPTIONS.find((opt) => opt.label.toUpperCase() === normalized);
+  if (apTs) {
+    return { categoryLabel: apTs.label, categoryN: apTs.id, baseCategory: apTs.label };
+  }
+  if (normalized === 'GENERAL' || normalized === 'GEN') {
+    return { categoryLabel: 'General', categoryN: null, baseCategory: 'GENERAL' };
+  }
+  return { categoryLabel: String(categoryLabel), categoryN: null, baseCategory: String(categoryLabel) };
+}
+
+function buildPredictorCtxFromProfile(profile) {
+  const exam = resolveLegacyExam(profile.examType);
+  const categoryFields = resolveCategoryFields(exam, profile.category);
+  const ctx = {
+    exam,
+    rank: profile.rank != null ? profile.rank : null,
+    percentile: profile.percentile != null ? profile.percentile : null,
+    gender: profile.gender || null,
+    quota: profile.quota || null,
+    admissionType: profile.admissionType || null,
+    admission_category_name_enum: profile.region || (exam === EXAM_AP ? null : 'DEFAULT'),
+    conversational: true,
+    ...categoryFields,
+  };
+  return ctx;
+}
+
+function buildCounsellorStyleRequestBody(ctx) {
+  const body = { exam: ctx.exam };
+  if (ctx.rank != null) body.rank = ctx.rank;
+  if (ctx.cutoff_from != null) body.cutoff_from = ctx.cutoff_from;
+  if (ctx.cutoff_to != null) body.cutoff_to = ctx.cutoff_to;
+  if (Array.isArray(ctx.reservation_category_codes)) {
+    body.reservation_category_codes = ctx.reservation_category_codes;
+  }
+  if (ctx.admission_category_name_enum) {
+    body.admission_category_name_enum = ctx.admission_category_name_enum;
+  }
+  if (ctx.quota) body.quota = ctx.quota;
+  return body;
+}
+
+function resultsInteractive(body) {
+  return { type: 'button', body, buttons: RESULTS_BUTTONS };
+}
+
+function apiErrorReply(profile) {
   return {
     replyText: null,
     replyParts: null,
-    interactive: null,
-    contextPatch: { stage: R4P_AWAITING_PREDICTION_STAGE, profile: mergedProfile, r4pPendingSlot: null },
+    interactive: { type: 'button', body: API_ERROR_TEXT, buttons: API_ERROR_BUTTONS },
+    contextPatch: {
+      stage: R4P_AWAITING_PREDICTION_STAGE,
+      profile,
+      r4pPendingSlot: null,
+    },
     nextState: 'career_counselling_flow_v2',
     intent: 'career_counselling_flow_v2',
   };
+}
+
+/**
+ * Stage 3 — real CollegeDost prediction. Presents EXACTLY what the API
+ * returns — no safe/likely/stretch tiers.
+ */
+async function runR4PPrediction(profile, ctx = {}) {
+  if (isBlockedDemographic(profile)) {
+    return blockedDemographicReply(profile);
+  }
+
+  const inboundId = ctx?.inboundId || ctx?.flowV2?.inboundId || null;
+  const priorIdempotency = ctx?.flowV2?.predictionIdempotency || null;
+  const predictorCtxSeed = buildPredictorCtxFromProfile(profile);
+  const built = buildPredictionContext(predictorCtxSeed);
+  if (built.blocked) return blockedDemographicReply(profile);
+  if (built.error) {
+    return {
+      replyText: built.error,
+      replyParts: null,
+      interactive: null,
+      contextPatch: { stage: R4P_SLOT_STAGE, profile, r4pPendingSlot: SLOT_CATEGORY },
+      nextState: 'career_counselling_flow_v2',
+      intent: 'career_counselling_flow_v2',
+    };
+  }
+
+  const predictCtx = built.ctx;
+  const hash = buildPredictionHash(predictCtx);
+  if (inboundId) {
+    const completed = findCompletedPrediction(priorIdempotency, inboundId, hash);
+    if (completed?.cachedReply) {
+      return {
+        replyText: null,
+        replyParts: null,
+        interactive: resultsInteractive(completed.cachedReply.replace(/\n(SHOW MORE|AGAIN|AGENT).*$/im, '').trim()),
+        contextPatch: {
+          stage: R4P_RESULTS_STAGE,
+          profile,
+          r4pPendingSlot: null,
+          predictionIdempotency: completed,
+          r4pSticky: priorIdempotency?.r4pSticky || ctx?.flowV2?.r4pSticky || null,
+        },
+        nextState: 'career_counselling_flow_v2',
+        intent: 'career_counselling_flow_v2',
+        idempotentReplay: true,
+      };
+    }
+  }
+
+  const requestBody = buildCounsellorStyleRequestBody(predictCtx);
+  const fetchLimit = Math.max(PAGE_SIZE * 5, 25);
+
+  let colleges = [];
+  let total = 0;
+  try {
+    const data = await fetchCollegeDostCollegesFn(predictCtx.exam, 0, fetchLimit, requestBody);
+    colleges = data?.colleges || [];
+    total = data?.total_no_of_colleges ?? colleges.length;
+  } catch (err) {
+    return apiErrorReply(profile);
+  }
+
+  const page = slicePage(colleges, 0, PAGE_SIZE);
+  let formatted;
+  try {
+    formatted = formatPredictionReply(predictCtx, page, { pageOffset: 0 });
+  } catch (err) {
+    return apiErrorReply(profile);
+  }
+
+  // Strip typed-command footer — sticky UX is button-based in Flow v2.
+  const cleaned = String(formatted || '')
+    .replace(/\n(-+\n)?(SHOW MORE|FILTER|AGAIN|AGENT|HELP).*$/ims, '')
+    .trim();
+
+  const sticky = {
+    resultCache: colleges,
+    pageOffset: page.length,
+    apiOffset: colleges.length,
+    totalColleges: total,
+    predictorCtx: predictCtx,
+    lastRequestBody: requestBody,
+    branchFilter: null,
+    ownershipFilter: null,
+    girlsOnly: false,
+    filterLabel: null,
+  };
+
+  const completion = inboundId
+    ? buildPredictionCompletion({
+        inboundId,
+        ctx: predictCtx,
+        cachedReply: cleaned,
+        collegeCount: page.length,
+      })
+    : null;
+
+  const predictedNames = page
+    .map((c) => c.college_name || c.collegeName)
+    .filter(Boolean);
+
+  const mergedProfile = mergeFlowV2Profile(profile, {
+    predictedColleges: predictedNames,
+    predictorBridgeShown: false,
+  });
+
+  return {
+    replyText: null,
+    replyParts: null,
+    interactive: resultsInteractive(cleaned),
+    contextPatch: {
+      stage: R4P_RESULTS_STAGE,
+      profile: mergedProfile,
+      r4pPendingSlot: null,
+      r4pSticky: sticky,
+      predictionIdempotency: completion,
+    },
+    nextState: 'career_counselling_flow_v2',
+    intent: 'career_counselling_flow_v2',
+  };
+}
+
+function remindResultsActions(profile, sticky) {
+  return {
+    replyText: null,
+    replyParts: null,
+    interactive: resultsInteractive(
+      'Those predictions are still here. You can show more, filter the list, or ask me to help you choose.'
+    ),
+    contextPatch: { stage: R4P_RESULTS_STAGE, profile, r4pSticky: sticky },
+    nextState: 'career_counselling_flow_v2',
+    intent: 'career_counselling_flow_v2',
+  };
+}
+
+function bridgeOffer(profile, sticky) {
+  return {
+    replyText: null,
+    replyParts: null,
+    interactive: { type: 'button', body: BRIDGE_TEXT, buttons: BRIDGE_BUTTONS },
+    contextPatch: {
+      stage: R4P_BRIDGE_STAGE,
+      profile: mergeFlowV2Profile(profile, { predictorBridgeShown: true }),
+      r4pSticky: sticky,
+    },
+    nextState: 'career_counselling_flow_v2',
+    intent: 'career_counselling_flow_v2',
+  };
+}
+
+async function handleR4PResultsReply(ctx, text) {
+  const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
+  const sticky = ctx?.flowV2?.r4pSticky || null;
+  const t = String(text || '');
+
+  if (/\bhelp me choose\b/i.test(t)) {
+    return bridgeOffer(profile, sticky);
+  }
+  if (/\bfilter these\b/i.test(t)) {
+    return {
+      replyText: null,
+      replyParts: null,
+      interactive: {
+        type: 'list',
+        body: 'Filter this rank list:',
+        buttonText: 'Select',
+        sections: [{ title: 'Filters', rows: FILTER_ROWS }],
+      },
+      contextPatch: { stage: R4P_FILTER_STAGE, profile, r4pSticky: sticky },
+      nextState: 'career_counselling_flow_v2',
+      intent: 'career_counselling_flow_v2',
+    };
+  }
+  if (/\bshow more\b|\bmore\b/i.test(t)) {
+    if (!sticky?.resultCache?.length) return remindResultsActions(profile, sticky);
+    const page = slicePage(sticky.resultCache, sticky.pageOffset || 0, PAGE_SIZE);
+    if (!page.length) {
+      return {
+        replyText: 'No more colleges for this profile. Try a filter, or ask me to help you choose.',
+        replyParts: null,
+        interactive: { type: 'button', body: 'What next?', buttons: RESULTS_BUTTONS },
+        contextPatch: { stage: R4P_RESULTS_STAGE, profile, r4pSticky: sticky },
+        nextState: 'career_counselling_flow_v2',
+        intent: 'career_counselling_flow_v2',
+      };
+    }
+    const formatted = formatPredictionReply(sticky.predictorCtx || {}, page, {
+      pageOffset: sticky.pageOffset || 0,
+      continuation: true,
+      filterLabel: sticky.filterLabel || null,
+    });
+    const cleaned = String(formatted || '')
+      .replace(/\n(-+\n)?(SHOW MORE|FILTER|AGAIN|AGENT|HELP).*$/ims, '')
+      .trim();
+    const nextSticky = {
+      ...sticky,
+      pageOffset: (sticky.pageOffset || 0) + page.length,
+    };
+    return {
+      replyText: null,
+      replyParts: null,
+      interactive: resultsInteractive(cleaned),
+      contextPatch: { stage: R4P_RESULTS_STAGE, profile, r4pSticky: nextSticky },
+      nextState: 'career_counselling_flow_v2',
+      intent: 'career_counselling_flow_v2',
+    };
+  }
+  if (/\btry again\b/i.test(t)) {
+    return runR4PPrediction(profile, ctx);
+  }
+  return remindResultsActions(profile, sticky);
+}
+
+async function handleR4PFilterReply(ctx, text) {
+  const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
+  const sticky = { ...(ctx?.flowV2?.r4pSticky || {}) };
+  const t = String(text || '');
+
+  if (/\bstart again\b/i.test(t)) {
+    return askForSlot(mergeFlowV2Profile(emptyFlowV2Profile(), {
+      name: profile.name,
+      qualification: profile.qualification,
+    }), SLOT_EXAM);
+  }
+
+  const branch = resolveBranchFilter(t);
+  const ownership = resolveOwnershipFilter(t);
+  const girls = resolveGirlsFilter(t);
+  if (branch) sticky.branchFilter = branch.code;
+  if (ownership) sticky.ownershipFilter = ownership;
+  if (girls) sticky.girlsOnly = true;
+
+  const filtered = filterCollegesLocally(sticky.resultCache || [], {
+    branchCode: sticky.branchFilter || null,
+    ownership: sticky.ownershipFilter || null,
+    girlsOnly: sticky.girlsOnly || false,
+  });
+  sticky.filterLabel = [branch?.label, ownership, girls ? 'Girls' : null].filter(Boolean).join(' + ') || null;
+  sticky.pageOffset = 0;
+
+  const working = filtered.length ? filtered : sticky.resultCache || [];
+  sticky.resultCache = working;
+  const page = slicePage(working, 0, PAGE_SIZE);
+  const filtersUsed = [];
+  if (sticky.branchFilter) filtersUsed.push(sticky.branchFilter);
+  if (sticky.ownershipFilter) filtersUsed.push(sticky.ownershipFilter);
+  if (sticky.girlsOnly) filtersUsed.push('girls');
+
+  const mergedProfile = mergeFlowV2Profile(profile, {
+    filtersUsed,
+    ...(sticky.branchFilter
+      ? {
+          branchInterest:
+            sticky.branchFilter === 'CSE'
+              ? 'cse_ai'
+              : sticky.branchFilter === 'MECH'
+                ? 'mechanical'
+                : sticky.branchFilter === 'CIVIL'
+                  ? 'civil'
+                  : sticky.branchFilter === 'ECE'
+                    ? 'ece'
+                    : profile.branchInterest,
+        }
+      : {}),
+  });
+
+  const formatted = formatPredictionReply(sticky.predictorCtx || {}, page, {
+    pageOffset: 0,
+    filterLabel: sticky.filterLabel,
+  });
+  const cleaned = String(formatted || '')
+    .replace(/\n(-+\n)?(SHOW MORE|FILTER|AGAIN|AGENT|HELP).*$/ims, '')
+    .trim();
+  sticky.pageOffset = page.length;
+
+  return {
+    replyText: null,
+    replyParts: null,
+    interactive: resultsInteractive(cleaned),
+    contextPatch: { stage: R4P_RESULTS_STAGE, profile: mergedProfile, r4pSticky: sticky },
+    nextState: 'career_counselling_flow_v2',
+    intent: 'career_counselling_flow_v2',
+  };
+}
+
+async function handleR4PBridgeReply(ctx, text) {
+  const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
+  const sticky = ctx?.flowV2?.r4pSticky || null;
+  const t = String(text || '');
+
+  if (/\bstick to my rank list\b/i.test(t)) {
+    const merged = mergeFlowV2Profile(profile, {
+      predictorBridgeChoice: 'rank_only',
+      predictorBridgeShown: true,
+    });
+    return {
+      replyText: STICK_RANK_CLOSE,
+      replyParts: null,
+      interactive: null,
+      contextPatch: {
+        stage: R4P_PARKED_STAGE,
+        profile: merged,
+        r4pSticky: sticky,
+      },
+      nextState: 'career_counselling_flow_v2',
+      intent: 'career_counselling_flow_v2',
+    };
+  }
+
+  if (/\bshow me both\b/i.test(t)) {
+    const inferredQual =
+      profile.qualification || QUALIFICATION_FROM_EXAM[profile.examType] || '12th Completed (PCM)';
+    const merged = mergeFlowV2Profile(profile, {
+      qualification: inferredQual,
+      predictorBridgeChoice: 'both',
+      predictorBridgeShown: true,
+    });
+    const clearedCtx = {
+      ...withMergedProfile(ctx, merged),
+      flowV2: {
+        ...(ctx?.flowV2 || {}),
+        profile: merged,
+        r4pSticky: null,
+      },
+    };
+    return handleB1Entry(clearedCtx);
+  }
+
+  return bridgeOffer(profile, sticky);
+}
+
+/** Stage 3+ — when slots are complete, run prediction (async). Kept as a
+ * thin trampoline so Stage 2's "all slots known" exit still has one name. */
+async function slotCompleteResult(mergedProfile, ctx = {}) {
+  return runR4PPrediction(mergedProfile, ctx);
 }
 
 /**
@@ -663,9 +1152,9 @@ function slotCompleteResult(mergedProfile) {
  * tap) that the shared extractor deliberately does not cover.
  * @param {{ flowV2?: { profile?: object, r4pPendingSlot?: string|null } }} ctx
  * @param {string} text
- * @returns {object} standard Flow v2 node return shape
+ * @returns {Promise<object>} standard Flow v2 node return shape
  */
-function processSlotReply(ctx, text) {
+async function processSlotReply(ctx, text) {
   const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
   const pendingSlot = ctx?.flowV2?.r4pPendingSlot || null;
   const patch = extractFlowV2Slots(text, profile);
@@ -708,7 +1197,7 @@ function processSlotReply(ctx, text) {
 
   const missing = getR4PMissingSlots(mergedProfile);
   if (missing.length === 0) {
-    return slotCompleteResult(mergedProfile);
+    return slotCompleteResult(mergedProfile, ctx);
   }
 
   // "Never re-ask a known slot" falls out of this by construction: if
@@ -724,12 +1213,12 @@ function processSlotReply(ctx, text) {
  * field. STAGE 2 replaces Stage 1's "not yet implemented" stub for the
  * non-blocked path with real slot-filling: asks the next missing slot
  * for whatever exam (if any) is already known, or transitions to the
- * Stage 3 placeholder if every slot the student's exam needs is already
+ * Stage 3 prediction when every slot the student's exam needs is already
  * known (e.g. via an earlier beat's over-answer).
  * @param {{ flowV2?: { profile?: object } }} ctx
- * @returns {object} standard Flow v2 node return shape
+ * @returns {Promise<object>} standard Flow v2 node return shape
  */
-function handleR4PEntry(ctx) {
+async function handleR4PEntry(ctx) {
   const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
 
   // THE FIRST CHECK. Nothing above this line reads any other profile
@@ -741,21 +1230,19 @@ function handleR4PEntry(ctx) {
 
   const missing = getR4PMissingSlots(profile);
   if (missing.length === 0) {
-    return slotCompleteResult(profile);
+    return slotCompleteResult(profile, ctx);
   }
   return askForSlot(profile, missing[0]);
 }
 
 /**
- * R4-P reply router. STAGE 1's `R4P_BLOCKED_STAGE` sub-replies and STAGE
- * 2's `R4P_SLOT_STAGE` are the only stages with a real handler here.
- * `R4P_AWAITING_PREDICTION_STAGE` is a documented Stage-3 placeholder
- * with NO handler here by design \u2014 see that constant's own doc comment.
+ * R4-P reply router. Stages 1–5 covered: blocked, slots, prediction retry,
+ * sticky results, filter menu, and the honest two-catalog bridge.
  * @param {{ flowV2?: { stage?: string|null, profile?: object, r4pPendingSlot?: string|null } }} ctx
  * @param {string} text
- * @returns {object} standard Flow v2 node return shape
+ * @returns {Promise<object>} standard Flow v2 node return shape
  */
-function handleR4PReply(ctx, text) {
+async function handleR4PReply(ctx, text) {
   const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
   const stage = ctx?.flowV2?.stage || null;
   const t = String(text || '');
@@ -780,14 +1267,42 @@ function handleR4PReply(ctx, text) {
     return processSlotReply(ctx, text);
   }
 
+  if (stage === R4P_AWAITING_PREDICTION_STAGE) {
+    return runR4PPrediction(profile, ctx);
+  }
+
+  if (stage === R4P_RESULTS_STAGE) {
+    return handleR4PResultsReply(ctx, text);
+  }
+
+  if (stage === R4P_FILTER_STAGE) {
+    return handleR4PFilterReply(ctx, text);
+  }
+
+  if (stage === R4P_BRIDGE_STAGE) {
+    return handleR4PBridgeReply(ctx, text);
+  }
+
+  if (stage === R4P_PARKED_STAGE) {
+    return {
+      replyText: STICK_RANK_CLOSE,
+      replyParts: null,
+      interactive: null,
+      contextPatch: { stage: R4P_PARKED_STAGE, profile },
+      nextState: 'career_counselling_flow_v2',
+      intent: 'career_counselling_flow_v2',
+    };
+  }
+
   throw new Error(
-    `r4pPredictor.handleR4PReply: no handler yet for stage "${stage}" \u2014 only R4P_BLOCKED_STAGE (Stage 1) and R4P_SLOT_STAGE (Stage 2) are implemented so far. "${R4P_AWAITING_PREDICTION_STAGE}" is a Stage-3 placeholder with no handler here by design \u2014 the dispatcher's own safeFallbackReply covers it once this node is wired in (see test/flowV2R4PPredictor.test.js).`
+    `r4pPredictor.handleR4PReply: no handler for stage "${stage}" \u2014 expected one of the R4-P stages.`
   );
 }
 
 module.exports = {
   handleR4PEntry,
   handleR4PReply,
+  setR4PDeps,
   isBlockedDemographic,
   resolveApTsCategoryId,
   R4P_BLOCKED_STAGE,
@@ -799,12 +1314,18 @@ module.exports = {
   // Stage 2 exports \u2014 for focused unit testing.
   R4P_SLOT_STAGE,
   R4P_AWAITING_PREDICTION_STAGE,
+  R4P_RESULTS_STAGE,
+  R4P_FILTER_STAGE,
+  R4P_BRIDGE_STAGE,
+  R4P_PARKED_STAGE,
   resolveLegacyExam,
   getR4PSlotOrder,
   getR4PMissingSlots,
   extractBareRank,
   extractBarePercentile,
   extractR4PAdmissionTypeTap,
+  buildPredictorCtxFromProfile,
+  runR4PPrediction,
   EXAM_ROWS,
   CATEGORY_ROWS,
   GENDER_BUTTONS,
@@ -812,4 +1333,8 @@ module.exports = {
   QUOTA_BUTTONS,
   KCET_ADMISSION_BUTTONS,
   MHT_ADMISSION_BUTTONS,
+  RESULTS_BUTTONS,
+  BRIDGE_BUTTONS,
+  BRIDGE_TEXT,
+  STICK_RANK_CLOSE,
 };

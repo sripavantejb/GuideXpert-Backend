@@ -116,11 +116,14 @@ describe('b2Branch — handleB2Reply', () => {
 });
 
 describe('b2Branch — full dispatcher regression', () => {
-  test('an R4-rank message at stage=b2_awaiting_reply keeps rank silently, re-asks the branch question (never a default)', async () => {
+  test('an R4-rank message at stage=b2_awaiting_reply jumps to R4-P (answer the need first), keeping rank', async () => {
     const ctx = { flowV2: { stage: 'b2_awaiting_reply', profile: emptyFlowV2Profile() } };
     const result = await processFlowV2Turn(ctx, 'my rank is 5000');
     assert.equal(result.contextPatch.profile.rank, 5000);
-    assert.equal(result.contextPatch.profile.branchInterest, null);
-    assert.equal(result.contextPatch.stage, 'b2_awaiting_reply');
+    assert.equal(result.contextPatch.profile.jumpType, 'rank');
+    assert.ok(
+      String(result.contextPatch.stage || '').startsWith('r4p_'),
+      `expected r4p_* stage, got ${result.contextPatch.stage}`
+    );
   });
 });

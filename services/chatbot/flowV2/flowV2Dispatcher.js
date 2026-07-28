@@ -97,6 +97,7 @@ const { handleB3Entry, handleB3Reply } = require('./nodes/b3Constraints');
 const { handleB5Entry, handleB5Reply } = require('./nodes/b5Shortlist');
 const { handleB6Entry } = require('./nodes/b6TheCase');
 const { handleB7Entry, handleB7Reply } = require('./nodes/b7Book');
+const { handleR4PEntry, handleR4PReply } = require('./nodes/r4pPredictor');
 const { classifyReply } = require('./router/classifyReply');
 const { isTier2Crisis } = require('./router/crisisClassifier');
 const { extractFlowV2Slots } = require('./flowV2SlotExtractor');
@@ -118,6 +119,7 @@ const { handleR9 } = require('./router/handlers/r9Handler');
 const { handleR10 } = require('./router/handlers/r10Handler');
 const { handleR11 } = require('./router/handlers/r11Handler');
 const { handleR12 } = require('./router/handlers/r12Handler');
+const { handleR4, handleR4PendingReply } = require('./router/handlers/r4Handler');
 
 /** Buckets fully owned by a router handler this phase — intercept and
  * return that handler's result directly (after doorHistory recording).
@@ -237,6 +239,19 @@ async function runStageFallthrough(ctx, stage, text) {
   if (stage === 'b7_awaiting_done') return await handleB7Reply(ctx, text);
   if (stage === 'b7_post_decline') return await handleB7Reply(ctx, text);
   if (stage === 'b7_post_booking') return await handleB7Reply(ctx, text);
+  // Stage 6 — R4 pending sub-stages and R4-P predictor stages.
+  if (
+    stage === 'r4_college_awaiting_reply' ||
+    stage === 'r4_money_awaiting_reply' ||
+    stage === 'r4_admission_awaiting_reply' ||
+    stage === 'r4_vs_awaiting_reply'
+  ) {
+    const pending = await handleR4PendingReply(ctx, text);
+    if (pending) return pending;
+  }
+  if (typeof stage === 'string' && stage.startsWith('r4p_')) {
+    return await handleR4PReply(ctx, text);
+  }
   return safeFallbackReply();
 }
 
@@ -332,6 +347,16 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
       profile: extractedProfile,
     },
   };
+
+  // I-7 ("how much does this cost") must beat Node 0: bare `session` is an
+  // OVERRIDE_PATTERN, and a price question containing that word must never
+  // be mistaken for a booking jump. Answer the fee plainly first.
+  {
+    const earlyInterrupt = detectNonDistressInterrupt(text, stage);
+    if (earlyInterrupt === 'I-7') {
+      return startNonDistressInterrupt(turnCtx, 'I-7');
+    }
+  }
 
   // Node 0 is a pre-empt, not a stage: checked next, on every turn,
   // regardless of context.flowV2.stage — EXCEPT once the student is
@@ -433,6 +458,20 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
     return interruptResult;
   }
 
+  if (
+    stage === 'interrupt_i3_awaiting_reply' ||
+    stage === 'interrupt_i4_awaiting_reply' ||
+    stage === 'interrupt_i6_awaiting_reply'
+  ) {
+    return handlePendingInterrupt(turnCtx, text);
+  }
+
+  // Core-fork / exit button stages own their replies — R4 must not steal
+  // "I want pure mechanical" (which matches R4-D goal) away from F2.
+  if (stage === 'b2_core_fork_awaiting_reply' || stage === 'b2_core_exit_awaiting_reply') {
+    return withDoorHistory(await runStageFallthrough(turnCtx, stage, text), turnCtx, 'R1', stage);
+  }
+
   const interruptId = detectNonDistressInterrupt(text, stage);
   if (interruptId) return startNonDistressInterrupt(turnCtx, interruptId);
 
@@ -474,9 +513,13 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
     return withDoorHistory(result, turnCtx, bucket, stage);
   }
 
-  // R1-R4 (taps / types / over-answers / jumps ahead): destinations don't
-  // exist yet (B1-B7 not built) — classify + record only, then fall
-  // through to whatever stage handler already exists, UNCHANGED.
+  // R4 — jumps ahead: answer the need, then rejoin (R4-A → R4-P).
+  if (bucket === 'R4') {
+    const result = await handleR4(turnCtx, text, classification);
+    return withDoorHistory(result, turnCtx, bucket, stage);
+  }
+
+  // R1-R3 (taps / types / over-answers): fall through to stage handlers.
   let fallthrough = await runStageFallthrough(turnCtx, stage, text);
   if (
     stage === 'b1_awaiting_reply' &&
