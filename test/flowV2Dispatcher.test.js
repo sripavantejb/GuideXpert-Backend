@@ -14,9 +14,13 @@ const {
 } = require('../services/chatbot/flowV2/nodes/b2CoreForkExit');
 const handoffService = require('../services/chatbot/handoffService');
 const WhatsAppAgentHandoff = require('../models/WhatsAppAgentHandoff');
+const guidanceBookingService = require('../services/guidanceBookingService');
 
 const FULL_GREETING_MARKER = "GuideXpert's counselling desk";
 
+function mockEmptySlots(t) {
+  t.mock.method(guidanceBookingService, 'getAvailableActiveSlots', async () => []);
+}
 describe('flowV2Dispatcher — stage routing', () => {
   test('a fresh conversation (no stage) routes to the full greeting entry', async () => {
     const result = await processFlowV2Turn({}, 'hi');
@@ -40,24 +44,27 @@ describe('flowV2Dispatcher — never sends the full greeting twice (proven at th
     assert.doesNotMatch(String(result.interactive?.body || ''), new RegExp(FULL_GREETING_MARKER));
   });
 
-  test('once stage is set, even an override-triggering message never routes back through the full greeting', async () => {
+  test('once stage is set, even an override-triggering message never routes back through the full greeting', async (t) => {
+    mockEmptySlots(t);
     const ctx = { flowV2: { stage: 'greeting_awaiting_reply', profile: emptyFlowV2Profile() } };
     const result = await processFlowV2Turn(ctx, 'human please');
     assert.doesNotMatch(String(result.replyText || ''), new RegExp(FULL_GREETING_MARKER));
-    assert.equal(result.contextPatch.stage, 'node0_awaiting_backfill');
+    assert.equal(result.contextPatch.stage, 'node0_awaiting_slot');
   });
 });
 
 describe('flowV2Dispatcher — Node 0 pre-empts every stage, checked before any stage routing', () => {
-  test('pre-empts a fresh conversation (stage = null)', async () => {
+  test('pre-empts a fresh conversation (stage = null)', async (t) => {
+    mockEmptySlots(t);
     const result = await processFlowV2Turn({}, 'book a session');
-    assert.equal(result.contextPatch.stage, 'node0_awaiting_backfill');
+    assert.equal(result.contextPatch.stage, 'node0_awaiting_slot');
   });
 
-  test('pre-empts mid-greeting-reply (stage = greeting_awaiting_reply)', async () => {
+  test('pre-empts mid-greeting-reply (stage = greeting_awaiting_reply)', async (t) => {
+    mockEmptySlots(t);
     const ctx = { flowV2: { stage: 'greeting_awaiting_reply', profile: emptyFlowV2Profile() } };
     const result = await processFlowV2Turn(ctx, 'connect me with a counsellor');
-    assert.equal(result.contextPatch.stage, 'node0_awaiting_backfill');
+    assert.equal(result.contextPatch.stage, 'node0_awaiting_slot');
   });
 });
 

@@ -7,6 +7,7 @@ const {
   handleB2Reply,
   isCoreEngineeringBranch,
   isBusinessBranch,
+  B2_ROWS,
 } = require('../services/chatbot/flowV2/nodes/b2Branch');
 const { OUT_OF_SCOPE_TEXT } = require('../services/chatbot/flowV2/router/handlers/r11Handler');
 const { emptyFlowV2Profile } = require('../constants/careerCounsellingFlowV2Profile');
@@ -33,11 +34,13 @@ describe('b2Branch — isCoreEngineeringBranch / isBusinessBranch', () => {
 });
 
 describe('b2Branch — handleB2Entry', () => {
-  test('asks the B2 question (list with 6 rows) when branchInterest is empty', () => {
+  test('asks the V3 interest list (10 rows) when interests/branch empty', () => {
     const result = handleB2Entry(ctxWithProfile());
     assert.equal(result.interactive.type, 'list');
-    assert.equal(result.interactive.sections[0].rows.length, 6);
+    assert.equal(result.interactive.sections[0].rows.length, 10);
+    assert.equal(B2_ROWS.length, 10);
     assert.equal(result.contextPatch.stage, 'b2_awaiting_reply');
+    assert.match(result.interactive.body, /actually interest you/i);
   });
 
   test('REGRESSION (Phase 4 propagation bug): the "ask B2 question" branch still carries forward a profile mutated by an upstream caller (B1\'s chain), not just an unmutated pass-through', () => {
@@ -47,10 +50,9 @@ describe('b2Branch — handleB2Entry', () => {
     assert.deepEqual(result.contextPatch.profile.goalPriority, ['placement']);
   });
 
-  test('SKIP to B3 works when branchInterest is pre-filled and non-core (e.g. CSE)', () => {
+  test('SKIP to B4 priority works when branchInterest is pre-filled and non-core (e.g. CSE)', () => {
     const result = handleB2Entry(ctxWithProfile({ branchInterest: 'CSE' }));
-    assert.equal(result.contextPatch.stage, 'b3_awaiting_entry');
-    // Silent structural skip — no B2 list, no unexpected message.
+    assert.equal(result.contextPatch.stage, 'b4_awaiting_entry');
     assert.equal(result.interactive, null);
   });
 
@@ -69,36 +71,51 @@ describe('b2Branch — handleB2Entry', () => {
   test('coreBridgeClosed makes it structurally impossible to re-enter the fork, even if branchInterest reads back as core', () => {
     const result = handleB2Entry(ctxWithProfile({ coreBridgeClosed: true, branchInterest: 'core' }));
     assert.notEqual(result.contextPatch.stage, 'b2_core_fork_awaiting_reply');
-    assert.equal(result.contextPatch.stage, 'b3_awaiting_entry');
+    assert.equal(result.contextPatch.stage, 'b4_awaiting_entry');
     assert.equal(result.replyParts, null);
     assert.equal(result.interactive, null);
   });
 });
 
-describe('b2Branch — handleB2Reply', () => {
-  test('"Coding / software / AI" tap acks and advances to B3 with branchInterest=cse_ai', () => {
-    const result = handleB2Reply(ctxWithProfile(), 'Coding / software / AI');
+describe('b2Branch — handleB2Reply (V3 multi-select)', () => {
+  test('"Computers & software" first tap stays collecting; done advances to B4 with cse_ai', () => {
+    const mid = handleB2Reply(ctxWithProfile(), 'Computers & software');
+    assert.equal(mid.contextPatch.stage, 'b2_awaiting_reply');
+    assert.ok(mid.contextPatch.profile.interests.includes('computers_software'));
+    assert.match(mid.interactive.body, /Noted|done/i);
+
+    const result = handleB2Reply(
+      { flowV2: { profile: mid.contextPatch.profile, stage: 'b2_awaiting_reply' } },
+      'done'
+    );
     assert.equal(result.contextPatch.profile.branchInterest, 'cse_ai');
-    assert.equal(result.contextPatch.stage, 'b3_awaiting_entry');
+    assert.equal(result.contextPatch.profile.interestCluster, 'software');
+    assert.equal(result.contextPatch.stage, 'b4_awaiting_entry');
     assert.ok(result.replyText);
   });
 
-  test('"Design / product" tap acks and advances to B3', () => {
+  test('legacy "Design / product" free-text still advances to B4', () => {
     const result = handleB2Reply(ctxWithProfile(), 'Design / product');
     assert.equal(result.contextPatch.profile.branchInterest, 'design');
-    assert.equal(result.contextPatch.stage, 'b3_awaiting_entry');
+    assert.equal(result.contextPatch.stage, 'b4_awaiting_entry');
   });
 
-  test('"Data / analytics" tap acks and advances to B3', () => {
-    const result = handleB2Reply(ctxWithProfile(), 'Data / analytics');
+  test('"Data Science" tap + done advances with data_ai cluster', () => {
+    const mid = handleB2Reply(ctxWithProfile(), 'Data Science');
+    assert.equal(mid.contextPatch.stage, 'b2_awaiting_reply');
+    const result = handleB2Reply(
+      { flowV2: { profile: mid.contextPatch.profile, stage: 'b2_awaiting_reply' } },
+      'done'
+    );
     assert.equal(result.contextPatch.profile.branchInterest, 'data_analytics');
-    assert.equal(result.contextPatch.stage, 'b3_awaiting_entry');
+    assert.equal(result.contextPatch.profile.interestCluster, 'data_ai');
+    assert.equal(result.contextPatch.stage, 'b4_awaiting_entry');
   });
 
-  test('"Core engineering (mech, civil, ECE)" tap routes into the fork, does NOT advance to B3 directly', () => {
-    const result = handleB2Reply(ctxWithProfile(), 'Core engineering (mech, civil, ECE)');
+  test('"Core engineering" tap routes into the fork, does NOT advance to B4 directly', () => {
+    const result = handleB2Reply(ctxWithProfile(), 'Core engineering (Mech / Civil / ECE / EEE)');
     assert.equal(result.contextPatch.stage, 'b2_core_fork_awaiting_reply');
-    assert.notEqual(result.contextPatch.stage, 'b3_awaiting_entry');
+    assert.notEqual(result.contextPatch.stage, 'b4_awaiting_entry');
   });
 
   test('"Business / management" tap with no catalog routes to R11, reusing its existing handler (not duplicated copy)', () => {
@@ -107,11 +124,11 @@ describe('b2Branch — handleB2Reply', () => {
     assert.deepEqual(result.interactive.buttons.map((b) => b.title), ['Book a session', 'Tell me about tech anyway']);
   });
 
-  test('"Not sure yet" does NOT set a default branchInterest and re-asks (never silently defaults)', () => {
-    const result = handleB2Reply(ctxWithProfile(), 'Not sure yet');
+  test('"Not sure yet" is a legitimate answer — sets undecided and advances (no loop)', () => {
+    const result = handleB2Reply(ctxWithProfile(), 'Not sure yet — help me figure it out');
     assert.equal(result.contextPatch.profile.branchInterest, null);
-    assert.equal(result.contextPatch.stage, 'b2_awaiting_reply');
-    assert.equal(result.interactive.type, 'list');
+    assert.equal(result.contextPatch.profile.interestCluster, 'undecided');
+    assert.equal(result.contextPatch.stage, 'b4_awaiting_entry');
   });
 });
 

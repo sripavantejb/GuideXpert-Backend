@@ -90,12 +90,13 @@ describe('b2CoreFork — coreBridgeAttempted guard rail', () => {
 });
 
 describe('b2CoreFork — handleCoreForkReply (F1)', () => {
-  test('"Yes, show me" keeps coreInterest, overwrites branchInterest to cse_ai, acks, advances to B3', () => {
+  test('"Yes, show me" keeps coreInterest, overwrites branchInterest to cse_ai, acks, advances to B4 priority', () => {
     const ctx = ctxWithProfile({ coreInterest: 'mechanical', coreBridgeAttempted: true, branchInterest: 'Mechanical' });
     const result = handleCoreForkReply(ctx, 'Yes, show me');
     assert.equal(result.contextPatch.profile.branchInterest, 'cse_ai');
     assert.equal(result.contextPatch.profile.coreInterest, 'mechanical');
     assert.equal(result.replyText, F1_ACK_TEXT);
+    assert.equal(result.contextPatch.stage, 'b4_awaiting_entry');
     assert.notEqual(result.contextPatch.stage, 'b2_core_fork_awaiting_reply');
   });
 });
@@ -155,8 +156,17 @@ describe('b2CoreFork — F1 preserves coreInterest specifically (pre-Phase-5 dat
 
     assert.equal(f1Result.contextPatch.profile.coreInterest, 'mechanical');
     assert.equal(f1Result.contextPatch.profile.branchInterest, 'cse_ai');
-    assert.equal(f1Result.contextPatch.stage, 'b3_awaiting_budget');
-    assert.equal(f1Result.interactive.type, 'button');
+    // V3: F1 drains into B4 priority (9-row list), not B3 constraints.
+    assert.ok(
+      f1Result.contextPatch.stage === 'b4_awaiting_reply' ||
+        f1Result.contextPatch.stage === 'b4_awaiting_entry' ||
+        f1Result.contextPatch.stage === 'b6_permission_awaiting_reply',
+      `expected B4 priority (or drained checklist/permission), got ${f1Result.contextPatch.stage}`
+    );
+    if (f1Result.contextPatch.stage === 'b4_awaiting_reply') {
+      assert.equal(f1Result.interactive.type, 'list');
+      assert.equal(f1Result.interactive.sections[0].rows.length, 9);
+    }
     // Full profile object, not a partial/truncated one — every schema
     // slot the entry turn had is still present after F1.
     assert.deepEqual(Object.keys(f1Result.contextPatch.profile).sort(), Object.keys(emptyFlowV2Profile()).sort());
@@ -164,7 +174,7 @@ describe('b2CoreFork — F1 preserves coreInterest specifically (pre-Phase-5 dat
 });
 
 describe('b2CoreFork — handleCoreForkReply (F2 route-in)', () => {
-  test('"I want pure mechanical" routes into the honest-exit sub-flow, does NOT advance to B3 directly', () => {
+  test('"I want pure mechanical" routes into the honest-exit sub-flow, does NOT advance to B4 directly', () => {
     const ctx = ctxWithProfile({ coreInterest: 'mechanical', coreBridgeAttempted: true, branchInterest: 'Mechanical' });
     const result = handleCoreForkReply(ctx, 'I want pure mechanical');
     assert.equal(result.contextPatch.stage, 'b2_core_exit_awaiting_reply');

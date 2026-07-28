@@ -172,47 +172,8 @@ const NO_SHORTLIST_FALLBACK_TEXT =
  * @returns {object} standard Flow v2 node return shape
  */
 function handleB6Entry(ctx) {
-  const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
-  const compareMode = ctx?.flowV2?.compareMode || null;
-  const shortlist = Array.isArray(profile.shortlist) ? profile.shortlist : [];
-  const bestFit = shortlist.find((c) => c.tier === 'best_match');
-
-  if (!bestFit) {
-    return {
-      replyText: NO_SHORTLIST_FALLBACK_TEXT,
-      replyParts: null,
-      interactive: null,
-      contextPatch: { stage: 'b5_awaiting_entry', profile },
-      nextState: 'career_counselling_flow_v2',
-      intent: 'career_counselling_flow_v2',
-    };
-  }
-
-  const replyParts = [];
-  let nextProfile = profile;
-
-  if (compareMode === 'full') {
-    const { text, comparedNames } = buildComparisonMessage(profile);
-    if (text) {
-      replyParts.push(text);
-      nextProfile = { ...nextProfile, comparedColleges: comparedNames };
-    }
-  }
-
-  const recommendationText = assertGuardrails(buildRecommendationText(bestFit, profile));
-  replyParts.push(recommendationText);
-  replyParts.push(buildVisionBubble(bestFit, profile));
-
-  nextProfile = { ...nextProfile, recommendation: bestFit.collegeName };
-
-  return {
-    replyText: null,
-    replyParts,
-    interactive: null,
-    contextPatch: { stage: 'b7_awaiting_entry', profile: nextProfile },
-    nextState: 'career_counselling_flow_v2',
-    intent: 'career_counselling_flow_v2',
-  };
+  // V3: B9 FIT replaces compare/vision "the case".
+  return require('./b9Fit').handleB9Entry(ctx);
 }
 
 module.exports = {

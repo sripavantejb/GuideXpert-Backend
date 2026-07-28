@@ -378,31 +378,8 @@ const CHANGE_SLOT_QUESTION = 'Which would you like to change?';
  * @returns {object} standard Flow v2 node return shape
  */
 function handleB5Entry(ctx) {
-  const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
-  const { tiers } = computeTiers(profile);
-  const shortlistArray = flattenShortlist(tiers);
-
-  // `shortlist` is intentionally NOT run through mergeFlowV2Profile's
-  // generic array-type handling (concat + dedupe by collegeName) — every
-  // handleB5Entry call (including the "Change something" re-run below)
-  // computes a FRESH, complete shortlist that must fully REPLACE the
-  // previous one. A concat+dedupe would silently keep the OLDER tier/score
-  // for every college name (dedupeArray() keeps first-seen), which would
-  // make "Change something" a visible no-op.
-  const nextProfile = { ...profile, shortlist: shortlistArray };
-
-  return {
-    replyText: null,
-    replyParts: null,
-    interactive: {
-      type: 'button',
-      body: buildShortlistBody(shortlistArray, profile),
-      buttons: B5_BUTTONS,
-    },
-    contextPatch: { stage: 'b5_awaiting_reply', profile: nextProfile },
-    nextState: 'career_counselling_flow_v2',
-    intent: 'career_counselling_flow_v2',
-  };
+  // V3 happy path: 3-flat shortlist + disclosure (B8), not tiered Best Match.
+  return require('./b8FlatShortlist').handleB8Entry(ctx);
 }
 
 function reAskB5(profile) {
@@ -549,18 +526,8 @@ function handleB5Reply(ctx, text) {
   const stage = ctx?.flowV2?.stage;
   if (stage === 'b5_change_awaiting_slot') return handleB5ChangeSlotReply(ctx, text);
   if (stage === 'b5_change_awaiting_value') return handleB5ChangeValueReply(ctx, text);
-
-  const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
-  const action = extractB5Action(text);
-
-  if (action === 'compare') return advanceToB6(profile, 'full');
-  if (action === 'best_only') return advanceToB6(profile, 'best_only');
-  if (action === 'change') return askChangeSlotMenu(profile);
-
-  // Free-typed text that doesn't confidently match any of the three
-  // meanings — reuse the same shortened re-ask pattern established by
-  // Greeting/B1/B2, rather than inventing new ambiguous-input handling.
-  return reAskB5(profile);
+  // V3: B8/B9 own post-shortlist replies (fit ask, compare-on-tap, wider list).
+  return require('./b8FlatShortlist').handleB8Reply(ctx, text);
 }
 
 module.exports = {

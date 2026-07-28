@@ -35,7 +35,7 @@
 
 const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
 const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingFlowV2Profile');
-const { advanceToB3 } = require('../flowV2NodeUtils');
+const { advanceToB4 } = require('../flowV2NodeUtils');
 
 const EXIT_MESSAGE_1 =
   "Respect \u2014 and honestly, if mechanical is what you want, you should do mechanical. Clear decisions beat hedged ones.";
@@ -132,7 +132,7 @@ function handleCoreForkExitReply(ctx, text) {
     // directly to B3. Structurally cannot re-trigger the joke/pitch \u2014
     // coreBridgeAttempted is already true from the fork's own entry.
     const mergedProfile = mergeFlowV2Profile(profile, { branchInterest: 'cse_ai' });
-    return advanceToB3(mergedProfile, TRANSITION_TEXT);
+    return advanceToB4(mergedProfile, TRANSITION_TEXT);
   }
 
   if (isAngerShaped(t)) {

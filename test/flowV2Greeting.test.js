@@ -34,12 +34,13 @@ describe('flowV2 greeting — Node E entry', () => {
     assert.equal(result.replyText, null);
     assert.equal(
       result.interactive.body,
-      "Hey Rahul! 👋\n\nI'm Rithika, from GuideXpert's counselling desk. We help students find a college that actually fits them — not just the ones with the biggest ads.\n\nCan I know your qualifications?"
+      "Hey Rahul! 👋\n\nI'm Rithika, from GuideXpert's counselling desk. We help students find a college that actually fits them — not just the ones with the biggest ads.\n\nTakes about 2 minutes, and it's free.\n\nFirst — where are you right now?"
     );
     assert.equal(result.interactive.body, buildNodeEOpenBody('Rahul'));
     assert.equal(result.contextPatch.stage, 'greeting_awaiting_qualification');
     assert.equal(result.interactive.type, 'list');
-    assert.equal(result.interactive.sections[0].title, 'Your qualification');
+    assert.equal(result.interactive.buttonText, 'Choose your stage');
+    assert.equal(result.interactive.sections[0].title, 'Your stage');
     assert.equal(result.interactive.sections[0].rows.length, 10);
     assert.deepEqual(
       result.interactive.sections[0].rows.map((r) => r.title),
@@ -61,7 +62,7 @@ describe('flowV2 greeting — Node E entry', () => {
     assert.equal(result.contextPatch.stage, 'greeting_awaiting_qualification');
   });
 
-  test('known name plus known qualification skips Node E list and routes immediately', () => {
+  test('known name plus known qualification skips Node E list and routes immediately to B2 GOAL', () => {
     const profile = {
       ...emptyFlowV2Profile(),
       name: 'Priya',
@@ -69,9 +70,10 @@ describe('flowV2 greeting — Node E entry', () => {
       stream: 'PCM',
     };
     const result = handleGreetingEntry({ flowV2: { profile } });
-    assert.equal(result.contextPatch.stage, 'b1_awaiting_reply');
-    assert.equal(result.interactive.type, 'list');
-    assert.match(result.interactive.body, /What matters most to you right now/i);
+    assert.equal(result.contextPatch.stage, 'b2_goal_awaiting_reply');
+    assert.equal(result.interactive.type, 'button');
+    assert.equal(result.interactive.buttons.length, 3);
+    assert.match(result.interactive.body, /What are you mainly trying to figure out/i);
   });
 
   test('unknown name still opens qualification list immediately (never asks for name)', () => {
@@ -80,9 +82,10 @@ describe('flowV2 greeting — Node E entry', () => {
     assert.equal(result.interactive.body, UNKNOWN_NAME_GREETING);
     assert.equal(result.interactive.body, buildNodeEOpenBody(null));
     assert.match(result.interactive.body, /^Hi! 👋/);
-    assert.match(result.interactive.body, /Can I know your qualifications/);
+    assert.match(result.interactive.body, /First — where are you right now\?/);
     assert.doesNotMatch(result.interactive.body, /May I know your name/i);
     assert.equal(result.interactive.type, 'list');
+    assert.equal(result.interactive.buttonText, 'Choose your stage');
     assert.equal(result.contextPatch.stage, 'greeting_awaiting_qualification');
     assert.equal(result.interactive.sections[0].rows.length, 10);
   });
@@ -133,7 +136,7 @@ describe('flowV2 greeting — legacy name capture (greeting_awaiting_name only)'
 
     const second = handleGreetingReply(nameCtx({ nameAttempts: 1 }), '...');
     assert.equal(second.interactive.body, NEUTRAL_QUALIFICATION_LINE);
-    assert.equal(second.interactive.body, 'Can I know your qualifications?');
+    assert.equal(second.interactive.body, 'First — where are you right now?');
     assert.equal(second.contextPatch.stage, 'greeting_awaiting_qualification');
     assert.equal(second.contextPatch.nameAttempts, null);
   });
@@ -159,15 +162,15 @@ describe('flowV2 greeting — qualification routes', () => {
     };
   }
 
-  test('PCM follows the default B1 path and preserves unrelated profile data', () => {
+  test('PCM follows the default B2 GOAL path and preserves unrelated profile data', () => {
     const result = handleGreetingReply(qualCtx({ cityPref: 'Hyderabad' }), '12th Completed (PCM)');
     assert.equal(result.contextPatch.profile.qualification, '12th Completed (PCM)');
     assert.equal(result.contextPatch.profile.stream, 'PCM');
     assert.equal(result.contextPatch.profile.cityPref, 'Hyderabad');
-    assert.equal(result.contextPatch.stage, 'b1_awaiting_reply');
-    assert.equal(result.interactive.type, 'list');
-    assert.match(result.interactive.body, /Perfect — MPC keeps engineering/i);
-    assert.match(result.interactive.body, /What matters most to you right now/i);
+    assert.equal(result.contextPatch.stage, 'b2_goal_awaiting_reply');
+    assert.equal(result.interactive.type, 'button');
+    assert.equal(result.interactive.buttons.length, 3);
+    assert.match(result.interactive.body, /What are you mainly trying to figure out/i);
   });
 
   test('all non-PCM list rows enter their required side tracks', () => {
@@ -199,7 +202,7 @@ describe('flowV2 greeting — qualification routes', () => {
     assert.match(result.replyText, /not shortlisting colleges/i);
   });
 
-  test('Class 11, PCB tech, Diploma, Degree, and Drop Year rejoin B1 with route data', () => {
+  test('Class 11, PCB tech, Diploma, Degree, and Drop Year rejoin B2 GOAL with route data', () => {
     const base = emptyFlowV2Profile();
     const cases = [
       ['entry_class11_awaiting_reply', { ...base, qualification: '11th Studying', timeline: 'next_year' }, 'Both'],
@@ -210,8 +213,9 @@ describe('flowV2 greeting — qualification routes', () => {
     ];
     for (const [stage, profile, answer] of cases) {
       const result = handleEntrySideTrackReply({ flowV2: { stage, profile } }, answer);
-      assert.equal(result.contextPatch.stage, 'b1_awaiting_reply', stage);
-      assert.equal(result.interactive.type, 'list', stage);
+      assert.equal(result.contextPatch.stage, 'b2_goal_awaiting_reply', stage);
+      assert.equal(result.interactive.type, 'button', stage);
+      assert.equal(result.interactive.buttons.length, 3, stage);
     }
     const diploma = handleEntrySideTrackReply(
       { flowV2: { stage: 'entry_diploma_awaiting_reply', profile: cases[2][1] } },
@@ -267,7 +271,7 @@ describe('flowV2 greeting — qualification routes', () => {
     assert.equal(other.contextPatch.stage, 'entry_degree_awaiting_reply');
   });
 
-  test('honest-scope "tell me about tech" choices rejoin B1, while Class 10 remains parked', () => {
+  test('honest-scope "tell me about tech" choices rejoin B2 GOAL, while Class 10 remains parked', () => {
     const artsProfile = {
       ...emptyFlowV2Profile(),
       qualification: '12th Completed (Arts)',
@@ -277,8 +281,9 @@ describe('flowV2 greeting — qualification routes', () => {
       { flowV2: { stage: 'entry_arts_honest_scope', profile: artsProfile } },
       'Tell me about tech anyway'
     );
-    assert.equal(tech.contextPatch.stage, 'b1_awaiting_reply');
-    assert.equal(tech.interactive.type, 'list');
+    assert.equal(tech.contextPatch.stage, 'b2_goal_awaiting_reply');
+    assert.equal(tech.interactive.type, 'button');
+    assert.equal(tech.interactive.buttons.length, 3);
 
     const class10 = handleEntrySideTrackReply(
       {

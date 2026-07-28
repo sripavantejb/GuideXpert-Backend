@@ -1,9 +1,13 @@
 'use strict';
 
 /**
- * Flow v2 — B3 · Constraints (budget + location).
+ * Flow V3 — B6.5 · Constraints (budget + location).
  *
- * Unlike B1/B2, B3 gates on TWO independent slots (`budgetBand`,
+ * Fires ONLY after B6 permission yes (not early in the spine).
+ * Stages remain `b3_*` / `b65_*` for compatibility; completion advances
+ * to B7 TWO MODELS (via handleB4Entry → b7TwoModels).
+ *
+ * Unlike B1/B2, B6.5 gates on TWO independent slots (`budgetBand`,
  * `cityPref`) rather than one, so `handleB3Entry` has four distinct
  * outcomes instead of a simple skip/ask binary:
  *   a) both already filled          -> skip straight to B4

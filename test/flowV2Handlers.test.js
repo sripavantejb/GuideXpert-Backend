@@ -225,12 +225,13 @@ describe('r10Handler — sub-case copy + silent PCM/PCB save', () => {
     const result = handleR10(ctxWithProfile(), '2nd year', { subCase: 'bare_year' });
     assert.equal(result.interactive.body, BARE_YEAR_TEXT);
   });
-  test('pcm -> silent save, no interactive confirm prompt, advances into B1', () => {
+  test('pcm -> silent save, no interactive confirm prompt, advances into B2 GOAL', () => {
     const result = handleR10(ctxWithProfile(), 'pcm', { subCase: 'pcm' });
     assert.equal(result.contextPatch.profile.qualification, PCM_QUALIFICATION);
-    assert.equal(result.contextPatch.stage, 'b1_awaiting_reply');
-    assert.equal(result.interactive.type, 'list');
-    assert.match(result.interactive.body, /What matters most to you right now/i);
+    assert.equal(result.contextPatch.stage, 'b2_goal_awaiting_reply');
+    assert.equal(result.interactive.type, 'button');
+    assert.equal(result.interactive.buttons.length, 3);
+    assert.match(result.interactive.body, /What are you mainly trying to figure out/i);
   });
   test('pcb -> silent save and enters the required medical/tech split without a confirm prompt', () => {
     const result = handleR10(ctxWithProfile(), 'pcb', { subCase: 'pcb' });

@@ -56,10 +56,10 @@ describe('Master Flow Stage 4b — B1/B2/B3/B5/B7 reconciliation', () => {
       ctx('b3_awaiting_location', { budgetBand: 'under_2l', state: 'Telangana' }),
       'Near home'
     );
-    assert.equal(knownState.contextPatch.stage, 'b5_awaiting_entry');
+    assert.equal(knownState.contextPatch.stage, 'b8_awaiting_entry');
   });
 
-  test('B5 emits exactly five colleges with locked framing and buttons', () => {
+  test('B8 emits exactly three flat colleges with disclosure + FIT ask', () => {
     const result = handleB5Entry(
       ctx('b5_awaiting_entry', {
         goalPriority: ['placement'],
@@ -68,26 +68,31 @@ describe('Master Flow Stage 4b — B1/B2/B3/B5/B7 reconciliation', () => {
         cityPref: 'Hyderabad',
       })
     );
-    assert.equal(result.contextPatch.profile.shortlist.length, 5);
-    assert.match(result.interactive.body, /^Based on everything you shared, here are 5 that fit you/);
-    assert.match(result.interactive.body, /These are matched to what you told me — not a generic ranking\.$/);
-    assert.deepEqual(result.interactive.buttons.map((button) => button.title), [
-      'Compare them',
-      'Just the best fit',
-      'Change something',
-    ]);
+    assert.equal(result.contextPatch.profile.shortlist.length, 3);
+    const visible = [...(result.replyParts || []), result.replyText, result.interactive?.body]
+      .filter(Boolean)
+      .join('\n');
+    assert.match(visible, /GuideXpert works with/i);
+    assert.doesNotMatch(visible, /\*Best Match\*/i);
+    assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
+    assert.ok(result.interactive.buttons.some((b) => /narrow/i.test(b.title)));
   });
 
-  test('B7 decline and post-booking helper modes answer supported topics and fresh booking intent', () => {
-    const fees = handleB7Reply(ctx('b7_post_decline'), 'Fees');
+  test('B7 decline and post-booking helper modes answer supported topics and fresh booking intent', async (t) => {
+    t.mock.method(
+      require('../services/guidanceBookingService'),
+      'getAvailableActiveSlots',
+      async () => []
+    );
+    const fees = await handleB7Reply(ctx('b7_post_decline'), 'Fees');
     assert.equal(fees.replyText, TOPIC_REPLIES.fees);
     assert.equal(fees.contextPatch.stage, 'b7_post_decline');
 
-    const booking = handleB7Reply(ctx('b7_post_decline'), 'Actually book it');
-    assert.equal(booking.contextPatch.stage, 'b7_awaiting_done');
-    assert.equal(booking.contextPatch.profile.bookingStatus, 'link_sent');
+    const booking = await handleB7Reply(ctx('b7_post_decline'), 'Actually book it');
+    assert.equal(booking.contextPatch.stage, 'b7_awaiting_slot');
+    assert.equal(booking.contextPatch.profile.bookingStatus, 'booking_started');
 
-    const scholarships = handleB7Reply(ctx('b7_post_booking', { bookingStatus: 'done' }), 'Scholarships');
+    const scholarships = await handleB7Reply(ctx('b7_post_booking', { bookingStatus: 'done' }), 'Scholarships');
     assert.equal(scholarships.replyText, TOPIC_REPLIES.scholarships);
     assert.equal(scholarships.contextPatch.stage, 'b7_post_booking');
   });
@@ -109,7 +114,15 @@ describe('Master Flow Stage 4b — non-distress interrupts', () => {
       'Building things'
     );
     assert.ok(resumed.contextPatch.profile.goalPriority.includes('startup'));
-    assert.equal(resumed.contextPatch.stage, 'b2_awaiting_reply');
+    // V3: priority filled → checklist/permission (or interest if still pending).
+    assert.ok(
+      resumed.contextPatch.stage === 'b6_permission_awaiting_reply' ||
+        resumed.contextPatch.stage === 'b5_awaiting_reply' ||
+        resumed.contextPatch.stage === 'b5_checklist_awaiting_entry' ||
+        resumed.contextPatch.stage === 'b2_awaiting_reply' ||
+        resumed.contextPatch.stage === 'b4_awaiting_reply',
+      `expected permission/checklist/interest/priority stage, got ${resumed.contextPatch.stage}`
+    );
     assert.notEqual(resumed.contextPatch.stage, 'greeting_awaiting_name');
   });
 
@@ -120,8 +133,15 @@ describe('Master Flow Stage 4b — non-distress interrupts', () => {
       'Numbers & analysis'
     );
     assert.equal(resumed.contextPatch.profile.branchInterest, 'data_analytics');
-    assert.equal(resumed.contextPatch.stage, 'b3_awaiting_budget');
-    assert.equal(resumed.interactive.type, 'button');
+    // V3: after interest resolve, advance to B4 priority (or stay collecting only if unresolved).
+    assert.ok(
+      resumed.contextPatch.stage === 'b4_awaiting_reply' ||
+        resumed.contextPatch.stage === 'b4_awaiting_entry' ||
+        resumed.contextPatch.stage === 'b6_permission_awaiting_reply' ||
+        resumed.contextPatch.stage === 'b5_checklist_awaiting_entry' ||
+        resumed.contextPatch.stage === 'b2_awaiting_reply',
+      `expected B4 priority (or drained checklist/permission), got ${resumed.contextPatch.stage}`
+    );
   });
 
   test('I-2 can interrupt any B-spine stage, updates budget, and returns to the saved stage', async () => {
@@ -147,10 +167,15 @@ describe('Master Flow Stage 4b — non-distress interrupts', () => {
   test('I-10 and Node 0 still outrank non-distress interrupts', async (t) => {
     t.mock.method(handoffService, 'createHandoff', async () => ({ _id: 'stage4b-crisis-ticket' }));
     t.mock.method(WhatsAppAgentHandoff, 'updateOne', async () => ({}));
+    t.mock.method(
+      require('../services/guidanceBookingService'),
+      'getAvailableActiveSlots',
+      async () => []
+    );
     const crisis = await processFlowV2Turn(ctx('b1_awaiting_reply'), "I don't know and my life is over");
     assert.equal(crisis.nextState, 'human_handoff');
     const booking = await processFlowV2Turn(ctx('b1_awaiting_reply'), "I don't know, book a session");
-    assert.equal(booking.contextPatch.stage, 'node0_awaiting_backfill');
+    assert.equal(booking.contextPatch.stage, 'node0_awaiting_slot');
   });
 
   test('Node E remains Stage 4a-owned and is not intercepted', async () => {

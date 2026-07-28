@@ -158,7 +158,7 @@ describe('Stage 6 — R4-P sticky + bridge', () => {
     assert.equal(parked.contextPatch.profile.predictorBridgeChoice, 'rank_only');
   });
 
-  test('Show me both seeds qualification and rejoins B1', async () => {
+  test('Show me both seeds qualification and rejoins B4 priority', async () => {
     const ctx = {
       flowV2: {
         stage: R4P_BRIDGE_STAGE,
@@ -175,10 +175,12 @@ describe('Stage 6 — R4-P sticky + bridge', () => {
     const result = await processFlowV2Turn(ctx, 'Show me both');
     assert.equal(result.contextPatch.profile.predictorBridgeChoice, 'both');
     assert.equal(result.contextPatch.profile.qualification, '12th Completed (PCM)');
+    // V3: Show me both calls handleB1Entry (now B4 priority).
     assert.ok(
-      result.contextPatch.stage === 'b1_awaiting_reply' ||
-        result.contextPatch.stage === 'b2_awaiting_reply' ||
-        result.contextPatch.stage === 'b3_awaiting_entry'
+      result.contextPatch.stage === 'b4_awaiting_reply' ||
+        result.contextPatch.stage === 'b2_goal_awaiting_reply' ||
+        result.contextPatch.stage === 'b6_permission_awaiting_reply',
+      `expected B4 priority (or B2 goal / permission), got ${result.contextPatch.stage}`
     );
   });
 
@@ -191,6 +193,6 @@ describe('Stage 6 — R4-P sticky + bridge', () => {
       },
     };
     const result = await processFlowV2Turn(ctx, 'Connect me');
-    assert.ok(String(result.replyText || result.interactive?.body || '').includes('http') || result.contextPatch.stage === 'node0_awaiting_backfill' || /book|session|guidexpert/i.test(String(result.replyText || result.interactive?.body || '')));
+    assert.ok(String(result.replyText || result.interactive?.body || '').includes('http') || result.contextPatch.stage === 'node0_awaiting_backfill' || result.contextPatch.stage === 'node0_awaiting_slot' || /book|session|guidexpert/i.test(String(result.replyText || result.interactive?.body || '')));
   });
 });

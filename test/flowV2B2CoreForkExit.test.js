@@ -71,13 +71,13 @@ describe('b2CoreForkExit — handleCoreForkExitReply (F2a)', () => {
 });
 
 describe('b2CoreForkExit — handleCoreForkExitReply (F2b)', () => {
-  test('"Actually, tell me about that route" overwrites branchInterest, keeps coreInterest, advances to B3', () => {
+  test('"Actually, tell me about that route" overwrites branchInterest, keeps coreInterest, advances to B4 priority', () => {
     const ctx = ctxWithProfile({ coreInterest: 'mechanical', coreBridgeAttempted: true, coreBridgeClosed: true, branchInterest: 'core' });
     const result = handleCoreForkExitReply(ctx, 'Actually, tell me about that route');
     assert.equal(result.contextPatch.profile.branchInterest, 'cse_ai');
     assert.equal(result.contextPatch.profile.coreInterest, 'mechanical');
     assert.equal(result.replyText, TRANSITION_TEXT);
-    assert.equal(result.contextPatch.stage, 'b3_awaiting_entry');
+    assert.equal(result.contextPatch.stage, 'b4_awaiting_entry');
   });
 
   test('the joke/pitch cannot re-fire — coreBridgeAttempted stays true, and re-running handleB2Entry never re-enters the fork', () => {
