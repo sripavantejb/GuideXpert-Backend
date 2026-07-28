@@ -99,6 +99,7 @@ const { handleB6Entry } = require('./nodes/b6TheCase');
 const { handleB7Entry, handleB7Reply } = require('./nodes/b7Book');
 const { classifyReply } = require('./router/classifyReply');
 const { isTier2Crisis } = require('./router/crisisClassifier');
+const { extractFlowV2Slots } = require('./flowV2SlotExtractor');
 const { mergeFlowV2Profile } = require('./flowV2ProfileMerge');
 const { emptyFlowV2Profile } = require('../../../constants/careerCounsellingFlowV2Profile');
 
@@ -285,6 +286,23 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
     return handleR7Tier2(ctx, text);
   }
 
+  // Part 13 Layer 3: extraction runs once at the turn boundary for every
+  // non-crisis inbound message, before Node 0, classification, or stage
+  // routing. Every downstream path sees the same additive merged profile;
+  // no handler can accidentally discard facts merely because the message
+  // took an override or leaf-router path.
+  const extractedPatch = extractFlowV2Slots(text, profile);
+  if (!stage && !profile.rawFirstMessage && text) extractedPatch.rawFirstMessage = text;
+  if (!profile.botState) extractedPatch.botState = 'career_counselling_flow_v2';
+  const extractedProfile = mergeFlowV2Profile(profile, extractedPatch);
+  const turnCtx = {
+    ...(ctx || {}),
+    flowV2: {
+      ...((ctx && ctx.flowV2) || {}),
+      profile: extractedProfile,
+    },
+  };
+
   // Node 0 is a pre-empt, not a stage: checked next, on every turn,
   // regardless of context.flowV2.stage — EXCEPT once the student is
   // already inside B7 · Book (Phase 7). Node 0's OVERRIDE_PATTERNS
@@ -297,10 +315,10 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
   // else — is moot once the student is already in the booking beat itself.
   const isB7Stage = typeof stage === 'string' && stage.startsWith('b7_');
   if (!isB7Stage && detectOverrideIntent(text)) {
-    return handleNode0Override(ctx, text);
+    return handleNode0Override(turnCtx, text);
   }
 
-  const classification = classifyReply(text, profile, {
+  const classification = classifyReply(text, extractedProfile, {
     stage,
     messageType: meta.messageType || 'text',
     pendingQualificationGuess: ctx?.flowV2?.pendingQualificationGuess || null,
@@ -311,13 +329,13 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
   // The normal dispatcher path was already intercepted by the I-10
   // pipeline pre-check above before Node 0.
   if (bucket === 'R7' && classification.tier === 2) {
-    return handleR7Tier2(ctx, text);
+    return handleR7Tier2(turnCtx, text);
   }
 
   // R7 Tier-1 — one empathetic line, THEN falls through to whatever the
   // current stage was. Never reachable from/into the Tier-2 path above.
   if (bucket === 'R7' && classification.tier === 1) {
-    const fallthrough = await runStageFallthrough(ctx, stage, text);
+    const fallthrough = await runStageFallthrough(turnCtx, stage, text);
     const combinedReplyParts = [
       getR7Tier1PrefixLine(),
       ...(fallthrough.replyText ? [fallthrough.replyText] : []),
@@ -325,7 +343,7 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
     ];
     return withDoorHistory(
       { ...fallthrough, replyText: null, replyParts: combinedReplyParts },
-      ctx,
+      turnCtx,
       bucket,
       stage
     );
@@ -334,15 +352,15 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
   // 8 fully self-contained, fully-wired buckets — intercept, do not fall
   // through to stage-based routing.
   if (WIRED_HANDLERS[bucket]) {
-    const result = WIRED_HANDLERS[bucket](ctx, text, classification);
-    return withDoorHistory(result, ctx, bucket, stage);
+    const result = WIRED_HANDLERS[bucket](turnCtx, text, classification);
+    return withDoorHistory(result, turnCtx, bucket, stage);
   }
 
   // R1-R4 (taps / types / over-answers / jumps ahead): destinations don't
   // exist yet (B1-B7 not built) — classify + record only, then fall
   // through to whatever stage handler already exists, UNCHANGED.
-  const fallthrough = await runStageFallthrough(ctx, stage, text);
-  return withDoorHistory(fallthrough, ctx, bucket, stage);
+  const fallthrough = await runStageFallthrough(turnCtx, stage, text);
+  return withDoorHistory(fallthrough, turnCtx, bucket, stage);
 }
 
 module.exports = {

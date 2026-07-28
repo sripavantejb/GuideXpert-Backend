@@ -75,22 +75,106 @@ function defaultForType(type) {
  * `nextSlot()` gates on `=== null`, never on falsiness.
  */
 const LEAD_PROFILE_SCHEMA = Object.freeze({
+  // Identity/source metadata from Part 13. These are persistent profile
+  // slots but not conversational questions, so they are system-owned and
+  // deliberately excluded from BEAT_ORDER/nextSlot gating.
+  phone: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['system'],
+    description: 'Canonical WhatsApp phone number for the lead.',
+  }),
+  name: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['entry', 'system'],
+    description: 'Accepted first/display name used by Node E; null until known confidently.',
+  }),
+  language: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['system'],
+    description: 'Detected/preferred conversation language.',
+  }),
+  proxy: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['system'],
+    description: 'Who the conversation is on behalf of, when not the student.',
+  }),
+  source: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['system'],
+    description: 'Lead source such as campaign, form, or organic WhatsApp.',
+  }),
+  campaign: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['system'],
+    description: 'Campaign identifier when present.',
+  }),
+  rawFirstMessage: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['system'],
+    description: 'First inbound message stored verbatim, including when a list row is also tapped.',
+  }),
+  createdAt: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['system'],
+    description: 'Lead creation timestamp in a serializable form.',
+  }),
+  botState: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['system'],
+    description: 'Persisted bot-state identifier; Flow v2 stage remains context.flowV2.stage.',
+  }),
   qualification: Object.freeze({
     type: 'string',
+    askable: true,
     writeBeats: ['entry'],
     readBeats: ['entry', 'B1', 'B4'],
     description:
       "Student's current qualification/class (e.g. 'Class 12', 'Diploma', 'B.Tech 2nd year'). Old profile equivalent: profile.currentQualification.",
   }),
+  stream: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['entry', 'B1'],
+    description: 'Qualification stream such as PCM, PCB, Commerce, or Arts.',
+  }),
+  entryType: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['entry', 'B5'],
+    description: 'regular, lateral, or dropper entry context.',
+  }),
+  timeline: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['B1', 'B5'],
+    description: 'Planning timeline such as next_year.',
+  }),
   goalPriority: Object.freeze({
     type: 'array',
+    askable: true,
     writeBeats: ['B1'],
     readBeats: ['B1', 'B5'],
     description:
       "Ordered list of what matters most for the student's goal (e.g. ['placements','budget']). Old profile equivalent: profile.evaluationPriorities / profile.studentPriorities.",
   }),
+  careerGoal: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['B1', 'B2', 'B5'],
+    description: 'Career outcome stated by the student; intentionally distinct from goalPriority.',
+  }),
   branchInterest: Object.freeze({
     type: 'string',
+    askable: true,
     writeBeats: ['B2'],
     readBeats: ['B2', 'B4'],
     description:
@@ -119,6 +203,7 @@ const LEAD_PROFILE_SCHEMA = Object.freeze({
   }),
   budgetBand: Object.freeze({
     type: 'string',
+    askable: true,
     writeBeats: ['B3'],
     readBeats: ['B3', 'B4'],
     description:
@@ -126,9 +211,22 @@ const LEAD_PROFILE_SCHEMA = Object.freeze({
   }),
   cityPref: Object.freeze({
     type: 'string',
+    askable: true,
     writeBeats: ['B3'],
     readBeats: ['B3', 'B4'],
     description: 'Preferred city/location or relocation stance. Old profile equivalent: profile.preferredLocation.',
+  }),
+  city: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['B3', 'B5'],
+    description: 'Specific city named by the lead when distinct from relocation stance.',
+  }),
+  state: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['B3', 'B5'],
+    description: 'Specific state named by the lead.',
   }),
   scholarshipFlag: Object.freeze({
     type: 'boolean',
@@ -222,6 +320,24 @@ const LEAD_PROFILE_SCHEMA = Object.freeze({
     description:
       "Filters the student applied to narrow predictedColleges (e.g. district, branch). No direct old-profile equivalent. Same BEAT LABEL NOTE as predictedColleges above — belongs to the not-yet-built R4-P predictor-bridge sub-flow, not to the already-built b4Bridge.js node.",
   }),
+  collegeOfInterest: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['B5', 'B6'],
+    description: 'Named college the student asked about or pinned for comparison.',
+  }),
+  concerns: Object.freeze({
+    type: 'array',
+    writeBeats: ['system'],
+    readBeats: ['system', 'B6'],
+    description: 'Append/dedupe list of volunteered concern categories.',
+  }),
+  hesitations: Object.freeze({
+    type: 'array',
+    writeBeats: ['system'],
+    readBeats: ['system', 'B7'],
+    description: 'Append/dedupe list of volunteered hesitation categories.',
+  }),
   shortlist: Object.freeze({
     type: 'array',
     writeBeats: ['B5'],
@@ -295,6 +411,54 @@ const LEAD_PROFILE_SCHEMA = Object.freeze({
     readBeats: ['system'],
     description:
       "R6 deflect bucket: whether the student explicitly opted out ('not interested' / 'stop' / \"don't message me\"). null = not opted out; true = opted out, no further retention attempts.",
+  }),
+  spam: Object.freeze({
+    type: 'boolean',
+    writeBeats: ['system'],
+    readBeats: ['system'],
+    description: 'Permanent spam/vendor close flag.',
+  }),
+  outOfScope: Object.freeze({
+    type: 'boolean',
+    writeBeats: ['system'],
+    readBeats: ['system'],
+    description: 'Whether the requested path is outside automated Flow v2 scope.',
+  }),
+  conflict: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['system', 'B7'],
+    description: 'Volunteered conflict such as parental pressure.',
+  }),
+  escalateHuman: Object.freeze({
+    type: 'boolean',
+    writeBeats: ['system'],
+    readBeats: ['system'],
+    description: 'Whether a non-crisis route requires human escalation.',
+  }),
+  status: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['system'],
+    description: 'Current lead lifecycle status.',
+  }),
+  exitReason: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['system'],
+    description: 'Terminal/park reason from Part 14.',
+  }),
+  nudgeSent: Object.freeze({
+    type: 'boolean',
+    writeBeats: ['system'],
+    readBeats: ['system'],
+    description: 'Global lifetime one-nudge gate; true prevents every later timeout nudge.',
+  }),
+  nudgeSentAt: Object.freeze({
+    type: 'string',
+    writeBeats: ['system'],
+    readBeats: ['system'],
+    description: 'Timestamp of the single allowed timeout nudge.',
   }),
   hostileRedirectIssued: Object.freeze({
     type: 'boolean',
