@@ -13,7 +13,7 @@ const { mergeFlowV2Profile } = require('../../flowV2ProfileMerge');
 const { emptyFlowV2Profile } = require('../../../../../constants/careerCounsellingFlowV2Profile');
 
 const FIRST_REDIRECT_TEXT =
-  "Ha — I'm GuideXpert's counselling bot, that's genuinely all \uD83D\uDE04 I'm useful for exactly one thing though: finding you a college that fits. Want to try me?";
+  "Ha — I'm Rithika, GuideXpert's counselling bot, that's genuinely all \uD83D\uDE04 I'm useful for exactly one thing though: finding you a college that fits. Want to try me?";
 const FIRST_REDIRECT_BUTTONS = Object.freeze([
   Object.freeze({ id: 'flowv2_r12_go_on', title: 'Go on then' }),
   Object.freeze({ id: 'flowv2_r12_nah', title: 'Nah' }),

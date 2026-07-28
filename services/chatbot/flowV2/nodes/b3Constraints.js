@@ -37,6 +37,7 @@ const { withMergedProfile } = require('../flowV2NodeUtils');
 const { handleB4Entry } = require('./b4Bridge');
 
 const BUDGET_QUESTION = "What's comfortable for your family, per year?\nWhy I ask: it keeps the options practical.";
+const B3_FRAMING_LINE = 'Two quick ones so the list stays realistic 👇';
 const BUDGET_BUTTONS = Object.freeze([
   Object.freeze({ id: 'flowv2_b3_budget_under_2l', title: 'Under \u20B92L' }),
   Object.freeze({ id: 'flowv2_b3_budget_2_5l', title: '\u20B92\u20135L' }),
@@ -56,11 +57,11 @@ function isFilled(value) {
   return typeof value === 'string' && value.length > 0;
 }
 
-function askBudget(profile) {
+function askBudget(profile, { framed = false } = {}) {
   return {
     replyText: null,
     replyParts: null,
-    interactive: { type: 'button', body: BUDGET_QUESTION, buttons: BUDGET_BUTTONS },
+    interactive: { type: 'button', body: framed ? `${B3_FRAMING_LINE}\n\n${BUDGET_QUESTION}` : BUDGET_QUESTION, buttons: BUDGET_BUTTONS },
     contextPatch: { stage: 'b3_awaiting_budget', profile },
     nextState: 'career_counselling_flow_v2',
     intent: 'career_counselling_flow_v2',
@@ -101,7 +102,7 @@ function handleB3Entry(ctx) {
   // filled" (d) \u2014 both ask budget first from the same stage; the
   // eventual difference (whether location gets asked afterward) is
   // resolved by handleB3BudgetReply's own cityPref re-check below.
-  return askBudget(profile);
+  return askBudget(profile, { framed: !cityFilled });
 }
 
 /**
@@ -164,7 +165,8 @@ function extractB3LocationTap(text) {
 function handleB3BudgetReply(ctx, text) {
   const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
   const freeTextPatch = extractFlowV2Slots(text, profile);
-  const budgetBand = extractB3BudgetTap(text) || freeTextPatch.budgetBand || null;
+  const isUnknownBudget = /\b(not sure|depends|don'?t know)\b/i.test(String(text || ''));
+  const budgetBand = extractB3BudgetTap(text) || freeTextPatch.budgetBand || (isUnknownBudget ? 'unknown' : null);
 
   if (!budgetBand) {
     // Never silently default \u2014 re-ask the same budget question,
@@ -211,6 +213,18 @@ function handleB3LocationReply(ctx, text) {
     return askLocation(mergedProfile, { sequential: false });
   }
 
+  if (cityPref === 'near_home' && !profile.state) {
+    const mergedProfile = mergeFlowV2Profile(profile, { ...freeTextPatch, cityPref });
+    return {
+      replyText: 'Which city are you in?',
+      replyParts: null,
+      interactive: null,
+      contextPatch: { stage: 'b3_awaiting_city', profile: mergedProfile },
+      nextState: 'career_counselling_flow_v2',
+      intent: 'career_counselling_flow_v2',
+    };
+  }
+
   const patch = { cityPref };
   for (const [key, value] of Object.entries(freeTextPatch)) {
     if (!(key in patch)) patch[key] = value;
@@ -221,6 +235,25 @@ function handleB3LocationReply(ctx, text) {
   return handleB4Entry(withMergedProfile(ctx, mergedProfile));
 }
 
+function handleB3CityReply(ctx, text) {
+  const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
+  const patch = extractFlowV2Slots(text, profile);
+  const city = patch.cityPref || null;
+  if (!city) {
+    return {
+      replyText: 'Which city are you in?',
+      replyParts: null,
+      interactive: null,
+      contextPatch: { stage: 'b3_awaiting_city', profile: mergeFlowV2Profile(profile, patch) },
+      nextState: 'career_counselling_flow_v2',
+      intent: 'career_counselling_flow_v2',
+    };
+  }
+  const { cityPref: _extractedCity, ...otherPatch } = patch;
+  const mergedProfile = mergeFlowV2Profile(profile, { ...otherPatch, city });
+  return handleB4Entry(withMergedProfile(ctx, mergedProfile));
+}
+
 /**
  * @param {{ flowV2?: { stage?: string, profile?: object } }} ctx
  * @param {string} text
@@ -228,6 +261,7 @@ function handleB3LocationReply(ctx, text) {
  */
 function handleB3Reply(ctx, text) {
   const stage = ctx?.flowV2?.stage;
+  if (stage === 'b3_awaiting_city') return handleB3CityReply(ctx, text);
   if (stage === 'b3_awaiting_location') return handleB3LocationReply(ctx, text);
   // Defensive default (should only be reachable via 'b3_awaiting_budget'
   // per the dispatcher's own wiring) \u2014 treats anything else as the
@@ -244,6 +278,7 @@ module.exports = {
   BUDGET_QUESTION,
   LOCATION_QUESTION_ONLY,
   LOCATION_QUESTION_SEQUENTIAL,
+  B3_FRAMING_LINE,
   // exported (Phase 6) so B5's "Change something" loop can re-show these
   // exact same buttons for a budget/location change, instead of a second,
   // possibly-drifting copy of the same three-button UI living in

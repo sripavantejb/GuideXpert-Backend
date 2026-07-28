@@ -153,12 +153,22 @@ describe('b3Constraints — handleB3Reply (stage = b3_awaiting_location)', () =>
     return { flowV2: { stage: 'b3_awaiting_location', profile: { ...emptyFlowV2Profile(), budgetBand: 'under_2l', ...patch } } };
   }
 
-  test('extracts cityPref and advances straight to B4 — the very next message is B4\u2019s bridge text, never another question', () => {
+  test('Near home asks for the city when state is unknown', () => {
     const result = handleB3Reply(locationCtx(), 'Near home');
     assert.equal(result.contextPatch.profile.cityPref, 'near_home');
-    assert.equal(result.replyText, BRIDGE_TEXT);
-    assert.equal(result.contextPatch.stage, 'b5_awaiting_entry');
+    assert.equal(result.replyText, 'Which city are you in?');
+    assert.equal(result.contextPatch.stage, 'b3_awaiting_city');
     assert.equal(result.interactive, null);
+  });
+
+  test('the follow-up city is stored separately without losing the near-home preference', () => {
+    const result = handleB3Reply(
+      { flowV2: { stage: 'b3_awaiting_city', profile: { ...emptyFlowV2Profile(), budgetBand: 'under_2l', cityPref: 'near_home' } } },
+      'Hyderabad'
+    );
+    assert.equal(result.contextPatch.profile.cityPref, 'near_home');
+    assert.equal(result.contextPatch.profile.city, 'Hyderabad');
+    assert.equal(result.contextPatch.stage, 'b5_awaiting_entry');
   });
 
   test('a real city name (free text, not a tap) also resolves correctly', () => {
@@ -240,8 +250,8 @@ describe('B3/B4 — end-to-end through the full dispatcher', () => {
     assert.equal(result.contextPatch.stage, 'b3_awaiting_location');
 
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
-    result = await processFlowV2Turn(ctx, 'Near home');
-    assert.equal(result.contextPatch.profile.cityPref, 'near_home');
+    result = await processFlowV2Turn(ctx, 'Open to move');
+    assert.equal(result.contextPatch.profile.cityPref, 'open_to_move');
     assert.equal(result.contextPatch.stage, 'b5_awaiting_entry');
     assert.equal(result.replyText, BRIDGE_TEXT);
   });

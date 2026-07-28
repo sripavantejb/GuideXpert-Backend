@@ -197,6 +197,6 @@ describe('flowV2Dispatcher — crisis lock non-recovery (guard rail test)', () =
     );
     const turn2Result = await processFlowV2Turn(turn2Ctx, 'hi, is anyone there?');
     assert.equal(turn2Result.nextState, 'human_handoff');
-    assert.ok(!/I'm Guide, from GuideXpert/i.test(turn2Result.replyText || ''));
+    assert.ok(!/from GuideXpert/i.test(turn2Result.replyText || ''));
   });
 });

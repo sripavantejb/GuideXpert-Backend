@@ -15,6 +15,7 @@ const {
   AWAITING_DONE_HOLDING_TEXT,
   POST_DECLINE_HOLDING_TEXT,
   POST_BOOKING_HOLDING_TEXT,
+  TOPIC_REPLIES,
 } = require('../services/chatbot/flowV2/nodes/b7Book');
 const nodeZeroOverride = require('../services/chatbot/flowV2/nodes/node0Override');
 const { emptyFlowV2Profile } = require('../constants/careerCounsellingFlowV2Profile');
@@ -153,6 +154,7 @@ describe('b7Book — [Not yet] never auto-re-invites', () => {
     const result = handleB7Reply(ctxWithProfile({}, { stage: 'b7_post_decline' }), 'Fees');
     assert.equal(result.interactive, null);
     assert.equal(result.contextPatch.stage, 'b7_post_decline');
+    assert.equal(result.replyText, TOPIC_REPLIES.fees);
     assert.ok(!/Want me to book it/i.test(result.replyText));
   });
 
@@ -226,7 +228,7 @@ describe('b7Book — every stage has a defined, non-silent response to an arbitr
 
   test('b7_post_booking: arbitrary text gets the holding reply, does not go silent (proves the "genuine terminal-ish state" still accepts follow-ups)', () => {
     const result = handleB7Reply(ctxWithProfile({ bookingStatus: 'done' }, { stage: 'b7_post_booking' }), 'what about scholarships');
-    assert.equal(result.replyText, POST_BOOKING_HOLDING_TEXT);
+    assert.equal(result.replyText, TOPIC_REPLIES.scholarships);
     assert.equal(result.contextPatch.stage, 'b7_post_booking');
     assert.notEqual(result.replyText, null);
   });

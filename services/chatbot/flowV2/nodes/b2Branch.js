@@ -93,9 +93,9 @@ function buildB2ListInteractive(body) {
  * branch value this extractor can currently produce. */
 function branchAckLine(branchInterest) {
   const b = String(branchInterest || '').toLowerCase();
-  if (b === 'cse_ai' || b === 'cse' || b === 'it') return 'Good choice \u2014 coding and AI have real depth right now.';
-  if (b === 'design') return "Design's a great space \u2014 plenty of crossover with tech too.";
-  if (b === 'data_analytics') return 'Data and analytics \u2014 smart pick, that\u2019s in high demand.';
+  if (b === 'cse_ai' || b === 'cse' || b === 'it') return "Solid \u2014 and it's the most flexible base you can pick right now.";
+  if (b === 'design') return 'Good \u2014 design plus tech is a genuinely strong combination right now.';
+  if (b === 'data_analytics') return 'Good pick \u2014 that sits right next to AI.';
   return 'Got it, noted.';
 }
 

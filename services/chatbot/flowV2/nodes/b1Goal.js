@@ -48,7 +48,7 @@ const B1_REASK_BODY = "No worries — take your time. Pick whichever fits best f
  */
 function qualificationAckLine(qualification) {
   const q = String(qualification || '').toLowerCase();
-  if (q.includes('(pcm)') || q.includes('(mpc)')) return 'Perfect \u2014 PCM keeps engineering and tech wide open for you.';
+  if (q.includes('(pcm)') || q.includes('(mpc)')) return 'Perfect \u2014 MPC keeps engineering and tech wide open for you.';
   if (q.includes('(pcb)') || q.includes('(bipc)')) return 'Got it.';
   if (q.includes('(commerce)') || q.includes('mec') || q.includes('cec')) {
     return 'Got it \u2014 commerce opens up business, finance and design routes.';
@@ -111,19 +111,17 @@ function handleB1Entry(ctx) {
  * example) — a documented judgment call covering every label this
  * extractor can currently produce. */
 const GOAL_ACK_LEAD = Object.freeze({
-  placement: 'Noted \u2014 placements first.',
-  ai_future_tech: 'Noted \u2014 AI and future tech excite you.',
-  affordable: 'Noted \u2014 affordability matters most.',
-  fee: 'Noted \u2014 fees matter most.',
-  higher_studies: "Noted \u2014 you're thinking long-term, higher studies later.",
-  startup: 'Noted \u2014 startup energy, got it.',
-  entrepreneurship: 'Noted \u2014 entrepreneurship energy, got it.',
+  placement: "Noted \u2014 placements first. That genuinely changes what I'd recommend, so thanks for being clear.",
+  ai_future_tech: "Good instinct \u2014 that's where the sharpest students are heading right now.",
+  affordable: 'Completely fair \u2014 and there are genuinely good options in that range.',
+  fee: 'Completely fair \u2014 and there are genuinely good options in that range.',
+  higher_studies: 'Useful to know \u2014 that changes which colleges actually make sense.',
+  startup: "Good \u2014 that's a different filter entirely, and a useful one.",
+  entrepreneurship: "Good \u2014 that's a different filter entirely, and a useful one.",
 });
-const GOAL_ACK_TAIL = 'That genuinely changes what I\u2019d recommend.';
 
 function goalPriorityAckLine(goalPriority) {
-  const lead = GOAL_ACK_LEAD[goalPriority[0]] || 'Noted \u2014 got it.';
-  return `${lead} ${GOAL_ACK_TAIL}`;
+  return GOAL_ACK_LEAD[goalPriority[0]] || 'Noted \u2014 got it.';
 }
 
 function reAskB1(mergedProfile) {

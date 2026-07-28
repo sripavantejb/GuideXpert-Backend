@@ -253,9 +253,9 @@ function computeTiers(profile) {
 
 function flattenShortlist(tiers) {
   const tagged = [
-    ...tiers.bestMatch.map((c) => ({ ...c, tier: 'best_match' })),
-    ...tiers.strongAlternatives.map((c) => ({ ...c, tier: 'strong_alternative' })),
-    ...tiers.worthExploring.map((c) => ({ ...c, tier: 'worth_exploring' })),
+    ...tiers.bestMatch.slice(0, 1).map((c) => ({ ...c, tier: 'best_match' })),
+    ...tiers.strongAlternatives.slice(0, 2).map((c) => ({ ...c, tier: 'strong_alternative' })),
+    ...tiers.worthExploring.slice(0, 2).map((c) => ({ ...c, tier: 'worth_exploring' })),
   ];
   return tagged.map((c) => ({
     collegeName: c.collegeName,
@@ -326,7 +326,7 @@ function buildShortlistBody(shortlistArray, profile) {
     strong_alternative: shortlistArray.filter((c) => c.tier === 'strong_alternative'),
     worth_exploring: shortlistArray.filter((c) => c.tier === 'worth_exploring'),
   };
-  const sections = [];
+  const sections = ['Based on everything you shared, here are 5 that fit you 👇', ''];
   for (const tier of ['best_match', 'strong_alternative', 'worth_exploring']) {
     const items = byTier[tier];
     if (!items.length) continue;
@@ -338,11 +338,11 @@ function buildShortlistBody(shortlistArray, profile) {
       if (tier === 'best_match' && profile.coreInterest && /\bniat\b/i.test(item.collegeName)) {
         line = appendCoreInterestPayoff(line, profile.coreInterest);
       }
-      sections.push(`- *${item.collegeName}* \u2014 ${line}`);
+      sections.push(`• *${item.collegeName}* \u2014 ${line}`);
     }
     sections.push('');
   }
-  sections.push('Want me to compare them, just tell you the best fit, or change something first?');
+  sections.push('These are matched to what you told me \u2014 not a generic ranking.');
   return sections.filter((line, i, arr) => !(line === '' && arr[i - 1] === '')).join('\n').trim();
 }
 

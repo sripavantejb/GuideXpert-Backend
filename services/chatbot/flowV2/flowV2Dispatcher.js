@@ -101,6 +101,11 @@ const { classifyReply } = require('./router/classifyReply');
 const { isTier2Crisis } = require('./router/crisisClassifier');
 const { extractFlowV2Slots } = require('./flowV2SlotExtractor');
 const { mergeFlowV2Profile } = require('./flowV2ProfileMerge');
+const {
+  detectNonDistressInterrupt,
+  startNonDistressInterrupt,
+  handlePendingInterrupt,
+} = require('./nonDistressInterrupts');
 const { emptyFlowV2Profile } = require('../../../constants/careerCounsellingFlowV2Profile');
 
 const { handleR7Tier2 } = require('./router/handlers/r7Tier2Handler');
@@ -210,6 +215,7 @@ async function runStageFallthrough(ctx, stage, text) {
   if (stage === 'b3_awaiting_entry') return await handleB3Entry(ctx);
   if (stage === 'b3_awaiting_budget') return await handleB3Reply(ctx, text);
   if (stage === 'b3_awaiting_location') return await handleB3Reply(ctx, text);
+  if (stage === 'b3_awaiting_city') return await handleB3Reply(ctx, text);
   // Phase 6 additions — B5 · Shortlist and B6 · The Case. B4 (Phase 5) sets
   // 'b5_awaiting_entry' and waits for the next turn (same precedent as B2's
   // advanceToB3, since B4 could not chain directly into a B5 that did not
@@ -359,6 +365,36 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
   if (isEntryStage) {
     return await runStageFallthrough(turnCtx, stage, text);
   }
+
+  // Stage 4b non-distress interrupts. Node E remains untouched above; for
+  // the B1-B7 spine these run after I-10 and Node 0, but before the ordinary
+  // reply classifier/stage logic. Pending interrupts always retain the
+  // exact stage they interrupted instead of resetting the journey.
+  if (stage === 'interrupt_i1_awaiting_reply' || stage === 'interrupt_i2_awaiting_reply') {
+    const interruptResult = handlePendingInterrupt(turnCtx, text);
+    if (interruptResult && interruptResult.interruptResolved) {
+      const resumedCtx = {
+        ...turnCtx,
+        flowV2: {
+          ...(turnCtx.flowV2 || {}),
+          stage: interruptResult.interruptedStage,
+          profile: interruptResult.profile,
+          interruptedStage: null,
+        },
+      };
+      const resumed = await runStageFallthrough(resumedCtx, interruptResult.interruptedStage, interruptResult.resumeText);
+      return {
+        ...resumed,
+        replyText: null,
+        replyParts: [interruptResult.confirmation, ...(resumed.replyText ? [resumed.replyText] : []), ...(resumed.replyParts || [])],
+        contextPatch: { ...resumed.contextPatch, interruptedStage: null },
+      };
+    }
+    return interruptResult;
+  }
+
+  const interruptId = detectNonDistressInterrupt(text, stage);
+  if (interruptId) return startNonDistressInterrupt(turnCtx, interruptId);
 
   const classification = classifyReply(text, extractedProfile, {
     stage,

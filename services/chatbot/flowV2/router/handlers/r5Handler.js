@@ -19,7 +19,7 @@
  */
 
 const BOT_IDENTITY_TEXT =
-  "Yep — I'm GuideXpert's AI counsellor. I do the shortlisting and comparisons, and when you're ready I hand you to a human counsellor for the personal session. Best of both. Want to carry on?";
+  "Yep — I'm Rithika, GuideXpert's AI counsellor. I do the shortlisting and comparisons, and when you're ready I hand you to a human counsellor for the personal session. Best of both. Want to carry on?";
 const BOT_IDENTITY_BUTTONS = Object.freeze([
   Object.freeze({ id: 'flowv2_r5_continue', title: 'Sure, continue' }),
   Object.freeze({ id: 'flowv2_r5_get_human', title: 'Get me a human' }),
