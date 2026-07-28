@@ -25,7 +25,12 @@ const QUALIFICATION_ROWS = Object.freeze([
   Object.freeze({ id: 'flowv2_qual_11_studying', title: '11th Studying' }),
   Object.freeze({ id: 'flowv2_qual_12_pcm', title: '12th Completed (PCM)' }),
   Object.freeze({ id: 'flowv2_qual_12_pcb', title: '12th Completed (PCB)' }),
-  Object.freeze({ id: 'flowv2_qual_12_commerce', title: '12th Completed (Commerce)' }),
+  // waTitle: WhatsApp list row titles max 24 chars; canonical title stays longer.
+  Object.freeze({
+    id: 'flowv2_qual_12_commerce',
+    title: '12th Completed (Commerce)',
+    waTitle: '12th Commerce',
+  }),
   Object.freeze({ id: 'flowv2_qual_12_arts', title: '12th Completed (Arts)' }),
   Object.freeze({ id: 'flowv2_qual_diploma', title: 'Diploma' }),
   Object.freeze({ id: 'flowv2_qual_degree', title: 'Degree' }),
@@ -33,6 +38,18 @@ const QUALIFICATION_ROWS = Object.freeze([
   Object.freeze({ id: 'flowv2_qual_other', title: 'Other' }),
 ]);
 
+function findQualificationRow(text) {
+  const t = String(text || '').trim().toLowerCase();
+  if (!t) return null;
+  return (
+    QUALIFICATION_ROWS.find(
+      (row) =>
+        row.id.toLowerCase() === t ||
+        row.title.toLowerCase() === t ||
+        (row.waTitle && row.waTitle.toLowerCase() === t)
+    ) || null
+  );
+}
 const QUALIFICATION_LIST_SECTION_TITLE = 'Where are you right now?';
 const QUALIFICATION_LIST_BUTTON_TEXT = 'Select';
 /** Exact Node E open when profile.name is unknown (Master Flow welcome). */
@@ -53,10 +70,17 @@ function buildQualificationListInteractive(body) {
     type: 'list',
     body,
     buttonText: QUALIFICATION_LIST_BUTTON_TEXT,
-    sections: [{ title: QUALIFICATION_LIST_SECTION_TITLE, rows: QUALIFICATION_ROWS }],
+    sections: [
+      {
+        title: QUALIFICATION_LIST_SECTION_TITLE,
+        rows: QUALIFICATION_ROWS.map((row) => ({
+          id: row.id,
+          title: row.waTitle || row.title,
+        })),
+      },
+    ],
   };
 }
-
 /** Only an already-accepted Flow v2 profile name may skip the name ask. */
 function resolveGreetingName(ctx) {
   return extractName(ctx?.flowV2?.profile?.name);
@@ -350,7 +374,7 @@ function resolvePendingGuess(ctx, text) {
     });
   }
 
-  const exactRow = QUALIFICATION_ROWS.find((row) => row.title.toLowerCase() === t);
+  const exactRow = findQualificationRow(text);
   const corrected = exactRow?.title || extractFlowV2Slots(text, profile).qualification;
   if (corrected) return acceptQualification(ctx, corrected, { temperature: 'warm' });
   return qualificationPrompt(profile, NEUTRAL_QUALIFICATION_LINE, {
@@ -395,9 +419,7 @@ function handleGreetingReply(ctx, text, options = {}) {
   const pendingAmbiguityResult = resolvePendingAmbiguity(ctx, text);
   if (pendingAmbiguityResult) return pendingAmbiguityResult;
   const normalizedText = String(text || '').replace(/[—–]/g, '-');
-  const exactRow = QUALIFICATION_ROWS.find(
-    (row) => row.title.toLowerCase() === String(text || '').trim().toLowerCase()
-  );
+  const exactRow = findQualificationRow(text);
   const patch = exactRow
     ? { qualification: exactRow.title }
     : extractFlowV2Slots(normalizedText, profile);
@@ -547,4 +569,5 @@ module.exports = {
   GUESS_CONFIRM_NO,
   // Reused by R10's deterministic PCM/PCB resolution.
   acceptQualification,
+  findQualificationRow,
 };

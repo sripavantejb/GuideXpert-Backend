@@ -45,7 +45,17 @@ async function executeActiveGuidedFlowTurn({
   resolvedLanguageFrom,
 }) {
   let contextPatch = botState?.context || {};
-  const inboundText = multilingualInbound?.englishMessage || String(inbound.text || '').trim();
+  const inboundText =
+    (inbound?.messageType === 'list_reply' || inbound?.messageType === 'button_reply') &&
+    (inbound?.interactivePayload?.postbackText ||
+      inbound?.interactivePayload?.id ||
+      inbound?.interactivePayload?.reply?.id)
+      ? String(
+          inbound.interactivePayload.postbackText ||
+            inbound.interactivePayload.id ||
+            inbound.interactivePayload.reply.id
+        ).trim()
+      : multilingualInbound?.englishMessage || String(inbound.text || '').trim();
 
   await transitionState(
     activeConversation._id,

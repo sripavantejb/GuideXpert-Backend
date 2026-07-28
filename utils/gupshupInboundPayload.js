@@ -58,20 +58,24 @@ function tryParseGupshupUserMessage(body) {
   if (rawType === 'text' || msg.text) {
     messageType = 'text';
     text = extractTextFromMessage(msg);
-  } else if (rawType === 'button_reply' || msg.button_reply) {
+  } else if (rawType === 'button_reply' || msg.button_reply || rawType === 'quick_reply') {
     messageType = 'button_reply';
-    interactivePayload = msg.button_reply || msg;
+    interactivePayload = msg.button_reply || msg.quick_reply || msg;
+    // Prefer postback/id so Flow v2 row ids (flowv2_*) resolve reliably.
     text =
-      (msg.button_reply && msg.button_reply.title) ||
-      (msg.button_reply && msg.button_reply.id) ||
-      JSON.stringify(msg.button_reply || msg);
+      (interactivePayload && interactivePayload.postbackText) ||
+      (interactivePayload && interactivePayload.id) ||
+      (interactivePayload && interactivePayload.title) ||
+      (interactivePayload && interactivePayload.text) ||
+      JSON.stringify(interactivePayload);
   } else if (rawType === 'list_reply' || msg.list_reply) {
     messageType = 'list_reply';
     interactivePayload = msg.list_reply || msg;
     text =
-      (msg.list_reply && msg.list_reply.title) ||
-      (msg.list_reply && msg.list_reply.id) ||
-      JSON.stringify(msg.list_reply || msg);
+      (interactivePayload && interactivePayload.postbackText) ||
+      (interactivePayload && interactivePayload.id) ||
+      (interactivePayload && interactivePayload.title) ||
+      JSON.stringify(interactivePayload);
   } else if (rawType === 'interactive') {
     messageType = 'interactive';
     interactivePayload = msg.interactive || msg;
@@ -136,11 +140,17 @@ function tryParseMetaInboundMessage(body) {
         if (ir.type === 'button_reply' && ir.button_reply) {
           messageType = 'button_reply';
           interactivePayload = ir.button_reply;
-          text = ir.button_reply.title || ir.button_reply.id;
+          text =
+            ir.button_reply.id ||
+            ir.button_reply.postbackText ||
+            ir.button_reply.title;
         } else if (ir.type === 'list_reply' && ir.list_reply) {
           messageType = 'list_reply';
           interactivePayload = ir.list_reply;
-          text = ir.list_reply.title || ir.list_reply.id;
+          text =
+            ir.list_reply.id ||
+            ir.list_reply.postbackText ||
+            ir.list_reply.title;
         } else {
           messageType = 'interactive';
           interactivePayload = ir;
