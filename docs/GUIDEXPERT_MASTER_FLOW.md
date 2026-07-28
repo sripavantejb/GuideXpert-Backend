@@ -549,6 +549,14 @@ ROUTER
 
 # PART 7 · ▼▼▼ R1 · THE HAPPY PATH · B1 → B10 ▼▼▼
 
+> **OPTION 3 SHIPPED (company Stage 1–10 overlay):** Runtime PCM happy path
+> uses company verbatim copy in `services/chatbot/flowV2/nodes/*`. After B6
+> permission Yes, **B6.5 is skipped** → B7 TWO MODELS. B8 shows **3 medals**
+> (Newton · NIAT · Scaler). B10 uses **IITian** offer copy. Company 30m/1h/3h
+> Maybe Later chase is **not** restored — see `GUIDEXPERT_HAPPY_FLOW_B8_B10.md`.
+> Historical B6.5 / five-flat / senior-counsellor text below is retained for
+> skip-matrix / non-happy-path reference only.
+
 ```
    B1        B2        B3        B4        B5        B6
  QUALIFY →  GOAL  → INTEREST → PRIORITY → CHECKLIST → PERMIT
@@ -558,13 +566,12 @@ ROUTER
                                                          │
             ┌────────────────────────────────────────────┘
             ▼
-       B6.5        B7          B8          B9         B10
-   CONSTRAINTS → TWO MODELS → SHORTLIST → FIT  →     BOOK
-    2 taps ⚠     0 taps      0 taps      1 tap    2 taps + name
-   (conditional)                ▲                     ▲
-                             PAYLOAD              the close
+       B7          B8          B9         B10
+   TWO MODELS → SHORTLIST → FIT  →     BOOK
+    0 taps      0 taps      1 tap    hybrid slots
+                (3 medals)           (IITian copy)
 
-   Student turns: 8 (10 if B6.5 fires)   Gates: 1   Typed answers: 1
+   Student turns: ~8 on PCM happy path (B6.5 skipped)   Gates: 1
 ```
 
 ---

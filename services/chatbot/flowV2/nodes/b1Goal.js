@@ -14,16 +14,15 @@ const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingF
 const { withMergedProfile, combineNodeResults, advanceToB5Checklist } = require('../flowV2NodeUtils');
 const { handleB5ChecklistEntry } = require('./b5Checklist');
 
+// Company Stage 4 — seven priorities (emoji in description when title would exceed 24).
 const B1_ROWS = Object.freeze([
-  Object.freeze({ id: 'flowv2_b4_placements', title: 'Placements' }),
-  Object.freeze({ id: 'flowv2_b4_internships', title: 'Internships' }),
-  Object.freeze({ id: 'flowv2_b4_curriculum', title: 'Curriculum' }),
-  Object.freeze({ id: 'flowv2_b4_faculty', title: 'Faculty' }),
-  Object.freeze({ id: 'flowv2_b4_campus', title: 'Campus life' }),
-  Object.freeze({ id: 'flowv2_b4_fees', title: 'Fees & scholarships' }),
-  Object.freeze({ id: 'flowv2_b4_location', title: 'Location' }),
-  Object.freeze({ id: 'flowv2_b4_higher_studies', title: 'Higher studies' }),
-  Object.freeze({ id: 'flowv2_b4_startup', title: 'Startup / entrepreneurship' }),
+  Object.freeze({ id: 'flowv2_b4_placements', title: '💼 Placements' }),
+  Object.freeze({ id: 'flowv2_b4_internships', title: '🚀 Internships' }),
+  Object.freeze({ id: 'flowv2_b4_curriculum', title: '📚 Updated Curriculum' }),
+  Object.freeze({ id: 'flowv2_b4_faculty', title: '👨‍🏫 Good Faculty' }),
+  Object.freeze({ id: 'flowv2_b4_campus', title: '🏫 Campus Life' }),
+  Object.freeze({ id: 'flowv2_b4_sports', title: '⚽ Sports & Clubs' }),
+  Object.freeze({ id: 'flowv2_b4_fees', title: '💰 Affordable Fees' }),
 ]);
 
 // Legacy id aliases so older taps / tests still resolve.
@@ -39,6 +38,7 @@ const LEGACY_PRIORITY_IDS = Object.freeze({
   flowv2_b4_curriculum: 'curriculum',
   flowv2_b4_faculty: 'faculty',
   flowv2_b4_campus: 'campus',
+  flowv2_b4_sports: 'sports',
   flowv2_b4_fees: 'fees',
   flowv2_b4_location: 'location',
   flowv2_b4_higher_studies: 'higher_studies',
@@ -47,8 +47,18 @@ const LEGACY_PRIORITY_IDS = Object.freeze({
 
 const B1_LIST_SECTION_TITLE = 'What matters most?';
 const B1_LIST_BUTTON_TEXT = 'Select';
-const B1_QUESTION_TAIL = 'Last question before I give you something useful — what matters most?';
+// Company Stage 4 prompt (qualification ack still prefixes on entry).
+const B1_QUESTION_TAIL =
+  "One more thing...\nWhen choosing a college, what's most important to you?";
 const B1_REASK_BODY = 'No worries — take your time. Pick whichever fits best for now:';
+
+const WA_LIST_TITLE_MAX = 24;
+
+function clipTitle(text) {
+  const s = String(text || '').trim();
+  if (s.length <= WA_LIST_TITLE_MAX) return s;
+  return s.slice(0, Math.max(0, WA_LIST_TITLE_MAX - 1)).trimEnd() + '…';
+}
 
 function qualificationAckLine(qualification) {
   const q = String(qualification || '').toLowerCase();
@@ -74,7 +84,12 @@ function buildB1ListInteractive(body) {
     type: 'list',
     body,
     buttonText: B1_LIST_BUTTON_TEXT,
-    sections: [{ title: B1_LIST_SECTION_TITLE, rows: B1_ROWS }],
+    sections: [
+      {
+        title: B1_LIST_SECTION_TITLE,
+        rows: B1_ROWS.map((row) => ({ id: row.id, title: clipTitle(row.title) })),
+      },
+    ],
   };
 }
 
@@ -87,9 +102,18 @@ function resolvePriorityFromText(text, patch) {
   const raw = String(text || '').trim();
   if (LEGACY_PRIORITY_IDS[raw]) return [LEGACY_PRIORITY_IDS[raw]];
   const lower = raw.toLowerCase();
+  const stripped = lower.replace(/^[^\w]+/, '').trim();
   for (const row of B1_ROWS) {
-    if (lower === row.title.toLowerCase() || lower === row.id.toLowerCase()) {
-      return [LEGACY_PRIORITY_IDS[row.id] || row.title.toLowerCase()];
+    const titleLower = row.title.toLowerCase();
+    const titleStripped = titleLower.replace(/^[^\w]+/, '').trim();
+    if (
+      lower === titleLower ||
+      lower === row.id.toLowerCase() ||
+      stripped === titleStripped ||
+      stripped.includes(titleStripped) ||
+      titleStripped.includes(stripped)
+    ) {
+      return [LEGACY_PRIORITY_IDS[row.id] || titleStripped.replace(/\s+/g, '_')];
     }
   }
   return null;
@@ -102,11 +126,11 @@ function handleB1Entry(ctx) {
     return handleB5ChecklistEntry(withMergedProfile(ctx, profile));
   }
 
-  const body = `${qualificationAckLine(profile.qualification)} ${B1_QUESTION_TAIL}`;
+  // Company Stage 4 verbatim prompt (no qualification ack prefix).
   return {
     replyText: null,
     replyParts: null,
-    interactive: buildB1ListInteractive(body),
+    interactive: buildB1ListInteractive(B1_QUESTION_TAIL),
     contextPatch: { stage: 'b4_awaiting_reply', profile },
     nextState: 'career_counselling_flow_v2',
     intent: 'career_counselling_flow_v2',
@@ -123,6 +147,7 @@ const GOAL_ACK_LEAD = Object.freeze({
   curriculum: 'Useful — syllabus reality matters more than brochures.',
   faculty: 'Good call — faculty quality is hard to fake.',
   campus: 'Fair — campus life is part of the decision.',
+  sports: 'Fair — sports and clubs matter for the full college experience.',
   fees: 'Completely fair — and there are genuinely good options in that range.',
   affordable: 'Completely fair — and there are genuinely good options in that range.',
   location: 'Got it — proximity matters, and we will treat it that way.',

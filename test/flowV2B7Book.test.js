@@ -32,12 +32,12 @@ function mockLiveSlots(t, slots = []) {
 }
 
 describe('b7Book — handleB7Entry (framing)', () => {
-  test('V3 offer copy names senior counsellor (no IITian clause)', () => {
+  test('V3 offer copy names IITian (company Stage 10)', () => {
     const result = handleB7Entry(ctxWithProfile({ recommendation: null }));
     assert.equal(result.interactive.body, GENERIC_INVITE_TEXT);
-    assert.match(result.interactive.body, /senior counsellor/i);
-    assert.doesNotMatch(result.interactive.body, /IITian/i);
-    assert.match(result.interactive.body, /Shall I book you in/i);
+    assert.match(result.interactive.body, /IITian/i);
+    assert.doesNotMatch(result.interactive.body, /senior counsellor/i);
+    assert.match(result.interactive.body, /Would you like to book your session/i);
   });
 
   test('same offer copy whether or not recommendation is set', () => {
@@ -50,7 +50,7 @@ describe('b7Book — handleB7Entry (framing)', () => {
   test('sets stage to b7_awaiting_reply and presents exactly 2 buttons, profile carried forward', () => {
     const result = handleB7Entry(ctxWithProfile({ recommendation: 'NIAT', qualification: 'Class 12 (MPC)' }));
     assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
-    assert.deepEqual(result.interactive.buttons.map((b) => b.title), ['Book my session', 'Not right now']);
+    assert.deepEqual(result.interactive.buttons.map((b) => b.title), ['Book My Session', 'Maybe Later']);
     assert.equal(result.contextPatch.profile.qualification, 'Class 12 (MPC)');
   });
 });
@@ -60,7 +60,8 @@ describe('b7Book — extractB7InviteAction', () => {
     assert.equal(extractB7InviteAction('Book my session'), 'book');
     assert.equal(extractB7InviteAction('Not yet'), 'not_yet');
     assert.equal(extractB7InviteAction('Not right now'), 'not_yet');
-    assert.equal(extractB7InviteAction('maybe later I guess'), null);
+    assert.equal(extractB7InviteAction('Maybe Later'), 'not_yet');
+    assert.equal(extractB7InviteAction('hello there'), null);
   });
 });
 
@@ -378,10 +379,10 @@ describe('B7 — full chained transition through the dispatcher', () => {
     let ctx = { flowV2: { stage: 'b6_awaiting_entry', profile } };
     let result = await processFlowV2Turn(ctx, 'ok');
     assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
-    assert.match(result.interactive.body, /narrow it down/i);
+    assert.match(result.interactive.body, /best fit|help you find/i);
 
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
-    result = await processFlowV2Turn(ctx, 'Yes, narrow it down');
+    result = await processFlowV2Turn(ctx, 'Yes, help me');
     assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
     assert.equal(result.interactive.body, STANDARD_INVITE_TEXT);
   });

@@ -1,12 +1,9 @@
 'use strict';
 
 /**
- * Flow V3 — B8 · SHORTLIST (5 flat new-age + mandatory disclosure).
+ * Flow V3 — B8 · SHORTLIST (Company Stage 8 — 3 medal colleges).
  *
- * DEFAULTED PENDING BUSINESS CONFIRMATION — ◆ DIFF-1 differentiator lines
- * are provisional until content fact-checks them.
- *
- * No medals / no Best Match tiers. Wider catalog on tap only.
+ * Newton / NIAT / Scaler with medal framing. Same-turn handoff to B9 fit ask.
  */
 
 const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
@@ -14,50 +11,30 @@ const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingF
 const { assertGuardrails } = require('../../../../constants/careerCounsellingFlowV2Guardrails');
 const { withMergedProfile, combineNodeResults } = require('../flowV2NodeUtils');
 
-/** DEFAULTED PENDING BUSINESS CONFIRMATION — ◆ DIFF-1 */
+/** Company Stage 8 medal shortlist — Newton, NIAT, Scaler only. */
 const FLAT_CATALOG = Object.freeze([
   Object.freeze({
     id: 'newton',
     name: 'Newton School of Technology',
-    // DEFAULTED PENDING BUSINESS CONFIRMATION — ◆ DIFF-1
-    differentiator:
-      'four-year degree with project work from early semesters — strongest when you want applied building early',
+    medal: '🥇',
   }),
   Object.freeze({
     id: 'niat',
     name: 'NIAT',
-    // DEFAULTED PENDING BUSINESS CONFIRMATION — ◆ DIFF-1
-    differentiator:
-      'AI-first curriculum with industry-integrated learning — strongest when AI and software depth matter most',
+    medal: '🥈',
   }),
   Object.freeze({
     id: 'scaler',
-    name: 'Scaler School of Technology',
-    // DEFAULTED PENDING BUSINESS CONFIRMATION — ◆ DIFF-1
-    differentiator:
-      'software engineering with industry mentorship emphasis — strongest when mentorship and career scope matter',
-  }),
-  Object.freeze({
-    id: 'plaksha',
-    name: 'Plaksha University',
-    // DEFAULTED PENDING BUSINESS CONFIRMATION — ◆ DIFF-1
-    differentiator:
-      'interdisciplinary tech education with a research-leaning campus — strongest when breadth across tech domains matters',
-  }),
-  Object.freeze({
-    id: 'kalvium',
-    name: 'Kalvium',
-    // DEFAULTED PENDING BUSINESS CONFIRMATION — ◆ DIFF-1
-    differentiator:
-      'work-integrated engineering model with early industry exposure — strongest when earning-while-learning structure matters',
+    name: 'Scaler',
+    medal: '🥉',
   }),
 ]);
 
 const WIDER_CATALOG_LINE =
-  "Wider options people often ask about: Masters' Union · Krea · Ahmedabad Univ · UPES · SRM AP.\n\nSame caveat: these are colleges GuideXpert works with, so we know them well — and you should weigh that.";
+  "Wider options people often ask about: Plaksha · Kalvium · Masters' Union · Krea · UPES · SRM AP.\n\nRun them through the same checklist before you decide.";
 
-const DISCLOSURE =
-  "Straight up: these are colleges GuideXpert works with, so we know them well — and you should weigh that. Run all five through the seven checks above, and run any other college you're considering through the same list.\n\nThey're different from each other in learning style, fees and location, so the right one depends on you.";
+/** Soft optional line — company Stage 8 is medal list without partnership pitch. */
+const DISCLOSURE = '';
 
 function interestPhrase(profile) {
   const cluster = profile?.interestCluster;
@@ -77,45 +54,21 @@ function priorityPhrase(profile) {
   return String(p).replace(/_/g, ' ');
 }
 
-function orderCatalog(profile) {
-  const list = [...FLAT_CATALOG];
-  const primary = String((profile?.goalPriority && profile.goalPriority[0]) || '').toLowerCase();
-  if (primary === 'fees' || primary === 'affordable' || primary === 'fee') {
-    return list.map((c) => ({
-      ...c,
-      differentiator: `${c.differentiator}; check full four-year cost before you decide`,
-    }));
-  }
-  if (profile?.scholarshipFlag === true) {
-    return list.map((c) => ({
-      ...c,
-      differentiator: `${c.differentiator}; ask scholarship criteria in writing`,
-    }));
-  }
-  if (profile?.coreInterest) {
-    return list.map((c) =>
-      c.id === 'niat'
-        ? {
-            ...c,
-            differentiator:
-              'project-led CSE/AI path that can still use mechanical/automation instincts — strongest if you converted from core and want applied builds',
-          }
-        : c
-    );
-  }
-  return list;
+function orderCatalog(_profile) {
+  return [...FLAT_CATALOG];
 }
 
-function buildShortlistBody(profile, colleges) {
+function buildShortlistBody(_profile, colleges) {
   const lines = [
-    `From what you've told me — ${interestPhrase(profile)}, and ${priorityPhrase(profile)} — these five are worth looking at:`,
-    '',
+    "From what you've shared...",
+    'I think these colleges could be worth exploring:',
   ];
   for (const c of colleges) {
-    lines.push(`*${c.name}* — ${c.differentiator}`);
-    lines.push('');
+    lines.push(`${c.medal} ${c.name}`);
   }
-  lines.push(DISCLOSURE);
+  lines.push(
+    'Each has a different learning style, so the right choice depends on your goals, budget, and interests.'
+  );
   return lines.join('\n');
 }
 
@@ -144,7 +97,11 @@ function handleB8Entry(ctx) {
   const body = buildShortlistBody(profile, colleges);
   assertGuardrails(body);
 
-  const shortlist = colleges.map((c) => ({ id: c.id, name: c.name, differentiator: c.differentiator }));
+  const shortlist = colleges.map((c) => ({
+    id: c.id,
+    name: c.name,
+    medal: c.medal,
+  }));
   const merged = mergeFlowV2Profile(profile, { shortlist });
   merged.shortlist = shortlist;
 

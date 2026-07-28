@@ -38,24 +38,23 @@ const nodeZeroOverride = require('./node0Override');
 // ---------------------------------------------------------------------------
 
 const STANDARD_INVITE_TEXT = [
-  "You're at the point where one good decision saves a couple of years of backtracking.",
-  '',
-  "GuideXpert runs a free 1:1 session with a senior counsellor. It's 30 minutes, on a call, and in it you'll get:",
-  '',
-  '✅ Whether NIAT — or one of the other four — actually fits your marks and budget',
-  '✅ Which branch matches how you like to work',
-  '✅ What the career paths after it realistically look like',
-  "✅ Which scholarships you're eligible to apply for",
-  '',
-  'No fee, and no obligation to join anything.',
-  '',
-  'Shall I book you in?',
+  "You're at an important stage in your career.",
+  'One good decision now can save years of confusion later.',
+  "That's why GuideXpert offers a FREE 1:1 Career Guidance Session with an IITian.",
+  "In this session, you'll understand:",
+  '✅ Which college suits you best',
+  '✅ Which branch matches your strengths',
+  '✅ Career opportunities after graduation',
+  '✅ Scholarships you may qualify for',
+  "It's completely free.",
+  'Would you like to book your session?',
 ].join('\n');
 const GENERIC_INVITE_TEXT = STANDARD_INVITE_TEXT;
 
+// Company Stage 10 buttons (titles ≤20).
 const B7_INVITE_BUTTONS = Object.freeze([
-  Object.freeze({ id: 'flowv2_b7_book', title: 'Book my session' }),
-  Object.freeze({ id: 'flowv2_b7_not_yet', title: 'Not right now' }),
+  Object.freeze({ id: 'flowv2_b7_book', title: 'Book My Session' }),
+  Object.freeze({ id: 'flowv2_b7_not_yet', title: 'Maybe Later' }),
 ]);
 
 const NOT_YET_TEXT =
@@ -138,7 +137,7 @@ function handleB7Entry(ctx) {
 // ---------------------------------------------------------------------------
 
 const BOOK_PATTERN = /\bbook\b/i;
-const NOT_YET_PATTERN = /\bnot (yet|right now)\b/i;
+const NOT_YET_PATTERN = /\bnot (yet|right now)\b|\bmaybe later\b/i;
 
 function extractB7InviteAction(text) {
   const t = String(text || '');

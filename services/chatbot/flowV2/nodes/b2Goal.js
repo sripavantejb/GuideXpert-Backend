@@ -13,11 +13,14 @@ const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingF
 const { withMergedProfile } = require('../flowV2NodeUtils');
 const { handleB2Entry } = require('./b2Branch');
 
-// WhatsApp reply-button titles hard-cap at 20 characters — longer titles
- // silently truncate on the client (e.g. "Which branch suits me" → "...suits m").
+// WhatsApp reply-button titles hard-cap at 20 characters — company labels
+// clipped; full intent lives in B2_BODY / GOAL_BY_TEXT parsers.
 const GOAL_BUTTONS = Object.freeze([
+  // Company: "Which engineering branch suits me" (34) → clip
   Object.freeze({ id: 'flowv2_b2_goal_branch', title: 'Which branch for me' }), // 19
+  // Company: "Careers with good future scope" (30) → clip
   Object.freeze({ id: 'flowv2_b2_goal_career', title: 'Careers with scope' }), // 18
+  // Company: "Best colleges for my profile" (28) → clip
   Object.freeze({ id: 'flowv2_b2_goal_college', title: 'Best colleges for me' }), // 20
 ]);
 
@@ -33,7 +36,8 @@ const GOAL_BY_TEXT = Object.freeze([
   Object.freeze({ re: /\bcollege/i, value: 'college_fit' }),
 ]);
 
-const B2_BODY = "What's the main thing you want clarity on?";
+// Company Stage 2 body (PCM path).
+const B2_BODY = 'Awesome! 👍\nWhat are you looking for ?';
 const B2_REASK = 'No worries — pick whichever is closest:';
 
 function isGoalFilled(goal) {

@@ -69,7 +69,7 @@ describe('Master Flow Stage 5 — R3 over-answer', () => {
 
     const afterGoal = await processFlowV2Turn(continueCtx(captured), 'Which branch suits me');
     assert.equal(afterGoal.contextPatch.stage, 'b4_awaiting_reply');
-    assert.equal(afterGoal.interactive.sections[0].rows.length, 9);
+    assert.equal(afterGoal.interactive.sections[0].rows.length, 7);
     assert.doesNotMatch(visibleText(afterGoal), /which field|comfortable for your family|near home|open to moving/i);
     assert.equal(afterGoal.contextPatch.profile.branchInterest, 'CSE');
 

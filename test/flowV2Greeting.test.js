@@ -32,11 +32,11 @@ describe('flowV2 greeting — Node E entry', () => {
     const profile = { ...emptyFlowV2Profile(), name: 'Rahul' };
     const result = handleGreetingEntry({ flowV2: { profile } });
     assert.equal(result.replyText, null);
-    assert.equal(
-      result.interactive.body,
-      "Hey Rahul! 👋\n\nI'm Rithika, from GuideXpert's counselling desk. We help students find a college that actually fits them — not just the ones with the biggest ads.\n\nTakes about 2 minutes, and it's free.\n\nFirst — where are you right now?"
-    );
     assert.equal(result.interactive.body, buildNodeEOpenBody('Rahul'));
+    assert.match(result.interactive.body, /Welcome to GuideXpert/);
+    assert.match(result.interactive.body, /Rithika from the GuideXpert counselling team/);
+    assert.match(result.interactive.body, /First, can I know your current qualifications\?/);
+    assert.doesNotMatch(result.interactive.body, /Takes about 2 minutes/);
     assert.equal(result.contextPatch.stage, 'greeting_awaiting_qualification');
     assert.equal(result.interactive.type, 'list');
     assert.equal(result.interactive.buttonText, 'Choose your stage');
@@ -73,7 +73,7 @@ describe('flowV2 greeting — Node E entry', () => {
     assert.equal(result.contextPatch.stage, 'b2_goal_awaiting_reply');
     assert.equal(result.interactive.type, 'button');
     assert.equal(result.interactive.buttons.length, 3);
-    assert.match(result.interactive.body, /main thing you want clarity on/i);
+    assert.match(result.interactive.body, /What are you looking for/i);
   });
 
   test('unknown name still opens qualification list immediately (never asks for name)', () => {
@@ -81,8 +81,8 @@ describe('flowV2 greeting — Node E entry', () => {
     assert.equal(result.replyText, null);
     assert.equal(result.interactive.body, UNKNOWN_NAME_GREETING);
     assert.equal(result.interactive.body, buildNodeEOpenBody(null));
-    assert.match(result.interactive.body, /^Hi! 👋/);
-    assert.match(result.interactive.body, /First — where are you right now\?/);
+    assert.match(result.interactive.body, /^👋 Hi! Welcome to GuideXpert/);
+    assert.match(result.interactive.body, /First, can I know your current qualifications\?/);
     assert.doesNotMatch(result.interactive.body, /May I know your name/i);
     assert.equal(result.interactive.type, 'list');
     assert.equal(result.interactive.buttonText, 'Choose your stage');
@@ -136,7 +136,7 @@ describe('flowV2 greeting — legacy name capture (greeting_awaiting_name only)'
 
     const second = handleGreetingReply(nameCtx({ nameAttempts: 1 }), '...');
     assert.equal(second.interactive.body, NEUTRAL_QUALIFICATION_LINE);
-    assert.equal(second.interactive.body, 'First — where are you right now?');
+    assert.equal(second.interactive.body, 'First, can I know your current qualifications?');
     assert.equal(second.contextPatch.stage, 'greeting_awaiting_qualification');
     assert.equal(second.contextPatch.nameAttempts, null);
   });
@@ -170,7 +170,7 @@ describe('flowV2 greeting — qualification routes', () => {
     assert.equal(result.contextPatch.stage, 'b2_goal_awaiting_reply');
     assert.equal(result.interactive.type, 'button');
     assert.equal(result.interactive.buttons.length, 3);
-    assert.match(result.interactive.body, /main thing you want clarity on/i);
+    assert.match(result.interactive.body, /What are you looking for/i);
   });
 
   test('all non-PCM list rows enter their required side tracks', () => {

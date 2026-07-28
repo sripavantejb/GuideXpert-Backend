@@ -47,21 +47,21 @@ describe('Flow V3 Phase 1 — B5 CHECKLIST', () => {
     const result = handleB5ChecklistEntry({ flowV2: { profile } });
     assert.equal(result.contextPatch.profile.checklistSent, true);
     const parts = [...(result.replyParts || []), result.replyText].filter(Boolean).join('\n');
-    assert.match(parts, /seven before you say yes/i);
+    assert.match(parts, /Got it|curriculum updated|alumni network/i);
     assert.doesNotMatch(parts, /\bNIAT\b|\bNewton\b|\bScaler\b/i);
     assert.equal(result.interactive?.type, 'button');
-    assert.match(result.interactive.body || PERMISSION_BODY, /shortlist/i);
+    assert.match(result.interactive.body || PERMISSION_BODY, /suggest colleges that match/i);
   });
 
   test('checklistSent=true skips re-send and goes to permission', () => {
     const profile = { ...emptyFlowV2Profile(), checklistSent: true };
     const result = handleB5ChecklistEntry({ flowV2: { profile } });
     const parts = [...(result.replyParts || []), result.replyText].filter(Boolean).join('\n');
-    assert.doesNotMatch(parts, /When was the curriculum last updated/);
+    assert.doesNotMatch(parts, /Is the curriculum updated/);
     assert.ok(
       result.contextPatch.stage === 'b6_permission_awaiting_reply' ||
-        result.contextPatch.stage === 'b65_awaiting_entry' ||
-        result.contextPatch.stage === 'b3_awaiting_entry'
+        result.contextPatch.stage === 'b7_two_models_awaiting_entry' ||
+        result.contextPatch.stage === 'b8_awaiting_entry'
     );
   });
 
@@ -76,13 +76,13 @@ describe('Flow V3 Phase 1 — B5 CHECKLIST', () => {
 });
 
 describe('Flow V3 Phase 1 — B6 PERMISSION', () => {
-  test('yes advances to interim constraints park', () => {
+  test('yes advances to B7 two models (skips B6.5)', () => {
     const result = handleB6PermissionReply(
       { flowV2: { profile: emptyFlowV2Profile() } },
       'flowv2_b6_yes'
     );
     assert.equal(result.contextPatch.profile.permissionRecommend, true);
-    assert.equal(result.contextPatch.stage, 'b65_awaiting_entry');
+    assert.equal(result.contextPatch.stage, 'b7_two_models_awaiting_entry');
   });
 
   test('not right now soft-closes without looping', () => {
@@ -99,6 +99,10 @@ describe('Flow V3 Phase 1 — B6 PERMISSION', () => {
     const result = handleB6PermissionEntry({ flowV2: { profile: emptyFlowV2Profile() } });
     assert.equal(result.interactive?.type, 'button');
     assert.equal(result.contextPatch.stage, 'b6_permission_awaiting_reply');
+    assert.deepEqual(
+      result.interactive.buttons.map((b) => b.title),
+      ['Yes 👍', 'Maybe Later']
+    );
   });
 });
 

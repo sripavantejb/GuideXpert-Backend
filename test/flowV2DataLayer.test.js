@@ -39,7 +39,7 @@ describe('Flow v2 Part 13 data layer — extraction at every inbound boundary', 
     assert.equal(result.contextPatch.stage, 'b2_goal_awaiting_reply');
     assert.equal(result.interactive.type, 'button');
     assert.equal(result.interactive.buttons.length, 3);
-    assert.match(result.interactive.body, /main thing you want clarity on/i);
+    assert.match(result.interactive.body, /What are you looking for/i);
     assert.equal((result.replyParts || []).filter((part) => /12th MPC, CSE, around ₹3L, Hyderabad/.test(part)).length, 1);
   });
 
@@ -53,7 +53,7 @@ describe('Flow v2 Part 13 data layer — extraction at every inbound boundary', 
     // Branch already filled → skip B3 interest → land on B4 priority.
     assert.equal(afterGoal.contextPatch.stage, 'b4_awaiting_reply');
     assert.equal(afterGoal.interactive.type, 'list');
-    assert.equal(afterGoal.interactive.sections[0].rows.length, 9);
+    assert.equal(afterGoal.interactive.sections[0].rows.length, 7);
     assert.doesNotMatch(visibleText(afterGoal), /which field|comfortable for your family|near home|open to moving/i);
 
     const afterPriority = await processFlowV2Turn(continueCtx(afterGoal), 'Placements');

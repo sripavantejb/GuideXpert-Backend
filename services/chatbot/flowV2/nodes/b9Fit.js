@@ -1,11 +1,10 @@
 'use strict';
 
 /**
- * Flow V3 — B9 · FIT (counsellor narrative).
+ * Flow V3 — B9 · FIT (Company Stage 8 ask + Stage 9 NIAT soft nudge).
  *
- * Ask → on yes: senior-counsellor NIAT pitch (reason first) → B10.
- * Self-lookup honoured once. Honest pass only for clearly out-of-catalog profiles.
- * Compare-on-tap: compact factor block (≤4 rows).
+ * Ask → on yes: company NIAT pitch → B10.
+ * Self-explore honoured once.
  */
 
 const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
@@ -13,35 +12,37 @@ const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingF
 const { assertGuardrails } = require('../../../../constants/careerCounsellingFlowV2Guardrails');
 const { advanceToB10 } = require('../flowV2NodeUtils');
 
-const FIT_ASK_BODY = 'Want me to narrow it down to the one that fits you best?';
+// Company Stage 8 closing ask (shown after medal shortlist).
+const FIT_ASK_BODY = 'Would you like me to help you find the best fit?';
 const FIT_BUTTONS = Object.freeze([
-  Object.freeze({ id: 'flowv2_b9_yes', title: 'Yes, narrow it down' }),
-  Object.freeze({ id: 'flowv2_b9_self', title: "I'll look them up myself" }),
+  Object.freeze({ id: 'flowv2_b9_yes', title: 'Yes, help me' }),
+  // Company: "I'll explore myself" (19 ≤ 20)
+  Object.freeze({ id: 'flowv2_b9_self', title: "I'll explore myself" }),
 ]);
 
 const SELF_LOOKUP_TEXT = [
-  "Good — that's the right instinct 👍 Take the seven checks with you.",
+  'Good — take your time exploring 👍',
   '',
   "If you want a second opinion after you've looked, I'm here.",
 ].join('\n');
 
 const HONEST_PASS_TEXT = [
-  "Being straight with you — from what you've shared, I'm not sure any of these five is the obvious fit. Your interests point somewhere our catalog doesn't cover well, and I'd rather say that than talk you into one.",
+  "Being straight with you — from what you've shared, I'm not sure any of these three is the obvious fit. Your interests point somewhere our catalog doesn't cover well, and I'd rather say that than talk you into one.",
   '',
-  "The seven checks above still work on whatever you're considering.",
+  'The checklist above still works on whatever you’re considering.',
   '',
   "If it'd help, I can put you in front of a counsellor who'll talk through the options that *do* fit — including ones we have nothing to do with.",
 ].join('\n');
 
-/** Compact compare — 4 factor rows max for WhatsApp readability. */
+/** Compact compare — 3 medal colleges. */
 const COMPARE_TABLE = [
-  "Here's how the five stack up on what you care about 👇",
+  "Here's how the three stack up on what you care about 👇",
   '',
-  'Focus           NIAT · Scaler · Newton · Plaksha · Kalvium',
-  'AI / curriculum ●●●  · ●●●    · ●●     · ●●●     · ●●',
-  'Projects        ●●●  · ●●●    · ●●●    · ●●      · ●●●',
-  'Internships     ●●●  · ●●●    · ●●     · ●●      · ●●●',
-  'Mentorship      ●●●  · ●●●    · ●●     · ●●      · ●●',
+  'Focus           Newton · NIAT · Scaler',
+  'AI / curriculum ●●     · ●●●  · ●●●',
+  'Projects        ●●●    · ●●●  · ●●●',
+  'Internships     ●●     · ●●●  · ●●●',
+  'Mentorship      ●●     · ●●●  · ●●●',
 ].join('\n');
 
 const NIAT_NAME = 'NIAT';
@@ -82,7 +83,7 @@ function priorityTiedReason(profile) {
   if (primary.includes('fee') || primary.includes('afford') || primary.includes('scholarship')) {
     return "you'll still need to check full four-year cost and scholarships in writing — and a counsellor call is the right place for that";
   }
-  if (primary.includes('location') || primary.includes('campus')) {
+  if (primary.includes('location') || primary.includes('campus') || primary.includes('sport')) {
     return "campus environment and day-to-day learning culture are easier to judge with someone who's walked students through it";
   }
   if (cluster === 'data_ai') {
@@ -106,7 +107,6 @@ function shouldHonestPass(profile) {
   ) {
     return true;
   }
-  // Undecided with no priority and no branch signal — thin enough to refuse a hard sell.
   const hasPriority = Array.isArray(profile?.goalPriority) && profile.goalPriority.length > 0;
   const hasBranch = typeof profile?.branchInterest === 'string' && profile.branchInterest.length > 0;
   if (cluster === 'undecided' && !hasPriority && !hasBranch) return true;
@@ -114,48 +114,34 @@ function shouldHonestPass(profile) {
 }
 
 /**
- * Senior-counsellor NIAT pitch — reason first, then curriculum / internships /
- * industry ties / environment. Possibility language only (L5).
- *
- * DEFAULTED PENDING BUSINESS CONFIRMATION — ◆ NIAT-1 / NIAT-2 / DIFF-1 claims
- * stay soft until content fact-checks them.
+ * Company Stage 9 — soft NIAT nudge (verbatim).
  */
-function buildNiatCounsellorPitch(profile) {
-  const coreLine = profile?.coreInterest
-    ? `\nYou came in via ${String(profile.coreInterest)} — this is still a CSE/AI path, so only lean in if you're open to that door, not if you need a licensed core-engineering role.\n`
-    : '';
-
+function buildNiatCounsellorPitch(_profile) {
   return [
     'Sure 😊',
-    '',
-    `You said *${priorityPhrase(profile)}* matters most, and you're interested in ${interestPhrase(profile)}. On that specific basis, I'd look at *${NIAT_NAME}* first — ${priorityTiedReason(profile)}.`,
-    coreLine.trimEnd(),
-    '',
-    'Here is how I usually explain it to a student in your seat:',
-    '',
-    '• *Curriculum* — industry-linked and refreshed more often than a typical university cycle, with coding and projects early rather than parked in year 3.',
-    '• *Internships* — the point is real work exposure and conversion paths, not a stack of attendance certificates.',
-    '• *Industry ties* — mentors and partner ecosystems matter when you are choosing a newer institute; ask for named examples on the counsellor call.',
-    '• *Environment* — built around applied learning and peer building, which fits students who want software/AI depth.',
-    '',
-    "That's my read from what you've shared — not a verdict. The other four may suit you better once someone has seen your marks, budget and where you can actually study.",
-    '',
-    'Which is exactly what a short counsellor call is for.',
-  ]
-    .filter((line, i, arr) => !(line === '' && arr[i - 1] === ''))
-    .join('\n')
-    .trim();
+    'From your interests, NIAT looks like one of the strongest options to explore.',
+    'It focuses on:',
+    '✅ AI & Tech skills',
+    '✅ Practical learning',
+    '✅ Industry projects',
+    '✅ Strong placement support',
+    "But I don't want you to choose a college just because I suggested it.",
+    "Let's make sure it's actually the right fit for you.",
+  ].join('\n');
 }
 
 function looksLikeYes(text) {
   const t = String(text || '').toLowerCase();
   return (
     t.includes('flowv2_b9_yes') ||
+    t.includes('yes, help') ||
     t.includes('yes, narrow') ||
     t === 'yes' ||
+    t.includes('help me') ||
     t.includes('narrow it') ||
     t.includes('suggest') ||
-    t.includes('best college')
+    t.includes('best college') ||
+    t.includes('best fit')
   );
 }
 
@@ -165,6 +151,8 @@ function looksLikeSelf(text) {
     t.includes('flowv2_b9_self') ||
     t.includes('look them up') ||
     t.includes("i'll look") ||
+    t.includes('explore myself') ||
+    t.includes("i'll explore") ||
     t.includes('myself')
   );
 }
@@ -184,7 +172,7 @@ function namedCollegeFromText(text, profile) {
   }
   if (/\bniat\b/.test(t)) return { id: 'niat', name: NIAT_NAME };
   if (/\bnewton\b/.test(t)) return { id: 'newton', name: 'Newton School of Technology' };
-  if (/\bscaler\b/.test(t)) return { id: 'scaler', name: 'Scaler School of Technology' };
+  if (/\bscaler\b/.test(t)) return { id: 'scaler', name: 'Scaler' };
   if (/\bplaksha\b/.test(t)) return { id: 'plaksha', name: 'Plaksha University' };
   if (/\bkalvium\b/.test(t)) return { id: 'kalvium', name: 'Kalvium' };
   return null;
@@ -212,7 +200,7 @@ function deliverNiatPitch(ctx, profile) {
   return advanceToB10(merged, body);
 }
 
-/** If student named a non-NIAT college, acknowledge it then still offer counsellor depth — do not invent rival pitches. */
+/** If student named a non-NIAT college, acknowledge it then still offer counsellor depth. */
 function deliverNamedCollege(ctx, profile, college) {
   const id = String(college.id || '').toLowerCase();
   if (id === 'niat') return deliverNiatPitch(ctx, profile);
@@ -299,7 +287,9 @@ module.exports = {
   shouldHonestPass,
   priorityTiedReason,
   FIT_ASK_BODY,
+  FIT_BUTTONS,
   HONEST_PASS_TEXT,
   COMPARE_TABLE,
   SELF_LOOKUP_TEXT,
+  interestPhrase,
 };

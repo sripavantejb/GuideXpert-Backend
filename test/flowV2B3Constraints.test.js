@@ -68,7 +68,7 @@ describe('b3Constraints — handleB3Entry (four skip-combination cases)', () => 
 
   test('case (a) both already filled: skips B3 entirely, advances straight to B4 in the same turn', () => {
     const result = handleB3Entry(ctxWithProfile({ budgetBand: 'under_2l', cityPref: 'Hyderabad' }));
-    assert.equal(result.replyText, BRIDGE_TEXT);
+    assert.equal([...(result.replyParts || []), result.replyText].filter(Boolean).join('\n\n'), BRIDGE_TEXT);
     assert.equal(result.contextPatch.stage, 'b8_awaiting_entry');
     assert.equal(result.interactive, null);
   });
@@ -129,7 +129,7 @@ describe('b3Constraints — handleB3Reply (stage = b3_awaiting_budget)', () => {
 
   test('defensive: if cityPref is somehow already filled by the time the budget reply arrives, skips location and advances to B4', () => {
     const result = handleB3Reply(ctxWithProfile({ cityPref: 'Hyderabad' }), '\u20B95L+');
-    assert.equal(result.replyText, BRIDGE_TEXT);
+    assert.equal([...(result.replyParts || []), result.replyText].filter(Boolean).join('\n\n'), BRIDGE_TEXT);
     assert.equal(result.contextPatch.stage, 'b8_awaiting_entry');
     assert.equal(result.contextPatch.profile.budgetBand, '5l_plus');
     assert.equal(result.contextPatch.profile.cityPref, 'Hyderabad');
@@ -174,20 +174,23 @@ describe('b3Constraints — handleB3Reply (stage = b3_awaiting_location)', () =>
   test('a real city name (free text, not a tap) also resolves correctly', () => {
     const result = handleB3Reply(locationCtx(), 'I want to study in Hyderabad');
     assert.equal(result.contextPatch.profile.cityPref, 'Hyderabad');
-    assert.equal(result.replyText, BRIDGE_TEXT);
+    assert.equal([...(result.replyParts || []), result.replyText].filter(Boolean).join('\n\n'), BRIDGE_TEXT);
   });
 
   test('never silently defaults cityPref on an unrecognized reply — re-asks the location question, never sends B4', () => {
     const result = handleB3Reply(locationCtx(), 'not sure honestly');
     assert.equal(result.contextPatch.profile.cityPref, null);
     assert.equal(result.contextPatch.stage, 'b3_awaiting_location');
-    assert.notEqual(result.replyText, BRIDGE_TEXT);
+    assert.notEqual([...(result.replyParts || []), result.replyText].filter(Boolean).join('\n\n'), BRIDGE_TEXT);
   });
 
   test('this is the LAST question of the beat: no additional question is ever appended after a location answer', () => {
     const result = handleB3Reply(locationCtx(), 'Open to move');
     assert.equal(result.interactive, null);
-    assert.equal(result.replyParts, null);
+    // Company two-models may arrive as replyParts (two bubbles) — still no question UI.
+    const text = [...(result.replyParts || []), result.replyText].filter(Boolean).join('\n');
+    assert.match(text, /Traditional Colleges|New-Age Colleges|biggest difference/i);
+    assert.doesNotMatch(text, /\?$/m);
   });
 
   test('contextPatch carries profile forward on the location->B4 transition', () => {
@@ -202,13 +205,12 @@ describe('b4Bridge — handleB4Entry', () => {
 
   test('sends V3 two-models frame, sets stage to b8_awaiting_entry, no buttons/interactive', () => {
     const result = handleB4Entry(ctxWithProfile());
-    assert.equal(result.replyText, BRIDGE_TEXT);
-    assert.match(result.replyText, /two models/i);
-    assert.match(result.replyText, /Established colleges/i);
+    const text = [...(result.replyParts || []), result.replyText].filter(Boolean).join('\n\n');
+    assert.equal(text, BRIDGE_TEXT);
+    assert.match(text, /Traditional Colleges|New-Age Colleges/i);
     assert.equal(result.contextPatch.stage, 'b8_awaiting_entry');
     assert.equal(result.contextPatch.profile.frameSent, true);
     assert.equal(result.interactive, null);
-    assert.equal(result.replyParts, null);
   });
 
   test('carries profile forward (Phase 4 propagation-bug shape)', () => {
@@ -228,7 +230,7 @@ describe('b4Bridge — handleB4Entry', () => {
 describe('B3/B4 — end-to-end through the full dispatcher', () => {
   test('B3 interest tap stays multi-select; done continues into B4 priority', async () => {
     let ctx = { flowV2: { stage: 'b2_awaiting_reply', profile: emptyFlowV2Profile() } };
-    let result = await processFlowV2Turn(ctx, 'Computers & software');
+    let result = await processFlowV2Turn(ctx, 'Computers');
     assert.ok(result.contextPatch.profile.interests?.includes('computers_software'));
     assert.equal(result.contextPatch.stage, 'b2_awaiting_reply');
 
@@ -272,7 +274,7 @@ describe('B3/B4 — end-to-end through the full dispatcher', () => {
     ]
       .filter(Boolean)
       .join('\n');
-    assert.match(visible, /two models|Established colleges|GuideXpert works with/i);
+    assert.match(visible, /Traditional Colleges|New-Age Colleges|Newton School|best fit/i);
     assert.doesNotMatch(visible, /\*Best Match\*/i);
   });
 });

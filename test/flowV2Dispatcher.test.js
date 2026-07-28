@@ -16,7 +16,7 @@ const handoffService = require('../services/chatbot/handoffService');
 const WhatsAppAgentHandoff = require('../models/WhatsAppAgentHandoff');
 const guidanceBookingService = require('../services/guidanceBookingService');
 
-const FULL_GREETING_MARKER = "GuideXpert's counselling desk";
+const FULL_GREETING_MARKER = 'Welcome to GuideXpert';
 
 function mockEmptySlots(t) {
   t.mock.method(guidanceBookingService, 'getAvailableActiveSlots', async () => []);

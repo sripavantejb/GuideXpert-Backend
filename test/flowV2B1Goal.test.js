@@ -21,14 +21,12 @@ function isChecklistOrPermissionStage(stage) {
 }
 
 describe('b1Goal — handleB1Entry (V3 B4 PRIORITY)', () => {
-  test('asks the B4 priority question (list with 9 rows) and sets stage when goalPriority is empty', () => {
+  test('asks the B4 priority question (list with 7 company rows) and sets stage when goalPriority is empty', () => {
     const result = handleB1Entry(ctxWithProfile({ qualification: 'Class 12 (MPC)' }));
     assert.equal(result.interactive.type, 'list');
-    assert.equal(result.interactive.sections[0].rows.length, 9);
-    assert.deepEqual(
-      result.interactive.sections[0].rows.map((r) => r.title),
-      B1_ROWS.map((r) => r.title)
-    );
+    assert.equal(result.interactive.sections[0].rows.length, 7);
+    assert.equal(B1_ROWS.length, 7);
+    assert.match(result.interactive.body, /One more thing/i);
     assert.equal(result.contextPatch.stage, 'b4_awaiting_reply');
   });
 

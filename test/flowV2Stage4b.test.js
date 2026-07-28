@@ -20,7 +20,7 @@ function ctx(stage, patch = {}, extra = {}) {
 
 describe('Master Flow Stage 4b — B1/B2/B3/B5/B7 reconciliation', () => {
   test('B1 qualification and choice acknowledgements use locked copy', () => {
-    assert.match(handleB1Entry(ctx(null, { qualification: '12th Completed (PCM)' })).interactive.body, /^Perfect — MPC keeps/);
+    assert.match(handleB1Entry(ctx(null, { qualification: '12th Completed (PCM)' })).interactive.body, /One more thing/i);
     assert.equal(
       goalPriorityAckLine(['placement']),
       "Noted — placements first. That genuinely changes what I'd recommend, so thanks for being clear."
@@ -59,24 +59,25 @@ describe('Master Flow Stage 4b — B1/B2/B3/B5/B7 reconciliation', () => {
     assert.equal(knownState.contextPatch.stage, 'b8_awaiting_entry');
   });
 
-  test('B8 emits exactly five flat colleges with disclosure + FIT ask', () => {
-    const result = handleB5Entry(
-      ctx('b5_awaiting_entry', {
+  test('B8 emits exactly three medal colleges with FIT ask', () => {
+    const { handleB8Entry } = require('../services/chatbot/flowV2/nodes/b8FlatShortlist');
+    const result = handleB8Entry(
+      ctx('b8_awaiting_entry', {
         goalPriority: ['placement'],
         branchInterest: 'cse_ai',
         budgetBand: '2_5l',
         cityPref: 'Hyderabad',
       })
     );
-    assert.equal(result.contextPatch.profile.shortlist.length, 5);
+    assert.equal(result.contextPatch.profile.shortlist.length, 3);
     const visible = [...(result.replyParts || []), result.replyText, result.interactive?.body]
       .filter(Boolean)
       .join('\n');
-    assert.match(visible, /GuideXpert works with/i);
-    assert.match(visible, /these five are worth looking at/i);
+    assert.match(visible, /Newton School|🥇|worth exploring/i);
     assert.doesNotMatch(visible, /\*Best Match\*/i);
+    assert.doesNotMatch(visible, /\bPlaksha\b|\bKalvium\b/i);
     assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
-    assert.ok(result.interactive.buttons.some((b) => /narrow/i.test(b.title)));
+    assert.ok(result.interactive.buttons.some((b) => /help me|explore/i.test(b.title)));
   });
 
   test('B7 decline and post-booking helper modes answer supported topics and fresh booking intent', async (t) => {

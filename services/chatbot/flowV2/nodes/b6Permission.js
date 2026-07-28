@@ -1,22 +1,23 @@
 'use strict';
 
 /**
- * Flow V3 — B6 · PERMISSION.
+ * Flow V3 — B6 · PERMISSION (Company Stage 6).
  *
- * Only gate before shortlist. Yes → B6.5 constraints → B7–B10.
- * No → soft-close, honour once.
+ * Only gate before shortlist. Yes → B7 TWO MODELS (skips B6.5 constraints
+ * on the company happy path). No / Maybe Later → soft-close, honour once.
  */
 
 const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
 const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingFlowV2Profile');
-const { advanceToB65 } = require('../flowV2NodeUtils');
+const { advanceToB7TwoModels } = require('../flowV2NodeUtils');
 
 const PERMISSION_BODY =
-  'Want me to shortlist a few colleges that actually match this — instead of a random top-10 list?';
+  'Would you like me to suggest colleges that match your interests and goals, instead of giving you a random list?';
 
+// Company Stage 6 buttons (WA title ≤20).
 const PERMISSION_BUTTONS = Object.freeze([
-  Object.freeze({ id: 'flowv2_b6_yes', title: 'Yes, show me 👍' }),
-  Object.freeze({ id: 'flowv2_b6_not_now', title: 'Not right now' }),
+  Object.freeze({ id: 'flowv2_b6_yes', title: 'Yes 👍' }),
+  Object.freeze({ id: 'flowv2_b6_not_now', title: 'Maybe Later' }),
 ]);
 
 const DECLINE_TEXT = [
@@ -34,7 +35,14 @@ function alreadyAskedForColleges(profile) {
 
 function looksLikeYes(text) {
   const t = String(text || '').trim().toLowerCase();
-  if (t === 'flowv2_b6_yes' || t.includes('yes, show me') || t === 'yes' || t.includes('show me')) {
+  if (
+    t === 'flowv2_b6_yes' ||
+    t.includes('yes, show me') ||
+    t === 'yes' ||
+    t === 'yes 👍' ||
+    t.includes('show me') ||
+    t.includes('yes 👍')
+  ) {
     return true;
   }
   return false;
@@ -42,7 +50,13 @@ function looksLikeYes(text) {
 
 function looksLikeNo(text) {
   const t = String(text || '').trim().toLowerCase();
-  if (t === 'flowv2_b6_not_now' || t.includes('not right now') || t === 'no' || t.includes('not now')) {
+  if (
+    t === 'flowv2_b6_not_now' ||
+    t.includes('not right now') ||
+    t === 'no' ||
+    t.includes('not now') ||
+    t.includes('maybe later')
+  ) {
     return true;
   }
   return false;
@@ -57,7 +71,7 @@ function handleB6PermissionEntry(ctx) {
       permissionRecommend: true,
       temperature: 'hot',
     });
-    return advanceToB65(merged, null);
+    return advanceToB7TwoModels(merged, null);
   }
 
   if (profile.permissionRecommend === false) {
@@ -122,7 +136,8 @@ function handleB6PermissionReply(ctx, text) {
     permissionRecommend: true,
     temperature: 'hot',
   });
-  return advanceToB65(merged, null);
+  // Company happy path: skip B6.5 budget/location → B7 two models.
+  return advanceToB7TwoModels(merged, null);
 }
 
 module.exports = {

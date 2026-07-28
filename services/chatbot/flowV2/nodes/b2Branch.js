@@ -29,66 +29,65 @@ const DONE_ROW = Object.freeze({
   description: 'Continue with my picks',
 });
 
-/** Spec options — titles clipped to WhatsApp list limits; detail in description. */
+/**
+ * Company Stage 3 interest rows. Titles ≤24 chars (WA list hard cap);
+ * emoji kept when the full title still fits, otherwise emoji in description.
+ * Core engineering removed from happy-path list (typed/R4 core still elsewhere).
+ */
 const B2_ROWS = Object.freeze([
   Object.freeze({
     id: 'flowv2_b3_computers',
-    title: 'Computers & software',
+    title: '💻 Computers',
     description: 'Coding, software, IT',
     label: 'computers_software',
   }),
   Object.freeze({
     id: 'flowv2_b3_ai',
+    // "🤖 Artificial Intelligence" exceeds 24 — clip title, emoji in description
     title: 'Artificial Intelligence',
-    description: 'AI / ML paths',
+    description: '🤖 AI / ML paths',
     label: 'artificial_intelligence',
   }),
   Object.freeze({
     id: 'flowv2_b3_data',
-    title: 'Data Science',
+    title: '📊 Data Science',
     description: 'Data & analytics',
     label: 'data_science',
   }),
   Object.freeze({
     id: 'flowv2_b3_cloud',
-    title: 'Cloud Computing',
+    title: '☁️ Cloud Computing',
     description: 'Cloud & infra',
     label: 'cloud_computing',
   }),
   Object.freeze({
     id: 'flowv2_b3_cyber',
-    title: 'Cyber Security',
+    title: '🔐 Cyber Security',
     description: 'Security & networks',
     label: 'cyber_security',
   }),
   Object.freeze({
     id: 'flowv2_b3_app',
-    title: 'App Development',
+    title: '📱 App Development',
     description: 'Mobile apps',
     label: 'app_development',
   }),
   Object.freeze({
     id: 'flowv2_b3_web',
-    title: 'Web Development',
+    title: '🌐 Web Development',
     description: 'Web & full-stack',
     label: 'web_development',
   }),
   Object.freeze({
     id: 'flowv2_b3_game',
-    title: 'Game Development',
+    title: '🎮 Game Development',
     description: 'Games & interactive',
     label: 'game_development',
   }),
   Object.freeze({
-    id: 'flowv2_b3_core',
-    title: 'Core engineering',
-    description: 'Mech / Civil / ECE / EEE',
-    label: 'core_engineering',
-    isCore: true,
-  }),
-  Object.freeze({
     id: 'flowv2_b3_unsure',
-    title: 'Not sure yet',
+    // Company: "🤔 I'm Not Sure Yet" — clip to ≤24
+    title: "🤔 I'm Not Sure Yet",
     description: 'Help me figure it out',
     label: 'undecided',
     isUndecided: true,
@@ -100,8 +99,9 @@ const B2_ROWS = Object.freeze([
 const B2_LIST_SECTION_TITLE = 'Interests';
 const B2_LIST_BUTTON_TEXT = 'Pick interests';
 
+// Company Stage 3. "I'm done ✓" kept for WhatsApp multi-select completion.
 const B2_QUESTION =
-  'Good — that helps.\n\nWhich of these actually interest you?\nPick as many as you like (up to 4).';
+  'Great ! Which topics excite you the most?\n(You can choose more than one.)';
 const B2_REASK_BODY =
   'Noted 👍 Tap more if you want — or tap *I\'m done ✓* when you\'re finished.';
 const B2_CAP_BODY = "That's a solid set — continuing with what you've picked.";
@@ -145,6 +145,21 @@ const INTEREST_DEFS = Object.freeze(
     });
   })
 );
+
+/** Typed / R4-only — not shown on company Stage 3 list. */
+const CORE_TYPED_DEF = Object.freeze({
+  id: 'core',
+  rowId: 'flowv2_b3_core',
+  title: 'Core engineering',
+  label: 'core_engineering',
+  cluster: 'core',
+  branch: 'mechanical',
+  isCore: true,
+  isUndecided: false,
+  re: /flowv2_b3_core|core engineering|\bmech\b.*\bcivil\b/i,
+});
+
+const ALL_INTEREST_DEFS = Object.freeze([...INTEREST_DEFS, CORE_TYPED_DEF]);
 
 function escapeRe(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -191,7 +206,7 @@ function toWaRow(row) {
 }
 
 /**
- * Initial ask: all 10 interest rows.
+ * Initial ask: company Stage 3 interest rows (9).
  * Follow-up (≥1 pick): Done first, then remaining unselected interests.
  */
 function buildInterestRows(selectedLabels = []) {
@@ -238,21 +253,21 @@ function matchInterest(text) {
   const t = String(text || '').trim();
   if (!t) return null;
   // Prefer exact id / title hits first (list postbacks).
-  for (const def of INTEREST_DEFS) {
+  for (const def of ALL_INTEREST_DEFS) {
     if (t === def.rowId || t.toLowerCase() === def.title.toLowerCase()) return def;
   }
-  for (const def of INTEREST_DEFS) {
+  for (const def of ALL_INTEREST_DEFS) {
     if (def.re.test(t)) return def;
   }
   // Truncated WhatsApp titles / aliases
   if (/\bcore engineering\b/i.test(t) || /\bmech\b.*\bcivil\b/i.test(t)) {
-    return INTEREST_DEFS.find((d) => d.isCore) || null;
+    return CORE_TYPED_DEF;
   }
-  if (/\bnot sure\b/i.test(t) || /help me figure/i.test(t)) {
-    return INTEREST_DEFS.find((d) => d.isUndecided) || null;
+  if (/\bnot sure\b/i.test(t) || /help me figure/i.test(t) || /i'?m not sure yet/i.test(t)) {
+    return ALL_INTEREST_DEFS.find((d) => d.isUndecided) || null;
   }
   if (/\bcomputers?\b|\bsoftware\b|coding \/ software/i.test(t)) {
-    return INTEREST_DEFS.find((d) => d.label === 'computers_software') || null;
+    return ALL_INTEREST_DEFS.find((d) => d.label === 'computers_software') || null;
   }
   return null;
 }
@@ -285,7 +300,7 @@ function deriveBranch(defsHit) {
 }
 
 function finalizeInterests(ctx, profile, interests, freePatch = {}) {
-  const defsHit = INTEREST_DEFS.filter((d) => interests.includes(d.label));
+  const defsHit = ALL_INTEREST_DEFS.filter((d) => interests.includes(d.label));
   const interestCluster = deriveCluster(interests, defsHit);
   const branchInterest = deriveBranch(defsHit);
 

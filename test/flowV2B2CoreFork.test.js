@@ -165,7 +165,7 @@ describe('b2CoreFork — F1 preserves coreInterest specifically (pre-Phase-5 dat
     );
     if (f1Result.contextPatch.stage === 'b4_awaiting_reply') {
       assert.equal(f1Result.interactive.type, 'list');
-      assert.equal(f1Result.interactive.sections[0].rows.length, 9);
+      assert.equal(f1Result.interactive.sections[0].rows.length, 7);
     }
     // Full profile object, not a partial/truncated one — every schema
     // slot the entry turn had is still present after F1.

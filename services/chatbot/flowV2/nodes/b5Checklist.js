@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Flow V3 — B5 · CHECKLIST (★ NEW).
+ * Flow V3 — B5 · CHECKLIST (Company Stage 5).
  *
  * One bubble, zero taps, no college names. Sets checklistSent=true.
  * Never re-sends when checklistSent is already true (R13 return).
@@ -13,91 +13,29 @@ const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingF
 const { withMergedProfile } = require('../flowV2NodeUtils');
 const { handleB6PermissionEntry } = require('./b6Permission');
 
-const INTEREST_PHRASE = Object.freeze({
-  software: "so you're leaning towards software",
-  data_ai: 'so AI and data is where your head is',
-  infra_security: 'so cloud and security interests you',
-  core: "so you're coming at this from mechanical",
-  undecided: "so you're still weighing it up — completely normal at this stage",
-});
-
-const PRIORITY_LINE = Object.freeze({
-  placements:
-    'Since placements matter most to you: ask for the median package and the percentage placed, not the highest package. One student with a ₹40L offer can carry a whole brochure.',
-  placement:
-    'Since placements matter most to you: ask for the median package and the percentage placed, not the highest package. One student with a ₹40L offer can carry a whole brochure.',
-  internships:
-    'Since internships matter most to you: ask which companies took interns last year, by name, and how many converted to jobs.',
-  internship:
-    'Since internships matter most to you: ask which companies took interns last year, by name, and how many converted to jobs.',
-  curriculum:
-    'Since curriculum matters most to you: ask to see the actual syllabus PDF for year 1. If it takes more than a day to produce, that tells you something.',
-  faculty:
-    'Since faculty matter most to you: ask how many are PhD-holders versus industry-experienced. You want both, in different subjects.',
-  campus:
-    'Since campus life matters most to you: ask to visit on a normal working day, not an open day. Ask a second-year student, not a guide.',
-  fees:
-    'Since fees matter most to you: ask for the full four-year cost — tuition, hostel, exam fees, everything — and get the scholarship criteria in writing before you pay a deposit.',
-  affordable:
-    'Since fees matter most to you: ask for the full four-year cost — tuition, hostel, exam fees, everything — and get the scholarship criteria in writing before you pay a deposit.',
-  location:
-    'Since staying close to home matters most to you: check the actual commute at 8am on a weekday, not on Google Maps at midnight.',
-  higher_studies:
-    "Since you're thinking MS or MBA later: ask what percentage of their grads go on to postgrad, and whether faculty write recommendation letters that carry weight.",
-  startup:
-    "Since you want to build something: ask whether there's an incubator you can actually access as an undergrad, and how many student companies came out of it last year.",
-  entrepreneurship:
-    "Since you want to build something: ask whether there's an incubator you can actually access as an undergrad, and how many student companies came out of it last year.",
-});
-
-function resolveInterestPhrase(profile) {
-  const cluster = profile?.interestCluster || 'undecided';
-  if (INTEREST_PHRASE[cluster]) return INTEREST_PHRASE[cluster];
-  const branch = String(profile?.branchInterest || '').toLowerCase();
-  if (branch.includes('cse') || branch.includes('software') || branch === 'cse_ai' || branch === 'it') {
-    return INTEREST_PHRASE.software;
-  }
-  if (branch.includes('data') || branch.includes('ai')) return INTEREST_PHRASE.data_ai;
-  if (['mechanical', 'civil', 'ece', 'eee', 'core'].includes(branch)) return INTEREST_PHRASE.core;
-  return INTEREST_PHRASE.undecided;
+/** Company Stage 5 — fixed checklist (no personalized preamble). */
+function buildChecklistBody(_profile) {
+  return [
+    'Got it 👍',
+    "Based on what you shared, here's something many students miss before joining a college.",
+    'Before saying YES to any college, make sure you check these:',
+    '✅ Is the curriculum updated?',
+    '✅ Do students get real internships?',
+    '✅ Do they teach coding from the 1st year?',
+    '✅ Are industry skills part of learning?',
+    '✅ How good are the placements?',
+    '✅ Is the faculty experienced?',
+    '✅ Does the college have a strong alumni network?',
+    'These small things can make a big difference in your career.',
+  ].join('\n');
 }
 
-function resolvePriorityLine(profile) {
-  const priorities = Array.isArray(profile?.goalPriority) ? profile.goalPriority : [];
-  const first = String(priorities[0] || '').toLowerCase().replace(/\s+/g, '_');
-  return PRIORITY_LINE[first] || PRIORITY_LINE[priorities[0]] || '';
+function resolveInterestPhrase() {
+  return '';
 }
 
-function resolvePriorityPhrase(profile) {
-  const priorities = Array.isArray(profile?.goalPriority) ? profile.goalPriority : [];
-  if (!priorities.length) return 'finding a solid fit';
-  return String(priorities[0]).replace(/_/g, ' ');
-}
-
-function buildChecklistBody(profile) {
-  const interestPhrase = resolveInterestPhrase(profile);
-  const priorityPhrase = resolvePriorityPhrase(profile);
-  const priorityLine = resolvePriorityLine(profile);
-  const lines = [
-    `Got it — ${interestPhrase}, and ${priorityPhrase} is what matters most.`,
-    '',
-    "Before I get to any college names, here's the part most students skip.",
-    '',
-    "Whatever college you're looking at — ours, someone else's, or one your relatives recommend — check these seven before you say yes:",
-    '',
-    '✅ When was the curriculum last updated?',
-    '✅ Do students get real internships, or just certificates?',
-    '✅ Does coding start in year 1, or year 3?',
-    '✅ Are industry tools part of the syllabus, or extra classes you pay for?',
-    '✅ What percentage got placed — and at what median salary, not the highest one?',
-    '✅ How many faculty have actually worked in the industry?',
-    '✅ Is there an alumni network you can reach today?',
-  ];
-  if (priorityLine) {
-    lines.push('', priorityLine);
-  }
-  lines.push('', "Ask these at every campus visit. They'll tell you more than any brochure.");
-  return lines.join('\n');
+function resolvePriorityLine() {
+  return '';
 }
 
 function handleB5ChecklistEntry(ctx) {

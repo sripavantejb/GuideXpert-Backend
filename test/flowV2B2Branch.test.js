@@ -58,15 +58,16 @@ describe('b2Branch — WhatsApp list shape', () => {
 });
 
 describe('b2Branch — handleB2Entry', () => {
-  test('asks the V3 interest list (10 rows) when interests/branch empty', () => {
+  test('asks the V3 interest list (9 company rows) when interests/branch empty', () => {
     const result = handleB2Entry(ctxWithProfile());
     assert.equal(result.interactive.type, 'list');
-    assert.equal(result.interactive.sections[0].rows.length, 10);
+    assert.equal(result.interactive.sections[0].rows.length, 9);
     assert.equal(result.interactive.sections[0].title, 'Interests');
-    assert.equal(B2_ROWS.length, 10);
+    assert.equal(B2_ROWS.length, 9);
     assert.equal(result.contextPatch.stage, 'b2_awaiting_reply');
-    assert.match(result.interactive.body, /actually interest you/i);
+    assert.match(result.interactive.body, /topics excite you/i);
     assert.ok(!result.interactive.sections[0].rows.some((r) => r.id === DONE_ROW.id));
+    assert.ok(!result.interactive.sections[0].rows.some((r) => /core engineering/i.test(r.title)));
   });
 
   test('REGRESSION (Phase 4 propagation bug): the "ask B2 question" branch still carries forward a profile mutated by an upstream caller (B1\'s chain), not just an unmutated pass-through', () => {
@@ -105,7 +106,7 @@ describe('b2Branch — handleB2Entry', () => {
 
 describe('b2Branch — handleB2Reply (V3 multi-select)', () => {
   test('first tap stays collecting and offers I\'m done; Done advances to B4', () => {
-    const mid = handleB2Reply(ctxWithProfile(), 'Computers & software');
+    const mid = handleB2Reply(ctxWithProfile(), 'Computers');
     assert.equal(mid.contextPatch.stage, 'b2_awaiting_reply');
     assert.ok(mid.contextPatch.profile.interests.includes('computers_software'));
     assert.match(mid.interactive.body, /Noted|done/i);
@@ -122,7 +123,7 @@ describe('b2Branch — handleB2Reply (V3 multi-select)', () => {
   });
 
   test('two picks then Done keeps both interests', () => {
-    let mid = handleB2Reply(ctxWithProfile(), 'Computers & software');
+    let mid = handleB2Reply(ctxWithProfile(), 'Computers');
     mid = handleB2Reply(
       { flowV2: { profile: mid.contextPatch.profile, stage: 'b2_awaiting_reply' } },
       'Artificial Intelligence'
@@ -141,7 +142,7 @@ describe('b2Branch — handleB2Reply (V3 multi-select)', () => {
 
   test('fourth pick auto-advances without another loop', () => {
     let profile = emptyFlowV2Profile();
-    for (const title of ['Computers & software', 'Data Science', 'Cloud Computing']) {
+    for (const title of ['Computers', 'Data Science', 'Cloud Computing']) {
       const mid = handleB2Reply({ flowV2: { profile, stage: 'b2_awaiting_reply' } }, title);
       profile = mid.contextPatch.profile;
       assert.equal(mid.contextPatch.stage, 'b2_awaiting_reply');

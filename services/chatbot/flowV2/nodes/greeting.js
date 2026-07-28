@@ -44,16 +44,17 @@ function findQualificationRow(text) {
 }
 const QUALIFICATION_LIST_SECTION_TITLE = 'Your stage';
 const QUALIFICATION_LIST_BUTTON_TEXT = 'Choose your stage';
-/** Qualification prompt line — never asks for name on entry. */
-const NEUTRAL_QUALIFICATION_LINE = 'First — where are you right now?';
+/** Qualification prompt line — never asks for name on entry. Company Stage 1. */
+const NEUTRAL_QUALIFICATION_LINE = 'First, can I know your current qualifications?';
 const NAME_REASK = "Sorry, didn't catch that 😊 What should I call you?";
 
 function buildNodeEOpenBody(firstName) {
-  const hello = firstName ? `Hey ${firstName}! 👋` : 'Hi! 👋';
+  // Company Stage 1 welcome — named greeting only when CRM/profile has a name.
+  const hello = firstName ? `👋 Hi ${firstName}! Welcome to GuideXpert.` : '👋 Hi! Welcome to GuideXpert.';
   return (
-    `${hello}\n\n` +
-    "I'm Rithika, from GuideXpert's counselling desk. We help students find a college that actually fits them — not just the ones with the biggest ads.\n\n" +
-    "Takes about 2 minutes, and it's free.\n\n" +
+    `${hello}\n` +
+    "I'm Rithika from the GuideXpert counselling team. 😊\n" +
+    'We help students choose a college that truly fits their goals, interests, and future.Not just the ones with the biggest ads.\n\n' +
     NEUTRAL_QUALIFICATION_LINE
   );
 }

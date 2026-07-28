@@ -72,9 +72,10 @@ module.exports = Object.freeze({
       'Node 0 / book path shows live GuidanceSlot options in chat, then hands off to the official website URL. WhatsApp never creates OneOnOneCounselingLead or increments slot bookings.',
   }),
   SENIOR_COUNSELLOR_CREDENTIAL: Object.freeze({
-    openItem: '◆ CRED / B10-a',
+    openItem: '◆ CRED / B10-a — Option 3 company happy-path override',
     defaultApplied: true,
-    meaning: 'Copy uses "senior counsellor"; IITian clause only if roster guarantees it (locked empty).',
+    meaning:
+      'Happy-path B10 copy uses "IITian" per company Stage 10 script (overrides prior senior-counsellor lock). Follow-up chase remains not the company 30m/1h/3h cadence.',
   }),
   EDITORIAL_SHORTLIST_DISCLOSURE: Object.freeze({
     openItem: '◆ PAID / B8-b',

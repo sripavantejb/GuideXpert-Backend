@@ -187,7 +187,7 @@ describe('flowV2 Node 0 override — general invariant: no beat\u2019s button/ro
    * Any OTHER colliding title anywhere in Stages 1–8 still fails this test.
    */
   const KNOWN_MITIGATED_COLLISION_TITLES = new Set([
-    'Book my session',
+    'Book My Session',
     'Connect me',
     'Book a session',
     'Book the session',

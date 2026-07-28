@@ -280,8 +280,9 @@ async function runStageFallthrough(ctx, stage, text) {
     return await handleEntrySideTrackReply(ctx, text);
   }
   // V3 spine — B2 GOAL → B3 INTEREST (b2_*) → B3.2 core → B4 PRIORITY (b1_/b4_) →
-  // B5 checklist → B6 permission → B6.5 constraints (b3_*/b65_*) → B7 two models →
-  // B8 flat shortlist → B9 FIT → B10 book (b7_* / b10_*).
+  // B5 checklist → B6 permission → B7 two models (B6.5 skipped on company happy path;
+  // legacy b3_*/b65_* still drained if parked) → B8 medal shortlist → B9 FIT →
+  // B10 book (b7_* / b10_*).
   if (stage === 'greeting_captured_pending_b1') return await handleB2GoalEntry(ctx);
   if (stage === 'b2_awaiting_entry') return await handleB2GoalEntry(ctx);
   if (stage === 'b2_goal_awaiting_reply') return await handleB2GoalReply(ctx, text);

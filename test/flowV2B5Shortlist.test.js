@@ -116,23 +116,23 @@ describe('b5Shortlist — computeTiers (real reuse of scoreEligibleColleges/tier
   });
 });
 
-describe('b5Shortlist — handleB5Entry (V3 B8 flat shortlist)', () => {
-  test('produces FIT ask with 5-flat shortlist (no Best Match tiers)', () => {
+describe('b5Shortlist — handleB5Entry (V3 B8 medal shortlist)', () => {
+  test('produces FIT ask with 3-medal shortlist (no Best Match tiers)', () => {
     const result = handleB5Entry(ctxWithProfile(STANDARD_PROFILE_PATCH));
     assert.equal(result.interactive.type, 'button');
     assert.ok(
-      result.interactive.buttons.some((b) => /narrow/i.test(b.title)),
+      result.interactive.buttons.some((b) => /help me|explore/i.test(b.title)),
       'expected B9 FIT buttons'
     );
     const visible = [...(result.replyParts || []), result.replyText, result.interactive?.body]
       .filter(Boolean)
       .join('\n');
     assert.doesNotMatch(visible, /\*Best Match\*/i);
-    assert.match(visible, /GuideXpert works with/i);
-    assert.match(visible, /these five are worth looking at/i);
+    assert.match(visible, /worth exploring|Newton School|🥇/i);
+    assert.doesNotMatch(visible, /\bPlaksha\b|\bKalvium\b/i);
     assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
     assert.ok(Array.isArray(result.contextPatch.profile.shortlist));
-    assert.equal(result.contextPatch.profile.shortlist.length, 5);
+    assert.equal(result.contextPatch.profile.shortlist.length, 3);
   });
 
   test('REGRESSION (Phase 4/5 propagation-bug shape): contextPatch always carries the profile forward', () => {
@@ -231,7 +231,7 @@ describe('b5Shortlist — handleB5Reply (V3 B8/B9)', () => {
     assert.match(result.replyText || '', /stack up/i);
   });
 
-  test('"Yes, narrow it down" delivers NIAT counsellor pitch then advances toward B10', () => {
+  test('"Yes, help me" delivers NIAT soft nudge then advances toward B10', () => {
     const seeded = handleB5Entry(ctxWithProfile(STANDARD_PROFILE_PATCH));
     const result = handleB5Reply(
       {
@@ -240,7 +240,7 @@ describe('b5Shortlist — handleB5Reply (V3 B8/B9)', () => {
           profile: seeded.contextPatch.profile,
         },
       },
-      'Yes, narrow it down'
+      'Yes, help me'
     );
     assert.ok(
       result.contextPatch.stage === 'b10_awaiting_entry' ||
@@ -251,8 +251,8 @@ describe('b5Shortlist — handleB5Reply (V3 B8/B9)', () => {
     const visible = [...(result.replyParts || []), result.replyText, result.interactive?.body]
       .filter(Boolean)
       .join('\n');
-    assert.match(visible, /\*NIAT\*/i);
-    assert.match(visible, /Curriculum|Internships|Industry ties|Environment/i);
+    assert.match(visible, /\bNIAT\b/i);
+    assert.match(visible, /AI & Tech skills|Practical learning|Industry projects/i);
   });
 
   test('wider catalog ask returns partner list without Best Match tiers', () => {
@@ -368,7 +368,7 @@ describe('B5 — end-to-end through the full dispatcher', () => {
     assert.doesNotMatch(visible, /\*Best Match\*/i);
 
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
-    result = await processFlowV2Turn(ctx, 'Yes, narrow it down');
+    result = await processFlowV2Turn(ctx, 'Yes, help me');
     assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
     assert.ok(result.interactive || (result.replyParts && result.replyParts.length));
   });

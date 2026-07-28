@@ -95,7 +95,7 @@ describe('b6TheCase — handleB6Entry (V3 delegates to B9 FIT)', () => {
     const result = handleB6Entry({ flowV2: { profile: profileWithShortlist() } });
     assert.equal(result.interactive?.type, 'button');
     assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
-    assert.match(result.interactive.body, /narrow it down/i);
+    assert.match(result.interactive.body, /best fit|help you find|narrow it down/i);
   });
 
   test('no hesitation question exists anywhere in the output', () => {
@@ -146,7 +146,7 @@ describe('B8/B9 — full chained transition through the dispatcher', () => {
     assert.doesNotMatch(visible, /\*Best Match\*/i);
 
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
-    result = await processFlowV2Turn(ctx, 'Yes, narrow it down');
+    result = await processFlowV2Turn(ctx, 'Yes, help me');
     assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
     assert.equal(result.contextPatch.profile.fitCollege, 'niat');
     assert.equal(result.contextPatch.profile.qualification, 'Class 12 (MPC)');
@@ -154,7 +154,7 @@ describe('B8/B9 — full chained transition through the dispatcher', () => {
     const afterYes = [...(result.replyParts || []), result.replyText, result.interactive?.body]
       .filter(Boolean)
       .join('\n');
-    assert.match(afterYes, /\*NIAT\*/i);
+    assert.match(afterYes, /\bNIAT\b/i);
   });
 
   test('compare-on-tap stays on FIT then yes advances to booking', async () => {
@@ -175,7 +175,7 @@ describe('B8/B9 — full chained transition through the dispatcher', () => {
     assert.match(result.replyText || '', /stack up/i);
 
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
-    result = await processFlowV2Turn(ctx, 'Yes, narrow it down');
+    result = await processFlowV2Turn(ctx, 'Yes, help me');
     assert.equal(result.contextPatch.stage, 'b7_awaiting_reply');
   });
 });
