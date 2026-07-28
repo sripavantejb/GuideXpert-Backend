@@ -18,7 +18,10 @@ describe('Flow v2 Part 13 data layer — extraction at every inbound boundary', 
     assert.equal(profile.branchInterest, 'CSE');
     assert.equal(profile.budgetBand, '2_4l');
     assert.equal(profile.cityPref, 'Hyderabad');
-    assert.equal(result.contextPatch.stage, 'greeting_captured_pending_b1');
+    assert.equal(profile.temperature, 'hot');
+    assert.equal(result.contextPatch.stage, 'b1_awaiting_reply');
+    assert.match(result.interactive.body, /what matters most/i);
+    assert.equal((result.replyParts || []).filter((part) => /12th MPC, CSE, around ₹3L, Hyderabad/.test(part)).length, 1);
   });
 
   test('R3 paste gate: B2 and both B3 questions skip without re-asking any volunteered fact', async () => {
@@ -27,32 +30,26 @@ describe('Flow v2 Part 13 data layer — extraction at every inbound boundary', 
       'im in 12th mpc, want cse, budget around 3 lakhs, hyderabad only'
     );
 
-    const b1Entry = await processFlowV2Turn(
-      { flowV2: { stage: captured.contextPatch.stage, profile: captured.contextPatch.profile } },
-      'ok'
-    );
-    assert.match(b1Entry.interactive.body, /what matters most/i);
-    assert.doesNotMatch(b1Entry.interactive.body, /branch|budget|comfortable|moving/i);
-
     const b1Reply = await processFlowV2Turn(
-      { flowV2: { stage: b1Entry.contextPatch.stage, profile: b1Entry.contextPatch.profile } },
+      {
+        flowV2: {
+          stage: captured.contextPatch.stage,
+          profile: captured.contextPatch.profile,
+          r3OverAnswerPending: captured.contextPatch.r3OverAnswerPending,
+        },
+      },
       'Strong placements'
     );
-    assert.equal(b1Reply.contextPatch.stage, 'b3_awaiting_entry');
-
-    const afterB3Skip = await processFlowV2Turn(
-      { flowV2: { stage: b1Reply.contextPatch.stage, profile: b1Reply.contextPatch.profile } },
-      'continue'
-    );
-    assert.equal(afterB3Skip.contextPatch.stage, 'b5_awaiting_entry');
+    assert.equal(b1Reply.contextPatch.stage, 'b5_awaiting_entry');
     const allVisibleText = [
-      afterB3Skip.replyText,
-      ...(afterB3Skip.replyParts || []),
-      afterB3Skip.interactive && afterB3Skip.interactive.body,
+      b1Reply.replyText,
+      ...(b1Reply.replyParts || []),
+      b1Reply.interactive && b1Reply.interactive.body,
     ]
       .filter(Boolean)
       .join('\n');
     assert.doesNotMatch(allVisibleText, /which field|comfortable for your family|near home|open to moving/i);
+    assert.doesNotMatch(allVisibleText, /12th MPC, CSE, around ₹3L, Hyderabad/i);
   });
 
   test('facts survive a leaf-router interception because extraction precedes classification', async () => {

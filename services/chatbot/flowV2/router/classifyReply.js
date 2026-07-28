@@ -128,14 +128,16 @@ const R5_ASKS_ABOUT_US_PATTERNS = Object.freeze([
  * group/context word that would let extractFlowV2Slots resolve confidently. */
 const R10_BARE_INTER_PATTERN = /\binter\b/i;
 const R10_BARE_YEAR_PATTERN = /\b(1st|first|2nd|second)\s*year\b/i;
+const R10_PASSED_OUT_PATTERN = /\bpassed out\b/i;
+const R10_12TH_PASS_PATTERN = /^\s*(?:12th|class\s*12)\s+pass(?:ed)?\s*$/i;
 const R10_PCM_PATTERN = /\bpcm\b/i;
 const R10_PCB_PATTERN = /\bpcb\b/i;
 
 /** Known qualification-adjacent terms for the generic typo-guess sub-case. */
 const R10_KNOWN_TERMS = Object.freeze([
   { term: 'diploma', guess: 'Diploma' },
-  { term: 'graduation', guess: 'Graduation' },
-  { term: 'dropper', guess: 'Dropper / gap year' },
+  { term: 'graduation', guess: 'Degree' },
+  { term: 'dropper', guess: 'Drop Year' },
 ]);
 
 /** R4 — jumps ahead. Sub-case patterns, checked in this order. */
@@ -249,7 +251,13 @@ function classifyReply(text, profile = {}, ctx = {}) {
   }
 
   // R10 — ambiguous (recognized-but-incomplete).
-  const hasGroupKeyword = /\bmpc\b|\bmec\b|\bbipc\b|\bcec\b|\bhec\b/.test(t);
+  const hasGroupKeyword = /\b(?:mpc|pcm|mec|cec|commerce|bipc|pcb|hec|arts)\b/.test(t);
+  if (R10_PASSED_OUT_PATTERN.test(t)) {
+    return { bucket: BUCKETS.R10, confidence: 0.6, extractedSlots: {}, subCase: 'passed_out' };
+  }
+  if (R10_12TH_PASS_PATTERN.test(t)) {
+    return { bucket: BUCKETS.R10, confidence: 0.65, extractedSlots: {}, subCase: 'bare_12th_pass' };
+  }
   if (R10_BARE_INTER_PATTERN.test(t) && !hasGroupKeyword) {
     return { bucket: BUCKETS.R10, confidence: 0.6, extractedSlots: {}, subCase: 'bare_inter' };
   }
@@ -271,13 +279,21 @@ function classifyReply(text, profile = {}, ctx = {}) {
     }
   }
 
-  // R4 — jumps ahead.
+  // R3 — over-answers (3+ extractable slots in one message). The Master
+  // Flow's canonical R3 paste contains the word "budget", which also
+  // resembles R4-C. Treat a genuinely multi-fact answer as R3 unless it is
+  // rank-led (R4-P owns rank/exam jumps and must keep its earlier route).
   const r4SubCase = classifyR4SubCase(t);
+  if (Object.keys(extractedSlots).length >= 3 && r4SubCase !== 'rank') {
+    return { bucket: BUCKETS.R3, confidence: 0.8, extractedSlots, subCase: null };
+  }
+
+  // R4 — jumps ahead.
   if (r4SubCase) {
     return { bucket: BUCKETS.R4, confidence: 0.75, extractedSlots, subCase: r4SubCase };
   }
 
-  // R3 — over-answers (3+ extractable slots in one message).
+  // R3 — over-answers without an R4-shaped keyword.
   if (Object.keys(extractedSlots).length >= 3) {
     return { bucket: BUCKETS.R3, confidence: 0.8, extractedSlots, subCase: null };
   }

@@ -12,13 +12,9 @@
  * avoids a double-ask bug where the profile has the value but the stage
  * still expects a qualification answer.
  *
- * bare_inter/bare_year are multi-step clarifying questions. TODO(Phase 4):
- * once B1 exists and stage-transition ownership outside Greeting is
- * clear, complete the year+stream combination into a single resolved
- * qualification value via `pendingAmbiguousResolution`. This phase only
- * asks the first clarifying question and records the scratch state —
- * the follow-up tap currently falls through as R1 (unchanged fallthrough,
- * per spec) rather than being fully resolved here.
+ * bare_inter/bare_year are multi-step clarifying questions. They record
+ * `pendingAmbiguousResolution`; Node E deterministically consumes the
+ * follow-up and routes the resulting canonical qualification.
  *
  * "SILENT" save (PCM/PCB, per spec guard rail) means: no interactive
  * Yes/No confirmation prompt is shown — NOT that zero reply is sent.
@@ -41,6 +37,13 @@ const BARE_YEAR_BUTTONS = Object.freeze([
   Object.freeze({ id: 'flowv2_r10_year_inter', title: 'Inter / 12th' }),
   Object.freeze({ id: 'flowv2_r10_year_diploma', title: 'Diploma' }),
   Object.freeze({ id: 'flowv2_r10_year_btech', title: 'B.Tech' }),
+]);
+
+const PASSED_OUT_TEXT = 'Passed out of 12th, or of a diploma?';
+const PASSED_OUT_BUTTONS = Object.freeze([
+  Object.freeze({ id: 'flowv2_r10_passed_12th', title: '12th' }),
+  Object.freeze({ id: 'flowv2_r10_passed_diploma', title: 'Diploma' }),
+  Object.freeze({ id: 'flowv2_r10_passed_degree', title: 'Degree' }),
 ]);
 
 const PCM_QUALIFICATION = '12th Completed (PCM)';
@@ -67,32 +70,52 @@ function handleR10(ctx, text, classification = {}) {
   const { subCase, guess } = classification;
 
   if (subCase === 'pcm') {
-    return acceptQualification(ctx, PCM_QUALIFICATION);
+    return acceptQualification(ctx, PCM_QUALIFICATION, { temperature: 'warm' });
   }
   if (subCase === 'pcb') {
-    return acceptQualification(ctx, PCB_QUALIFICATION);
+    return acceptQualification(ctx, PCB_QUALIFICATION, { temperature: 'warm' });
   }
 
   if (subCase === 'bare_inter') {
     return buttonShape(BARE_INTER_TEXT, BARE_INTER_BUTTONS, {
+      stage: ctx?.flowV2?.stage || 'greeting_awaiting_qualification',
       pendingAmbiguousResolution: { slot: 'qualification', partial: 'inter' },
     });
   }
 
   if (subCase === 'bare_year') {
     return buttonShape(BARE_YEAR_TEXT, BARE_YEAR_BUTTONS, {
+      stage: ctx?.flowV2?.stage || 'greeting_awaiting_qualification',
       pendingAmbiguousResolution: { slot: 'qualification', partial: '2nd_year' },
     });
   }
 
+  if (subCase === 'passed_out') {
+    return buttonShape(PASSED_OUT_TEXT, PASSED_OUT_BUTTONS, {
+      stage: ctx?.flowV2?.stage || 'greeting_awaiting_qualification',
+      pendingAmbiguousResolution: { slot: 'qualification', partial: 'passed_out' },
+    });
+  }
+
+  if (subCase === 'bare_12th_pass') {
+    return buttonShape('Got it — which stream?', [
+      Object.freeze({ id: 'flowv2_r10_stream_pcm', title: 'MPC / PCM' }),
+      Object.freeze({ id: 'flowv2_r10_stream_pcb', title: 'BiPC / PCB' }),
+      Object.freeze({ id: 'flowv2_r10_stream_commerce', title: 'MEC / CEC' }),
+    ], {
+      stage: ctx?.flowV2?.stage || 'greeting_awaiting_qualification',
+      pendingAmbiguousResolution: { slot: 'qualification', partial: 'inter_stream' },
+    });
+  }
+
   if (subCase === 'typo_guess' && guess) {
-    // Rides on Greeting's OWN pendingQualificationGuess mechanism (same
-    // field name, not a new one) — when stage is 'greeting_awaiting_reply'
-    // and the student replies "yes", handleGreetingReply already checks
-    // this field and calls acceptQualification itself. No change to
-    // greeting.js's reply-handling logic needed.
+    // Rides on Node E's pendingQualificationGuess mechanism (same field
+    // name, not a second scratch state). The stage is preserved so the
+    // following Yes/No turn cannot accidentally restart Greeting.
     return buttonShape(`${guess}, right?`, [GUESS_CONFIRM_YES, GUESS_CONFIRM_NO], {
+      stage: ctx?.flowV2?.stage || 'greeting_awaiting_qualification',
       pendingQualificationGuess: guess,
+      pendingAmbiguousResolution: null,
     });
   }
 
@@ -114,6 +137,8 @@ module.exports = {
   BARE_INTER_BUTTONS,
   BARE_YEAR_TEXT,
   BARE_YEAR_BUTTONS,
+  PASSED_OUT_TEXT,
+  PASSED_OUT_BUTTONS,
   PCM_QUALIFICATION,
   PCB_QUALIFICATION,
 };

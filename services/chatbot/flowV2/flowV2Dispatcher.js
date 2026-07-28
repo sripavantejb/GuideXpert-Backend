@@ -101,6 +101,7 @@ const { classifyReply } = require('./router/classifyReply');
 const { isTier2Crisis } = require('./router/crisisClassifier');
 const { extractFlowV2Slots } = require('./flowV2SlotExtractor');
 const { mergeFlowV2Profile } = require('./flowV2ProfileMerge');
+const { combineNodeResults, withMergedProfile } = require('./flowV2NodeUtils');
 const {
   detectNonDistressInterrupt,
   startNonDistressInterrupt,
@@ -363,6 +364,45 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
     stage === 'greeting_awaiting_reply' ||
     (typeof stage === 'string' && stage.startsWith('entry_'));
   if (isEntryStage) {
+    const isQualificationStage =
+      stage === 'greeting_awaiting_qualification' || stage === 'greeting_awaiting_reply';
+    if (isQualificationStage) {
+      // A pending R10 confirmation/clarification is a deterministic Node E
+      // state, so resolve it before attempting a fresh classification.
+      if (
+        turnCtx.flowV2.pendingQualificationGuess ||
+        turnCtx.flowV2.pendingAmbiguousResolution
+      ) {
+        return await handleGreetingReply(turnCtx, text);
+      }
+
+      // Stage 5 reconciliation: Node E still owns qualification routing,
+      // but its inbound is classified so typed rows (R2), multi-fact
+      // answers (R3), and ambiguous answers (R10) receive their documented
+      // behavior without moving Node E below ordinary interrupts.
+      const entryClassification = classifyReply(text, extractedProfile, {
+        stage,
+        messageType: meta.messageType || 'text',
+        pendingQualificationGuess: null,
+      });
+      if (entryClassification.bucket === 'R10') {
+        return withDoorHistory(
+          handleR10(turnCtx, text, entryClassification),
+          turnCtx,
+          entryClassification.bucket,
+          stage
+        );
+      }
+      return withDoorHistory(
+        handleGreetingReply(turnCtx, text, {
+          classification: entryClassification,
+          messageType: meta.messageType || 'text',
+        }),
+        turnCtx,
+        entryClassification.bucket,
+        stage
+      );
+    }
     return await runStageFallthrough(turnCtx, stage, text);
   }
 
@@ -437,7 +477,25 @@ async function processFlowV2Turn(ctx, inboundMessage, meta = {}) {
   // R1-R4 (taps / types / over-answers / jumps ahead): destinations don't
   // exist yet (B1-B7 not built) — classify + record only, then fall
   // through to whatever stage handler already exists, UNCHANGED.
-  const fallthrough = await runStageFallthrough(turnCtx, stage, text);
+  let fallthrough = await runStageFallthrough(turnCtx, stage, text);
+  if (
+    stage === 'b1_awaiting_reply' &&
+    turnCtx.flowV2.r3OverAnswerPending === true &&
+    fallthrough.contextPatch?.stage === 'b3_awaiting_entry'
+  ) {
+    const prefix = [
+      ...(fallthrough.replyText ? [fallthrough.replyText] : []),
+      ...(fallthrough.replyParts || []),
+    ];
+    const skippedB3 = handleB3Entry(
+      withMergedProfile(turnCtx, fallthrough.contextPatch.profile)
+    );
+    fallthrough = combineNodeResults(prefix, skippedB3);
+    fallthrough.contextPatch = {
+      ...fallthrough.contextPatch,
+      r3OverAnswerPending: null,
+    };
+  }
   return withDoorHistory(fallthrough, turnCtx, bucket, stage);
 }
 

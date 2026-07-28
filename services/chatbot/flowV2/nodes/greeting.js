@@ -16,6 +16,9 @@ const { extractFlowV2Slots, extractName } = require('../flowV2SlotExtractor');
 const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
 const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingFlowV2Profile');
 const { handleR11, OUT_OF_SCOPE_BUTTONS } = require('../router/handlers/r11Handler');
+const { combineNodeResults, withMergedProfile } = require('../flowV2NodeUtils');
+const { handleB1Entry } = require('./b1Goal');
+const { handleB3Entry } = require('./b3Constraints');
 
 const QUALIFICATION_ROWS = Object.freeze([
   Object.freeze({ id: 'flowv2_qual_10_completed', title: '10th Completed' }),
@@ -237,13 +240,20 @@ function acceptQualification(ctx, qualification, extraPatch = {}) {
     stream: streamByQualification[qualification],
   });
   const result = qualificationRoute(mergedProfile, qualification);
-  return { ...result, contextPatch: { ...result.contextPatch, pendingQualificationGuess: null } };
+  return {
+    ...result,
+    contextPatch: {
+      ...result.contextPatch,
+      pendingQualificationGuess: null,
+      pendingAmbiguousResolution: null,
+    },
+  };
 }
 
-function qualificationPrompt(profile, body = NEUTRAL_QUALIFICATION_LINE) {
+function qualificationPrompt(profile, body = NEUTRAL_QUALIFICATION_LINE, extraContext = {}) {
   return resultWithProfile(profile, 'greeting_awaiting_qualification', {
     interactive: buildQualificationListInteractive(body),
-    extraContext: { nameAttempts: null },
+    extraContext: { nameAttempts: null, ...extraContext },
   });
 }
 
@@ -267,15 +277,116 @@ function handleNameReply(ctx, text) {
   return qualificationPrompt(profile);
 }
 
+const STREAM_CONFIRM_BUTTONS = Object.freeze([
+  button('flowv2_r10_stream_pcm', 'MPC / PCM'),
+  button('flowv2_r10_stream_pcb', 'BiPC / PCB'),
+  button('flowv2_r10_stream_commerce', 'MEC / CEC'),
+]);
+
+function streamPrompt(profile) {
+  return resultWithProfile(profile, 'greeting_awaiting_qualification', {
+    interactive: interactiveButtons('Got it — which stream?', STREAM_CONFIRM_BUTTONS),
+    extraContext: {
+      pendingQualificationGuess: null,
+      pendingAmbiguousResolution: { slot: 'qualification', partial: 'inter_stream' },
+    },
+  });
+}
+
+function resolvePendingAmbiguity(ctx, text) {
+  const pending = ctx?.flowV2?.pendingAmbiguousResolution;
+  if (!pending || pending.slot !== 'qualification') return null;
+  const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
+  const t = String(text || '').toLowerCase();
+
+  if (pending.partial === 'inter_stream') {
+    if (/\b(mpc|pcm)\b/.test(t)) return acceptQualification(ctx, '12th Completed (PCM)', { temperature: 'warm' });
+    if (/\b(bipc|pcb)\b/.test(t)) return acceptQualification(ctx, '12th Completed (PCB)', { temperature: 'warm' });
+    if (/\b(mec|cec)\b/.test(t)) return acceptQualification(ctx, '12th Completed (Commerce)', { temperature: 'warm' });
+  }
+  if (pending.partial === 'inter') {
+    if (/\b(1st|first)\b/.test(t)) {
+      return acceptQualification(ctx, '11th Studying', { temperature: 'warm' });
+    }
+    if (/\b(2nd|second|finished|completed)\b/.test(t)) return streamPrompt(profile);
+  }
+  if (pending.partial === '2nd_year') {
+    if (/\bdiploma\b/.test(t)) return acceptQualification(ctx, 'Diploma', { temperature: 'warm' });
+    if (/\b(b\.?\s*tech|degree)\b/.test(t)) return acceptQualification(ctx, 'Degree', { temperature: 'warm' });
+    if (/\b(inter|12th)\b/.test(t)) return streamPrompt(profile);
+  }
+  if (pending.partial === 'passed_out') {
+    if (/^\s*12th\s*$|\binter\b/i.test(text)) return streamPrompt(profile);
+    if (/\bdiploma\b/.test(t)) return acceptQualification(ctx, 'Diploma', { temperature: 'warm' });
+    if (/\bdegree\b/.test(t)) return acceptQualification(ctx, 'Degree', { temperature: 'warm' });
+  }
+
+  return qualificationPrompt(profile, NEUTRAL_QUALIFICATION_LINE, {
+    pendingQualificationGuess: null,
+    pendingAmbiguousResolution: null,
+  });
+}
+
+function resolvePendingGuess(ctx, text) {
+  const guess = ctx?.flowV2?.pendingQualificationGuess;
+  if (!guess) return null;
+  const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
+  const t = String(text || '').trim().toLowerCase();
+  const yes = t === 'yes' || t === "yes, that's right" || t === 'flowv2_guess_confirm_yes';
+  const no = t === 'no' || t === 'no, let me pick' || t === 'flowv2_guess_confirm_no';
+
+  if (yes) return acceptQualification(ctx, guess, { temperature: 'warm' });
+  if (no) {
+    return qualificationPrompt(profile, NEUTRAL_QUALIFICATION_LINE, {
+      pendingQualificationGuess: null,
+      pendingAmbiguousResolution: null,
+    });
+  }
+
+  const exactRow = QUALIFICATION_ROWS.find((row) => row.title.toLowerCase() === t);
+  const corrected = exactRow?.title || extractFlowV2Slots(text, profile).qualification;
+  if (corrected) return acceptQualification(ctx, corrected, { temperature: 'warm' });
+  return qualificationPrompt(profile, NEUTRAL_QUALIFICATION_LINE, {
+    pendingQualificationGuess: null,
+    pendingAmbiguousResolution: null,
+  });
+}
+
+function qualificationReflection(qualification) {
+  const q = String(qualification || '');
+  if (q === '12th Completed (PCM)') return '12th MPC';
+  if (q === '12th Completed (PCB)') return '12th BiPC';
+  if (q === '12th Completed (Commerce)') return '12th MEC / CEC';
+  if (q === '12th Completed (Arts)') return '12th Arts';
+  return q;
+}
+
+function r3Reflection(text, slots) {
+  const facts = [];
+  if (slots.qualification) facts.push(qualificationReflection(slots.qualification));
+  if (slots.branchInterest) facts.push(slots.branchInterest);
+  if (slots.budgetBand) {
+    const amount = String(text || '').match(/(\d+(?:\.\d+)?)\s*(?:lakhs?|l\b)/i);
+    facts.push(amount ? `around ₹${amount[1]}L` : 'your budget');
+  }
+  if (slots.cityPref) facts.push(slots.cityPref);
+  return `That's really helpful, thanks — ${facts.join(', ')}. That's most of what I need already.`;
+}
+
 /**
  * @param {{ flowV2?: { stage?: string, profile?: object } }} ctx
  * @param {string} text
+ * @param {{ classification?: object, messageType?: string }} [options]
  * @returns {object} standard Flow v2 node return shape (see flowV2Dispatcher.js)
  */
-function handleGreetingReply(ctx, text) {
+function handleGreetingReply(ctx, text, options = {}) {
   const stage = ctx?.flowV2?.stage;
   if (stage === 'greeting_awaiting_name') return handleNameReply(ctx, text);
   const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
+  const pendingGuessResult = resolvePendingGuess(ctx, text);
+  if (pendingGuessResult) return pendingGuessResult;
+  const pendingAmbiguityResult = resolvePendingAmbiguity(ctx, text);
+  if (pendingAmbiguityResult) return pendingAmbiguityResult;
   const normalizedText = String(text || '').replace(/[—–]/g, '-');
   const exactRow = QUALIFICATION_ROWS.find(
     (row) => row.title.toLowerCase() === String(text || '').trim().toLowerCase()
@@ -285,10 +396,40 @@ function handleGreetingReply(ctx, text) {
     : extractFlowV2Slots(normalizedText, profile);
   if (patch.qualification) {
     const { qualification, ...rest } = patch;
-    return acceptQualification(ctx, qualification, rest);
+    const isR3 = options.classification?.bucket === 'R3';
+    const temperature = isR3 ? 'hot' : profile.temperature || 'warm';
+    const accepted = acceptQualification(ctx, qualification, { ...rest, temperature });
+    if (isR3) {
+      const reflection = r3Reflection(text, options.classification.extractedSlots || patch);
+      if (accepted.contextPatch.stage === 'greeting_captured_pending_b1') {
+        const b1 = handleB1Entry(withMergedProfile(ctx, accepted.contextPatch.profile));
+        if (b1.contextPatch.stage === 'b3_awaiting_entry') {
+          return combineNodeResults(
+            [reflection],
+            handleB3Entry(withMergedProfile(ctx, b1.contextPatch.profile))
+          );
+        }
+        const combined = combineNodeResults([reflection], b1);
+        const hasFullConstraintSkip =
+          Boolean(accepted.contextPatch.profile.branchInterest) &&
+          Boolean(accepted.contextPatch.profile.budgetBand) &&
+          Boolean(accepted.contextPatch.profile.cityPref);
+        return hasFullConstraintSkip
+          ? {
+              ...combined,
+              contextPatch: { ...combined.contextPatch, r3OverAnswerPending: true },
+            }
+          : combined;
+      }
+      return combineNodeResults([reflection], accepted);
+    }
+    return accepted;
   }
 
-  return qualificationPrompt(mergeFlowV2Profile(profile, patch));
+  return qualificationPrompt(mergeFlowV2Profile(profile, patch), NEUTRAL_QUALIFICATION_LINE, {
+    pendingQualificationGuess: null,
+    pendingAmbiguousResolution: null,
+  });
 }
 
 function continueToB1(profile) {
