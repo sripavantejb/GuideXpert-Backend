@@ -117,7 +117,7 @@ describe('b5Shortlist — computeTiers (real reuse of scoreEligibleColleges/tier
 });
 
 describe('b5Shortlist — handleB5Entry (V3 B8 flat shortlist)', () => {
-  test('produces FIT ask with 3-flat shortlist (no Best Match tiers)', () => {
+  test('produces FIT ask with 5-flat shortlist (no Best Match tiers)', () => {
     const result = handleB5Entry(ctxWithProfile(STANDARD_PROFILE_PATCH));
     assert.equal(result.interactive.type, 'button');
     assert.ok(
@@ -129,9 +129,10 @@ describe('b5Shortlist — handleB5Entry (V3 B8 flat shortlist)', () => {
       .join('\n');
     assert.doesNotMatch(visible, /\*Best Match\*/i);
     assert.match(visible, /GuideXpert works with/i);
+    assert.match(visible, /these five are worth looking at/i);
     assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
     assert.ok(Array.isArray(result.contextPatch.profile.shortlist));
-    assert.equal(result.contextPatch.profile.shortlist.length, 3);
+    assert.equal(result.contextPatch.profile.shortlist.length, 5);
   });
 
   test('REGRESSION (Phase 4/5 propagation-bug shape): contextPatch always carries the profile forward', () => {
@@ -230,7 +231,7 @@ describe('b5Shortlist — handleB5Reply (V3 B8/B9)', () => {
     assert.match(result.replyText || '', /stack up/i);
   });
 
-  test('"Yes, narrow it down" advances toward B10 booking', () => {
+  test('"Yes, narrow it down" delivers NIAT counsellor pitch then advances toward B10', () => {
     const seeded = handleB5Entry(ctxWithProfile(STANDARD_PROFILE_PATCH));
     const result = handleB5Reply(
       {
@@ -246,6 +247,12 @@ describe('b5Shortlist — handleB5Reply (V3 B8/B9)', () => {
         result.contextPatch.stage === 'b7_awaiting_reply',
       `expected B10/B7 book stage, got ${result.contextPatch.stage}`
     );
+    assert.equal(result.contextPatch.profile.fitCollege, 'niat');
+    const visible = [...(result.replyParts || []), result.replyText, result.interactive?.body]
+      .filter(Boolean)
+      .join('\n');
+    assert.match(visible, /\*NIAT\*/i);
+    assert.match(visible, /Curriculum|Internships|Industry ties|Environment/i);
   });
 
   test('wider catalog ask returns partner list without Best Match tiers', () => {
@@ -259,7 +266,7 @@ describe('b5Shortlist — handleB5Reply (V3 B8/B9)', () => {
       },
       'show me all options'
     );
-    assert.match(result.replyText || '', /Plaksha|Kalvium/i);
+    assert.match(result.replyText || '', /Masters' Union|UPES|SRM AP/i);
     assert.doesNotMatch(result.replyText || '', /\*Best Match\*/i);
   });
 

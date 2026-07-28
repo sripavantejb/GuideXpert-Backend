@@ -1,19 +1,17 @@
 'use strict';
 
 /**
- * Flow V3 — B9 · FIT (was v2 B6 · The Case).
+ * Flow V3 — B9 · FIT (counsellor narrative).
  *
- * Ask → narrow with reason → honest pass below threshold → B10.
- * Compare table only on tap.
+ * Ask → on yes: senior-counsellor NIAT pitch (reason first) → B10.
+ * Self-lookup honoured once. Honest pass only for clearly out-of-catalog profiles.
+ * Compare-on-tap: compact factor block (≤4 rows).
  */
 
 const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
 const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingFlowV2Profile');
 const { assertGuardrails } = require('../../../../constants/careerCounsellingFlowV2Guardrails');
 const { advanceToB10 } = require('../flowV2NodeUtils');
-
-/** Provisional honest-pass threshold (plan default). */
-const HONEST_PASS_THRESHOLD = 0.45;
 
 const FIT_ASK_BODY = 'Want me to narrow it down to the one that fits you best?';
 const FIT_BUTTONS = Object.freeze([
@@ -28,22 +26,25 @@ const SELF_LOOKUP_TEXT = [
 ].join('\n');
 
 const HONEST_PASS_TEXT = [
-  "Being straight with you — from what you've shared, I'm not sure any of these three is the obvious fit. Your interests point somewhere our catalog doesn't cover well, and I'd rather say that than talk you into one.",
+  "Being straight with you — from what you've shared, I'm not sure any of these five is the obvious fit. Your interests point somewhere our catalog doesn't cover well, and I'd rather say that than talk you into one.",
   '',
-  'The seven checks above still work on whatever you\'re considering.',
+  "The seven checks above still work on whatever you're considering.",
   '',
   "If it'd help, I can put you in front of a counsellor who'll talk through the options that *do* fit — including ones we have nothing to do with.",
 ].join('\n');
 
+/** Compact compare — 4 factor rows max for WhatsApp readability. */
 const COMPARE_TABLE = [
-  "Here's how the three stack up on what you care about 👇",
+  "Here's how the five stack up on what you care about 👇",
   '',
-  'Factor           NIAT    Scaler   Newton',
-  'Placements       ●●●     ●●●      ●●●',
-  'AI focus         ●●●     ●●●      ●●',
-  'Projects         ●●●     ●●●      ●●●',
-  'Mentorship       ●●●     ●●●      ●●',
+  'Focus           NIAT · Scaler · Newton · Plaksha · Kalvium',
+  'AI / curriculum ●●●  · ●●●    · ●●     · ●●●     · ●●',
+  'Projects        ●●●  · ●●●    · ●●●    · ●●      · ●●●',
+  'Internships     ●●●  · ●●●    · ●●     · ●●      · ●●●',
+  'Mentorship      ●●●  · ●●●    · ●●     · ●●      · ●●',
 ].join('\n');
+
+const NIAT_NAME = 'NIAT';
 
 function priorityPhrase(profile) {
   const p = Array.isArray(profile?.goalPriority) ? profile.goalPriority[0] : null;
@@ -63,106 +64,83 @@ function interestPhrase(profile) {
   return 'what you shared';
 }
 
-/**
- * Lightweight fit scorer — spreads across catalog based on priority + cluster.
- * Returns { id, name, score, reason }.
- */
-function scoreFit(profile) {
-  const shortlist = Array.isArray(profile?.shortlist) && profile.shortlist.length
-    ? profile.shortlist
-    : [
-        { id: 'newton', name: 'Newton School of Technology' },
-        { id: 'niat', name: 'NIAT' },
-        { id: 'scaler', name: 'Scaler School of Technology' },
-      ];
-
+function priorityTiedReason(profile) {
   const primary = String((profile?.goalPriority && profile.goalPriority[0]) || '').toLowerCase();
   const cluster = String(profile?.interestCluster || '').toLowerCase();
-  const interests = (Array.isArray(profile?.interests) ? profile.interests : []).map((x) =>
-    String(x).toLowerCase()
-  );
-
-  const scores = shortlist.map((c) => {
-    let score = 0.5;
-    const id = String(c.id || '').toLowerCase();
-
-    if (cluster === 'data_ai' || interests.some((i) => i.includes('ai') || i.includes('data'))) {
-      if (id === 'niat') score += 0.25;
-      if (id === 'scaler') score += 0.15;
-      if (id === 'newton') score += 0.1;
-    } else if (cluster === 'infra_security') {
-      if (id === 'scaler') score += 0.2;
-      if (id === 'niat') score += 0.15;
-      if (id === 'newton') score += 0.1;
-    } else if (cluster === 'software' || cluster === 'core') {
-      if (id === 'newton') score += 0.2;
-      if (id === 'niat') score += 0.18;
-      if (id === 'scaler') score += 0.15;
-    }
-
-    if (primary.includes('placement')) {
-      if (id === 'niat') score += 0.12;
-      if (id === 'scaler') score += 0.1;
-    }
-    if (primary.includes('fee') || primary.includes('afford')) {
-      if (id === 'newton') score += 0.08;
-      score -= 0.05; // fees are a weak catalog signal overall
-    }
-    if (primary.includes('ai') || primary.includes('future')) {
-      if (id === 'niat') score += 0.2;
-    }
-    if (profile?.coreInterest) {
-      if (id === 'niat') score += 0.1;
-      if (id === 'newton') score += 0.08;
-    }
-    if (cluster === 'undecided' && !primary) {
-      score -= 0.15;
-    }
-
-    let reason = 'it lines up with how you described learning and outcomes';
-    if (id === 'niat') {
-      reason =
-        primary.includes('ai') || cluster === 'data_ai'
-          ? 'its AI-first path matches what you said you care about'
-          : 'its industry-integrated learning matches your priorities';
-    } else if (id === 'newton') {
-      reason = 'project work early matches how you want to learn';
-    } else if (id === 'scaler') {
-      reason = 'mentorship and career scope match what you highlighted';
-    }
-
-    return {
-      id: c.id,
-      name: c.name || c.id,
-      score: Math.min(1, Math.max(0, score)),
-      reason,
-    };
-  });
-
-  scores.sort((a, b) => b.score - a.score);
-  return scores[0];
+  if (primary.includes('placement')) {
+    return 'its industry-linked training is built around becoming job-ready, not just exam-ready';
+  }
+  if (primary.includes('internship') || primary.includes('project')) {
+    return 'students get real project and internship exposure early, not certificate theatre in the final year';
+  }
+  if (primary.includes('curriculum') || primary.includes('ai') || primary.includes('future')) {
+    return 'the curriculum is updated for industry tools and AI/software depth, not a once-a-decade syllabus cycle';
+  }
+  if (primary.includes('faculty') || primary.includes('mentor')) {
+    return 'industry-experienced mentors sit alongside teaching, which matches how you said you want to learn';
+  }
+  if (primary.includes('fee') || primary.includes('afford') || primary.includes('scholarship')) {
+    return "you'll still need to check full four-year cost and scholarships in writing — and a counsellor call is the right place for that";
+  }
+  if (primary.includes('location') || primary.includes('campus')) {
+    return "campus environment and day-to-day learning culture are easier to judge with someone who's walked students through it";
+  }
+  if (cluster === 'data_ai') {
+    return 'its AI-first path lines up with where your head already is';
+  }
+  if (cluster === 'software' || cluster === 'infra_security') {
+    return 'coding and applied building start early, which matches a software-leaning direction';
+  }
+  return 'it balances modern curriculum, real internships and an industry-linked environment better than a brochure ranking can';
 }
 
-function buildFitAnswer(profile, best) {
-  const coreLine = profile?.coreInterest
-    ? `\nAnd given you came in via ${String(profile.coreInterest)}, this path still lets you aim that at robotics, automation or EV if you want.\n`
-    : '\n';
+/**
+ * Honest pass only when catalog clearly does not fit — not a silent always-NIAT lie.
+ */
+function shouldHonestPass(profile) {
+  const cluster = String(profile?.interestCluster || '').toLowerCase();
+  const status = String(profile?.status || '').toLowerCase();
+  if (
+    status === 'out_of_scope_core' ||
+    (profile?.coreBridgeClosed === true && cluster === 'core')
+  ) {
+    return true;
+  }
+  // Undecided with no priority and no branch signal — thin enough to refuse a hard sell.
+  const hasPriority = Array.isArray(profile?.goalPriority) && profile.goalPriority.length > 0;
+  const hasBranch = typeof profile?.branchInterest === 'string' && profile.branchInterest.length > 0;
+  if (cluster === 'undecided' && !hasPriority && !hasBranch) return true;
+  return false;
+}
 
-  const weak =
-    !profile?.goalPriority?.length || profile?.interestCluster === 'undecided'
-      ? '\nSome profile signals are still thin — treat this as decision support, not certainty.\n'
-      : '';
+/**
+ * Senior-counsellor NIAT pitch — reason first, then curriculum / internships /
+ * industry ties / environment. Possibility language only (L5).
+ *
+ * DEFAULTED PENDING BUSINESS CONFIRMATION — ◆ NIAT-1 / NIAT-2 / DIFF-1 claims
+ * stay soft until content fact-checks them.
+ */
+function buildNiatCounsellorPitch(profile) {
+  const coreLine = profile?.coreInterest
+    ? `\nYou came in via ${String(profile.coreInterest)} — this is still a CSE/AI path, so only lean in if you're open to that door, not if you need a licensed core-engineering role.\n`
+    : '';
 
   return [
     'Sure 😊',
     '',
-    `You said ${priorityPhrase(profile)} matters most, and you're interested in ${interestPhrase(profile)}. On that specific basis, I'd look at *${best.name}* first — ${best.reason}.`,
+    `You said *${priorityPhrase(profile)}* matters most, and you're interested in ${interestPhrase(profile)}. On that specific basis, I'd look at *${NIAT_NAME}* first — ${priorityTiedReason(profile)}.`,
     coreLine.trimEnd(),
     '',
-    "That's my read from four answers, though. It's not a verdict. The other two may suit you better once someone's seen your marks, your budget and where you can actually study.",
+    'Here is how I usually explain it to a student in your seat:',
     '',
-    'Which is exactly what the next step is for.',
-    weak.trimEnd(),
+    '• *Curriculum* — industry-linked and refreshed more often than a typical university cycle, with coding and projects early rather than parked in year 3.',
+    '• *Internships* — the point is real work exposure and conversion paths, not a stack of attendance certificates.',
+    '• *Industry ties* — mentors and partner ecosystems matter when you are choosing a newer institute; ask for named examples on the counsellor call.',
+    '• *Environment* — built around applied learning and peer building, which fits students who want software/AI depth.',
+    '',
+    "That's my read from what you've shared — not a verdict. The other four may suit you better once someone has seen your marks, budget and where you can actually study.",
+    '',
+    'Which is exactly what a short counsellor call is for.',
   ]
     .filter((line, i, arr) => !(line === '' && arr[i - 1] === ''))
     .join('\n')
@@ -175,7 +153,9 @@ function looksLikeYes(text) {
     t.includes('flowv2_b9_yes') ||
     t.includes('yes, narrow') ||
     t === 'yes' ||
-    t.includes('narrow it')
+    t.includes('narrow it') ||
+    t.includes('suggest') ||
+    t.includes('best college')
   );
 }
 
@@ -199,24 +179,19 @@ function namedCollegeFromText(text, profile) {
   const list = Array.isArray(profile?.shortlist) ? profile.shortlist : [];
   for (const c of list) {
     const name = String(c.name || c.id || '').toLowerCase();
-    if (name && t.includes(name.split(' ')[0])) return c;
+    const first = name.split(' ')[0];
+    if (first && t.includes(first)) return c;
   }
-  if (/\bniat\b/.test(t)) return { id: 'niat', name: 'NIAT' };
+  if (/\bniat\b/.test(t)) return { id: 'niat', name: NIAT_NAME };
   if (/\bnewton\b/.test(t)) return { id: 'newton', name: 'Newton School of Technology' };
   if (/\bscaler\b/.test(t)) return { id: 'scaler', name: 'Scaler School of Technology' };
+  if (/\bplaksha\b/.test(t)) return { id: 'plaksha', name: 'Plaksha University' };
+  if (/\bkalvium\b/.test(t)) return { id: 'kalvium', name: 'Kalvium' };
   return null;
 }
 
-function deliverFit(ctx, profile, forcedCollege = null) {
-  const best = forcedCollege
-    ? {
-        ...scoreFit({ ...profile, shortlist: [forcedCollege, ...(profile.shortlist || [])] }),
-        id: forcedCollege.id,
-        name: forcedCollege.name,
-      }
-    : scoreFit(profile);
-
-  if (!best || best.score < HONEST_PASS_THRESHOLD) {
+function deliverNiatPitch(ctx, profile) {
+  if (shouldHonestPass(profile)) {
     const merged = mergeFlowV2Profile(profile, {
       honestPassFired: true,
       fitCollege: null,
@@ -226,15 +201,36 @@ function deliverFit(ctx, profile, forcedCollege = null) {
     return advanceToB10(merged, HONEST_PASS_TEXT);
   }
 
-  const body = buildFitAnswer(profile, best);
+  const body = buildNiatCounsellorPitch(profile);
   assertGuardrails(body);
   const merged = mergeFlowV2Profile(profile, {
-    fitCollege: best.id,
-    fitReason: best.reason,
-    recommendation: best.id,
+    fitCollege: 'niat',
+    fitReason: priorityTiedReason(profile),
+    recommendation: 'niat',
     honestPassFired: false,
   });
+  return advanceToB10(merged, body);
+}
 
+/** If student named a non-NIAT college, acknowledge it then still offer counsellor depth — do not invent rival pitches. */
+function deliverNamedCollege(ctx, profile, college) {
+  const id = String(college.id || '').toLowerCase();
+  if (id === 'niat') return deliverNiatPitch(ctx, profile);
+
+  const body = [
+    `Got it — *${college.name}* is on your shortlist.`,
+    '',
+    `You said ${priorityPhrase(profile)} matters most. I can walk you through how it compares on curriculum, internships and fees on a short counsellor call — that's cleaner than me guessing from four answers.`,
+    '',
+    'Shall I book you in?',
+  ].join('\n');
+  assertGuardrails(body);
+  const merged = mergeFlowV2Profile(profile, {
+    fitCollege: college.id,
+    fitReason: `student asked about ${college.name}`,
+    recommendation: college.id,
+    honestPassFired: false,
+  });
   return advanceToB10(merged, body);
 }
 
@@ -266,8 +262,8 @@ function handleB9Reply(ctx, text) {
   }
 
   const named = namedCollegeFromText(text, profile);
-  if (named && !looksLikeSelf(text)) {
-    return deliverFit(ctx, profile, named);
+  if (named && !looksLikeSelf(text) && !looksLikeYes(text)) {
+    return deliverNamedCollege(ctx, profile, named);
   }
 
   if (looksLikeSelf(text)) {
@@ -283,7 +279,7 @@ function handleB9Reply(ctx, text) {
   }
 
   if (looksLikeYes(text)) {
-    return deliverFit(ctx, profile);
+    return deliverNiatPitch(ctx, profile);
   }
 
   return {
@@ -299,10 +295,11 @@ function handleB9Reply(ctx, text) {
 module.exports = {
   handleB9Entry,
   handleB9Reply,
-  scoreFit,
-  buildFitAnswer,
-  HONEST_PASS_THRESHOLD,
+  buildNiatCounsellorPitch,
+  shouldHonestPass,
+  priorityTiedReason,
   FIT_ASK_BODY,
   HONEST_PASS_TEXT,
   COMPARE_TABLE,
+  SELF_LOOKUP_TEXT,
 };
