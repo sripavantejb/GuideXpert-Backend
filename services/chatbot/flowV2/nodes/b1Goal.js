@@ -45,7 +45,7 @@ const LEGACY_PRIORITY_IDS = Object.freeze({
   flowv2_b4_startup: 'startup',
 });
 
-const B1_LIST_SECTION_TITLE = 'What matters most?';
+const B1_LIST_SECTION_TITLE = 'Options';
 const B1_LIST_BUTTON_TEXT = 'Select';
 // Company Stage 4 prompt (qualification ack still prefixes on entry).
 const B1_QUESTION_TAIL =
@@ -82,6 +82,7 @@ function qualificationAckLine(qualification) {
 function buildB1ListInteractive(body) {
   return {
     type: 'list',
+    title: '',
     body,
     buttonText: B1_LIST_BUTTON_TEXT,
     sections: [

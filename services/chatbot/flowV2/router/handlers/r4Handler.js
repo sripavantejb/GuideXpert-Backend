@@ -135,6 +135,7 @@ function extractCollegeName(text) {
 function buildB1Interactive(body) {
   return {
     type: 'list',
+    title: '',
     body,
     buttonText: B1_LIST_BUTTON_TEXT,
     sections: [{ title: B1_LIST_SECTION_TITLE, rows: B1_ROWS }],

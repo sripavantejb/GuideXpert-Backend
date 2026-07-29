@@ -42,8 +42,10 @@ function findQualificationRow(text) {
     ) || null
   );
 }
-const QUALIFICATION_LIST_SECTION_TITLE = 'Your stage';
-const QUALIFICATION_LIST_BUTTON_TEXT = 'Choose your stage';
+// Neutral picker section label only (inside the opened list). Card header is
+// suppressed via title: '' so the body question asks directly.
+const QUALIFICATION_LIST_SECTION_TITLE = 'Options';
+const QUALIFICATION_LIST_BUTTON_TEXT = 'Select';
 /** Qualification prompt line — never asks for name on entry. Company Stage 1. */
 const NEUTRAL_QUALIFICATION_LINE = 'First, can I know your current qualifications?';
 const NAME_REASK = "Sorry, didn't catch that 😊 What should I call you?";
@@ -70,6 +72,7 @@ const GUESS_CONFIRM_NO = Object.freeze({ id: 'flowv2_guess_confirm_no', title: '
 function buildQualificationListInteractive(body) {
   return {
     type: 'list',
+    title: '',
     body,
     buttonText: QUALIFICATION_LIST_BUTTON_TEXT,
     sections: [

@@ -49,11 +49,26 @@ describe('gupshupSessionPayload', () => {
       })
     );
     assert.equal(j.type, 'list');
+    assert.equal(j.title, 'Where are you right now?');
     assert.equal(j.body.includes('Nice to meet you'), true);
     assert.equal(j.globalButtons[0].title, 'Select');
     assert.equal(j.items[0].options[0].postbackText, 'flowv2_qual_10_completed');
     assert.equal(j.items[0].options[1].title, '12th Commerce');
     assert.equal(j.interactive, undefined);
+  });
+
+  test('buildInteractiveListMessageField hides card title when title is blank', () => {
+    const j = JSON.parse(
+      buildInteractiveListMessageField({
+        title: '',
+        body: 'Which of these actually interest you?',
+        buttonText: 'Select',
+        sections: [{ title: 'Options', rows: [{ id: 'a', title: 'AI' }] }],
+      })
+    );
+    assert.equal(j.title, '\u200b');
+    assert.equal(j.items[0].title, 'Options');
+    assert.equal(j.body, 'Which of these actually interest you?');
   });
 
   test('listMessageNeedsEncode detects emoji', () => {

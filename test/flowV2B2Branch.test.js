@@ -37,8 +37,8 @@ describe('b2Branch — isCoreEngineeringBranch / isBusinessBranch', () => {
 });
 
 describe('b2Branch — WhatsApp list shape', () => {
-  test('section title is short Interests (not instructional echo text)', () => {
-    assert.equal(B2_LIST_SECTION_TITLE, 'Interests');
+  test('section title is short Options (card header suppressed separately)', () => {
+    assert.equal(B2_LIST_SECTION_TITLE, 'Options');
     assert.ok(B2_LIST_SECTION_TITLE.length <= 24);
   });
 
@@ -62,7 +62,9 @@ describe('b2Branch — handleB2Entry', () => {
     const result = handleB2Entry(ctxWithProfile());
     assert.equal(result.interactive.type, 'list');
     assert.equal(result.interactive.sections[0].rows.length, 9);
-    assert.equal(result.interactive.sections[0].title, 'Interests');
+    assert.equal(result.interactive.sections[0].title, 'Options');
+    assert.equal(result.interactive.title, '');
+    assert.equal(result.interactive.buttonText, 'Select');
     assert.equal(B2_ROWS.length, 9);
     assert.equal(result.contextPatch.stage, 'b2_awaiting_reply');
     assert.match(result.interactive.body, /topics excite you/i);

@@ -27,7 +27,7 @@ describe('Full Flow V3 — happy path PCM spine (company Option 3)', () => {
     let ctx = { flowV2: { stage: null, profile: emptyFlowV2Profile() } };
     let result = await processFlowV2Turn(ctx, 'hi');
     let text = visible(result);
-    assert.match(text, /Welcome to GuideXpert|current qualifications|Choose your stage/i);
+    assert.match(text, /Welcome to GuideXpert|current qualifications/i);
 
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     if (String(result.contextPatch.stage || '').includes('name')) {
