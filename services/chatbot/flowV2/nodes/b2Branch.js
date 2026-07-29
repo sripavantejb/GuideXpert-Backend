@@ -100,10 +100,11 @@ const B2_LIST_SECTION_TITLE = 'Options';
 const B2_LIST_BUTTON_TEXT = 'Select';
 
 // Company Stage 3. "I'm done ✓" kept for WhatsApp multi-select completion.
+// Keep on one line — WhatsApp list cards turn `\n` into a visible blank gap.
 const B2_QUESTION =
-  'Great ! Which topics excite you more?\n(You can choose more than one.)';
+  'Great ! Which topics excite you more? (You can choose more than one.)';
 const B2_REASK_BODY =
-  'Noted 👍 Tap more if you want — or tap *I\'m done ✓* when you\'re finished.';
+  "Noted 👍 Tap more if you want — or tap *I'm done ✓* when you're finished.";
 const B2_CAP_BODY = "That's a solid set — continuing with what you've picked.";
 
 /** @deprecated alias — tests / change-slot menus */
