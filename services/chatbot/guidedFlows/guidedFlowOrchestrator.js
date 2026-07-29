@@ -10,6 +10,19 @@ const { matchesAny, matchesMenuCommands } = require('../intentTextUtils');
 const { isGuidedFlowInterrupt } = require('./guidedFlowInterruptPolicy');
 const { processGuidedFlowTurn } = require('./guidedFlowProcessors');
 
+function mediaFollowupDelayMs() {
+  if (process.env.NODE_ENV === 'test') return 0;
+  const configured = Number.parseInt(process.env.WA_MEDIA_FOLLOWUP_DELAY_MS || '', 10);
+  return Number.isFinite(configured) ? Math.max(0, Math.min(configured, 5000)) : 2000;
+}
+
+async function waitForMediaOrdering() {
+  const delayMs = mediaFollowupDelayMs();
+  if (delayMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+}
+
 function logCareerJourneyInterrupt(flow, botState, routingText) {
   if (flow?.id !== 'career_counselling_journey') return;
   const cc = botState?.context?.careerCounselling || {};
@@ -174,6 +187,11 @@ async function executeActiveGuidedFlowTurn({
       inReplyToInboundId: null,
     });
     mediaCaption = caption;
+    // Gupshup acknowledges media before WhatsApp finishes processing it.
+    // Without a small gap, the following quick-reply can arrive first.
+    if (result?.success && flowV2Interactive) {
+      await waitForMediaOrdering();
+    }
   }
 
   if (flowV2Interactive && flowV2Interactive.type === 'list') {
