@@ -27,7 +27,11 @@ Shortlist + fit ask ship in **one** button interactive. Wider catalog (Kalvium e
 
 Ask: *Would you like me to help you find the best fit?*
 
-- **Yes, help me** → detailed NIAT pitch (curriculum phases, partner universities, internships, placement support) + *Does exploring NIAT further sound interesting?*  
+- **Yes, help me** → detailed NIAT pitch that:
+  - Names the student’s selected interests + “what matters most” aspects
+  - Adds an **✨ How NIAT lines up with your picks** block (✅ per interest/priority)
+  - Marks matching Curriculum / Internships / Placement bullets with ✅
+  - Then: *Does exploring NIAT further sound interesting?*
 - **Yes, I'm interested** → Stage 10 booking invite  
 - **Not for me** → honour, warm park  
 - **I'll explore myself** → honour once, warm park  

@@ -57,22 +57,209 @@ const COMPARE_TABLE = [
 
 const NIAT_NAME = 'NIAT';
 
+/** Friendly labels + how NIAT covers each interest the student tapped. */
+const INTEREST_NIAT_MAP = Object.freeze({
+  computers_software: Object.freeze({
+    label: 'Computers & software',
+    emoji: '💻',
+    hook: 'full-stack coding and shipping real software projects early',
+  }),
+  artificial_intelligence: Object.freeze({
+    label: 'Artificial Intelligence',
+    emoji: '🤖',
+    hook: 'an AI-first path with AI/ML threaded through Decode → Ship',
+  }),
+  data_science: Object.freeze({
+    label: 'Data Science',
+    emoji: '📊',
+    hook: 'AI/ML and data-heavy projects inside the industry-oriented syllabus',
+  }),
+  cloud_computing: Object.freeze({
+    label: 'Cloud Computing',
+    emoji: '☁️',
+    hook: 'industry tools students actually use, including modern cloud stacks',
+  }),
+  cyber_security: Object.freeze({
+    label: 'Cyber Security',
+    emoji: '🔐',
+    hook: 'applied security-minded building inside real project work',
+  }),
+  app_development: Object.freeze({
+    label: 'App Development',
+    emoji: '📱',
+    hook: 'hands-on product building — apps and full-stack shipping across the 4 phases',
+  }),
+  web_development: Object.freeze({
+    label: 'Web Development',
+    emoji: '🌐',
+    hook: 'full-stack web depth with projects you can actually ship',
+  }),
+  game_development: Object.freeze({
+    label: 'Game Development',
+    emoji: '🎮',
+    hook: 'creative building and shipping — useful if you want a product-maker path',
+  }),
+});
+
+/** Aspects from “what matters most” → how NIAT speaks to them. */
+const PRIORITY_NIAT_MAP = Object.freeze({
+  placements: Object.freeze({
+    label: 'Placements',
+    emoji: '💼',
+    hook: 'mock interviews, mentoring and hiring-partner access through the NxtWave network',
+    section: 'placement',
+  }),
+  placement: Object.freeze({
+    label: 'Placements',
+    emoji: '💼',
+    hook: 'mock interviews, mentoring and hiring-partner access through the NxtWave network',
+    section: 'placement',
+  }),
+  internships: Object.freeze({
+    label: 'Internships',
+    emoji: '🚀',
+    hook: 'internships that can start early — plus stipend-based options (amounts vary by role)',
+    section: 'internship',
+  }),
+  internship: Object.freeze({
+    label: 'Internships',
+    emoji: '🚀',
+    hook: 'internships that can start early — plus stipend-based options (amounts vary by role)',
+    section: 'internship',
+  }),
+  curriculum: Object.freeze({
+    label: 'Updated Curriculum',
+    emoji: '📚',
+    hook: 'AI-first phases that refresh with tools students actually use — not a stale syllabus',
+    section: 'curriculum',
+  }),
+  faculty: Object.freeze({
+    label: 'Good Faculty',
+    emoji: '👨‍🏫',
+    hook: 'industry-experienced mentors sit alongside teaching',
+    section: 'placement',
+  }),
+  campus: Object.freeze({
+    label: 'Campus Life',
+    emoji: '🏫',
+    hook: 'you study on partner university campuses — day-to-day culture varies by city, so verify on a call',
+    section: 'degree',
+  }),
+  sports: Object.freeze({
+    label: 'Sports & Clubs',
+    emoji: '⚽',
+    hook: 'clubs and sports depend on the partner campus — worth checking for your city before you decide',
+    section: 'degree',
+  }),
+  fees: Object.freeze({
+    label: 'Affordable Fees',
+    emoji: '💰',
+    hook: "full four-year cost and scholarships need to be checked in writing — a counsellor call is the right place",
+    section: null,
+  }),
+  location: Object.freeze({
+    label: 'Location',
+    emoji: '📍',
+    hook: 'partner campuses span multiple cities — so location flexibility is real, but city-by-city fit still matters',
+    section: 'degree',
+  }),
+  higher_studies: Object.freeze({
+    label: 'Higher studies',
+    emoji: '🎓',
+    hook: 'UGC-recognised degree from the partner university keeps higher-studies doors open',
+    section: 'degree',
+  }),
+  startup: Object.freeze({
+    label: 'Startup / building',
+    emoji: '🚀',
+    hook: 'shipping real projects early — useful if you care about building, not only exams',
+    section: 'curriculum',
+  }),
+});
+
 function priorityPhrase(profile) {
   const p = Array.isArray(profile?.goalPriority) ? profile.goalPriority[0] : null;
   if (!p) return 'finding a solid fit';
+  const key = String(p).toLowerCase().replace(/\s+/g, '_');
+  const mapped = PRIORITY_NIAT_MAP[key] || PRIORITY_NIAT_MAP[String(p).toLowerCase()];
+  if (mapped) return `${mapped.emoji} ${mapped.label}`;
   return String(p).replace(/_/g, ' ');
 }
 
 function interestPhrase(profile) {
+  const highlights = selectedInterestHighlights(profile);
+  if (highlights.length === 1) return `${highlights[0].emoji} ${highlights[0].label}`;
+  if (highlights.length > 1) {
+    return highlights
+      .slice(0, 3)
+      .map((h) => `${h.emoji} ${h.label}`)
+      .join(', ');
+  }
   const cluster = profile?.interestCluster;
   if (cluster === 'software') return 'software and building';
   if (cluster === 'data_ai') return 'AI and data';
   if (cluster === 'infra_security') return 'cloud and security';
   if (cluster === 'core') return 'core engineering with a software door';
   if (cluster === 'undecided') return 'still exploring directions';
-  const interests = Array.isArray(profile?.interests) ? profile.interests : [];
-  if (interests.length) return interests.slice(0, 2).join(' and ').replace(/_/g, ' ');
   return 'what you shared';
+}
+
+function selectedInterestHighlights(profile) {
+  const raw = Array.isArray(profile?.interests) ? profile.interests : [];
+  const out = [];
+  const seen = new Set();
+  for (const id of raw) {
+    const key = String(id || '')
+      .toLowerCase()
+      .replace(/\s+/g, '_');
+    if (key === 'undecided' || seen.has(key)) continue;
+    const mapped = INTEREST_NIAT_MAP[key];
+    if (mapped) {
+      seen.add(key);
+      out.push(mapped);
+    }
+  }
+  if (out.length) return out.slice(0, 4);
+
+  // Fall back to cluster when interests array is empty but cluster was saved.
+  const cluster = String(profile?.interestCluster || '').toLowerCase();
+  if (cluster === 'data_ai') return [INTEREST_NIAT_MAP.artificial_intelligence];
+  if (cluster === 'infra_security') return [INTEREST_NIAT_MAP.cloud_computing];
+  if (cluster === 'software') return [INTEREST_NIAT_MAP.computers_software];
+  return [];
+}
+
+function selectedPriorityHighlights(profile) {
+  const raw = Array.isArray(profile?.goalPriority) ? profile.goalPriority : [];
+  const out = [];
+  const seen = new Set();
+  for (const id of raw) {
+    const key = String(id || '')
+      .toLowerCase()
+      .replace(/\s+/g, '_');
+    if (seen.has(key)) continue;
+    const mapped = PRIORITY_NIAT_MAP[key];
+    if (mapped) {
+      seen.add(key);
+      out.push(mapped);
+    }
+  }
+  return out.slice(0, 3);
+}
+
+function buildMatchHighlights(profile) {
+  const interests = selectedInterestHighlights(profile);
+  const priorities = selectedPriorityHighlights(profile);
+  if (!interests.length && !priorities.length) return [];
+
+  const lines = ['✨ How NIAT lines up with *your* picks:'];
+  for (const item of interests) {
+    lines.push(`✅ *${item.emoji} ${item.label}* — ${item.hook}`);
+  }
+  for (const item of priorities) {
+    lines.push(`✅ *${item.emoji} ${item.label}* — ${item.hook}`);
+  }
+  return lines;
 }
 
 function priorityTiedReason(profile) {
@@ -122,33 +309,47 @@ function shouldHonestPass(profile) {
 
 /**
  * Rich NIAT pitch — curriculum, partner campuses, internships, placement support.
+ * Lead with the student's own interests + priorities, then highlight how NIAT covers them.
  * Sourced from public NIAT/NxtWave materials; no outcome guarantees.
  */
 function buildNiatCounsellorPitch(profile) {
   const why = priorityTiedReason(profile);
   const interest = interestPhrase(profile);
+  const priorities = selectedPriorityHighlights(profile);
+  const priorityBit = priorities.length
+    ? `, and what matters most to you is *${priorities.map((p) => `${p.emoji} ${p.label}`).join(' + ')}*`
+    : '';
+  const matchLines = buildMatchHighlights(profile);
+  const primarySections = new Set(
+    priorities.map((p) => p.section).filter(Boolean)
+  );
+
+  const bullet = (section, text) =>
+    `${primarySections.has(section) ? '✅' : '•'} ${text}`;
+
   return [
     'Sure 😊',
-    `From what you shared about ${interest}, NIAT (NxtWave Institute of Advanced Technologies) is one of the strongest options to explore — ${why}.`,
+    `From what you shared about *${interest}*${priorityBit}, NIAT (NxtWave Institute of Advanced Technologies) is one of the strongest options to explore — ${why}.`,
     '',
+    ...(matchLines.length ? [...matchLines, ''] : []),
     '📚 Curriculum',
-    '• AI-first B.Tech-style path with 4 phases: Decode → Develop → Architect → Ship',
-    '• Focus on full-stack, AI/ML and shipping real projects — not only semester exams',
-    '• Industry-oriented syllabus that refreshes with tools students actually use',
+    bullet('curriculum', 'AI-first B.Tech-style path with 4 phases: Decode → Develop → Architect → Ship'),
+    bullet('curriculum', 'Focus on full-stack, AI/ML and shipping real projects — not only semester exams'),
+    bullet('curriculum', 'Industry-oriented syllabus that refreshes with tools students actually use'),
     '',
     '🏫 Degree + tied-up colleges',
-    '• NIAT is an industry upskilling layer by NxtWave (not a standalone degree university)',
-    '• You study on partner university campuses; the UGC-recognised degree comes from that university',
-    '• Partner network spans multiple cities — examples include campuses linked with Chaitanya, DY Patil, Yenepoya, Crescent, S-VYASA, Aurora and others',
+    bullet('degree', 'NIAT is an industry upskilling layer by NxtWave (not a standalone degree university)'),
+    bullet('degree', 'You study on partner university campuses; the UGC-recognised degree comes from that university'),
+    bullet('degree', 'Partner network spans multiple cities — examples include campuses linked with Chaitanya, DY Patil, Yenepoya, Crescent, S-VYASA, Aurora and others'),
     '',
     '🛠️ Internships & real work',
-    '• Internships can start early in the journey — not only in the final year',
-    '• Multiple hands-on projects across the 4 years',
-    '• Many students also get stipend-based internship opportunities (amounts vary by role)',
+    bullet('internship', 'Internships can start early in the journey — not only in the final year'),
+    bullet('internship', 'Multiple hands-on projects across the 4 years'),
+    bullet('internship', 'Many students also get stipend-based internship opportunities (amounts vary by role)'),
     '',
     '💼 Placement support',
-    '• Mock interviews, mentoring and hiring-partner access through the NxtWave network',
-    '• Strong placement support culture — results still depend on your effort and performance',
+    bullet('placement', 'Mock interviews, mentoring and hiring-partner access through the NxtWave network'),
+    bullet('placement', 'Strong placement support culture — results still depend on your effort and performance'),
     '',
     "But I don't want you to choose a college just because I suggested it.",
     "Let's make sure it's actually the right fit for you.",
@@ -476,6 +677,9 @@ module.exports = {
   buildNiatCounsellorPitch,
   shouldHonestPass,
   priorityTiedReason,
+  selectedInterestHighlights,
+  selectedPriorityHighlights,
+  buildMatchHighlights,
   FIT_ASK_BODY,
   FIT_BUTTONS,
   NIAT_INTEREST_BODY,
@@ -485,4 +689,5 @@ module.exports = {
   COMPARE_TABLE,
   SELF_LOOKUP_TEXT,
   interestPhrase,
+  priorityPhrase,
 };

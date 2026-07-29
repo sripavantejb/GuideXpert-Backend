@@ -253,6 +253,27 @@ describe('b5Shortlist — handleB5Reply (V3 B8/B9)', () => {
     assert.doesNotMatch(visible, /Book My Session|IITian/);
   });
 
+  test('NIAT pitch highlights the student\'s selected interests and priorities', () => {
+    const { buildNiatCounsellorPitch } = require('../services/chatbot/flowV2/nodes/b9Fit');
+    const pitch = buildNiatCounsellorPitch({
+      ...emptyFlowV2Profile(),
+      interests: ['computers_software', 'web_development', 'artificial_intelligence'],
+      interestCluster: 'software',
+      goalPriority: ['placements', 'internships'],
+    });
+    assert.match(pitch, /Computers & software/i);
+    assert.match(pitch, /Web Development/i);
+    assert.match(pitch, /Artificial Intelligence/i);
+    assert.match(pitch, /Placements/i);
+    assert.match(pitch, /Internships/i);
+    assert.match(pitch, /How NIAT lines up with \*your\* picks/i);
+    assert.match(pitch, /✅ \*💻 Computers & software\*/);
+    assert.match(pitch, /✅ \*💼 Placements\*/);
+    // Placement + internship sections use ✅ bullets when those aspects were selected
+    assert.match(pitch, /✅ Mock interviews/);
+    assert.match(pitch, /✅ Internships can start early/);
+  });
+
   test('wider catalog ask returns partner list without Best Match tiers', () => {
     const seeded = handleB5Entry(ctxWithProfile(STANDARD_PROFILE_PATCH));
     const result = handleB5Reply(
