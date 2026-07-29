@@ -10,6 +10,11 @@ const { matchesAny, matchesMenuCommands } = require('../intentTextUtils');
 const { isGuidedFlowInterrupt } = require('./guidedFlowInterruptPolicy');
 const { processGuidedFlowTurn } = require('./guidedFlowProcessors');
 
+function compactWhatsAppSpacing(text) {
+  if (text == null) return text;
+  return String(text).replace(/\n[ \t]*\n+/g, '\n').trim();
+}
+
 function mediaFollowupDelayMs() {
   if (process.env.NODE_ENV === 'test') return 0;
   const configured = Number.parseInt(process.env.WA_MEDIA_FOLLOWUP_DELAY_MS || '', 10);
@@ -110,6 +115,8 @@ async function executeActiveGuidedFlowTurn({
   // Master Flow v2 is English-only: never translate Rithika copy even if
   // inbound language detection resolved to Telugu/Hindi/etc.
   const flowV2EnglishOnly = flow?.id === 'career_counselling_flow_v2';
+  const compactFlowV2Text = (text) =>
+    flowV2EnglishOnly ? compactWhatsAppSpacing(text) : text;
   const outboundLanguageInbound = flowV2EnglishOnly
     ? {
         ...(multilingualInbound || {}),
@@ -146,13 +153,15 @@ async function executeActiveGuidedFlowTurn({
     for (const part of replyParts) {
       let partText = part;
       if (partText) {
-        partText = await deliverOutboundReply({
-          replyText: partText,
-          multilingualInbound: outboundLanguageInbound,
-          intent: turn.intent,
-          localizationTier: outboundLocalizationTier,
-          preLocalized: outboundPreLocalized,
-        });
+        partText = compactFlowV2Text(
+          await deliverOutboundReply({
+            replyText: partText,
+            multilingualInbound: outboundLanguageInbound,
+            intent: turn.intent,
+            localizationTier: outboundLocalizationTier,
+            preLocalized: outboundPreLocalized,
+          })
+        );
       }
       result = await h.outbound.sendBotTextReply({
         conversationId: activeConversation._id,
@@ -169,13 +178,15 @@ async function executeActiveGuidedFlowTurn({
     console.warn('[flowV2] image reply skipped — outbound.sendBotImageReply unavailable');
   } else if (flowV2Media) {
     const caption = flowV2Media.caption
-      ? await deliverOutboundReply({
-          replyText: flowV2Media.caption,
-          multilingualInbound: outboundLanguageInbound,
-          intent: turn.intent,
-          localizationTier: outboundLocalizationTier,
-          preLocalized: outboundPreLocalized,
-        })
+      ? compactFlowV2Text(
+          await deliverOutboundReply({
+            replyText: flowV2Media.caption,
+            multilingualInbound: outboundLanguageInbound,
+            intent: turn.intent,
+            localizationTier: outboundLocalizationTier,
+            preLocalized: outboundPreLocalized,
+          })
+        )
       : null;
     // inReplyToInboundId stays null — the interactive/text reply in this same
     // turn owns the one bot-reply row allowed per inbound.
@@ -195,13 +206,15 @@ async function executeActiveGuidedFlowTurn({
   }
 
   if (flowV2Interactive && flowV2Interactive.type === 'list') {
-    const body = await deliverOutboundReply({
-      replyText: flowV2Interactive.body,
-      multilingualInbound: outboundLanguageInbound,
-      intent: turn.intent,
-      localizationTier: outboundLocalizationTier,
-      preLocalized: outboundPreLocalized,
-    });
+    const body = compactFlowV2Text(
+      await deliverOutboundReply({
+        replyText: flowV2Interactive.body,
+        multilingualInbound: outboundLanguageInbound,
+        intent: turn.intent,
+        localizationTier: outboundLocalizationTier,
+        preLocalized: outboundPreLocalized,
+      })
+    );
     result = await h.outbound.sendBotListReply({
       conversationId: activeConversation._id,
       phone10: activeConversation.phone,
@@ -213,13 +226,15 @@ async function executeActiveGuidedFlowTurn({
     });
     replyText = body;
   } else if (flowV2Interactive && flowV2Interactive.type === 'button') {
-    const body = await deliverOutboundReply({
-      replyText: flowV2Interactive.body,
-      multilingualInbound: outboundLanguageInbound,
-      intent: turn.intent,
-      localizationTier: outboundLocalizationTier,
-      preLocalized: outboundPreLocalized,
-    });
+    const body = compactFlowV2Text(
+      await deliverOutboundReply({
+        replyText: flowV2Interactive.body,
+        multilingualInbound: outboundLanguageInbound,
+        intent: turn.intent,
+        localizationTier: outboundLocalizationTier,
+        preLocalized: outboundPreLocalized,
+      })
+    );
     result = await h.outbound.sendBotButtonReply({
       conversationId: activeConversation._id,
       phone10: activeConversation.phone,
@@ -229,13 +244,15 @@ async function executeActiveGuidedFlowTurn({
     });
     replyText = body;
   } else if (replyText && (!replyParts || !replyParts.length)) {
-    replyText = await deliverOutboundReply({
-      replyText,
-      multilingualInbound: outboundLanguageInbound,
-      intent: turn.intent,
-      localizationTier: outboundLocalizationTier,
-      preLocalized: outboundPreLocalized,
-    });
+    replyText = compactFlowV2Text(
+      await deliverOutboundReply({
+        replyText,
+        multilingualInbound: outboundLanguageInbound,
+        intent: turn.intent,
+        localizationTier: outboundLocalizationTier,
+        preLocalized: outboundPreLocalized,
+      })
+    );
 
     result = await h.outbound.sendBotTextReply({
       conversationId: activeConversation._id,
@@ -354,6 +371,7 @@ async function applyGuidedFlowSwitchTurn({
 }
 
 module.exports = {
+  compactWhatsAppSpacing,
   executeActiveGuidedFlowTurn,
   tryRouteActiveGuidedFlow,
   applyGuidedFlowSwitchTurn,
