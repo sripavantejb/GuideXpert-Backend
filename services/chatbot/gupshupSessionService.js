@@ -145,10 +145,18 @@ async function sendListMessage(phone10, body, buttonText, sections, opts = {}) {
     return result;
   }
 
-  console.warn('[chatbot] list_header_omitted_rejected — retrying with hidden title', {
+  // Never fall back to a zero-width title — that recreates the empty top gap.
+  // Re-send with the first body line as a real header instead.
+  const firstLine = String(body || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .find(Boolean);
+  const fallbackTitle = firstLine && firstLine.length <= 60 ? firstLine : HIDDEN_LIST_TITLE;
+  console.warn('[chatbot] list_header_omitted_rejected — retrying with content title', {
     error: result.error,
+    fallbackTitle: fallbackTitle === HIDDEN_LIST_TITLE ? 'hidden' : 'first_line',
   });
-  return sendSessionMessageRaw(phone10, buildField(HIDDEN_LIST_TITLE), { ...opts, encode });
+  return sendSessionMessageRaw(phone10, buildField(fallbackTitle), { ...opts, encode });
 }
 
 async function sendImageMessage(phone10, url, caption, opts = {}) {

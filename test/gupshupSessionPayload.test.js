@@ -82,10 +82,29 @@ describe('gupshupSessionPayload', () => {
         sections: [{ title: 'Options', rows: [{ id: 'a', title: 'AI' }] }],
       })
     );
-    // A zero-width-space heading still renders as an empty line above the body.
+    // Single-line body: do not duplicate into the header.
     assert.equal(Object.prototype.hasOwnProperty.call(j, 'title'), false);
     assert.equal(j.items[0].title, 'Options');
     assert.equal(j.body, 'Which of these actually interest you?');
+  });
+
+  test('blank list title promotes the first body line into the header row', () => {
+    const j = JSON.parse(
+      buildInteractiveListMessageField({
+        title: '',
+        body:
+          '👋 Hi! Welcome to GuideXpert.\n\n' +
+          "I'm Rithika from the GuideXpert Counselling Team. 😊\n\n" +
+          'First, may I know your current qualification?',
+        buttonText: 'Select',
+        sections: [{ title: 'Options', rows: [{ id: 'a', title: 'AI' }] }],
+      })
+    );
+    assert.equal(j.title, '👋 Hi! Welcome to GuideXpert.');
+    assert.equal(
+      j.body,
+      "I'm Rithika from the GuideXpert Counselling Team. 😊\n\nFirst, may I know your current qualification?"
+    );
   });
 
   test('leading and trailing blank lines are stripped from every body', () => {

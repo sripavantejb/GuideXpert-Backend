@@ -21,6 +21,28 @@ function normalizeMessageText(value) {
     .replace(/\n{3,}/g, '\n\n');
 }
 
+/**
+ * WhatsApp list cards always allocate a header row. An omitted / blank / ZWSP
+ * title leaves that row empty — the "top gap". When the caller asks for no
+ * heading and the body has more than one line, move the first line into
+ * `title` so the header row shows real content; remaining lines stay in body.
+ */
+function resolveListTitleAndBody(rawTitle, rawBody) {
+  const body = normalizeMessageText(rawBody);
+  const title = normalizeMessageText(rawTitle);
+  if (title) return { title: title.slice(0, 60), body };
+
+  const nl = body.indexOf('\n');
+  if (nl === -1) return { title: '', body };
+
+  const firstLine = body.slice(0, nl).trim();
+  const rest = normalizeMessageText(body.slice(nl + 1));
+  if (firstLine && firstLine.length <= 60 && rest) {
+    return { title: firstLine, body: rest };
+  }
+  return { title: '', body };
+}
+
 function buildTextMessageField(text, previewUrl = false) {
   return JSON.stringify({
     type: 'text',
@@ -52,8 +74,8 @@ function buildInteractiveButtonMessageField(p) {
 
 /**
  * Fallback heading used only if Gupshup rejects a list without a title.
- * A zero-width space still renders as an empty header line, so the field is
- * omitted instead whenever the caller asks for no heading.
+ * Prefer resolveListTitleAndBody (first-line promotion) over this — a
+ * zero-width space still renders as an empty header line.
  */
 const HIDDEN_LIST_TITLE = '\u200b';
 
@@ -67,8 +89,9 @@ const HIDDEN_LIST_TITLE = '\u200b';
  *   msgid?: string,
  * }} p
  *
- * Pass `title: ''` (or whitespace) to suppress the WhatsApp card header so the
- * body question asks directly — otherwise defaults to the first section title.
+ * Pass `title: ''` (or whitespace) to avoid a separate heading. For multi-line
+ * bodies the first line is used as the WhatsApp header so the reserved header
+ * row is not left blank.
  */
 function buildInteractiveListMessageField(p) {
   const firstSection = (p.sections || [])[0] || { title: '', rows: [] };
@@ -88,12 +111,15 @@ function buildInteractiveListMessageField(p) {
   const rawTitle = explicitTitle
     ? String(p.title)
     : String(firstSection.title || 'Select');
-  const title = normalizeMessageText(rawTitle).slice(0, 60);
+  // Callers pass title: '' when they want no separate heading.
+  const { title, body } = explicitTitle && !String(p.title).trim()
+    ? resolveListTitleAndBody('', p.body)
+    : resolveListTitleAndBody(rawTitle, p.body);
 
   return JSON.stringify({
     type: 'list',
     ...(title ? { title } : {}),
-    body: normalizeMessageText(p.body).slice(0, 1024),
+    body: body.slice(0, 1024),
     msgid: String(p.msgid || 'list1').slice(0, 64),
     globalButtons: [
       {
@@ -145,5 +171,6 @@ module.exports = {
   buildImageMessageField,
   listMessageNeedsEncode,
   normalizeMessageText,
+  resolveListTitleAndBody,
   HIDDEN_LIST_TITLE,
 };
