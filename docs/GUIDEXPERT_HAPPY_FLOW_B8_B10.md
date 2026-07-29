@@ -12,12 +12,15 @@ Buttons: **Yes, show me** / **Maybe Later**.
 
 ## B8 · Shortlist (top 5, one WhatsApp bubble)
 
-1. 🥇 Newton School of Technology  
-2. 🥈 NIAT  
-3. 🥉 Scaler  
-4. Polar School of Technology  
-5. Plaksha University  
+Personalised lead-in (interest + priority) → structured list:
 
+1. 🥇 *Newton School of Technology*  
+2. 🥈 *NIAT*  
+3. 🥉 *Scaler*  
+4. 🔹 *Polar School of Technology*  
+5. 🔹 *Plaksha University*  
+
+Close: learning-style note → *Want me to narrow this to the best fit for you?*  
 Shortlist + fit ask ship in **one** button interactive. Wider catalog (Kalvium etc.) on typed ask.
 
 ## B9 · Fit ask → rich NIAT pitch → interest gate

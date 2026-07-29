@@ -37,7 +37,7 @@ const SHORTLIST_ASK_DECLINE = [
   "Whenever you're ready for the shortlist, just say the word.",
 ].join('\n');
 
-const FIT_ASK_BODY = 'Would you like me to help you find the best fit?';
+const FIT_ASK_BODY = 'Want me to narrow this to the best fit for you?';
 const FIT_BUTTONS = Object.freeze([
   Object.freeze({ id: 'flowv2_b9_yes', title: 'Yes, help me' }),
   Object.freeze({ id: 'flowv2_b9_self', title: "I'll explore myself" }),
@@ -65,16 +65,20 @@ function orderCatalog(_profile) {
   return [...FLAT_CATALOG];
 }
 
-function buildShortlistBody(_profile, colleges) {
+function buildShortlistBody(profile, colleges) {
   const lines = [
-    "From what you've shared...",
-    'I think these colleges could be worth exploring:',
+    `From what you've shared — ${interestPhrase(profile)}, and what matters most is *${priorityPhrase(profile)}* 💡`,
+    '',
+    'Here are *5 colleges* worth exploring 👇',
+    '',
   ];
   for (const c of colleges) {
-    lines.push(c.medal ? `${c.medal} ${c.name}` : c.name);
+    const mark = c.medal || '🔹';
+    lines.push(`${mark} *${c.name}*`);
   }
   lines.push(
-    'Each has a different learning style, so the right choice depends on your goals, budget, and interests.',
+    '',
+    'Each has a different learning style — the right pick depends on your goals, budget, and interests 🎯',
     '',
     FIT_ASK_BODY
   );
