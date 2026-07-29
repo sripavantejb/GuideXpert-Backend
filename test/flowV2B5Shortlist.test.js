@@ -128,7 +128,7 @@ describe('b5Shortlist — handleB5Entry (V3 B8 medal shortlist)', () => {
       .filter(Boolean)
       .join('\n');
     assert.doesNotMatch(visible, /\*Best Match\*/i);
-    assert.match(visible, /worth exploring|Newton School|🥇/i);
+    assert.match(visible, /top 5 college|Newton School|🥇/i);
     assert.match(visible, /Polar School of Technology/i);
     assert.match(visible, /best fit/i);
     assert.equal(result.contextPatch.stage, 'b9_awaiting_reply');
@@ -253,7 +253,7 @@ describe('b5Shortlist — handleB5Reply (V3 B8/B9)', () => {
     assert.doesNotMatch(visible, /Book My Session|IITian/);
   });
 
-  test('NIAT pitch highlights the student\'s selected interests and priorities', () => {
+  test('NIAT pitch uses the redefined short benefit list', () => {
     const { buildNiatCounsellorPitch } = require('../services/chatbot/flowV2/nodes/b9Fit');
     const pitch = buildNiatCounsellorPitch({
       ...emptyFlowV2Profile(),
@@ -261,17 +261,11 @@ describe('b5Shortlist — handleB5Reply (V3 B8/B9)', () => {
       interestCluster: 'software',
       goalPriority: ['placements', 'internships'],
     });
-    assert.match(pitch, /Computers & software/i);
-    assert.match(pitch, /Web Development/i);
-    assert.match(pitch, /Artificial Intelligence/i);
-    assert.match(pitch, /Placements/i);
-    assert.match(pitch, /Internships/i);
-    assert.match(pitch, /How NIAT lines up with \*your\* picks/i);
-    assert.match(pitch, /✅ \*💻 Computers & software\*/);
-    assert.match(pitch, /✅ \*💼 Placements\*/);
-    // Placement + internship sections use ✅ bullets when those aspects were selected
-    assert.match(pitch, /✅ Mock interviews/);
-    assert.match(pitch, /✅ Internships can start early/);
+    assert.match(pitch, /Based on what you've shared/i);
+    assert.match(pitch, /\*NIAT\*/);
+    assert.match(pitch, /Learn coding, AI, and real-world projects/i);
+    assert.match(pitch, /UGC-recognised degree/i);
+    assert.match(pitch, /don't decide just because I recommended it/i);
   });
 
   test('wider catalog ask returns partner list without Best Match tiers', () => {

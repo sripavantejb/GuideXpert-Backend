@@ -101,7 +101,7 @@ const B2_LIST_BUTTON_TEXT = 'Select';
 
 // Company Stage 3. "I'm done ✓" kept for WhatsApp multi-select completion.
 const B2_QUESTION =
-  'Great ! Which topics excite you the most?\n(You can choose more than one.)';
+  'Great ! Which topics excite you more?\n(You can choose more than one.)';
 const B2_REASK_BODY =
   'Noted 👍 Tap more if you want — or tap *I\'m done ✓* when you\'re finished.';
 const B2_CAP_BODY = "That's a solid set — continuing with what you've picked.";
@@ -243,11 +243,11 @@ function buildB2ListInteractive(body, selectedLabels = []) {
 function branchAckLine(branchInterest) {
   const b = String(branchInterest || '').toLowerCase();
   if (b === 'cse_ai' || b === 'cse' || b === 'it') {
-    return "Solid — and it's the most flexible base you can pick right now.";
+    return 'Solid — Now you can pick..';
   }
-  if (b === 'design') return 'Good — design plus tech is a genuinely strong combination right now.';
-  if (b === 'data_analytics') return 'Good pick — that sits right next to AI.';
-  return 'Got it, noted.';
+  if (b === 'design') return 'Solid — Now you can pick..';
+  if (b === 'data_analytics') return 'Solid — Now you can pick..';
+  return 'Solid — Now you can pick..';
 }
 
 function matchInterest(text) {

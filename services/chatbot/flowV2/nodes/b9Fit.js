@@ -308,51 +308,20 @@ function shouldHonestPass(profile) {
 }
 
 /**
- * Rich NIAT pitch — curriculum, partner campuses, internships, placement support.
- * Lead with the student's own interests + priorities, then highlight how NIAT covers them.
- * Sourced from public NIAT/NxtWave materials; no outcome guarantees.
+ * Redefined NIAT pitch — short benefit list (exact company copy).
  */
-function buildNiatCounsellorPitch(profile) {
-  const why = priorityTiedReason(profile);
-  const interest = interestPhrase(profile);
-  const priorities = selectedPriorityHighlights(profile);
-  const priorityBit = priorities.length
-    ? `, and what matters most to you is *${priorities.map((p) => `${p.emoji} ${p.label}`).join(' + ')}*`
-    : '';
-  const matchLines = buildMatchHighlights(profile);
-  const primarySections = new Set(
-    priorities.map((p) => p.section).filter(Boolean)
-  );
-
-  const bullet = (section, text) =>
-    `${primarySections.has(section) ? '✅' : '•'} ${text}`;
-
+function buildNiatCounsellorPitch(_profile) {
   return [
-    'Sure 😊',
-    `From what you shared about *${interest}*${priorityBit}, NIAT (NxtWave Institute of Advanced Technologies) is one of the strongest options to explore — ${why}.`,
+    "Based on what you've shared, *NIAT* could be a great fit for you. 😊",
     '',
-    ...(matchLines.length ? [...matchLines, ''] : []),
-    '📚 Curriculum',
-    bullet('curriculum', 'AI-first B.Tech-style path with 4 phases: Decode → Develop → Architect → Ship'),
-    bullet('curriculum', 'Focus on full-stack, AI/ML and shipping real projects — not only semester exams'),
-    bullet('curriculum', 'Industry-oriented syllabus that refreshes with tools students actually use'),
+    '✅ Learn coding, AI, and real-world projects from day one.',
+    '✅ UGC-recognised degree from a partner university.',
+    '✅ Internship opportunities from the early years.',
+    '✅ Strong placement training and career support.',
+    '✅ Industry-focused curriculum, not just theory.',
+    '✅ Learn from experienced industry mentors.',
     '',
-    '🏫 Degree + tied-up colleges',
-    bullet('degree', 'NIAT is an industry upskilling layer by NxtWave (not a standalone degree university)'),
-    bullet('degree', 'You study on partner university campuses; the UGC-recognised degree comes from that university'),
-    bullet('degree', 'Partner network spans multiple cities — examples include campuses linked with Chaitanya, DY Patil, Yenepoya, Crescent, S-VYASA, Aurora and others'),
-    '',
-    '🛠️ Internships & real work',
-    bullet('internship', 'Internships can start early in the journey — not only in the final year'),
-    bullet('internship', 'Multiple hands-on projects across the 4 years'),
-    bullet('internship', 'Many students also get stipend-based internship opportunities (amounts vary by role)'),
-    '',
-    '💼 Placement support',
-    bullet('placement', 'Mock interviews, mentoring and hiring-partner access through the NxtWave network'),
-    bullet('placement', 'Strong placement support culture — results still depend on your effort and performance'),
-    '',
-    "But I don't want you to choose a college just because I suggested it.",
-    "Let's make sure it's actually the right fit for you.",
+    "But don't decide just because I recommended it. Let's check if it truly matches your goals, budget, and preferences.",
   ].join('\n');
 }
 
@@ -365,6 +334,7 @@ function looksLikeYes(text) {
     t === 'yes' ||
     t.includes('help me') ||
     t.includes('narrow it') ||
+    t.includes('pick the best') ||
     t.includes('suggest') ||
     t.includes('best college') ||
     t.includes('best fit')
@@ -537,11 +507,13 @@ function handleB9Entry(ctx) {
 }
 
 const NIAT_TO_BOOKING_BRIDGE = [
-  'Great 👍',
-  'Since NIAT looks interesting, I recommend booking a FREE 1:1 Career Guidance Session with an IITian.',
-  "They'll help you verify curriculum, partner campus, internships, fees and whether NIAT is the right fit — before you decide.",
+  'Great! 👍',
   '',
-  'Would you like to book your session now?',
+  'To know more about Interest, attend a *FREE 1:1 Career Guidance Session with an IITian* from *GuideXpert*.',
+  '',
+  "You'll get personalized guidance on colleges, courses, career opportunities, admissions, fees, and placements—so you can make the right decision with confidence.",
+  '',
+  '*Would you like to book your FREE session now?* 😊',
 ].join('\n');
 
 function handleB9NiatInterestReply(ctx, text) {

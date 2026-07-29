@@ -26,7 +26,7 @@ describe('b1Goal — handleB1Entry (V3 B4 PRIORITY)', () => {
     assert.equal(result.interactive.type, 'list');
     assert.equal(result.interactive.sections[0].rows.length, 7);
     assert.equal(B1_ROWS.length, 7);
-    assert.match(result.interactive.body, /One more thing/i);
+    assert.match(result.interactive.body, /What matters to you the most/i);
     assert.equal(result.contextPatch.stage, 'b4_awaiting_reply');
   });
 

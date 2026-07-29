@@ -47,9 +47,8 @@ const LEGACY_PRIORITY_IDS = Object.freeze({
 
 const B1_LIST_SECTION_TITLE = 'Options';
 const B1_LIST_BUTTON_TEXT = 'Select';
-// Company Stage 4 prompt (qualification ack still prefixes on entry).
-const B1_QUESTION_TAIL =
-  "One more thing...\nWhen choosing a college, what's most important to you?";
+// Company Stage 4 prompt.
+const B1_QUESTION_TAIL = 'What matters to you the most?';
 const B1_REASK_BODY = 'No worries — take your time. Pick whichever fits best for now:';
 
 const WA_LIST_TITLE_MAX = 24;
@@ -139,24 +138,22 @@ function handleB1Entry(ctx) {
 }
 
 const GOAL_ACK_LEAD = Object.freeze({
-  placements:
-    "Noted — placements first. That genuinely changes what I'd recommend, so thanks for being clear.",
-  placement:
-    "Noted — placements first. That genuinely changes what I'd recommend, so thanks for being clear.",
-  internships: 'Good — early internships are one of the clearest filters.',
-  internship: 'Good — early internships are one of the clearest filters.',
-  curriculum: 'Useful — syllabus reality matters more than brochures.',
-  faculty: 'Good call — faculty quality is hard to fake.',
-  campus: 'Fair — campus life is part of the decision.',
-  sports: 'Fair — sports and clubs matter for the full college experience.',
-  fees: 'Completely fair — and there are genuinely good options in that range.',
-  affordable: 'Completely fair — and there are genuinely good options in that range.',
-  location: 'Got it — proximity matters, and we will treat it that way.',
-  higher_studies: 'Useful to know — that changes which colleges actually make sense.',
-  startup: "Good — that's a different filter entirely, and a useful one.",
-  entrepreneurship: "Good — that's a different filter entirely, and a useful one.",
-  ai_future_tech: "Good instinct — that's where the sharpest students are heading right now.",
-  not_sure: 'Totally fine — we can keep that open.',
+  placements: 'Noted — placements first.',
+  placement: 'Noted — placements first.',
+  internships: 'Noted — internships first.',
+  internship: 'Noted — internships first.',
+  curriculum: 'Noted — curriculum first.',
+  faculty: 'Noted — faculty first.',
+  campus: 'Noted — campus life first.',
+  sports: 'Noted — sports & clubs first.',
+  fees: 'Noted — fees first.',
+  affordable: 'Noted — fees first.',
+  location: 'Noted — location first.',
+  higher_studies: 'Noted — higher studies first.',
+  startup: 'Noted — startup first.',
+  entrepreneurship: 'Noted — startup first.',
+  ai_future_tech: 'Noted — AI & future tech first.',
+  not_sure: 'Noted — got it.',
 });
 
 function goalPriorityAckLine(goalPriority) {

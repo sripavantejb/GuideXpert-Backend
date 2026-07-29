@@ -76,7 +76,8 @@ describe('b7Book — [Book my session] real reuse of Node 0\u2019s shared helper
   test('the real (unmocked) message contains the actual booking URL', () => {
     const message = buildB7BookingLinkMessage();
     assert.match(message, /guidexpert\.co\.in\/one-on-one-session/);
-    assert.match(message, /reply Done/i);
+    assert.match(message, /reply\. Done here/i);
+    assert.match(message, /Ask directly get real answers from IITians/i);
   });
 
   test('handleB7Reply([Book my session]) opens hybrid slot picker via Node 0 shared helper', async (t) => {

@@ -37,7 +37,7 @@ const GOAL_BY_TEXT = Object.freeze([
 ]);
 
 // Company Stage 2 body (PCM path).
-const B2_BODY = 'Awesome! 👍\nWhat are you looking for ?';
+const B2_BODY = 'Great 👍\n\nWhat are you looking for ?';
 const B2_REASK = 'No worries — pick whichever is closest:';
 
 function isGoalFilled(goal) {

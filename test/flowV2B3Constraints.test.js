@@ -71,7 +71,7 @@ describe('b3Constraints — handleB3Entry (four skip-combination cases)', () => 
     assert.equal([...(result.replyParts || []), result.replyText].filter(Boolean).join('\n\n'), BRIDGE_TEXT);
     assert.equal(result.contextPatch.stage, 'b8_shortlist_ask_awaiting_reply');
     assert.equal(result.interactive?.type, 'button');
-    assert.match(result.interactive.body, /top 5 colleges/i);
+    assert.match(result.interactive.body, /top 5 college matches/i);
   });
 
   test('REGRESSION (Phase 4 propagation-bug shape): every entry branch carries a profile mutated by an upstream caller', () => {
@@ -189,7 +189,7 @@ describe('b3Constraints — handleB3Reply (stage = b3_awaiting_location)', () =>
     const result = handleB3Reply(locationCtx(), 'Open to move');
     // Framing + top-5 ask buttons (not another B3 budget/location question).
     assert.equal(result.interactive?.type, 'button');
-    assert.match(result.interactive.body, /top 5 colleges/i);
+    assert.match(result.interactive.body, /top 5 college matches/i);
     const text = [...(result.replyParts || []), result.replyText].filter(Boolean).join('\n');
     assert.match(text, /Traditional Colleges|New-Age Colleges|biggest difference/i);
     assert.doesNotMatch(result.interactive.body, /comfortable for your family|near home/i);
@@ -213,7 +213,7 @@ describe('b4Bridge — handleB4Entry', () => {
     assert.equal(result.contextPatch.stage, 'b8_shortlist_ask_awaiting_reply');
     assert.equal(result.contextPatch.profile.frameSent, true);
     assert.equal(result.interactive?.type, 'button');
-    assert.match(result.interactive.body, /top 5 colleges/i);
+    assert.match(result.interactive.body, /top 5 college matches/i);
   });
 
   test('carries profile forward (Phase 4 propagation-bug shape)', () => {
@@ -251,7 +251,7 @@ describe('B3/B4 — end-to-end through the full dispatcher', () => {
     const visible = [...(result.replyParts || []), result.replyText, result.interactive?.body]
       .filter(Boolean)
       .join('\n');
-    assert.match(visible, /most flexible base/i);
+    assert.match(visible, /Now you can pick/i);
     assert.doesNotMatch(visible, /comfortable for your family/i);
   });
 
@@ -278,7 +278,7 @@ describe('B3/B4 — end-to-end through the full dispatcher', () => {
     ]
       .filter(Boolean)
       .join('\n');
-    assert.match(visible, /Traditional Colleges|New-Age Colleges|top 5 colleges|Newton School|best fit/i);
+    assert.match(visible, /Traditional Colleges|New-Age Colleges|top 5 college|Newton School|best fit/i);
     assert.doesNotMatch(visible, /\*Best Match\*/i);
   });
 });

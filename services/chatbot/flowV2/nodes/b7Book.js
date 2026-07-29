@@ -174,15 +174,17 @@ function buildB7BookingLinkMessage(preferredSlotLabel = null) {
     ? `Got it — ${preferredSlotLabel} noted as a preference.\n\n`
     : '';
   return [
-    `${hint}Great \u2014 here\u2019s your booking form:`,
+    `${hint}Great — here’s your booking form:`,
+    '',
     nodeZeroOverride.buildBookingUrlLine(),
     '',
-    'In the session your counsellor will:',
-    '\u2022 Compare colleges against YOUR goals',
-    '\u2022 Walk through placements, internships and scholarships',
-    '\u2022 Answer anything still open',
+    'Ask directly get real answers from IITians',
     '',
-    'After submitting, just reply Done here. \uD83D\uDE4C',
+    'Best options after 12th',
+    'Common mistakes to avoid',
+    'Things no one tells before choosing a college',
+    '',
+    'After submitting, just reply. Done here. 🙌',
   ].join('\n');
 }
 

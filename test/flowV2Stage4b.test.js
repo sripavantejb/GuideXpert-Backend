@@ -20,18 +20,18 @@ function ctx(stage, patch = {}, extra = {}) {
 
 describe('Master Flow Stage 4b — B1/B2/B3/B5/B7 reconciliation', () => {
   test('B1 qualification and choice acknowledgements use locked copy', () => {
-    assert.match(handleB1Entry(ctx(null, { qualification: '12th Completed (PCM)' })).interactive.body, /One more thing/i);
+    assert.match(handleB1Entry(ctx(null, { qualification: '12th Completed (PCM)' })).interactive.body, /What matters to you the most/i);
     assert.equal(
       goalPriorityAckLine(['placement']),
-      "Noted — placements first. That genuinely changes what I'd recommend, so thanks for being clear."
+      'Noted — placements first.'
     );
-    assert.equal(goalPriorityAckLine(['ai_future_tech']), "Good instinct — that's where the sharpest students are heading right now.");
+    assert.equal(goalPriorityAckLine(['ai_future_tech']), 'Noted — AI & future tech first.');
   });
 
   test('B2 non-core acknowledgements use locked copy', () => {
-    assert.equal(branchAckLine('cse_ai'), "Solid — and it's the most flexible base you can pick right now.");
-    assert.equal(branchAckLine('design'), 'Good — design plus tech is a genuinely strong combination right now.');
-    assert.equal(branchAckLine('data_analytics'), 'Good pick — that sits right next to AI.');
+    assert.equal(branchAckLine('cse_ai'), 'Solid — Now you can pick..');
+    assert.equal(branchAckLine('design'), 'Solid — Now you can pick..');
+    assert.equal(branchAckLine('data_analytics'), 'Solid — Now you can pick..');
   });
 
   test('B3 starts with the promised framing line and preserves independent skip behavior', () => {
@@ -73,7 +73,7 @@ describe('Master Flow Stage 4b — B1/B2/B3/B5/B7 reconciliation', () => {
     const visible = [...(result.replyParts || []), result.replyText, result.interactive?.body]
       .filter(Boolean)
       .join('\n');
-    assert.match(visible, /Newton School|🥇|worth exploring/i);
+    assert.match(visible, /Newton School|🥇|top 5 colleges/i);
     assert.match(visible, /Polar School of Technology/i);
     assert.match(visible, /best fit/i);
     assert.doesNotMatch(visible, /\*Best Match\*/i);

@@ -27,7 +27,7 @@ describe('Full Flow V3 — happy path PCM spine (company Option 3)', () => {
     let ctx = { flowV2: { stage: null, profile: emptyFlowV2Profile() } };
     let result = await processFlowV2Turn(ctx, 'hi');
     let text = visible(result);
-    assert.match(text, /Welcome to GuideXpert|current qualifications/i);
+    assert.match(text, /Welcome to GuideXpert|current qualification/i);
 
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     if (String(result.contextPatch.stage || '').includes('name')) {
@@ -73,7 +73,7 @@ describe('Full Flow V3 — happy path PCM spine (company Option 3)', () => {
     assert.notEqual(result.contextPatch.stage, 'b3_awaiting_budget');
     text = visible(result);
     assert.match(text, /Traditional Colleges|New-Age Colleges/i);
-    assert.match(text, /top 5 colleges that match/i);
+    assert.match(text, /top 5 college matches/i);
     assert.doesNotMatch(text, /Newton School of Technology/);
     assert.equal(result.contextPatch.stage, 'b8_shortlist_ask_awaiting_reply');
 
@@ -88,7 +88,7 @@ describe('Full Flow V3 — happy path PCM spine (company Option 3)', () => {
     result = await processFlowV2Turn(ctx, 'Yes, help me');
     ctx = { flowV2: { stage: result.contextPatch.stage, profile: result.contextPatch.profile } };
     text = visible(result);
-    assert.match(text, /NIAT|Decode|partner|Internship|Placement support/i);
+    assert.match(text, /NIAT|great fit|coding|Internship|placement|partner university/i);
     assert.match(text, /exploring NIAT further|interested/i);
     assert.doesNotMatch(text, /Book My Session|IITian/);
     assert.equal(result.contextPatch.stage, 'b9_niat_interest_awaiting_reply');

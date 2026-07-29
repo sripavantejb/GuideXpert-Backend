@@ -34,8 +34,9 @@ describe('flowV2 greeting — Node E entry', () => {
     assert.equal(result.replyText, null);
     assert.equal(result.interactive.body, buildNodeEOpenBody('Rahul'));
     assert.match(result.interactive.body, /Welcome to GuideXpert/);
-    assert.match(result.interactive.body, /Rithika from the GuideXpert counselling team/);
-    assert.match(result.interactive.body, /First, can I know your current qualifications\?/);
+    assert.match(result.interactive.body, /Rithika from the GuideXpert Counselling Team/);
+    assert.match(result.interactive.body, /First, may I know your current qualification\?/);
+    assert.match(result.interactive.body, /^👋 Hi! Welcome to GuideXpert/);
     assert.doesNotMatch(result.interactive.body, /Takes about 2 minutes/);
     assert.equal(result.contextPatch.stage, 'greeting_awaiting_qualification');
     assert.equal(result.interactive.type, 'list');
@@ -83,7 +84,7 @@ describe('flowV2 greeting — Node E entry', () => {
     assert.equal(result.interactive.body, UNKNOWN_NAME_GREETING);
     assert.equal(result.interactive.body, buildNodeEOpenBody(null));
     assert.match(result.interactive.body, /^👋 Hi! Welcome to GuideXpert/);
-    assert.match(result.interactive.body, /First, can I know your current qualifications\?/);
+    assert.match(result.interactive.body, /First, may I know your current qualification\?/);
     assert.doesNotMatch(result.interactive.body, /May I know your name/i);
     assert.equal(result.interactive.type, 'list');
     assert.equal(result.interactive.buttonText, 'Select');
@@ -138,7 +139,7 @@ describe('flowV2 greeting — legacy name capture (greeting_awaiting_name only)'
 
     const second = handleGreetingReply(nameCtx({ nameAttempts: 1 }), '...');
     assert.equal(second.interactive.body, NEUTRAL_QUALIFICATION_LINE);
-    assert.equal(second.interactive.body, 'First, can I know your current qualifications?');
+    assert.equal(second.interactive.body, 'First, may I know your current qualification?');
     assert.equal(second.contextPatch.stage, 'greeting_awaiting_qualification');
     assert.equal(second.contextPatch.nameAttempts, null);
   });

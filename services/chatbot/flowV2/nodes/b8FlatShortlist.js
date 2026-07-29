@@ -25,8 +25,7 @@ const WIDER_CATALOG_LINE =
 const DISCLOSURE = '';
 
 /** Explicit gate after Stage 7 — before the top-5 list. */
-const SHORTLIST_ASK_BODY =
-  'Would you like me to show you the top 5 colleges that match your interests and goals?';
+const SHORTLIST_ASK_BODY = 'Want to see your top 5 college matches?';
 const SHORTLIST_ASK_BUTTONS = Object.freeze([
   Object.freeze({ id: 'flowv2_b8_show', title: 'Yes, show me' }),
   Object.freeze({ id: 'flowv2_b8_later', title: 'Maybe Later' }),
@@ -37,7 +36,7 @@ const SHORTLIST_ASK_DECLINE = [
   "Whenever you're ready for the shortlist, just say the word.",
 ].join('\n');
 
-const FIT_ASK_BODY = 'Want me to narrow this to the best fit for you?';
+const FIT_ASK_BODY = 'Want me to pick the best fit for you?';
 const FIT_BUTTONS = Object.freeze([
   Object.freeze({ id: 'flowv2_b9_yes', title: 'Yes, help me' }),
   Object.freeze({ id: 'flowv2_b9_self', title: "I'll explore myself" }),
@@ -65,20 +64,22 @@ function orderCatalog(_profile) {
   return [...FLAT_CATALOG];
 }
 
-function buildShortlistBody(profile, colleges) {
+function buildShortlistBody(_profile, colleges) {
   const lines = [
-    `From what you've shared — ${interestPhrase(profile)}, and what matters most is *${priorityPhrase(profile)}* 💡`,
+    "From what you've shared💡",
     '',
-    'Here are *5 colleges* worth exploring 👇',
+    'Here your top 5 colleges👇',
     '',
   ];
   for (const c of colleges) {
     const mark = c.medal || '🔹';
-    lines.push(`${mark} *${c.name}*`);
+    lines.push(`${mark} ${c.name}`);
   }
   lines.push(
     '',
-    'Each has a different learning style — the right pick depends on your goals, budget, and interests 🎯',
+    'Each college has its own strengths.',
+    '',
+    'The best choice depends on your career goals, budget, and interests. 🎯',
     '',
     FIT_ASK_BODY
   );

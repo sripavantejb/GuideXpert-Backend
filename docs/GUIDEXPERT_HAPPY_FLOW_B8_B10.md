@@ -1,47 +1,56 @@
 # GuideXpert · Happy Flow B8–B10 (product overlay)
 
-PCM happy path: company Stages 5–10 with an explicit shortlist ask and NIAT interest gate before booking.
+PCM happy path copy (redefined company strings).
+
+## Greeting → Goal → Interest → Priority
+
+- Greeting: fixed `👋 Hi! Welcome to GuideXpert.` (no name) + `First, may I know your current qualification?`
+- Goal: `Great 👍` / `What are you looking for ?`
+- Interest: `Great ! Which topics excite you more?`
+- After interest: `Solid — Now you can pick..` then `What matters to you the most?`
+- Priority ack: `Noted — {priority} first.`
 
 ## After Stage 7 · Ask before top 5
 
-After Traditional vs New-Age framing, ask:
-
-*Would you like me to show you the top 5 colleges that match your interests and goals?*
+*Want to see your top 5 college matches?*
 
 Buttons: **Yes, show me** / **Maybe Later**.
 
 ## B8 · Shortlist (top 5, one WhatsApp bubble)
 
-Personalised lead-in (interest + priority) → structured list:
+```
+From what you've shared💡
 
-1. 🥇 *Newton School of Technology*  
-2. 🥈 *NIAT*  
-3. 🥉 *Scaler*  
-4. 🔹 *Polar School of Technology*  
-5. 🔹 *Plaksha University*  
+Here your top 5 colleges👇
 
-Close: learning-style note → *Want me to narrow this to the best fit for you?*  
-Shortlist + fit ask ship in **one** button interactive. Wider catalog (Kalvium etc.) on typed ask.
+🥇 Newton School of Technology
+🥈 NIAT
+🥉 Scaler
+🔹 Polar School of Technology
+🔹 Plaksha University
 
-## B9 · Fit ask → rich NIAT pitch → interest gate
+Each college has its own strengths.
 
-Ask: *Would you like me to help you find the best fit?*
+The best choice depends on your career goals, budget, and interests. 🎯
 
-- **Yes, help me** → detailed NIAT pitch that:
-  - Names the student’s selected interests + “what matters most” aspects
-  - Adds an **✨ How NIAT lines up with your picks** block (✅ per interest/priority)
-  - Marks matching Curriculum / Internships / Placement bullets with ✅
-  - Then: *Does exploring NIAT further sound interesting?*
+Want me to pick the best fit for you?
+```
+
+## B9 · Fit ask → short NIAT pitch → interest gate
+
+- **Yes, help me** → short NIAT benefit list (coding/AI, UGC degree, internships, placements, curriculum, mentors)  
+- Then: *Does exploring NIAT further sound interesting?*  
 - **Yes, I'm interested** → Stage 10 booking invite  
-- **Not for me** → honour, warm park  
-- **I'll explore myself** → honour once, warm park  
+- **Not for me** / **I'll explore myself** → honour, warm park  
 
 ## B10 · Hybrid book (IITian copy)
 
-Only after NIAT interest yes:
+```
+Great! 👍
 
-1. Bridge: free 1:1 IITian session suggestion  
-2. Stage 10 invite buttons: **📅 Book My Session** / **Maybe Later**  
-3. **Book My Session** → booking link sent immediately (no slot picker on this path)
+To know more about Interest, attend a FREE 1:1 Career Guidance Session with an IITian from GuideXpert.
+…
+*Would you like to book your FREE session now?* 😊
+```
 
-Maybe Later schedules +30m / +1h / +3h via `GET /cron/process-booking-followups`.
+**Book My Session** → booking form link + IITian bullet points → reply Done.
