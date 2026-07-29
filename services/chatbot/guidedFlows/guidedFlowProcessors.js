@@ -216,6 +216,7 @@ async function processCareerCounsellingFlowV2Turn({
   return {
     replyText: result.replyText,
     replyParts: result.replyParts,
+    replyMedia: result.replyMedia || null,
     interactive: result.interactive || null,
     nextState: result.nextState || 'career_counselling_flow_v2',
     contextPatch: clearAssistantSessionFlags({

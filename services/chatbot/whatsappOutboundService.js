@@ -346,6 +346,72 @@ async function sendAgentTextReply({
   };
 }
 
+/**
+ * Send a bot image (optionally captioned) and persist the outbound row.
+ *
+ * Callers pass `inReplyToInboundId: null` when the same turn also sends a
+ * text/interactive reply — the unique bot-reply index allows only one row
+ * per inbound.
+ */
+async function sendBotImageReply({
+  conversationId,
+  phone10,
+  url,
+  caption = null,
+  inReplyToInboundId = null,
+}) {
+  const outbound = await WhatsAppOutboundMessage.create({
+    conversationId,
+    phone: phone10,
+    senderType: 'bot',
+    messageType: 'image',
+    content: { type: 'image', url, caption },
+    textPreview: String(caption || url || '').slice(0, 500),
+    status: 'queued',
+    inReplyToInboundId: inReplyToInboundId || null,
+  });
+
+  const result = await gupshupSession.sendImageMessage(phone10, url, caption);
+  const ids = parseGupshupTemplateSendResponse(result && result.data);
+  const nowUp = new Date();
+
+  if (result && result.success) {
+    await WhatsAppOutboundMessage.updateOne(
+      { _id: outbound._id },
+      {
+        $set: {
+          status: result.stub ? 'simulated' : 'submitted',
+          gupshupMessageId: ids.canonicalMessageId || null,
+          gupshupInternalMessageId: ids.gupshupInternalMessageId || null,
+          whatsappWaMessageId: ids.whatsappWaMessageId || null,
+          providerPayloadSnippet: snippetFromResult(result),
+          sentAt: nowUp,
+          updatedAt: nowUp,
+        },
+      }
+    );
+    return { success: true, outboundId: outbound._id };
+  }
+
+  await WhatsAppOutboundMessage.updateOne(
+    { _id: outbound._id },
+    {
+      $set: {
+        status: 'failed',
+        webhookErrorReason: (result && result.error) || 'send failed',
+        failedAt: nowUp,
+        updatedAt: nowUp,
+      },
+    }
+  );
+  logOutboundFailure(phone10, 'image', result);
+  const fallback = await attemptSessionFallbackOnFailure(phone10, result);
+  if (fallback && fallback.success) {
+    return { success: true, outboundId: outbound._id, sessionFallback: true };
+  }
+  return { success: false, outboundId: outbound._id, error: result && result.error };
+}
+
 async function sendBotListReply({
   conversationId,
   phone10,
@@ -413,6 +479,7 @@ module.exports = {
   sendBotTextReply,
   sendBotButtonReply,
   sendBotListReply,
+  sendBotImageReply,
   sendAgentTextReply,
   isReengagementSendError,
 };

@@ -10,6 +10,19 @@ PCM happy path copy (redefined company strings).
 - After interest: `Solid — Now you can pick..` then `What matters to you the most?`
 - Priority ack: `Noted — {priority} first.`
 
+## Stage 7 · Traditional vs new-age (image)
+
+Sent as a captioned image, not a text wall — the comparison lives in the artwork.
+
+```
+[image] https://res.cloudinary.com/dfqdb1xws/image/upload/v1785308851/WhatsApp_Image_2026-07-29_at_12.35.01_PM_bm2zsf.jpg
+
+caption:
+Great! 👍
+
+Before I recommend colleges, here's something every student should know.
+```
+
 ## After Stage 7 · Ask before top 5
 
 *Want to see your top 5 college matches?*

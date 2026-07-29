@@ -6,6 +6,7 @@ const {
   buildTextMessageField,
   buildInteractiveButtonMessageField,
   buildInteractiveListMessageField,
+  buildImageMessageField,
   listMessageNeedsEncode,
 } = require('../utils/gupshupSessionPayload');
 
@@ -14,6 +15,21 @@ describe('gupshupSessionPayload', () => {
     const j = JSON.parse(buildTextMessageField('Hello'));
     assert.equal(j.type, 'text');
     assert.equal(j.text, 'Hello');
+  });
+
+  test('buildImageMessageField uses Gupshup image shape with caption', () => {
+    const j = JSON.parse(
+      buildImageMessageField({ url: 'https://cdn.example.com/a.jpg', caption: 'Great! 👍' })
+    );
+    assert.equal(j.type, 'image');
+    assert.equal(j.originalUrl, 'https://cdn.example.com/a.jpg');
+    assert.equal(j.previewUrl, 'https://cdn.example.com/a.jpg');
+    assert.equal(j.caption, 'Great! 👍');
+  });
+
+  test('buildImageMessageField omits an empty caption', () => {
+    const j = JSON.parse(buildImageMessageField({ url: 'https://cdn.example.com/a.jpg' }));
+    assert.equal(j.caption, undefined);
   });
 
   test('buildInteractiveButtonMessageField uses Gupshup quick_reply shape', () => {

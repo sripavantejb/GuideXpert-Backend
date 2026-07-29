@@ -11,7 +11,12 @@ const { processFlowV2Turn } = require('../services/chatbot/flowV2/flowV2Dispatch
 const { emptyFlowV2Profile } = require('../constants/careerCounsellingFlowV2Profile');
 
 function visible(result) {
-  return [...(result.replyParts || []), result.replyText, result.interactive?.body]
+  return [
+    result.replyMedia?.caption,
+    ...(result.replyParts || []),
+    result.replyText,
+    result.interactive?.body,
+  ]
     .filter(Boolean)
     .join('\n');
 }
@@ -72,7 +77,9 @@ describe('Full Flow V3 — happy path PCM spine (company Option 3)', () => {
 
     assert.notEqual(result.contextPatch.stage, 'b3_awaiting_budget');
     text = visible(result);
-    assert.match(text, /Traditional Colleges|New-Age Colleges/i);
+    // The traditional-vs-new-age comparison ships as an image; text is the short lead-in.
+    assert.equal(result.replyMedia?.type, 'image');
+    assert.match(text, /every student should know/i);
     assert.match(text, /top 5 college matches/i);
     assert.doesNotMatch(text, /Newton School of Technology/);
     assert.equal(result.contextPatch.stage, 'b8_shortlist_ask_awaiting_reply');

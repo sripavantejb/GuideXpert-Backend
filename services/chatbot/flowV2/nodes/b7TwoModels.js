@@ -8,32 +8,21 @@
 const { mergeFlowV2Profile } = require('../flowV2ProfileMerge');
 const { emptyFlowV2Profile } = require('../../../../constants/careerCounsellingFlowV2Profile');
 const { handleB8ShortlistAskEntry } = require('./b8FlatShortlist');
-const { withMergedProfile, combineNodeResults } = require('../flowV2NodeUtils');
+const { withMergedProfile } = require('../flowV2NodeUtils');
 
-const TWO_MODELS_PART_1 = [
+/** Traditional vs new-age comparison card — the framing is carried by the image. */
+const TWO_MODELS_IMAGE_URL =
+  'https://res.cloudinary.com/dfqdb1xws/image/upload/v1785308851/WhatsApp_Image_2026-07-29_at_12.35.01_PM_bm2zsf.jpg';
+
+const TWO_MODELS_TEXT = [
   'Great! 👍',
-  "Before I suggest colleges, here's something important.",
-  'Today, students generally have two choices:',
-  '🏛️ Traditional Colleges',
-  '📚 Curriculum updates less frequently',
-  '📝 Theory & semester-focused learning',
-  '🎓 More focus on exams than practical skills',
-  '💻 Limited industry exposure',
-  '📉 Placements usually start in the final year',
-  '🚀 New-Age Colleges',
-  '✅ Industry projects from Day 1',
-  '✅ Coding from Day 1',
-  '✅ AI & emerging technologies',
-  '✅ Internships and hands-on learning',
-  '✅ Regularly updated curriculum',
-  '✅ Job-ready skills with strong placement support',
+  '',
+  "Before I recommend colleges, here's something every student should know.",
 ].join('\n');
 
-const TWO_MODELS_PART_2 =
-  "The biggest difference isn't the campus—it's how well the college prepares you for your career.";
-
-/** Combined for tests / callers that expect a single string. */
-const TWO_MODELS_TEXT = `${TWO_MODELS_PART_1}\n\n${TWO_MODELS_PART_2}`;
+function twoModelsMedia() {
+  return { type: 'image', url: TWO_MODELS_IMAGE_URL, caption: TWO_MODELS_TEXT };
+}
 
 function handleB7TwoModelsEntry(ctx) {
   const profile = ctx?.flowV2?.profile || emptyFlowV2Profile();
@@ -42,12 +31,11 @@ function handleB7TwoModelsEntry(ctx) {
   }
   const merged = mergeFlowV2Profile(profile, { frameSent: true });
   const ask = handleB8ShortlistAskEntry(withMergedProfile(ctx, merged));
-  return combineNodeResults([TWO_MODELS_PART_1, TWO_MODELS_PART_2], ask);
+  return { ...ask, replyMedia: twoModelsMedia() };
 }
 
 module.exports = {
   handleB7TwoModelsEntry,
   TWO_MODELS_TEXT,
-  TWO_MODELS_PART_1,
-  TWO_MODELS_PART_2,
+  TWO_MODELS_IMAGE_URL,
 };

@@ -91,6 +91,22 @@ function buildInteractiveListMessageField(p) {
   });
 }
 
+/**
+ * Image message with optional caption.
+ * @param {{ url: string, caption?: string }} p
+ */
+function buildImageMessageField(p) {
+  const url = String(p.url || '').trim();
+  const caption = String(p.caption || '').slice(0, 1024);
+  const field = {
+    type: 'image',
+    originalUrl: url,
+    previewUrl: url,
+  };
+  if (caption) field.caption = caption;
+  return JSON.stringify(field);
+}
+
 /** True when list body/titles need Gupshup `encode=true` (emoji / non-ASCII). */
 function listMessageNeedsEncode(body, sections) {
   const chunks = [String(body || '')];
@@ -107,5 +123,6 @@ module.exports = {
   buildTextMessageField,
   buildInteractiveButtonMessageField,
   buildInteractiveListMessageField,
+  buildImageMessageField,
   listMessageNeedsEncode,
 };

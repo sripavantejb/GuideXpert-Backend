@@ -8,6 +8,7 @@ const {
   buildTextMessageField,
   buildInteractiveButtonMessageField,
   buildInteractiveListMessageField,
+  buildImageMessageField,
   listMessageNeedsEncode,
 } = require('../../utils/gupshupSessionPayload');
 const { isWhatsAppEnabled } = require('../gupshupService');
@@ -133,13 +134,20 @@ async function sendListMessage(phone10, body, buttonText, sections, opts = {}) {
   return sendSessionMessageRaw(phone10, field, { ...opts, encode });
 }
 
+async function sendImageMessage(phone10, url, caption, opts = {}) {
+  const field = buildImageMessageField({ url, caption });
+  return sendSessionMessageRaw(phone10, field, opts);
+}
+
 module.exports = {
   GUPSHUP_SESSION_URL,
   sendSessionMessageRaw,
   sendTextMessage,
   sendButtonMessage,
   sendListMessage,
+  sendImageMessage,
   buildTextMessageField,
   buildInteractiveButtonMessageField,
   buildInteractiveListMessageField,
+  buildImageMessageField,
 };

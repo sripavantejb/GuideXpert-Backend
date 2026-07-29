@@ -16,6 +16,15 @@ function ctxWithProfile(patch = {}) {
   return { flowV2: { profile: { ...emptyFlowV2Profile(), ...patch } } };
 }
 
+/** Everything the student reads in a turn — the two-models frame ships as an image caption. */
+function turnText(result) {
+  return [
+    ...(result.replyMedia?.caption ? [result.replyMedia.caption] : []),
+    ...(result.replyParts || []),
+    ...(result.replyText ? [result.replyText] : []),
+  ].join('\n\n');
+}
+
 describe('b3Constraints — extractB3BudgetTap / extractB3LocationTap', () => {
   test('recognizes all three budget buttons distinctly (generic extractor would collapse two of them)', () => {
     assert.equal(extractB3BudgetTap('Under \u20B92L'), 'under_2l');
@@ -68,7 +77,7 @@ describe('b3Constraints — handleB3Entry (four skip-combination cases)', () => 
 
   test('case (a) both already filled: skips B3 entirely, advances straight to B4 in the same turn', () => {
     const result = handleB3Entry(ctxWithProfile({ budgetBand: 'under_2l', cityPref: 'Hyderabad' }));
-    assert.equal([...(result.replyParts || []), result.replyText].filter(Boolean).join('\n\n'), BRIDGE_TEXT);
+    assert.equal(turnText(result), BRIDGE_TEXT);
     assert.equal(result.contextPatch.stage, 'b8_shortlist_ask_awaiting_reply');
     assert.equal(result.interactive?.type, 'button');
     assert.match(result.interactive.body, /top 5 college matches/i);
@@ -130,7 +139,7 @@ describe('b3Constraints — handleB3Reply (stage = b3_awaiting_budget)', () => {
 
   test('defensive: if cityPref is somehow already filled by the time the budget reply arrives, skips location and advances to B4', () => {
     const result = handleB3Reply(ctxWithProfile({ cityPref: 'Hyderabad' }), '\u20B95L+');
-    assert.equal([...(result.replyParts || []), result.replyText].filter(Boolean).join('\n\n'), BRIDGE_TEXT);
+    assert.equal(turnText(result), BRIDGE_TEXT);
     assert.equal(result.contextPatch.stage, 'b8_shortlist_ask_awaiting_reply');
     assert.equal(result.contextPatch.profile.budgetBand, '5l_plus');
     assert.equal(result.contextPatch.profile.cityPref, 'Hyderabad');
@@ -175,14 +184,14 @@ describe('b3Constraints — handleB3Reply (stage = b3_awaiting_location)', () =>
   test('a real city name (free text, not a tap) also resolves correctly', () => {
     const result = handleB3Reply(locationCtx(), 'I want to study in Hyderabad');
     assert.equal(result.contextPatch.profile.cityPref, 'Hyderabad');
-    assert.equal([...(result.replyParts || []), result.replyText].filter(Boolean).join('\n\n'), BRIDGE_TEXT);
+    assert.equal(turnText(result), BRIDGE_TEXT);
   });
 
   test('never silently defaults cityPref on an unrecognized reply — re-asks the location question, never sends B4', () => {
     const result = handleB3Reply(locationCtx(), 'not sure honestly');
     assert.equal(result.contextPatch.profile.cityPref, null);
     assert.equal(result.contextPatch.stage, 'b3_awaiting_location');
-    assert.notEqual([...(result.replyParts || []), result.replyText].filter(Boolean).join('\n\n'), BRIDGE_TEXT);
+    assert.notEqual(turnText(result), BRIDGE_TEXT);
   });
 
   test('this is the LAST question of the beat: no additional B3 question is appended after a location answer', () => {
@@ -190,8 +199,8 @@ describe('b3Constraints — handleB3Reply (stage = b3_awaiting_location)', () =>
     // Framing + top-5 ask buttons (not another B3 budget/location question).
     assert.equal(result.interactive?.type, 'button');
     assert.match(result.interactive.body, /top 5 college matches/i);
-    const text = [...(result.replyParts || []), result.replyText].filter(Boolean).join('\n');
-    assert.match(text, /Traditional Colleges|New-Age Colleges|biggest difference/i);
+    assert.equal(turnText(result), BRIDGE_TEXT);
+    assert.equal(result.replyMedia?.type, 'image');
     assert.doesNotMatch(result.interactive.body, /comfortable for your family|near home/i);
   });
 
@@ -205,11 +214,13 @@ describe('b3Constraints — handleB3Reply (stage = b3_awaiting_location)', () =>
 describe('b4Bridge — handleB4Entry', () => {
   const { handleB4Entry } = require('../services/chatbot/flowV2/nodes/b4Bridge');
 
-  test('sends V3 two-models frame then asks before top-5 shortlist', () => {
+  test('sends V3 two-models frame as a captioned image then asks before top-5 shortlist', () => {
     const result = handleB4Entry(ctxWithProfile());
-    const text = [...(result.replyParts || []), result.replyText].filter(Boolean).join('\n\n');
-    assert.equal(text, BRIDGE_TEXT);
-    assert.match(text, /Traditional Colleges|New-Age Colleges/i);
+    assert.equal(turnText(result), BRIDGE_TEXT);
+    assert.equal(result.replyMedia.type, 'image');
+    assert.match(result.replyMedia.url, /^https:\/\/res\.cloudinary\.com\//);
+    assert.equal(result.replyMedia.caption, BRIDGE_TEXT);
+    assert.equal(result.replyParts, null);
     assert.equal(result.contextPatch.stage, 'b8_shortlist_ask_awaiting_reply');
     assert.equal(result.contextPatch.profile.frameSent, true);
     assert.equal(result.interactive?.type, 'button');
@@ -226,6 +237,7 @@ describe('b4Bridge — handleB4Entry', () => {
   test('exports no reply handler for B4 — only entry + two-models text aliases', () => {
     const mod = require('../services/chatbot/flowV2/nodes/b4Bridge');
     assert.deepEqual(Object.keys(mod).sort(), ['BRIDGE_TEXT', 'TWO_MODELS_TEXT', 'handleB4Entry']);
+    assert.equal(mod.BRIDGE_TEXT, mod.TWO_MODELS_TEXT);
     assert.equal(mod.handleB4Reply, undefined);
   });
 });

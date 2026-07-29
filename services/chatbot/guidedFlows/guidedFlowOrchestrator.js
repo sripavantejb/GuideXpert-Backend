@@ -108,9 +108,14 @@ async function executeActiveGuidedFlowTurn({
     ? 'static'
     : turn.localizationTier || flow.localizationTier || 'translate';
   const outboundPreLocalized = flowV2EnglishOnly ? true : Boolean(turn.preLocalized);
+  const flowV2Media =
+    turn.replyMedia && turn.replyMedia.type === 'image' && turn.replyMedia.url
+      ? turn.replyMedia
+      : null;
   if (
     !replyText &&
     !flowV2Interactive &&
+    !flowV2Media &&
     (!Array.isArray(turn.replyParts) || turn.replyParts.length === 0)
   ) {
     replyText =
@@ -144,6 +149,31 @@ async function executeActiveGuidedFlowTurn({
       });
     }
     replyText = replyParts.join('\n\n');
+  }
+
+  let mediaCaption = null;
+  if (flowV2Media && typeof h.outbound.sendBotImageReply !== 'function') {
+    console.warn('[flowV2] image reply skipped — outbound.sendBotImageReply unavailable');
+  } else if (flowV2Media) {
+    const caption = flowV2Media.caption
+      ? await deliverOutboundReply({
+          replyText: flowV2Media.caption,
+          multilingualInbound: outboundLanguageInbound,
+          intent: turn.intent,
+          localizationTier: outboundLocalizationTier,
+          preLocalized: outboundPreLocalized,
+        })
+      : null;
+    // inReplyToInboundId stays null — the interactive/text reply in this same
+    // turn owns the one bot-reply row allowed per inbound.
+    result = await h.outbound.sendBotImageReply({
+      conversationId: activeConversation._id,
+      phone10: activeConversation.phone,
+      url: flowV2Media.url,
+      caption,
+      inReplyToInboundId: null,
+    });
+    mediaCaption = caption;
   }
 
   if (flowV2Interactive && flowV2Interactive.type === 'list') {
@@ -180,16 +210,14 @@ async function executeActiveGuidedFlowTurn({
       inReplyToInboundId: inbound._id,
     });
     replyText = body;
-  } else if (!replyParts || !replyParts.length) {
-    if (replyText) {
-      replyText = await deliverOutboundReply({
-        replyText,
-        multilingualInbound: outboundLanguageInbound,
-        intent: turn.intent,
-        localizationTier: outboundLocalizationTier,
-        preLocalized: outboundPreLocalized,
-      });
-    }
+  } else if (replyText && (!replyParts || !replyParts.length)) {
+    replyText = await deliverOutboundReply({
+      replyText,
+      multilingualInbound: outboundLanguageInbound,
+      intent: turn.intent,
+      localizationTier: outboundLocalizationTier,
+      preLocalized: outboundPreLocalized,
+    });
 
     result = await h.outbound.sendBotTextReply({
       conversationId: activeConversation._id,
@@ -197,6 +225,10 @@ async function executeActiveGuidedFlowTurn({
       text: replyText,
       inReplyToInboundId: inbound._id,
     });
+  }
+
+  if (!replyText && mediaCaption) {
+    replyText = mediaCaption;
   }
 
   if (turn.pendingSideEffect && typeof turn.pendingSideEffect.execute === 'function') {

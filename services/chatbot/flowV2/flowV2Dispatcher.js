@@ -70,6 +70,7 @@
  * {
  *   replyText: string|null,
  *   replyParts: string[]|null,
+ *   replyMedia: null | { type:'image', url, caption },
  *   interactive: null | { type:'list', body, buttonText, sections } | { type:'button', body, buttons },
  *   contextPatch: object,   // patches context.flowV2 only, never the top-level context
  *   nextState: 'career_counselling_flow_v2' | 'human_handoff',
@@ -198,6 +199,9 @@ async function drainAwaitingEntryStages(ctx, result) {
     const combined = prefixes.length ? combineNodeResults(prefixes, entryResult) : entryResult;
     if (current.pendingSideEffect && !combined.pendingSideEffect) {
       combined.pendingSideEffect = current.pendingSideEffect;
+    }
+    if (current.replyMedia && !combined.replyMedia) {
+      combined.replyMedia = current.replyMedia;
     }
     current = {
       ...combined,
