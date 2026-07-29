@@ -10,6 +10,7 @@ const {
   buildInteractiveListMessageField,
   buildImageMessageField,
   listMessageNeedsEncode,
+  HIDDEN_LIST_TITLE,
 } = require('../../utils/gupshupSessionPayload');
 const { isWhatsAppEnabled } = require('../gupshupService');
 
@@ -122,16 +123,32 @@ async function sendButtonMessage(phone10, body, buttons, opts = {}) {
   return sendSessionMessageRaw(phone10, field, opts);
 }
 
+/** Gupshup documents `title` as required; detect a rejection caused by omitting it. */
+function looksLikeMissingTitleError(error) {
+  return /title|invalid.*(message|format|param)/i.test(String(error || ''));
+}
+
 async function sendListMessage(phone10, body, buttonText, sections, opts = {}) {
-  const field = buildInteractiveListMessageField({
-    body,
-    buttonText,
-    sections,
-    title: opts.title,
-  });
+  const buildField = (title) =>
+    buildInteractiveListMessageField({ body, buttonText, sections, title });
   const encode =
     opts.encode != null ? Boolean(opts.encode) : listMessageNeedsEncode(body, sections);
-  return sendSessionMessageRaw(phone10, field, { ...opts, encode });
+
+  const result = await sendSessionMessageRaw(phone10, buildField(opts.title), {
+    ...opts,
+    encode,
+  });
+
+  const headerOmitted =
+    opts.title !== undefined && opts.title !== null && !String(opts.title).trim();
+  if (result.success || !headerOmitted || !looksLikeMissingTitleError(result.error)) {
+    return result;
+  }
+
+  console.warn('[chatbot] list_header_omitted_rejected — retrying with hidden title', {
+    error: result.error,
+  });
+  return sendSessionMessageRaw(phone10, buildField(HIDDEN_LIST_TITLE), { ...opts, encode });
 }
 
 async function sendImageMessage(phone10, url, caption, opts = {}) {

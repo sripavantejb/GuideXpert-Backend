@@ -6,10 +6,25 @@
  * causes WhatsApp to show the raw JSON as plain text.
  */
 
+/**
+ * Strip the leading/trailing blank space WhatsApp renders as an empty line
+ * above (or below) the bubble content, and collapse runs of blank lines.
+ * Spacing that is part of the copy — single blank lines between paragraphs —
+ * is preserved.
+ */
+function normalizeMessageText(value) {
+  return String(value ?? '')
+    .replace(/\r\n/g, '\n')
+    .replace(/^[\s\u200b\u200c\u200d\u00a0\ufeff]+/, '')
+    .replace(/[\s\u200b\u200c\u200d\u00a0\ufeff]+$/, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
 function buildTextMessageField(text, previewUrl = false) {
   return JSON.stringify({
     type: 'text',
-    text: String(text || '').slice(0, 4096),
+    text: normalizeMessageText(text).slice(0, 4096),
     previewUrl: Boolean(previewUrl),
   });
 }
@@ -29,13 +44,17 @@ function buildInteractiveButtonMessageField(p) {
     msgid: String(p.msgid || 'qr1').slice(0, 64),
     content: {
       type: 'text',
-      text: String(p.body || '').slice(0, 1024),
+      text: normalizeMessageText(p.body).slice(0, 1024),
     },
     options,
   });
 }
 
-/** Zero-width space — Gupshup requires a title; this hides the card heading. */
+/**
+ * Fallback heading used only if Gupshup rejects a list without a title.
+ * A zero-width space still renders as an empty header line, so the field is
+ * omitted instead whenever the caller asks for no heading.
+ */
 const HIDDEN_LIST_TITLE = '\u200b';
 
 /**
@@ -69,12 +88,12 @@ function buildInteractiveListMessageField(p) {
   const rawTitle = explicitTitle
     ? String(p.title)
     : String(firstSection.title || 'Select');
-  const title = (rawTitle.trim() ? rawTitle : HIDDEN_LIST_TITLE).slice(0, 60);
+  const title = normalizeMessageText(rawTitle).slice(0, 60);
 
   return JSON.stringify({
     type: 'list',
-    title,
-    body: String(p.body || '').slice(0, 1024),
+    ...(title ? { title } : {}),
+    body: normalizeMessageText(p.body).slice(0, 1024),
     msgid: String(p.msgid || 'list1').slice(0, 64),
     globalButtons: [
       {
@@ -97,7 +116,7 @@ function buildInteractiveListMessageField(p) {
  */
 function buildImageMessageField(p) {
   const url = String(p.url || '').trim();
-  const caption = String(p.caption || '').slice(0, 1024);
+  const caption = normalizeMessageText(p.caption).slice(0, 1024);
   const field = {
     type: 'image',
     originalUrl: url,
@@ -125,4 +144,6 @@ module.exports = {
   buildInteractiveListMessageField,
   buildImageMessageField,
   listMessageNeedsEncode,
+  normalizeMessageText,
+  HIDDEN_LIST_TITLE,
 };

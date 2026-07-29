@@ -73,7 +73,7 @@ describe('gupshupSessionPayload', () => {
     assert.equal(j.interactive, undefined);
   });
 
-  test('buildInteractiveListMessageField hides card title when title is blank', () => {
+  test('buildInteractiveListMessageField omits the card title when title is blank', () => {
     const j = JSON.parse(
       buildInteractiveListMessageField({
         title: '',
@@ -82,9 +82,43 @@ describe('gupshupSessionPayload', () => {
         sections: [{ title: 'Options', rows: [{ id: 'a', title: 'AI' }] }],
       })
     );
-    assert.equal(j.title, '\u200b');
+    // A zero-width-space heading still renders as an empty line above the body.
+    assert.equal(Object.prototype.hasOwnProperty.call(j, 'title'), false);
     assert.equal(j.items[0].title, 'Options');
     assert.equal(j.body, 'Which of these actually interest you?');
+  });
+
+  test('leading and trailing blank lines are stripped from every body', () => {
+    assert.equal(JSON.parse(buildTextMessageField('\n\n  Hello  \n\n')).text, 'Hello');
+    assert.equal(
+      JSON.parse(buildInteractiveButtonMessageField({ body: '\nChoose\n\n', buttons: [] })).content
+        .text,
+      'Choose'
+    );
+    assert.equal(
+      JSON.parse(
+        buildInteractiveListMessageField({
+          title: '',
+          body: '\u200b\nPick one\n ',
+          buttonText: 'Select',
+          sections: [{ title: 'Options', rows: [{ id: 'a', title: 'AI' }] }],
+        })
+      ).body,
+      'Pick one'
+    );
+    assert.equal(
+      JSON.parse(buildImageMessageField({ url: 'https://x/a.jpg', caption: '\n\nGreat! 👍\n' }))
+        .caption,
+      'Great! 👍'
+    );
+  });
+
+  test('paragraph spacing survives, runaway blank lines collapse', () => {
+    assert.equal(
+      JSON.parse(buildTextMessageField('Great! 👍\n\nBefore I recommend colleges.')).text,
+      'Great! 👍\n\nBefore I recommend colleges.'
+    );
+    assert.equal(JSON.parse(buildTextMessageField('A\n\n\n\nB')).text, 'A\n\nB');
   });
 
   test('listMessageNeedsEncode detects emoji', () => {
