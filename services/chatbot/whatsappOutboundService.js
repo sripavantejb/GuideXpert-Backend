@@ -352,6 +352,7 @@ async function sendBotListReply({
   body,
   buttonText,
   sections,
+  title,
   inReplyToInboundId,
 }) {
   const outbound = await WhatsAppOutboundMessage.create({
@@ -359,13 +360,15 @@ async function sendBotListReply({
     phone: phone10,
     senderType: 'bot',
     messageType: 'interactive_list',
-    content: { type: 'interactive_list', body, buttonText, sections },
+    content: { type: 'interactive_list', body, buttonText, sections, title },
     textPreview: String(body || '').slice(0, 500),
     status: 'queued',
     inReplyToInboundId: inReplyToInboundId || null,
   });
 
-  const result = await gupshupSession.sendListMessage(phone10, body, buttonText, sections);
+  const result = await gupshupSession.sendListMessage(phone10, body, buttonText, sections, {
+    title,
+  });
   const ids = parseGupshupTemplateSendResponse(result && result.data);
   const nowUp = new Date();
 

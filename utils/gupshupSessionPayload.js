@@ -35,6 +35,9 @@ function buildInteractiveButtonMessageField(p) {
   });
 }
 
+/** Zero-width space — Gupshup requires a title; this hides the card heading. */
+const HIDDEN_LIST_TITLE = '\u200b';
+
 /**
  * List message (single section, up to 10 rows).
  * @param {{
@@ -44,6 +47,9 @@ function buildInteractiveButtonMessageField(p) {
  *   title?: string,
  *   msgid?: string,
  * }} p
+ *
+ * Pass `title: ''` (or whitespace) to suppress the WhatsApp card header so the
+ * body question asks directly — otherwise defaults to the first section title.
  */
 function buildInteractiveListMessageField(p) {
   const firstSection = (p.sections || [])[0] || { title: '', rows: [] };
@@ -59,9 +65,15 @@ function buildInteractiveListMessageField(p) {
     return option;
   });
 
+  const explicitTitle = p.title !== undefined && p.title !== null;
+  const rawTitle = explicitTitle
+    ? String(p.title)
+    : String(firstSection.title || 'Select');
+  const title = (rawTitle.trim() ? rawTitle : HIDDEN_LIST_TITLE).slice(0, 60);
+
   return JSON.stringify({
     type: 'list',
-    title: String(p.title || firstSection.title || 'Select').slice(0, 60),
+    title,
     body: String(p.body || '').slice(0, 1024),
     msgid: String(p.msgid || 'list1').slice(0, 64),
     globalButtons: [

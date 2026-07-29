@@ -122,7 +122,12 @@ async function sendButtonMessage(phone10, body, buttons, opts = {}) {
 }
 
 async function sendListMessage(phone10, body, buttonText, sections, opts = {}) {
-  const field = buildInteractiveListMessageField({ body, buttonText, sections });
+  const field = buildInteractiveListMessageField({
+    body,
+    buttonText,
+    sections,
+    title: opts.title,
+  });
   const encode =
     opts.encode != null ? Boolean(opts.encode) : listMessageNeedsEncode(body, sections);
   return sendSessionMessageRaw(phone10, field, { ...opts, encode });

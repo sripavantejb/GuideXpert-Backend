@@ -45,7 +45,7 @@ const LEGACY_PRIORITY_IDS = Object.freeze({
   flowv2_b4_startup: 'startup',
 });
 
-const B1_LIST_SECTION_TITLE = 'What matters most?';
+const B1_LIST_SECTION_TITLE = 'Options';
 const B1_LIST_BUTTON_TEXT = 'Select';
 const B1_QUESTION_TAIL = 'Last question before I give you something useful — what matters most?';
 const B1_REASK_BODY = 'No worries — take your time. Pick whichever fits best for now:';
@@ -72,6 +72,7 @@ function qualificationAckLine(qualification) {
 function buildB1ListInteractive(body) {
   return {
     type: 'list',
+    title: '',
     body,
     buttonText: B1_LIST_BUTTON_TEXT,
     sections: [{ title: B1_LIST_SECTION_TITLE, rows: B1_ROWS }],

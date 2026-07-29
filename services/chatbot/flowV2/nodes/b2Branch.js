@@ -95,10 +95,10 @@ const B2_ROWS = Object.freeze([
   }),
 ]);
 
-// Short section title — WhatsApp echoes this above the chosen row in the
- // student bubble. Never put instructions here.
-const B2_LIST_SECTION_TITLE = 'Interests';
-const B2_LIST_BUTTON_TEXT = 'Pick interests';
+// Short section title — only shown inside the opened list picker.
+// Card header is suppressed (title: '') so the body asks directly.
+const B2_LIST_SECTION_TITLE = 'Options';
+const B2_LIST_BUTTON_TEXT = 'Select';
 
 const B2_QUESTION =
   'Good — that helps.\n\nWhich of these actually interest you?\nPick as many as you like (up to 4).';
@@ -213,6 +213,7 @@ function buildInterestRows(selectedLabels = []) {
 function buildB2ListInteractive(body, selectedLabels = []) {
   return {
     type: 'list',
+    title: '',
     body,
     buttonText: B2_LIST_BUTTON_TEXT,
     sections: [

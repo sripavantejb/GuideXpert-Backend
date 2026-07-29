@@ -159,6 +159,7 @@ async function executeActiveGuidedFlowTurn({
       body,
       buttonText: flowV2Interactive.buttonText || 'Select',
       sections: flowV2Interactive.sections || [],
+      title: flowV2Interactive.title,
       inReplyToInboundId: inbound._id,
     });
     replyText = body;

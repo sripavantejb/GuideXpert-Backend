@@ -39,8 +39,9 @@ describe('flowV2 greeting — Node E entry', () => {
     assert.equal(result.interactive.body, buildNodeEOpenBody('Rahul'));
     assert.equal(result.contextPatch.stage, 'greeting_awaiting_qualification');
     assert.equal(result.interactive.type, 'list');
-    assert.equal(result.interactive.buttonText, 'Choose your stage');
-    assert.equal(result.interactive.sections[0].title, 'Your stage');
+    assert.equal(result.interactive.buttonText, 'Select');
+    assert.equal(result.interactive.title, '');
+    assert.equal(result.interactive.sections[0].title, 'Options');
     assert.equal(result.interactive.sections[0].rows.length, 10);
     assert.deepEqual(
       result.interactive.sections[0].rows.map((r) => r.title),
@@ -85,7 +86,8 @@ describe('flowV2 greeting — Node E entry', () => {
     assert.match(result.interactive.body, /First — where are you right now\?/);
     assert.doesNotMatch(result.interactive.body, /May I know your name/i);
     assert.equal(result.interactive.type, 'list');
-    assert.equal(result.interactive.buttonText, 'Choose your stage');
+    assert.equal(result.interactive.buttonText, 'Select');
+    assert.equal(result.interactive.title, '');
     assert.equal(result.contextPatch.stage, 'greeting_awaiting_qualification');
     assert.equal(result.interactive.sections[0].rows.length, 10);
   });
