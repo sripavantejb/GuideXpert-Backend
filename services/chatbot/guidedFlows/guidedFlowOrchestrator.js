@@ -148,7 +148,15 @@ async function executeActiveGuidedFlowTurn({
       ? turn.replyParts
       : null;
 
+  let nextPartIndex = 0;
+  const partSendResults = [];
   let result = null;
+
+  function recordPartResult(sendResult) {
+    if (sendResult) partSendResults.push(sendResult);
+    return sendResult;
+  }
+
   if (replyParts && replyParts.length) {
     for (const part of replyParts) {
       let partText = part;
@@ -163,12 +171,16 @@ async function executeActiveGuidedFlowTurn({
           })
         );
       }
-      result = await h.outbound.sendBotTextReply({
-        conversationId: activeConversation._id,
-        phone10: activeConversation.phone,
-        text: partText,
-        inReplyToInboundId: inbound._id,
-      });
+      const partIndex = nextPartIndex++;
+      result = recordPartResult(
+        await h.outbound.sendBotTextReply({
+          conversationId: activeConversation._id,
+          phone10: activeConversation.phone,
+          text: partText,
+          inReplyToInboundId: inbound._id,
+          partIndex,
+        })
+      );
     }
     replyText = replyParts.join('\n\n');
   }
@@ -188,15 +200,17 @@ async function executeActiveGuidedFlowTurn({
           })
         )
       : null;
-    // inReplyToInboundId stays null — the interactive/text reply in this same
-    // turn owns the one bot-reply row allowed per inbound.
-    result = await h.outbound.sendBotImageReply({
-      conversationId: activeConversation._id,
-      phone10: activeConversation.phone,
-      url: flowV2Media.url,
-      caption,
-      inReplyToInboundId: null,
-    });
+    const partIndex = nextPartIndex++;
+    result = recordPartResult(
+      await h.outbound.sendBotImageReply({
+        conversationId: activeConversation._id,
+        phone10: activeConversation.phone,
+        url: flowV2Media.url,
+        caption,
+        inReplyToInboundId: inbound._id,
+        partIndex,
+      })
+    );
     mediaCaption = caption;
     // Gupshup acknowledges media before WhatsApp finishes processing it.
     // Without a small gap, the following quick-reply can arrive first.
@@ -215,15 +229,19 @@ async function executeActiveGuidedFlowTurn({
         preLocalized: outboundPreLocalized,
       })
     );
-    result = await h.outbound.sendBotListReply({
-      conversationId: activeConversation._id,
-      phone10: activeConversation.phone,
-      body,
-      buttonText: flowV2Interactive.buttonText || 'Select',
-      sections: flowV2Interactive.sections || [],
-      title: flowV2Interactive.title,
-      inReplyToInboundId: inbound._id,
-    });
+    const partIndex = nextPartIndex++;
+    result = recordPartResult(
+      await h.outbound.sendBotListReply({
+        conversationId: activeConversation._id,
+        phone10: activeConversation.phone,
+        body,
+        buttonText: flowV2Interactive.buttonText || 'Select',
+        sections: flowV2Interactive.sections || [],
+        title: flowV2Interactive.title,
+        inReplyToInboundId: inbound._id,
+        partIndex,
+      })
+    );
     replyText = body;
   } else if (flowV2Interactive && flowV2Interactive.type === 'button') {
     const body = compactFlowV2Text(
@@ -235,13 +253,17 @@ async function executeActiveGuidedFlowTurn({
         preLocalized: outboundPreLocalized,
       })
     );
-    result = await h.outbound.sendBotButtonReply({
-      conversationId: activeConversation._id,
-      phone10: activeConversation.phone,
-      body,
-      buttons: flowV2Interactive.buttons || [],
-      inReplyToInboundId: inbound._id,
-    });
+    const partIndex = nextPartIndex++;
+    result = recordPartResult(
+      await h.outbound.sendBotButtonReply({
+        conversationId: activeConversation._id,
+        phone10: activeConversation.phone,
+        body,
+        buttons: flowV2Interactive.buttons || [],
+        inReplyToInboundId: inbound._id,
+        partIndex,
+      })
+    );
     replyText = body;
   } else if (replyText && (!replyParts || !replyParts.length)) {
     replyText = compactFlowV2Text(
@@ -254,12 +276,16 @@ async function executeActiveGuidedFlowTurn({
       })
     );
 
-    result = await h.outbound.sendBotTextReply({
-      conversationId: activeConversation._id,
-      phone10: activeConversation.phone,
-      text: replyText,
-      inReplyToInboundId: inbound._id,
-    });
+    const partIndex = nextPartIndex++;
+    result = recordPartResult(
+      await h.outbound.sendBotTextReply({
+        conversationId: activeConversation._id,
+        phone10: activeConversation.phone,
+        text: replyText,
+        inReplyToInboundId: inbound._id,
+        partIndex,
+      })
+    );
   }
 
   if (!replyText && mediaCaption) {
@@ -300,7 +326,24 @@ async function executeActiveGuidedFlowTurn({
       : null,
   });
 
-  return result;
+  const envelopePartCount = partSendResults.length;
+  if (envelopePartCount === 0) {
+    return result;
+  }
+
+  const sentPartCount = partSendResults.filter((r) => r && r.success).length;
+  const newlySent = partSendResults.filter((r) => r && r.success && !r.duplicatePrevented).length;
+  // A successful final part must not hide a middle failure.
+  const allPartsOk = partSendResults.every((r) => r && r.success);
+
+  return {
+    ...(result && typeof result === 'object' ? result : {}),
+    success: allPartsOk,
+    envelopePartCount,
+    sentPartCount,
+    newlySent,
+    partResults: partSendResults,
+  };
 }
 
 /**
