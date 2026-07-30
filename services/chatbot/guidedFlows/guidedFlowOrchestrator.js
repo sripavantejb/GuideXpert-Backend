@@ -386,7 +386,7 @@ async function executeActiveGuidedFlowTurn({
  * normal orchestrator routing (interrupts, idle states, etc.).
  */
 async function tryRouteActiveGuidedFlow(params) {
-  const { botState, inbound, multilingualInbound } = params;
+  const { botState, inbound, multilingualInbound, activeConversation } = params;
   const flow = resolveActiveGuidedFlow(botState);
   if (!flow) return null;
 
@@ -394,6 +394,25 @@ async function tryRouteActiveGuidedFlow(params) {
   if (isGuidedFlowInterrupt(routingText, inbound.text)) {
     logCareerJourneyInterrupt(flow, botState, routingText);
     return null;
+  }
+
+  // Live V3 canary: do not sticky-route mid-conversation V2. Falling through lets
+  // the orchestrator remap career_counselling_flow_v2(_continue) → V3. Without this,
+  // phones already in V2 never reach resolveFlowV3Routing (canary looks "dead").
+  if (flow.id === 'career_counselling_flow_v2') {
+    try {
+      const { resolveFlowV3Routing } = require('../flowV3LLM/flowV3Rollout');
+      const routing = resolveFlowV3Routing({
+        phone: activeConversation?.phone,
+        pinnedEngine: botState?.context?.flowV3?.engine || null,
+        pinnedMode: botState?.context?.flowV3?.mode || null,
+      });
+      if (routing.useV3 && routing.mode === 'live') {
+        return null;
+      }
+    } catch (err) {
+      console.warn('[flowV3] sticky V2 yield check failed', err?.message || err);
+    }
   }
 
   return executeActiveGuidedFlowTurn({ ...params, flow });

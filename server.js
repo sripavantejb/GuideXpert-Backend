@@ -262,11 +262,27 @@ app.get('/api/health', async (req, res) => {
   const leadScoring = getLeadScoringConfigStatus();
   const scopeFirewall = getScopeFirewallConfigStatus();
   const humanCopilot = await getHumanCopilotHealthStatus();
+  let flowV3 = { enabled: false, mode: 'shadow', canaryPercent: 0 };
+  try {
+    const {
+      isFlowV3Enabled,
+      getFlowV3Mode,
+      getCanaryPercent,
+    } = require('./services/chatbot/flowV3LLM/flowV3Rollout');
+    flowV3 = {
+      enabled: isFlowV3Enabled(),
+      mode: getFlowV3Mode(),
+      canaryPercent: getCanaryPercent(),
+    };
+  } catch {
+    flowV3 = { enabled: false, mode: null, canaryPercent: 0, error: true };
+  }
   res.json({
     status: 'ok',
     message: 'GuideXpert API is running',
     features: { posterDownloadAdmin: true },
     whatsapp,
+    flowV3,
     knowledgeAssistant: {
       enabled: knowledgeAssistant.enabled,
       llmKeyPresent: knowledgeAssistant.llmKeyPresent,
