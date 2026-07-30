@@ -1,4 +1,6 @@
 'use strict';
+
+require('../config/mongooseSafety');
 /**
  * Phase 4.5 deep red-team audit — production webhook + MongoDB evidence.
  * Does NOT modify firewall code.

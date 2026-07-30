@@ -1,3 +1,4 @@
+require('../config/mongooseSafety');
 #!/usr/bin/env node
 'use strict';
 

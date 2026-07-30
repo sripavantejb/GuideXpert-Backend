@@ -5,6 +5,8 @@
  *   node scripts/requeueIitReminderJobs.js
  *   node scripts/requeueIitReminderJobs.js --dispatch
  */
+
+require('../config/mongooseSafety');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const WhatsAppReminderJob = require('../models/WhatsAppReminderJob');

@@ -5,6 +5,8 @@
  *   node scripts/backfillIitTeluguSmsJobs.js              # dry-run (default)
  *   node scripts/backfillIitTeluguSmsJobs.js --execute    # write jobs
  */
+
+require('../config/mongooseSafety');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');

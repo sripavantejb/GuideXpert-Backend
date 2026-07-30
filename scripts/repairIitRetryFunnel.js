@@ -5,6 +5,8 @@
  *   node scripts/repairIitRetryFunnel.js
  *   node scripts/repairIitRetryFunnel.js --execute
  */
+
+require('../config/mongooseSafety');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');

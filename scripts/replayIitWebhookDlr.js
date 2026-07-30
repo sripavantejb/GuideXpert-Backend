@@ -5,6 +5,8 @@
  *   node scripts/replayIitWebhookDlr.js
  *   node scripts/replayIitWebhookDlr.js --since=2026-05-20
  */
+
+require('../config/mongooseSafety');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const WhatsAppWebhookEvent = require('../models/WhatsAppWebhookEvent');

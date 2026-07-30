@@ -5,6 +5,8 @@
  *   node scripts/deleteAllBdas.js              # dry-run (default)
  *   node scripts/deleteAllBdas.js --execute    # apply deletes
  */
+
+require('../config/mongooseSafety');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const Bda = require('../models/Bda');

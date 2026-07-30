@@ -4,6 +4,7 @@
  * Run: node scripts/reset-reminder-flags.js
  */
 
+require('../config/mongooseSafety');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const FormSubmission = require('../models/FormSubmission');

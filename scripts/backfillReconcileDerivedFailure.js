@@ -7,6 +7,8 @@
  *   node scripts/backfillReconcileDerivedFailure.js --execute
  *   node scripts/backfillReconcileDerivedFailure.js --execute --batch-size=500
  */
+
+require('../config/mongooseSafety');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');

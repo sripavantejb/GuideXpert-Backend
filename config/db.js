@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+require('./mongooseSafety');
 
 const ATLAS_WHITELIST_MSG = `
 --- MongoDB Atlas: fix connection ---

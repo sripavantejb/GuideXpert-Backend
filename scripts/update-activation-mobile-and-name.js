@@ -6,6 +6,7 @@
  * Run from backend directory: node scripts/update-activation-mobile-and-name.js
  */
 
+require('../config/mongooseSafety');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const TrainingFeedback = require('../models/TrainingFeedback');

@@ -6,6 +6,8 @@
  *
  * Requires MONGODB_URI in .env from GuideXpert-Backend directory.
  */
+
+require('../config/mongooseSafety');
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const mongoose = require('mongoose');
 const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');

@@ -1,5 +1,7 @@
 'use strict';
 
+require('../config/mongooseSafety');
+
 /**
  * Pre-production validation — API + DB integration checks.
  * Run: node scripts/preProductionValidation.js

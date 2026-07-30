@@ -1,5 +1,7 @@
 'use strict';
 
+require('../config/mongooseSafety');
+
 const { after, before, beforeEach, describe, test } = require('node:test');
 const assert = require('node:assert/strict');
 const mongoose = require('mongoose');

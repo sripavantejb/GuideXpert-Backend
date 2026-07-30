@@ -7,6 +7,8 @@
  *   node scripts/repairIitWhatsappDlr.js --from=2026-05-19 --execute --skip-bulk-webhooks
  *   node scripts/repairIitWhatsappDlr.js --from=2026-05-13 --to=2026-05-19 --execute --skip-bulk-webhooks
  */
+
+require('../config/mongooseSafety');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const WhatsAppWebhookEvent = require('../models/WhatsAppWebhookEvent');

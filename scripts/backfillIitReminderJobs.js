@@ -6,6 +6,8 @@
  *   node scripts/backfillIitReminderJobs.js --execute    # write jobs
  *   node scripts/backfillIitReminderJobs.js --execute --include-today
  */
+
+require('../config/mongooseSafety');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');

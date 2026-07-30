@@ -4,6 +4,8 @@
  *   node scripts/ensureWhatsAppReminderJobUniqueIndex.js           # dry-run
  *   node scripts/ensureWhatsAppReminderJobUniqueIndex.js --execute
  */
+
+require('../config/mongooseSafety');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const WhatsAppReminderJob = require('../models/WhatsAppReminderJob');

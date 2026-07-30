@@ -1,3 +1,4 @@
+require('../config/mongooseSafety');
 require('dotenv').config({ path: '.env' });
 const mongoose = require('mongoose');
 const WhatsAppMessageEvent = require('../models/WhatsAppMessageEvent');

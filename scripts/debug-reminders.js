@@ -3,6 +3,7 @@
  * Run: node scripts/debug-reminders.js
  */
 
+require('../config/mongooseSafety');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const FormSubmission = require('../models/FormSubmission');

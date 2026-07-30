@@ -2,6 +2,8 @@
  * Sanity-check WhatsApp ops day cohort: FormSubmission count vs computeRecipientDayOverview.bookedSlotsCount.
  * Usage: node scripts/verify-wa-ops-cohort.js [YYYY-MM-DD] [slotTime e.g. 6PM|all]
  */
+
+require('../config/mongooseSafety');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const FormSubmission = require('../models/FormSubmission');

@@ -1,3 +1,4 @@
+require('../config/mongooseSafety');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const WebinarProgress = require('../models/WebinarProgress');

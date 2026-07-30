@@ -3,6 +3,7 @@
  * Run from backend directory: node scripts/remove-sunday-3pm-entries.js
  */
 
+require('../config/mongooseSafety');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const FormSubmission = require('../models/FormSubmission');

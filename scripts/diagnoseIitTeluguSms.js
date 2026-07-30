@@ -8,6 +8,8 @@
  *
  * Requires MONGODB_URI in .env (use production URI to match Vercel cron).
  */
+
+require('../config/mongooseSafety');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');
