@@ -110,6 +110,7 @@ const { isTier2Crisis } = require('./router/crisisClassifier');
 const { extractFlowV2Slots } = require('./flowV2SlotExtractor');
 const { mergeFlowV2Profile } = require('./flowV2ProfileMerge');
 const { combineNodeResults, withMergedProfile } = require('./flowV2NodeUtils');
+const { combineWithDistressUrlSuppression } = require('./flowV2DistressUrlGuard');
 const {
   detectNonDistressInterrupt,
   startNonDistressInterrupt,
@@ -557,11 +558,18 @@ async function processFlowV2TurnRaw(ctx, inboundMessage, meta = {}) {
         },
       };
       const resumed = await runStageFallthrough(resumedCtx, interruptResult.interruptedStage, interruptResult.resumeText);
+      // Soft prefix (interrupt confirmation) must never push a booking URL
+      // into part 2+. See flowV2DistressUrlGuard.js.
+      const combined = combineWithDistressUrlSuppression({
+        prefix: interruptResult.confirmation,
+        fallthrough: resumed,
+        preserveStage: interruptResult.interruptedStage,
+        preserveProfile: interruptResult.profile,
+        preserveHybridSlotOffers: resumedCtx.flowV2?.hybridSlotOffers ?? null,
+      });
       return {
-        ...resumed,
-        replyText: null,
-        replyParts: [interruptResult.confirmation, ...(resumed.replyText ? [resumed.replyText] : []), ...(resumed.replyParts || [])],
-        contextPatch: { ...resumed.contextPatch, interruptedStage: null },
+        ...combined,
+        contextPatch: { ...combined.contextPatch, interruptedStage: null },
       };
     }
     return interruptResult;
@@ -610,19 +618,18 @@ async function processFlowV2TurnRaw(ctx, inboundMessage, meta = {}) {
 
   // R7 Tier-1 — one empathetic line, THEN falls through to whatever the
   // current stage was. Never reachable from/into the Tier-2 path above.
+  // If fallthrough would emit a booking URL, suppress it for THIS turn only
+  // (empathy stands alone; booking stays reachable later via Node 0 / B7).
   if (bucket === 'R7' && classification.tier === 1) {
     const fallthrough = await runStageFallthrough(turnCtx, stage, text);
-    const combinedReplyParts = [
-      getR7Tier1PrefixLine(),
-      ...(fallthrough.replyText ? [fallthrough.replyText] : []),
-      ...(fallthrough.replyParts || []),
-    ];
-    return withDoorHistory(
-      { ...fallthrough, replyText: null, replyParts: combinedReplyParts },
-      turnCtx,
-      bucket,
-      stage
-    );
+    const combined = combineWithDistressUrlSuppression({
+      prefix: getR7Tier1PrefixLine(),
+      fallthrough,
+      preserveStage: stage,
+      preserveProfile: extractedProfile,
+      preserveHybridSlotOffers: turnCtx.flowV2?.hybridSlotOffers ?? null,
+    });
+    return withDoorHistory(combined, turnCtx, bucket, stage);
   }
 
   // 8 fully self-contained, fully-wired buckets — intercept, do not fall
