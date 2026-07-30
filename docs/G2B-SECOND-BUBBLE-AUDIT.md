@@ -160,3 +160,81 @@ core-fork offer claims and confirms R7-T1 → booking-URL ordering is intentiona
 - Did not run the migration `--execute`.
 - Did not send a staging multi-part to a phone.
 - Did not edit `flowV2/**` or `careerCounselling/**`.
+
+---
+
+## B-1 — URL as a non-first text part (findings only)
+
+**Question:** After Branch 4 re-enables parts 2+, which paths can put a
+booking/website URL in `replyParts[n]` for `n ≥ 1`? For each: does it pass
+Phase 13 `allowUrl` / `buildUrlShareReply`, advance booking status, and use
+`BOOKING_SERVICE_REGISTRY`?
+
+### Canonical Phase 13 path (reference — normally first/only part)
+
+| Check | Result |
+|---|---|
+| Emitter | `shareOfficialUrl` → `buildUrlShareReply` in `careerCounsellingV2BookingOrchestratorEngine.js:95-128` |
+| `allowUrl` | **Yes** — `assertPhase13Guardrails(reply, { allowUrl: true })` inside `buildUrlShareReply` (`careerCounsellingV2BookingOrchestratorCore.js:107-115`) |
+| Registry | **Yes** — URL from `BOOKING_SERVICE_REGISTRY` / `resolveBookingDestination` |
+| Status | Sets `phase13UrlShared` / `phase13Outcome: 'url_shared'` (not Flow V2 `bookingStatus`) |
+| Multipart? | Returns a single `reply` string with `keepIntact` / `skipLineCap`. Optimizer collapses normal replies to one part. **No fixed path** makes this Phase 13 URL a non-first text part. |
+
+### Flow V2 URL emitters (always single `replyText` at the node)
+
+| Emitter | File:line | Advances `bookingStatus`? | `allowUrl` / `buildUrlShareReply`? | `BOOKING_SERVICE_REGISTRY`? |
+|---|---|---|---|---|
+| Node 0 slot → website handoff | `node0Override.js:381-396` (`BOOKING_URL` / `buildBookingUrlLine` at `:62-72`) | **Yes** → `link_sent` | **No** | **No** — hardcoded `https://www.guidexpert.co.in/one-on-one-session` |
+| B7 slot → link | `b7Book.js:233-243` via `buildB7BookingLinkMessage` → `buildBookingUrlLine()` | **Yes** → `link_sent` | **No** | **No** — same helper |
+| B7 NIAT interest → link | `b7Book.js:200-207` | **Yes** → `link_sent` | **No** | **No** |
+
+Alone, these set `replyParts: null` and put the URL in `replyText` → orchestrator
+sends them as **partIndex 0**. Not a non-first-part issue by themselves.
+
+### Combiners that can promote a Flow V2 URL into part 2+
+
+| Combiner | File:line | When URL becomes non-first | `allowUrl` / registry? | Live defect? |
+|---|---|---|---|---|
+| R7 Tier-1 empathy prefix + stage fallthrough | `flowV2Dispatcher.js:613-625` | Student on `b7_awaiting_slot` / `b7_awaiting_reply` (NIAT link path) / other B7 stage classifies as R7-T1 **and** fallthrough returns a link `replyText`. Node 0 slot stage short-circuits earlier (`:478-479`) so **Node 0 URL is not** R7-prefixed. | **No** — never enters Phase 13 guards | **YES — live V2 defect (multipart-sensitive).** Empathy bubble 1 + booking URL bubble 2 after Branch 4. Needs a **separate hotfix** (e.g. suppress R7-T1 prefix when fallthrough contains a URL / is a link_sent handoff), not a G-2b copy edit. |
+| Non-distress interrupt confirm + resume | `flowV2Dispatcher.js:547-565` | Pending I-1/I-2 interrupt resolved while `interruptedStage` was a B7 link-emitting stage; resume fallthrough returns URL → `[confirmation, url, …]` | **No** | **YES — same class.** Separate hotfix: do not prefix URL handoffs, or force URL to part 0 only. |
+| `drainAwaitingEntryStages` / `combineNodeResults` | `flowV2Dispatcher.js:176-199`, `flowV2NodeUtils.js:11` | Only if an `*_awaiting_entry` drain’s **next** entry result itself contains a URL. B7 entry is invite CTA (no URL). **No current drain emits a URL as part 2.** | n/a | No |
+| B5 checklist combiner | `b5Checklist.js:56` | Checklist + permission — **no URL** | n/a | No |
+| Core-fork / exit multi-text | `b2CoreFork.js:143`, `b2CoreForkExit.js:109` | Parts 2–3 are claims, **no URL** | n/a | No (see B-2) |
+
+### Other URL-ish surfaces (out of B-1 booking scope, listed for completeness)
+
+- `b7TwoModels.js` Cloudinary **image** URL — media part, not a student booking text URL.
+- Phase 11 / NIAT `ONE_ON_ONE_SESSION_URL` constants — journey engines emit their own single replies; not Flow V2 `replyParts` combiners.
+- Lead/demo support register links — outside Flow V2 multipart inventory.
+
+### B-1 verdict
+
+1. Phase 13 URL share is gated correctly (`allowUrl` + registry + `phase13UrlShared`) and is not a non-first-part emitter today.
+2. Flow V2 booking URLs **always bypass** `allowUrl` / `buildUrlShareReply` / `BOOKING_SERVICE_REGISTRY` (hardcoded Node 0 line). That is an existing V2/Phase-13 ownership split — flag for product, not introduced by G-2b.
+3. **Hotfix-worthy after Branch 4:** R7-T1 prefix and interrupt-resume combiners can deliver the Flow V2 booking URL as **text part 2+** with no Phase 13 guard and no registry. Fix outside this PR; do not merge G-2b relying on “URL only appears first.”
+
+---
+
+## B-2 — Core-fork offer parts 2–3 claim table (findings only)
+
+Source: [`b2CoreFork.js`](../services/chatbot/flowV2/nodes/b2CoreFork.js) `OFFER_MESSAGE_2` / `OFFER_MESSAGE_3` (emitted as `replyParts[1]` / `replyParts[2]` at `:143`).
+Cross-ref: [`careerCounsellingFlowV2BusinessDefaults.js`](../constants/careerCounsellingFlowV2BusinessDefaults.js) (`defaultApplied: true` items).
+
+| # | Claim (verbatim excerpt) | File:line | Classification | Business-defaults cross-ref |
+|---|---|---|---|---|
+| 1 | “whatever branch you join, half the batch ends up writing code on placement day anyway” / “largely true” | `b2CoreFork.js:35-36` | Strong placement-pattern factual claim (anecdotal) | **No** `defaultApplied` item owns this claim. Not covered by `NIAT_*`, `CAT-*`, or `VARIANT_B_*`. |
+| 2 | “the big recruiters hire across branches for software roles” | `b2CoreFork.js:36` | Labour-market factual claim | **No** matching default. Adjacent CSE-door framing is product copy, not `NIAT_CSE_ONLY` (that default only constrains NIAT branch claims). |
+| 3 | “A CS student can work in almost any INDUSTRY — automotive, aerospace, healthcare, finance — because all of them run on software now” | `b2CoreFork.js:37-38` | Broad industry-access claim | **No** matching default. `ENGINEERING_TECH_SCOPE_ONLY` limits chatbot scope to eng/tech journeys; it does **not** authorize or deny this industry list. |
+| 4 | “What they can’t do is sign off a bridge” | `b2CoreFork.js:38` | Licensing / role-boundary claim (rhetorical) | **No** matching default. |
+| 5 | “it’s not that core is weaker. It’s that the software door is wider, and it opens from both sides.” | `b2CoreFork.js:38` | Comparative career framing | Thematically near `VARIANT_B_PURE_CORE_EXIT` / `CORE_BRANCH_CATALOG_UNKNOWN` (`defaultApplied: true`), which govern the **F2 pure-core exit** path — **not** these offer bubbles. Offer path still nudges CSE/AI shortlist without those defaults gating the wording. |
+
+### Adjacent copy (not parts 2–3, for cross-ref only)
+
+| Claim site | File:line | Defaults |
+|---|---|---|
+| `OFFER_MESSAGE_4` CSE/AI door nudge; comment cites `NIAT_NO_ROBOTICS_CLAIM` + `CORE-1` Variant B | `b2CoreFork.js:39-42` | `NIAT_NO_ROBOTICS_CLAIM.defaultApplied === true`; `VARIANT_B_PURE_CORE_EXIT.defaultApplied === true` (exit path). No robotics claim in the string. |
+| `PARENT_VARIANT_TEXT` “software roles hire in larger numbers and across more industries” | `b2CoreFork.js:44-45` | Same class as claims 2–5; **no** dedicated default. |
+
+### B-2 verdict
+
+Parts 2–3 ship **five factual / comparative claims** with **zero** `defaultApplied: true` owners in `careerCounsellingFlowV2BusinessDefaults.js`. Product sign-off (or softening) remains the Branch 4 merge gate already recorded above. **No copy rewrites in this audit.**
