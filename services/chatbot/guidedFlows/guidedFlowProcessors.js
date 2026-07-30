@@ -213,6 +213,15 @@ async function processCareerCounsellingFlowV2Turn({
         : flowV2.stage,
   };
 
+  // Shadow mode: V2 still owns the student reply; V3 logs would-be envelope only.
+  maybeRunFlowV3Shadow({
+    phone,
+    inboundText,
+    inbound,
+    conversationId: inbound?.conversationId || null,
+    contextPatch,
+  });
+
   return {
     replyText: result.replyText,
     replyParts: result.replyParts,
@@ -225,10 +234,129 @@ async function processCareerCounsellingFlowV2Turn({
       ...(result.contextPatch?.predictionIdempotency
         ? { predictionIdempotency: result.contextPatch.predictionIdempotency }
         : {}),
+      // Pin V2 when live canary is on but this phone missed — raising % later
+      // must not migrate mid-conversation.
+      ...(shouldPinFlowV2(contextPatch, phone)
+        ? { flowV3: { engine: 'flow_v2', mode: null } }
+        : {}),
     }),
     intent: result.intent || 'career_counselling_flow_v2',
     pendingSideEffect: result.pendingSideEffect || null,
     // Master Flow v2 is English-only — never translate Rithika copy.
+    localizationTier: 'static',
+    preLocalized: true,
+  };
+}
+
+function shouldPinFlowV2(contextPatch, phone) {
+  const { resolveFlowV3Routing, isFlowV3Enabled, getFlowV3Mode } = require('../flowV3LLM/flowV3Rollout');
+  if (!isFlowV3Enabled() || getFlowV3Mode() !== 'live') return false;
+  if (contextPatch?.flowV3?.engine) return false;
+  const routing = resolveFlowV3Routing({ phone });
+  return !routing.useV3;
+}
+
+function maybeRunFlowV3Shadow({ phone, inboundText, inbound, conversationId, contextPatch }) {
+  try {
+    const { resolveFlowV3Routing } = require('../flowV3LLM/flowV3Rollout');
+    const routing = resolveFlowV3Routing({
+      phone,
+      pinnedEngine: contextPatch?.flowV3?.engine || null,
+      pinnedMode: contextPatch?.flowV3?.mode || null,
+    });
+    if (!routing.useV3 || routing.mode !== 'shadow') return;
+    const { processFlowV3Turn } = require('../flowV3LLM/flowV3Dispatcher');
+    Promise.resolve(
+      processFlowV3Turn({
+        text: inboundText,
+        phone,
+        conversationId: conversationId || inbound?.conversationId || null,
+        inboundId: inbound?._id ? String(inbound._id) : null,
+        profile: contextPatch?.flowV3?.profile || {},
+        slotMeta: contextPatch?.flowV3?.slotMeta || {},
+        promptVersion: contextPatch?.flowV3?.promptVersion || null,
+        mode: 'shadow',
+        history: contextPatch?.flowV3?.history || [],
+      })
+    ).catch((err) => {
+      console.warn('[flowV3] shadow turn failed', err?.message || err);
+    });
+  } catch (err) {
+    console.warn('[flowV3] shadow wiring failed', err?.message || err);
+  }
+}
+
+async function processCareerCounsellingFlowV3Turn({
+  inboundText,
+  inbound,
+  contextPatch,
+  isNewEntry = false,
+  leadContext = null,
+  phone = null,
+}) {
+  const { processFlowV3Turn } = require('../flowV3LLM/flowV3Dispatcher');
+  const { resolvePinnedVersion } = require('../flowV3LLM/llm/promptLoader');
+  let profile = contextPatch?.flowV3?.profile || {};
+  let slotMeta = contextPatch?.flowV3?.slotMeta || {};
+  let casVersion = contextPatch?.flowV3?.casVersion ?? null;
+
+  if (phone) {
+    try {
+      const { loadLeadProfile, ensureLeadProfile } = require('../flowV3LLM/profile');
+      let loaded = await loadLeadProfile(phone);
+      if (!loaded && isNewEntry) {
+        loaded = await ensureLeadProfile(phone, {});
+      }
+      if (loaded) {
+        profile = loaded.profile || profile;
+        slotMeta = loaded.slotMeta || slotMeta;
+        casVersion = loaded.casVersion ?? casVersion;
+      }
+    } catch (err) {
+      console.warn('[flowV3] profile load failed', err?.message || err);
+    }
+  }
+
+  const promptVersion = resolvePinnedVersion(contextPatch?.flowV3?.promptVersion || null);
+  const mode = 'live';
+
+  const result = await processFlowV3Turn({
+    text: inboundText,
+    phone,
+    conversationId: inbound?.conversationId || null,
+    inboundId: inbound?._id ? String(inbound._id) : null,
+    profile,
+    slotMeta,
+    promptVersion,
+    mode,
+    history: contextPatch?.flowV3?.history || [],
+    deps: { leadContext },
+  });
+
+  const nextFlowV3 = {
+    ...(contextPatch.flowV3 || {}),
+    engine: 'flow_v3',
+    mode: 'live',
+    promptVersion,
+    profile,
+    slotMeta,
+    casVersion,
+    lastTurnId: result.turnId,
+    ...(result.contextPatch?.flowV3 || {}),
+  };
+
+  return {
+    replyText: result.silent ? null : result.replyText,
+    replyParts: result.silent ? null : result.replyParts,
+    replyMedia: result.silent ? null : result.replyMedia || null,
+    interactive: result.silent ? null : result.interactive || null,
+    nextState: result.nextState || 'career_counselling_flow_v3',
+    contextPatch: clearAssistantSessionFlags({
+      ...contextPatch,
+      flowV3: nextFlowV3,
+    }),
+    intent: result.intent || 'career_counselling_flow_v3',
+    silent: Boolean(result.silent),
     localizationTier: 'static',
     preLocalized: true,
   };
@@ -282,6 +410,15 @@ async function processGuidedFlowTurn({
         leadContext,
         phone,
       });
+    case 'career_counselling_flow_v3':
+      return await processCareerCounsellingFlowV3Turn({
+        inboundText,
+        inbound,
+        contextPatch,
+        isNewEntry,
+        leadContext,
+        phone,
+      });
     case 'faq':
       return processFaqTurn({
         flow,
@@ -304,5 +441,7 @@ module.exports = {
   processRankPredictorTurn,
   processCareerCounsellingTurn,
   processCareerCounsellingFlowV2Turn,
+  processCareerCounsellingFlowV3Turn,
   processFaqTurn,
+  maybeRunFlowV3Shadow,
 };

@@ -17,6 +17,7 @@ const BOT_STATES = Object.freeze([
   'college_predictor',
   'career_counselling_journey',
   'career_counselling_flow_v2',
+  'career_counselling_flow_v3',
   'human_handoff',
   'idle',
 ]);

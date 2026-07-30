@@ -1,0 +1,14 @@
+{
+  "envelope": {
+    "intent": "answer_question",
+    "parts": [
+      {
+        "type": "text",
+        "body": "Kalvium college has strong coding culture for CSE aspirants."
+      }
+    ],
+    "grounding": [],
+    "profile_patch": {},
+    "booking_url_slot": null
+  }
+}

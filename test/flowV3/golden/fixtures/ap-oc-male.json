@@ -1,0 +1,9 @@
+{
+  "inbound": "suggest colleges for my rank",
+  "profile": {
+    "examType": "AP_EAMCET",
+    "category": "OC",
+    "gender": "male"
+  },
+  "expect": { "kind": "demographic_blocked" }
+}

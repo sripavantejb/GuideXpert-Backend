@@ -58,6 +58,17 @@ const GUIDED_FLOW_DEFINITIONS = Object.freeze([
     completeBotState: 'career_counselling_flow_v2',
     localizationTier: 'static',
   }),
+  Object.freeze({
+    id: 'career_counselling_flow_v3',
+    botState: 'career_counselling_flow_v3',
+    contextKey: 'flowV3',
+    continueIntent: 'career_counselling_flow_v3_continue',
+    // Dark by default — orchestrator only enters via CHATBOT_FLOW_V3_* canary/pin.
+    entryIntents: Object.freeze(['career_counselling_flow_v3']),
+    slotFilling: false,
+    completeBotState: 'career_counselling_flow_v3',
+    localizationTier: 'static',
+  }),
 ]);
 
 const BY_BOT_STATE = new Map(GUIDED_FLOW_DEFINITIONS.map((flow) => [flow.botState, flow]));

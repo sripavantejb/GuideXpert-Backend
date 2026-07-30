@@ -111,38 +111,44 @@ async function executeActiveGuidedFlowTurn({
   );
 
   let replyText = turn.replyText;
-  const flowV2Interactive = flow?.id === 'career_counselling_flow_v2' ? turn.interactive : null;
-  // Master Flow v2 is English-only: never translate Rithika copy even if
+  const flowEnglishInteractive =
+    flow?.id === 'career_counselling_flow_v2' || flow?.id === 'career_counselling_flow_v3'
+      ? turn.interactive
+      : null;
+  // Master Flow v2/v3 are English-only: never translate Rithika copy even if
   // inbound language detection resolved to Telugu/Hindi/etc.
-  const flowV2EnglishOnly = flow?.id === 'career_counselling_flow_v2';
-  const compactFlowV2Text = (text) =>
-    flowV2EnglishOnly ? compactWhatsAppSpacing(text) : text;
-  const outboundLanguageInbound = flowV2EnglishOnly
+  const flowEnglishOnly =
+    flow?.id === 'career_counselling_flow_v2' || flow?.id === 'career_counselling_flow_v3';
+  const compactFlowText = (text) => (flowEnglishOnly ? compactWhatsAppSpacing(text) : text);
+  const outboundLanguageInbound = flowEnglishOnly
     ? {
         ...(multilingualInbound || {}),
         resolvedLanguage: 'en',
         language: 'en',
       }
     : multilingualInbound;
-  const outboundLocalizationTier = flowV2EnglishOnly
+  const outboundLocalizationTier = flowEnglishOnly
     ? 'static'
     : turn.localizationTier || flow.localizationTier || 'translate';
-  const outboundPreLocalized = flowV2EnglishOnly ? true : Boolean(turn.preLocalized);
-  const flowV2Media =
+  const outboundPreLocalized = flowEnglishOnly ? true : Boolean(turn.preLocalized);
+  const flowMedia =
     turn.replyMedia && turn.replyMedia.type === 'image' && turn.replyMedia.url
       ? turn.replyMedia
       : null;
   if (
+    !turn.silent &&
     !replyText &&
-    !flowV2Interactive &&
-    !flowV2Media &&
+    !flowEnglishInteractive &&
+    !flowMedia &&
     (!Array.isArray(turn.replyParts) || turn.replyParts.length === 0)
   ) {
     replyText =
       'Share what matters most in a college — placements, coding culture, fees, or say "I don\'t know".';
   }
   const replyParts =
-    (flow?.id === 'career_counselling_v2' || flow?.id === 'career_counselling_flow_v2') &&
+    (flow?.id === 'career_counselling_v2' ||
+      flow?.id === 'career_counselling_flow_v2' ||
+      flow?.id === 'career_counselling_flow_v3') &&
     Array.isArray(turn.replyParts) &&
     turn.replyParts.length > 0
       ? turn.replyParts
@@ -157,11 +163,40 @@ async function executeActiveGuidedFlowTurn({
     return sendResult;
   }
 
+  if (turn.silent) {
+    logInboundResult({
+      event: 'inbound_processed',
+      conversation: activeConversation,
+      botState,
+      intent: turn.intent,
+      contextPatch: turn.contextPatch,
+      durationMs: Date.now() - startedAt,
+      multilingual: multilingualInbound
+        ? {
+            originalMessage: multilingualInbound.originalMessage,
+            detectedLanguage: multilingualInbound.detectedLanguage,
+            confidence: multilingualInbound.confidence,
+            preferredLanguage: multilingualInbound.preferredLanguage,
+            resolvedLanguage: multilingualInbound.resolvedLanguage,
+            resolutionReason: multilingualInbound.resolutionReason,
+            detectionSource: multilingualInbound.detectionSource,
+            englishMessage: multilingualInbound.englishMessage,
+            translatedQuery: multilingualInbound.englishMessage,
+            translationApplied: multilingualInbound.translationApplied,
+            outboundLanguage: multilingualInbound.language,
+            finalResponseLanguage: resolvedLanguageFrom(multilingualInbound),
+            finalResponse: null,
+          }
+        : null,
+    });
+    return { success: true, silent: true, envelopePartCount: 0, sentPartCount: 0, newlySent: 0 };
+  }
+
   if (replyParts && replyParts.length) {
     for (const part of replyParts) {
       let partText = part;
       if (partText) {
-        partText = compactFlowV2Text(
+        partText = compactFlowText(
           await deliverOutboundReply({
             replyText: partText,
             multilingualInbound: outboundLanguageInbound,
@@ -186,13 +221,13 @@ async function executeActiveGuidedFlowTurn({
   }
 
   let mediaCaption = null;
-  if (flowV2Media && typeof h.outbound.sendBotImageReply !== 'function') {
+  if (flowMedia && typeof h.outbound.sendBotImageReply !== 'function') {
     console.warn('[flowV2] image reply skipped — outbound.sendBotImageReply unavailable');
-  } else if (flowV2Media) {
-    const caption = flowV2Media.caption
-      ? compactFlowV2Text(
+  } else if (flowMedia) {
+    const caption = flowMedia.caption
+      ? compactFlowText(
           await deliverOutboundReply({
-            replyText: flowV2Media.caption,
+            replyText: flowMedia.caption,
             multilingualInbound: outboundLanguageInbound,
             intent: turn.intent,
             localizationTier: outboundLocalizationTier,
@@ -205,7 +240,7 @@ async function executeActiveGuidedFlowTurn({
       await h.outbound.sendBotImageReply({
         conversationId: activeConversation._id,
         phone10: activeConversation.phone,
-        url: flowV2Media.url,
+        url: flowMedia.url,
         caption,
         inReplyToInboundId: inbound._id,
         partIndex,
@@ -214,15 +249,15 @@ async function executeActiveGuidedFlowTurn({
     mediaCaption = caption;
     // Gupshup acknowledges media before WhatsApp finishes processing it.
     // Without a small gap, the following quick-reply can arrive first.
-    if (result?.success && flowV2Interactive) {
+    if (result?.success && flowEnglishInteractive) {
       await waitForMediaOrdering();
     }
   }
 
-  if (flowV2Interactive && flowV2Interactive.type === 'list') {
-    const body = compactFlowV2Text(
+  if (flowEnglishInteractive && flowEnglishInteractive.type === 'list') {
+    const body = compactFlowText(
       await deliverOutboundReply({
-        replyText: flowV2Interactive.body,
+        replyText: flowEnglishInteractive.body,
         multilingualInbound: outboundLanguageInbound,
         intent: turn.intent,
         localizationTier: outboundLocalizationTier,
@@ -235,18 +270,18 @@ async function executeActiveGuidedFlowTurn({
         conversationId: activeConversation._id,
         phone10: activeConversation.phone,
         body,
-        buttonText: flowV2Interactive.buttonText || 'Select',
-        sections: flowV2Interactive.sections || [],
-        title: flowV2Interactive.title,
+        buttonText: flowEnglishInteractive.buttonText || 'Select',
+        sections: flowEnglishInteractive.sections || [],
+        title: flowEnglishInteractive.title,
         inReplyToInboundId: inbound._id,
         partIndex,
       })
     );
     replyText = body;
-  } else if (flowV2Interactive && flowV2Interactive.type === 'button') {
-    const body = compactFlowV2Text(
+  } else if (flowEnglishInteractive && flowEnglishInteractive.type === 'button') {
+    const body = compactFlowText(
       await deliverOutboundReply({
-        replyText: flowV2Interactive.body,
+        replyText: flowEnglishInteractive.body,
         multilingualInbound: outboundLanguageInbound,
         intent: turn.intent,
         localizationTier: outboundLocalizationTier,
@@ -259,14 +294,14 @@ async function executeActiveGuidedFlowTurn({
         conversationId: activeConversation._id,
         phone10: activeConversation.phone,
         body,
-        buttons: flowV2Interactive.buttons || [],
+        buttons: flowEnglishInteractive.buttons || [],
         inReplyToInboundId: inbound._id,
         partIndex,
       })
     );
     replyText = body;
   } else if (replyText && (!replyParts || !replyParts.length)) {
-    replyText = compactFlowV2Text(
+    replyText = compactFlowText(
       await deliverOutboundReply({
         replyText,
         multilingualInbound: outboundLanguageInbound,

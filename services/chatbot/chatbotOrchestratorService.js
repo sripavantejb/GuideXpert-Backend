@@ -95,6 +95,7 @@ function localizationTierForIntent(intent) {
     case 'college_predictor':
     case 'career_counselling_journey':
     case 'career_counselling_flow_v2':
+    case 'career_counselling_flow_v3':
     case 'faq':
       return 'static';
     default:
@@ -737,24 +738,67 @@ async function processInboundCore({
     };
   }
 
-  // Master Flow v2 — sole live WhatsApp counselling experience.
+  // Master Flow v2 — sole live WhatsApp counselling experience (V3 enters via canary/pin only).
   if (
     intentResult.intent === 'career_counselling_flow_v2' ||
-    intentResult.intent === 'career_counselling_flow_v2_continue'
+    intentResult.intent === 'career_counselling_flow_v2_continue' ||
+    intentResult.intent === 'career_counselling_flow_v3' ||
+    intentResult.intent === 'career_counselling_flow_v3_continue'
   ) {
-    const flow = getGuidedFlowByIntent(intentResult.intent);
+    const { resolveFlowV3Routing } = require('./flowV3LLM/flowV3Rollout');
+    const priorContext = botState?.context || {};
+    const routing = resolveFlowV3Routing({
+      phone: activeConversation.phone,
+      pinnedEngine: priorContext.flowV3?.engine || null,
+      pinnedMode: priorContext.flowV3?.mode || null,
+    });
+
+    const useLiveV3 =
+      routing.useV3 &&
+      routing.mode === 'live' &&
+      (intentResult.intent === 'career_counselling_flow_v2' ||
+        intentResult.intent === 'career_counselling_flow_v2_continue' ||
+        intentResult.intent === 'career_counselling_flow_v3' ||
+        intentResult.intent === 'career_counselling_flow_v3_continue');
+
+    const flowIntent = useLiveV3
+      ? intentResult.intent.includes('continue')
+        ? 'career_counselling_flow_v3_continue'
+        : 'career_counselling_flow_v3'
+      : intentResult.intent === 'career_counselling_flow_v3' ||
+          intentResult.intent === 'career_counselling_flow_v3_continue'
+        ? // Kill switch / canary miss: never start dark V3 from a stray intent.
+          priorContext.flowV3?.engine === 'flow_v3'
+            ? intentResult.intent
+            : 'career_counselling_flow_v2'
+        : intentResult.intent;
+
+    const flow = getGuidedFlowByIntent(flowIntent);
     if (flow) {
-      const priorContext = botState?.context || {};
       const restart =
         intentResult.intentReason === 'menu_to_flow_v2' ||
         intentResult.intentReason === 'main_menu_redirect_flow_v2' ||
         intentResult.intentReason === 'migrate_legacy_guided_flow';
-      const seededContext = {
-        ...emptySubflows(),
-        flowV2: restart
-          ? { stage: null, profile: priorContext.flowV2?.profile || null }
-          : priorContext.flowV2 || { stage: null, profile: null },
-      };
+      const seededContext =
+        flow.id === 'career_counselling_flow_v3'
+          ? {
+              ...emptySubflows(),
+              flowV3: {
+                engine: 'flow_v3',
+                mode: 'live',
+                promptVersion: priorContext.flowV3?.promptVersion || null,
+                profile: priorContext.flowV3?.profile || null,
+                slotMeta: priorContext.flowV3?.slotMeta || null,
+                history: priorContext.flowV3?.history || [],
+              },
+            }
+          : {
+              ...emptySubflows(),
+              flowV2: restart
+                ? { stage: null, profile: priorContext.flowV2?.profile || null }
+                : priorContext.flowV2 || { stage: null, profile: null },
+              ...(priorContext.flowV3 ? { flowV3: priorContext.flowV3 } : {}),
+            };
       await transitionState(
         activeConversation._id,
         activeConversation.phone,
@@ -952,7 +996,9 @@ async function processInboundCore({
     case 'career_counselling_journey':
     case 'career_counselling_journey_continue':
     case 'career_counselling_flow_v2':
-    case 'career_counselling_flow_v2_continue': {
+    case 'career_counselling_flow_v2_continue':
+    case 'career_counselling_flow_v3':
+    case 'career_counselling_flow_v3_continue': {
       const flow = getGuidedFlowByIntent(intentResult.intent);
       if (!flow) break;
       const applied = await applyGuidedFlowSwitchTurn({

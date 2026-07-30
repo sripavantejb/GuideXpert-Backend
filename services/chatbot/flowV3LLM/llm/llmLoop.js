@@ -1,0 +1,211 @@
+'use strict';
+
+/**
+ * Flow V3 LLM loop — tool rounds then JSON envelope (architecture §3 step 9).
+ * 12s wall · max 3 tool iterations · JSON response_format + parse/repair.
+ */
+
+const { OpenAiCompatibleProvider } = require('../../../ai/providers/OpenAiCompatibleProvider');
+const { createToolBroker } = require('../tools/toolBroker');
+const { openaiToolDefinitions } = require('../tools/openaiToolSchemas');
+const { parseEnvelope } = require('./parseEnvelope');
+const { loadPrompt } = require('./promptLoader');
+
+const DEFAULT_WALL_MS = 12000;
+const MAX_TOOL_ITERATIONS = 3;
+const JSON_RESPONSE_FORMAT = Object.freeze({ type: 'json_object' });
+
+function elapsed(startedAt) {
+  return Date.now() - startedAt;
+}
+
+function remainingMs(startedAt, wallMs) {
+  return Math.max(0, wallMs - elapsed(startedAt));
+}
+
+/**
+ * @param {{
+ *   messages: Array,
+ *   promptVersion?: string,
+ *   toolContext?: object,
+ *   broker?: object,
+ *   provider?: { chatCompletion: Function },
+ *   wallMs?: number,
+ *   maxToolIterations?: number,
+ *   repairFeedback?: string|null,
+ * }} input
+ */
+async function runLlmLoop(input = {}) {
+  const startedAt = Date.now();
+  const wallMs = Number(input.wallMs) || DEFAULT_WALL_MS;
+  const maxToolIterations = Number(input.maxToolIterations) || MAX_TOOL_ITERATIONS;
+  const provider = input.provider || new OpenAiCompatibleProvider();
+  const broker = input.broker || createToolBroker({ deps: input.deps || {} });
+  const tools = openaiToolDefinitions();
+
+  let messages = Array.isArray(input.messages) ? [...input.messages] : [];
+  if (input.repairFeedback) {
+    messages.push({
+      role: 'user',
+      content: `Your previous envelope failed validation: ${input.repairFeedback}. Return a corrected JSON envelope only.`,
+    });
+  }
+
+  const toolTrace = [];
+  let toolIterations = 0;
+
+  while (toolIterations < maxToolIterations) {
+    const left = remainingMs(startedAt, wallMs);
+    if (left < 500) {
+      return {
+        ok: false,
+        reason: 'wall_budget',
+        envelope: null,
+        parse: null,
+        toolTrace,
+        latencyMs: elapsed(startedAt),
+      };
+    }
+
+    const completion = await provider.chatCompletion({
+      messages,
+      tools,
+      toolChoice: 'auto',
+      responseFormat: null,
+      temperature: 0.4,
+      maxTokens: 1200,
+      timeoutMs: Math.min(4000, left),
+    });
+
+    if (completion.toolCalls && completion.toolCalls.length) {
+      toolIterations += 1;
+      messages.push({
+        role: 'assistant',
+        content: completion.text || null,
+        tool_calls: completion.toolCalls,
+      });
+      for (const tc of completion.toolCalls) {
+        let args = {};
+        try {
+          args = JSON.parse(tc.function.arguments || '{}');
+        } catch {
+          args = {};
+        }
+        const invoked = await broker.invokeTool(tc.function.name, args, input.toolContext || {});
+        toolTrace.push({
+          name: tc.function.name,
+          callId: invoked.callId,
+          ok: invoked.ok,
+          result: invoked.result,
+          error: invoked.error || null,
+        });
+        messages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: JSON.stringify(invoked.result != null ? invoked.result : { error: invoked.error }),
+        });
+      }
+      continue;
+    }
+
+    // Final JSON envelope pass — force json_object when no more tools.
+    const finalLeft = remainingMs(startedAt, wallMs);
+    if (finalLeft < 500 && !completion.text) {
+      return {
+        ok: false,
+        reason: 'wall_budget',
+        envelope: null,
+        parse: null,
+        toolTrace,
+        latencyMs: elapsed(startedAt),
+      };
+    }
+
+    let finalText = completion.text;
+    if (!finalText || !String(finalText).trim().startsWith('{')) {
+      const forced = await provider.chatCompletion({
+        messages: [
+          ...messages,
+          {
+            role: 'user',
+            content:
+              'Return ONLY the reply envelope JSON object now (intent, parts, grounding, profile_patch, booking_url_slot). No prose.',
+          },
+        ],
+        responseFormat: JSON_RESPONSE_FORMAT,
+        temperature: 0.2,
+        maxTokens: 1200,
+        timeoutMs: Math.min(4000, remainingMs(startedAt, wallMs) || 1000),
+      });
+      finalText = forced.text;
+      messages.push({ role: 'assistant', content: finalText });
+    }
+
+    let parsed = parseEnvelope(finalText);
+    if (!parsed.ok) {
+      const repairLeft = remainingMs(startedAt, wallMs);
+      if (repairLeft >= 800) {
+        const repaired = await provider.chatCompletion({
+          messages: [
+            ...messages,
+            {
+              role: 'user',
+              content: `Malformed envelope (${parsed.error}). Return corrected JSON envelope only.`,
+            },
+          ],
+          responseFormat: JSON_RESPONSE_FORMAT,
+          temperature: 0.1,
+          maxTokens: 1200,
+          timeoutMs: Math.min(4000, repairLeft),
+        });
+        parsed = parseEnvelope(repaired.text);
+        finalText = repaired.text;
+      }
+    }
+
+    return {
+      ok: parsed.ok,
+      reason: parsed.ok ? null : 'parse_failed',
+      envelope: parsed.envelope,
+      parse: parsed,
+      rawText: finalText,
+      toolTrace,
+      latencyMs: elapsed(startedAt),
+      messages,
+    };
+  }
+
+  return {
+    ok: false,
+    reason: 'tool_iteration_cap',
+    envelope: null,
+    parse: null,
+    toolTrace,
+    latencyMs: elapsed(startedAt),
+  };
+}
+
+/**
+ * Build the initial messages array for a turn.
+ */
+function buildTurnMessages({ promptVersion, systemExtra = '', userText, turnContext }) {
+  const prompt = loadPrompt(promptVersion || null);
+  const system = [prompt.text, systemExtra, turnContext ? `TURN_CONTEXT_JSON:\n${JSON.stringify(turnContext)}` : '']
+    .filter(Boolean)
+    .join('\n\n');
+  return {
+    prompt,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: String(userText || '') },
+    ],
+  };
+}
+
+module.exports = {
+  DEFAULT_WALL_MS,
+  MAX_TOOL_ITERATIONS,
+  JSON_RESPONSE_FORMAT,
+  runLlmLoop,
+  buildTurnMessages,
+};

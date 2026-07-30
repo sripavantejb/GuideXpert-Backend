@@ -365,7 +365,10 @@ function classifyIntent(text, botState, productLine, originalText = null) {
   }
 
   const activeGuidedFlow = getGuidedFlowByBotState(botState?.state);
-  if (activeGuidedFlow?.id === 'career_counselling_flow_v2') {
+  if (
+    activeGuidedFlow?.id === 'career_counselling_flow_v2' ||
+    activeGuidedFlow?.id === 'career_counselling_flow_v3'
+  ) {
     return { intent: activeGuidedFlow.continueIntent, confidence: 'high' };
   }
 
@@ -380,7 +383,9 @@ function classifyIntent(text, botState, productLine, originalText = null) {
   const menuOrCancel =
     matchesMainMenuTrigger(t) || matchesAny(t, GLOBAL_KEYWORDS.cancel);
   const migratingLegacyFlow = Boolean(
-    activeGuidedFlow && activeGuidedFlow.id !== 'career_counselling_flow_v2'
+    activeGuidedFlow &&
+      activeGuidedFlow.id !== 'career_counselling_flow_v2' &&
+      activeGuidedFlow.id !== 'career_counselling_flow_v3'
   );
 
   let intentReason = 'master_flow_v2_sole_door';

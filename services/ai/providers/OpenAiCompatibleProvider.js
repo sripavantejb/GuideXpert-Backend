@@ -26,14 +26,36 @@ class OpenAiCompatibleProvider {
     return this._client;
   }
 
-  async chatCompletion({ messages, temperature = 1, maxTokens = 1000, timeoutMs, maxRetries }) {
+  /**
+   * @param {{
+   *   messages: Array,
+   *   temperature?: number,
+   *   maxTokens?: number,
+   *   timeoutMs?: number,
+   *   maxRetries?: number,
+   *   tools?: Array,
+   *   toolChoice?: string|object,
+   *   responseFormat?: object|null,
+   * }} args
+   * @returns {Promise<{ text: string, model: string, toolCalls: Array|null, finishReason: string|null, rawMessage: object|null }>}
+   */
+  async chatCompletion({
+    messages,
+    temperature = 1,
+    maxTokens = 1000,
+    timeoutMs,
+    maxRetries,
+    tools = null,
+    toolChoice = null,
+    responseFormat = null,
+  }) {
     aiDebugLog('LLM-DEBUG', 'entered OpenAiCompatibleProvider');
     const model = String(process.env.LLM_MODEL || '').trim();
     if (!model) {
       throw new Error('LLM_MODEL is required');
     }
 
-    aiDebugLog('LLM-DEBUG', 'calling NVIDIA model =', model);
+    aiDebugLog('LLM-DEBUG', 'calling model =', model);
     const client = this._getClient();
     const requestOptions = {};
     if (timeoutMs != null) {
@@ -43,22 +65,47 @@ class OpenAiCompatibleProvider {
       requestOptions.maxRetries = maxRetries;
     }
 
+    const body = {
+      model,
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+      stream: false,
+    };
+    if (Array.isArray(tools) && tools.length) {
+      body.tools = tools;
+      if (toolChoice != null) body.tool_choice = toolChoice;
+    }
+    if (responseFormat) {
+      body.response_format = responseFormat;
+    }
+
     const completion = await client.chat.completions.create(
-      {
-        model,
-        messages,
-        temperature,
-        max_tokens: maxTokens,
-        stream: false,
-      },
+      body,
       Object.keys(requestOptions).length ? requestOptions : undefined
     );
 
     aiDebugLog('LLM-DEBUG', 'received response');
-    const text = completion.choices?.[0]?.message?.content || '';
+    const choice = completion.choices?.[0] || {};
+    const message = choice.message || {};
+    const text = message.content || '';
+    const toolCalls = Array.isArray(message.tool_calls) && message.tool_calls.length
+      ? message.tool_calls.map((tc) => ({
+          id: tc.id,
+          type: tc.type || 'function',
+          function: {
+            name: tc.function?.name,
+            arguments: tc.function?.arguments || '{}',
+          },
+        }))
+      : null;
+
     return {
-      text: String(text).trim(),
+      text: String(text || '').trim(),
       model: completion.model,
+      toolCalls,
+      finishReason: choice.finish_reason || null,
+      rawMessage: message,
     };
   }
 }

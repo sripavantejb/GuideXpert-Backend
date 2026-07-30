@@ -70,14 +70,27 @@ function checkPepper() {
 function currentTestNames() {
   const dir = path.join(ROOT, 'test/flowV3');
   const names = [];
-  for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.test.js')).sort()) {
-    const src = fs.readFileSync(path.join(dir, file), 'utf8');
-    const re = /\b(?:test|it|g2bTest)\(\s*(['"`])([\s\S]*?)\1/g;
-    let m;
-    while ((m = re.exec(src))) {
-      names.push(`${file} :: ${m[2].replace(/\s+/g, ' ').trim()}`);
+
+  function walk(relDir) {
+    const abs = path.join(dir, relDir);
+    for (const file of fs.readdirSync(abs).sort()) {
+      const absFile = path.join(abs, file);
+      const relFile = relDir ? path.join(relDir, file) : file;
+      if (fs.statSync(absFile).isDirectory()) {
+        walk(relFile);
+        continue;
+      }
+      if (!file.endsWith('.test.js')) continue;
+      const src = fs.readFileSync(absFile, 'utf8');
+      const re = /\b(?:test|it|g2bTest)\(\s*(['"`])([\s\S]*?)\1/g;
+      let m;
+      while ((m = re.exec(src))) {
+        names.push(`${relFile.replace(/\\/g, '/')} :: ${m[2].replace(/\s+/g, ' ').trim()}`);
+      }
     }
   }
+
+  walk('');
   return names;
 }
 

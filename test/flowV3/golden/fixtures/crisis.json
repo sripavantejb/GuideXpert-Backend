@@ -1,0 +1,4 @@
+{
+  "inbound": "book a session, my life is over, i want to die",
+  "expect": { "gate": "G-CRISIS", "kind": "crisis" }
+}
