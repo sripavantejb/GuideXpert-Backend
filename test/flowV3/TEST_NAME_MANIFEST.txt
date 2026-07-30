@@ -6,6 +6,9 @@ allowlistExclusionComplete.test.js :: every writable field is intentional: known
 allowlistExclusionComplete.test.js :: exclusion set includes every required group H / I / Tier 3 / Tier 4 field
 allowlistExclusionComplete.test.js :: fixture files exist on disk next to this suite
 allowlistExclusionComplete.test.js :: writable-set snapshot matches LLM_WRITABLE_FIELDS (fails loudly on drift)
+contractDoNotBuild.test.js :: excluded categories are documented on the schema module
+contractDoNotBuild.test.js :: forbidden example names are not known fields and are not in the schema object
+contractDoNotBuild.test.js :: no schema field name matches an excluded pattern
 durableProfileIdle.test.js :: schema has no TTL; saved profile remains loadable after simulated 30-minute idle
 gatesAndContext.test.js :: S-1 demographic block terminates with verbatim copy and no LLM
 gatesAndContext.test.js :: an unrecognised purpose does not unlock tier 3

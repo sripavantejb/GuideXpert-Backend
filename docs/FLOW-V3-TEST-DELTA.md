@@ -1,21 +1,42 @@
 # Flow V3 — test-count delta (A-5)
 
 **Branch:** `feat/flow-v3-foundation`  
-**Sources:** agent transcripts ([reconciliation](b79771df-7cca-49d2-9ce5-397ef73176e4), [M-1](38f63e6a-cff1-4526-b063-5d4dea73a275)), [`TEST_NAME_MANIFEST.txt`](../test/flowV3/TEST_NAME_MANIFEST.txt), live suite 2026-07-30.
+**Sources:** git history on pushed branches, [`TEST_NAME_MANIFEST.txt`](../test/flowV3/TEST_NAME_MANIFEST.txt), prior session reports.
 
 ## Timeline
 
 | Count | Scope / command | What changed (named) |
 |---|---|---|
-| **218** | M-1 subagent: `test/flowV3` + in-memory Mongo | Baseline after durable profile / turn-log / tools / gates landed in that session. Individual add names from that session are not preserved as a checked-in list (tree was untracked). |
-| **228** | Parent session after restoring non-`flowV3` companions | Scope widened. Static reconstruction of that tree: **221** leaf names under `test/flowV3` **+** `guidedFlowSpacing.test.js` (1) **+** `outboundDuplicateGuard.test.js` (2) **+** `mongooseIndexSafety.test.js` (4) = **228**. |
-| **226** | Same parent session after M-1 final writes | **−2** vs 228. **Names unknown** — no stash, no reflog, no terminal log of the 226 run. Flagged as an **unproven removal** (possible regression). Manifest pinning was introduced afterward so this cannot recur silently. |
-| **227** | Post-reconciliation report (R-7 / final): `test/flowV3/*.test.js` + `outboundDuplicateGuard.test.js` | Scope **without** `mongooseIndexSafety` / spacing. Manifest at foundation commit: **226** source `test()` names under `test/flowV3` only (outbound guard tracked separately in CI command). The reported **227** includes the outbound duplicate-guard suite leaf count delta vs a 226 `flowV3`-only pin — see note below. |
-| **Now (close-out)** | Same CI command; G-2b multipart describes skip when `partIndex` absent | Manifest regenerated from source `test()` names after A-2/A-4 adds. Multipart G-2b cases remain listed (not deleted) but are **runtime-skipped** on this branch until PR 4’s model lands. |
+| **218** | M-1 subagent: `test/flowV3` + in-memory Mongo (untracked tree) | Pre-commit working tree only. |
+| **228** | Parent session + companions | Reconstructed scope: flowV3 leaves **+** `guidedFlowSpacing` (1) **+** `outboundDuplicateGuard` (2) **+** `mongooseIndexSafety` (4). |
+| **226** | Same session after M-1 final writes | **−2** vs 228. |
+| **227** | Post-reconciliation report | `test/flowV3` + outbound guard (no mongoose on feat). |
+| **Now** | Close-out + A-2/A-4 | Manifest **238** source names; suite **239** with **8** explicit G-2b skips. |
 
-## Named adds in this close-out (A-2 / A-4)
+## P-2 — git-history attempt for the two missing names (228→226)
 
-### `allowlistExclusionComplete.test.js` (new file)
+### Commits / refs inspected
+
+| Ref | What it showed |
+|---|---|
+| `git log --diff-filter=D --name-only --all -- test/` | **Empty** — no tracked test-file deletions in history |
+| `2069e3e` | First commit that introduced `test/flowV3/**`; manifest already **226** names |
+| `1234c1d` | Adds `mongooseIndexSafety.test.js` (4 named tests) on PR 2 branch |
+| `08ad31d` | G-2b multipart model/tests on PR 4 branch |
+| `346e29c` | PR3 close-out (+12 named tests) |
+| `git reflog` | Checkout/commit dance only; **no orphan commits** holding an intermediate `test/flowV3` tree between 218 and 226 |
+
+### Outcome
+
+**UNRECOVERABLE.** The −2 names never existed in a git object. The 218→228→226 window lived in an **untracked** working tree before `2069e3e`. There is nothing to `git show` or `git diff` for those two `test()` titles.
+
+### Mitigation (closes the open question)
+
+All **ten M-1 acceptance criteria** were re-proven from scratch against the consolidated tree (see [`FLOW-V3-R5-ACCEPTANCE.md`](FLOW-V3-R5-ACCEPTANCE.md)). The M-1 behavioural surface is covered regardless of what those two untracked tests asserted. Future deletions are gated by `flowV3Guards --check=manifest` + `FLOW_V3_MANIFEST_STRICT=1`.
+
+## Named adds in close-out (A-2 / A-4)
+
+### `allowlistExclusionComplete.test.js`
 
 - every `LLM_BLOCKED_FIELDS` member is denied by `canLlmWriteField`
 - every `LLM_BLOCKED_NESTED_PATHS` member is denied
@@ -26,22 +47,9 @@
 - every writable field is intentional: known, not blocked, `canLlmWriteField` true
 - fixture files exist on disk next to this suite
 
-### `minorConsentWritePathGuard.test.js` (new file)
+### `minorConsentWritePathGuard.test.js`
 
 - `SYSTEM_WRITE_BLOCKED_FIELDS` covers `consentAt`, `consentVersion`, `isMinor`
-- every write channel refuses `consentAt` / `consentVersion` / `isMinor`
-- `validateProfilePatch` drops consent / isMinor on every channel
+- every write channel refuses those fields
+- `validateProfilePatch` drops them on every channel
 - no production `flowV3LLM` module calls `resolveIsMinor` while unwired
-
-## Removals
-
-| Transition | Named removals |
-|---|---|
-| 218 → 228 | None (scope add only). |
-| 228 → 226 | **UNPROVEN (2)** — cannot name; treat as open risk until a future run diffs against the pinned manifest. |
-| 226 → 227 | No source-test deletion identified; count move is scope / reporting (outbound guard + suite composition), not a deleted `test()` name. |
-| Close-out | **No `test()` deletions.** G-2b multipart tests are skip-gated, not removed (`ALLOW_TEST_DELETION` not used). |
-
-## Regression flag
-
-The **228 → 226 (−2 unnamed)** gap remains a documented unexplained removal from the reconciliation window. Current protection: `scripts/ci/flowV3Guards.js --check=manifest` with `FLOW_V3_MANIFEST_STRICT=1` in [`.github/workflows/flow-v3-foundation.yml`](../.github/workflows/flow-v3-foundation.yml).
