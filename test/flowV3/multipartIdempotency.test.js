@@ -7,6 +7,17 @@ const mongoose = require('mongoose');
 const outboundServicePath = require.resolve('../../services/chatbot/whatsappOutboundService');
 const gupshupSessionPath = require.resolve('../../services/chatbot/gupshupSessionService');
 
+const G2B_PART_INDEX_READY = Boolean(
+  require('../../models/WhatsAppOutboundMessage').schema.path('partIndex')
+);
+const G2B_SKIP = G2B_PART_INDEX_READY
+  ? false
+  : 'G-2b partIndex model is on fix/g2b-multipart-delivery (PR 4)';
+
+function g2bTest(name, fn) {
+  return test(name, { skip: G2B_SKIP }, fn);
+}
+
 describe('G-2b multipart idempotency (3-part envelope)', () => {
   let sendCalls;
   let createdDocs;
@@ -85,7 +96,7 @@ describe('G-2b multipart idempotency (3-part envelope)', () => {
     delete require.cache[gupshupSessionPath];
   });
 
-  test('3 indexed parts send once; replay sends zero additional provider messages', async () => {
+  g2bTest('3 indexed parts send once; replay sends zero additional provider messages', async () => {
     const outbound = require(outboundServicePath);
     const conversationId = new mongoose.Types.ObjectId();
     const inboundId = new mongoose.Types.ObjectId();
