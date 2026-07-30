@@ -1,0 +1,53 @@
+name: Flow V3 foundation guards
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'services/chatbot/flowV3LLM/**'
+      - 'constants/flowV3/**'
+      - 'models/FlowV3*.js'
+      - 'test/flowV3/**'
+      - 'scripts/ci/**'
+      - 'config/mongooseSafety.js'
+      - 'test/mongooseIndexSafety.test.js'
+      - 'test/outboundDuplicateGuard.test.js'
+      - '.github/workflows/flow-v3-foundation.yml'
+  pull_request:
+    paths:
+      - 'services/chatbot/flowV3LLM/**'
+      - 'constants/flowV3/**'
+      - 'models/FlowV3*.js'
+      - 'test/flowV3/**'
+      - 'scripts/ci/**'
+      - 'config/mongooseSafety.js'
+      - 'test/mongooseIndexSafety.test.js'
+      - 'test/outboundDuplicateGuard.test.js'
+      - '.github/workflows/flow-v3-foundation.yml'
+  workflow_dispatch:
+
+jobs:
+  guards-and-suite:
+    runs-on: ubuntu-latest
+    env:
+      FLOW_V3_REQUIRE_MONGO: '1'
+      FLOW_V3_MANIFEST_STRICT: '1'
+      ALLOW_REMOTE_AUTO_INDEX: '0'
+      CHATBOT_FLOW_V3_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: Mechanical guards
+        run: node scripts/ci/flowV3Guards.js
+      - name: Flow V3 suite + outbound duplicate guard
+        run: |
+          env -u MONGODB_URI -u MONGO_URI \
+            node --test test/flowV3/*.test.js test/outboundDuplicateGuard.test.js
+      - name: Counseling orchestration baseline allow-list
+        run: node scripts/ci/counselingBaselineAllowlist.js
