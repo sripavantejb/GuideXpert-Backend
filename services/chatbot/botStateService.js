@@ -90,6 +90,39 @@ function logOptimisticLockFailed(fields) {
   logChatbotEvent('optimistic_lock_failed', fields);
 }
 
+/**
+ * Crisis lock is permanent — "never set to false once true". The 30-minute
+ * subflow expiry must not be able to hide it.
+ *
+ * The stored document is already safe: mergeContext preserves context keys that
+ * are absent from the patch, so resetToMainMenu never removes flowV2 from Mongo.
+ * The hazard is a caller that rebuilds an in-memory context from emptySubflows()
+ * after an expiry — that turn is then routed as if the student had never been
+ * locked, and any writer that rebuilds flowV2 wholesale can persist the blank
+ * view back over the real one.
+ *
+ * @returns {{ flowV2?: object }} empty object when the student is not locked
+ */
+function preserveCrisisLock(botState) {
+  const flowV2 =
+    botState && botState.context && typeof botState.context.flowV2 === 'object'
+      ? botState.context.flowV2
+      : null;
+  const profile = flowV2 ? flowV2.profile : null;
+  if (!profile || profile.crisisLocked !== true) return {};
+
+  return {
+    flowV2: {
+      ...flowV2,
+      profile: {
+        ...profile,
+        crisisLocked: true,
+        crisisHandoffId: profile.crisisHandoffId ?? null,
+      },
+    },
+  };
+}
+
 function isStateExpired(botState, now = new Date()) {
   if (!botState || !botState.stateExpiresAt) return false;
   const expiresAt = new Date(botState.stateExpiresAt).getTime();
@@ -331,6 +364,7 @@ module.exports = {
   updateBotStateCas,
   runWithOptimisticLockRetry,
   isStateExpired,
+  preserveCrisisLock,
   OptimisticLockConflictError,
   OptimisticLockFailedError,
   getOptimisticLockMetrics,

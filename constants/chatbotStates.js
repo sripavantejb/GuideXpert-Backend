@@ -73,6 +73,11 @@ const HANDOFF_REASONS = Object.freeze([
   'keyword',
   'admin_initiated',
   'reopened',
+  // R7 Tier-2 crisis. The crisis path has always written this value; without it
+  // in the enum Mongoose rejected the document, so the ticket was never created.
+  // Agent queues filter on reason, so crisis must stay distinguishable from an
+  // ordinary bot_escalation.
+  'crisis_escalation',
 ]);
 
 const WEBHOOK_EVENT_KINDS = Object.freeze(['inbound', 'dlr', 'unknown']);
