@@ -1,4 +1,6 @@
 'use strict';
+
+require('../config/mongooseSafety');
 /**
  * Phase 4.6 Super Red-Team — production webhook + MongoDB + local scope engine comparison.
  * Does NOT modify firewall code. Does NOT enable enforcement.

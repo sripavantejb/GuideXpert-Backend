@@ -3,6 +3,8 @@
  *
  * Usage: node scripts/smokeIitSection2Jobs.js
  */
+
+require('../config/mongooseSafety');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const IitCounsellingSubmission = require('../models/IitCounsellingSubmission');

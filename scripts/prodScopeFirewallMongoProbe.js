@@ -1,4 +1,6 @@
 'use strict';
+
+require('../config/mongooseSafety');
 /** One-off production audit helper — inspect recent inbound/outbound in MongoDB */
 require('dotenv').config();
 const mongoose = require('mongoose');

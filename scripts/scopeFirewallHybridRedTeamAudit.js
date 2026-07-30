@@ -1,4 +1,6 @@
 'use strict';
+
+require('../config/mongooseSafety');
 /**
  * Phase 4.7 Hybrid Red-Team — production webhook + MongoDB + local hybrid engine (real LLM).
  * Does NOT modify firewall code. Does NOT enable enforcement.

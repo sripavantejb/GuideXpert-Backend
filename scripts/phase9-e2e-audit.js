@@ -1,5 +1,7 @@
 'use strict';
 
+require('../config/mongooseSafety');
+
 require('dotenv').config();
 const mongoose = require('mongoose');
 const http = require('http');

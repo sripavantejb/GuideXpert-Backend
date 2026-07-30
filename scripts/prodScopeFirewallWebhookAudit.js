@@ -1,4 +1,6 @@
 'use strict';
+
+require('../config/mongooseSafety');
 /**
  * Send audit messages to production Gupshup webhook and inspect MongoDB outbounds.
  * Uses guide-xpert-backend.vercel.app (actual chatbot host; www proxy returns 405 on /webhook).

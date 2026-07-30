@@ -5,6 +5,8 @@
  *   node scripts/repairIitTeluguSmsTminus2h.js              # dry-run
  *   node scripts/repairIitTeluguSmsTminus2h.js --execute  # repair + dispatch
  */
+
+require('../config/mongooseSafety');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const IitTeluguSmsReminderJob = require('../models/IitTeluguSmsReminderJob');

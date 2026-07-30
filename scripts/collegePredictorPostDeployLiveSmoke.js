@@ -1,5 +1,7 @@
 'use strict';
 
+require('../config/mongooseSafety');
+
 /**
  * Post-deploy production WhatsApp smoke for College Predictor.
  * Phone: 9347763131 → production webhook → Gupshup → WhatsApp

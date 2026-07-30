@@ -4,6 +4,8 @@
  * Usage: npm run verify:iit-messaging
  * Requires MONGODB_URI (and optional production .env for cron ping).
  */
+
+require('../config/mongooseSafety');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const { isGupshupConfigured, isWhatsAppEnabled } = require('../services/gupshupService');

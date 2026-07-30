@@ -1,3 +1,4 @@
+require('./config/mongooseSafety');
 #!/usr/bin/env node
 /**
  * Clean up corrupted OTP/Meet entry data for a specific mobile number

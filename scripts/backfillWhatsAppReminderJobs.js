@@ -7,6 +7,8 @@
  *   node scripts/backfillWhatsAppReminderJobs.js --execute --batch-size=200
  *   node scripts/backfillWhatsAppReminderJobs.js --execute --resume-from=<objectId>
  */
+
+require('../config/mongooseSafety');
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');

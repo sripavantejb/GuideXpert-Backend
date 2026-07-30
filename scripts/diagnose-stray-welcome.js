@@ -1,3 +1,4 @@
+require('../config/mongooseSafety');
 #!/usr/bin/env node
 /**
  * Check whether "Welcome" outbounds come from GuideXpert Mongo vs Gupshup/Meta.

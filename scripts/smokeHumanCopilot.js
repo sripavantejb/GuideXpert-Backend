@@ -1,5 +1,7 @@
 'use strict';
 
+require('../config/mongooseSafety');
+
 /**
  * Human Copilot production smoke test (API + DB).
  * Run: node scripts/smokeHumanCopilot.js

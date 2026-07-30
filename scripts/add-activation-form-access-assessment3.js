@@ -8,6 +8,7 @@
  * Run from backend directory: node scripts/add-activation-form-access-assessment3.js
  */
 
+require('../config/mongooseSafety');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const AssessmentSubmission3 = require('../models/AssessmentSubmission3');
