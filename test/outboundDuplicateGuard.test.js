@@ -6,6 +6,9 @@ const mongoose = require('mongoose');
 
 const outboundServicePath = require.resolve('../services/chatbot/whatsappOutboundService');
 const gupshupSessionPath = require.resolve('../services/chatbot/gupshupSessionService');
+const {
+  BOT_REPLY_INBOUND_PART_INDEX_NAME,
+} = require('../models/WhatsAppOutboundMessage');
 
 const CONVERSATION_ID = new mongoose.Types.ObjectId();
 const INBOUND_ID = new mongoose.Types.ObjectId();
@@ -31,11 +34,13 @@ describe('sendBotTextReply duplicate guard', () => {
               query.inReplyToInboundId &&
               String(query.inReplyToInboundId) === String(INBOUND_ID) &&
               query.senderType === 'bot' &&
+              query.partIndex === 0 &&
               query.status?.$in
             ) {
               return {
                 _id: EXISTING_OUTBOUND_ID,
                 status: 'submitted',
+                partIndex: 0,
               };
             }
             return null;
@@ -47,11 +52,13 @@ describe('sendBotTextReply duplicate guard', () => {
           query.inReplyToInboundId &&
           String(query.inReplyToInboundId) === String(INBOUND_ID) &&
           query.senderType === 'bot' &&
+          query.partIndex === 0 &&
           query.status?.$in
         ) {
           return {
             _id: EXISTING_OUTBOUND_ID,
             status: 'submitted',
+            partIndex: 0,
           };
         }
         return null;
@@ -62,6 +69,7 @@ describe('sendBotTextReply duplicate guard', () => {
       return {
         _id: new mongoose.Types.ObjectId(),
         status: 'queued',
+        partIndex: 0,
       };
     });
     mock.method(WhatsAppOutboundMessage, 'updateOne', async () => ({ acknowledged: true }));
@@ -86,6 +94,7 @@ describe('sendBotTextReply duplicate guard', () => {
       phone10: '9876543210',
       text: 'Duplicate should be blocked',
       inReplyToInboundId: INBOUND_ID,
+      partIndex: 0,
     });
 
     assert.equal(result.success, true);
@@ -97,19 +106,21 @@ describe('sendBotTextReply duplicate guard', () => {
 });
 
 describe('WhatsAppOutboundMessage bot reply index', () => {
-  test('schema defines unique partial index on inReplyToInboundId for bot sender', () => {
+  test('schema defines unique partial compound index on (inReplyToInboundId, partIndex)', () => {
     const WhatsAppOutboundMessage = require('../models/WhatsAppOutboundMessage');
     const indexes = WhatsAppOutboundMessage.schema.indexes();
     const botReplyIndex = indexes.find(
-      ([fields]) =>
+      ([fields, opts]) =>
         fields &&
-        Object.keys(fields).length === 1 &&
-        fields.inReplyToInboundId === 1
+        fields.inReplyToInboundId === 1 &&
+        fields.partIndex === 1 &&
+        (opts?.name === BOT_REPLY_INBOUND_PART_INDEX_NAME || opts?.unique === true)
     );
 
-    assert.ok(botReplyIndex, 'expected inReplyToInboundId index');
+    assert.ok(botReplyIndex, 'expected compound inReplyToInboundId+partIndex index');
     const options = botReplyIndex[1] || {};
     assert.equal(options.unique, true);
     assert.equal(options.partialFilterExpression?.senderType, 'bot');
+    assert.equal(options.name, BOT_REPLY_INBOUND_PART_INDEX_NAME);
   });
 });

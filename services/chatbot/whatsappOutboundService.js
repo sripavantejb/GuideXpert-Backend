@@ -1,4 +1,3 @@
-const mongoose = require('mongoose');
 const WhatsAppOutboundMessage = require('../../models/WhatsAppOutboundMessage');
 const { parseGupshupTemplateSendResponse } = require('../../utils/gupshupMessageIds');
 const { maskPhoneTail } = require('../../utils/chatbotPhone');
@@ -6,6 +5,7 @@ const { isMongoDuplicateKeyError } = require('../../utils/mongoDuplicateKey');
 const gupshupSession = require('./gupshupSessionService');
 const { sendSessionInactiveTemplateFallback } = require('./sessionFallbackService');
 
+/** Statuses that must not be re-sent (queued includes in-flight create-owns-send). */
 const SUCCESSFUL_OUTBOUND_STATUSES = ['queued', 'submitted', 'sent', 'delivered', 'read', 'simulated'];
 
 function isReengagementSendError(error) {
@@ -57,119 +57,155 @@ function snippetFromResult(result, max = 1000) {
   }
 }
 
-async function findExistingBotReply(inReplyToInboundId) {
+function normalizePartIndex(partIndex) {
+  const n = Number(partIndex);
+  return Number.isInteger(n) && n >= 0 ? n : 0;
+}
+
+async function findExistingBotReply(inReplyToInboundId, partIndex) {
   if (!inReplyToInboundId) return null;
   return WhatsAppOutboundMessage.findOne({
     inReplyToInboundId,
+    partIndex: normalizePartIndex(partIndex),
     senderType: 'bot',
   }).lean();
 }
 
-async function findSuccessfulBotReply(inReplyToInboundId) {
+async function findSuccessfulBotReply(inReplyToInboundId, partIndex) {
   if (!inReplyToInboundId) return null;
   return WhatsAppOutboundMessage.findOne({
     inReplyToInboundId,
+    partIndex: normalizePartIndex(partIndex),
     senderType: 'bot',
     status: { $in: SUCCESSFUL_OUTBOUND_STATUSES },
   }).lean();
 }
 
 /**
- * Send bot text reply and persist outbound row.
+ * Create owns send. Concurrent create on the same (inbound, partIndex) tuple:
+ * - queued / successful → duplicatePrevented (no re-send)
+ * - failed → atomic failed→queued claim; only the claimant retries
  */
-async function sendBotTextReply({
+async function createOrClaimBotOutbound({
   conversationId,
   phone10,
-  text,
+  messageType,
+  content,
+  textPreview,
   inReplyToInboundId = null,
+  partIndex = 0,
   handoffId = null,
-  messageType = 'text',
 }) {
+  const normalizedPartIndex = normalizePartIndex(partIndex);
+  const now = new Date();
+
   if (inReplyToInboundId) {
-    const existingSuccess = await findSuccessfulBotReply(inReplyToInboundId);
+    const existingSuccess = await findSuccessfulBotReply(inReplyToInboundId, normalizedPartIndex);
     if (existingSuccess) {
       return {
-        success: true,
-        outboundId: existingSuccess._id,
+        outbound: existingSuccess,
         duplicatePrevented: true,
+        newlySent: false,
+        partIndex: normalizedPartIndex,
       };
     }
   }
 
-  const now = new Date();
-  let outbound;
+  const createDoc = {
+    conversationId,
+    phone: phone10,
+    senderType: 'bot',
+    messageType,
+    content,
+    textPreview,
+    status: 'queued',
+    inReplyToInboundId: inReplyToInboundId || null,
+    partIndex: normalizedPartIndex,
+    handoffId: handoffId || null,
+  };
+
   try {
-    outbound = await WhatsAppOutboundMessage.create({
-      conversationId,
-      phone: phone10,
-      senderType: 'bot',
-      messageType,
-      content: { type: 'text', text },
-      textPreview: String(text || '').slice(0, 500),
-      status: 'queued',
-      inReplyToInboundId: inReplyToInboundId || null,
-      handoffId: handoffId || null,
-    });
+    const outbound = await WhatsAppOutboundMessage.create(createDoc);
+    return {
+      outbound,
+      duplicatePrevented: false,
+      newlySent: true,
+      partIndex: normalizedPartIndex,
+    };
   } catch (err) {
-    if (isMongoDuplicateKeyError(err) && inReplyToInboundId) {
-      const existing = await findExistingBotReply(inReplyToInboundId);
-      if (existing) {
-        if (SUCCESSFUL_OUTBOUND_STATUSES.includes(existing.status)) {
-          return {
-            success: true,
-            outboundId: existing._id,
-            duplicatePrevented: true,
-          };
-        }
-        outbound = existing;
-      } else {
-        throw err;
-      }
-    } else {
+    if (!isMongoDuplicateKeyError(err) || !inReplyToInboundId) {
       throw err;
     }
-  }
 
-  if (outbound.status !== 'queued') {
-    await WhatsAppOutboundMessage.updateOne(
-      { _id: outbound._id },
+    const claimed = await WhatsAppOutboundMessage.findOneAndUpdate(
+      {
+        inReplyToInboundId,
+        partIndex: normalizedPartIndex,
+        senderType: 'bot',
+        status: 'failed',
+      },
       {
         $set: {
-          content: { type: 'text', text },
-          textPreview: String(text || '').slice(0, 500),
+          content,
+          textPreview,
           status: 'queued',
           messageType,
           handoffId: handoffId || null,
+          webhookErrorReason: null,
+          webhookErrorCode: null,
+          failedAt: null,
           updatedAt: now,
         },
-      }
+      },
+      { new: true }
     );
-  }
 
-  const result = await gupshupSession.sendTextMessage(phone10, text);
-  const ids = parseGupshupTemplateSendResponse(result && result.data);
+    if (claimed) {
+      return {
+        outbound: claimed,
+        duplicatePrevented: false,
+        newlySent: true,
+        partIndex: normalizedPartIndex,
+      };
+    }
+
+    const existing = await findExistingBotReply(inReplyToInboundId, normalizedPartIndex);
+    if (existing) {
+      return {
+        outbound: existing,
+        duplicatePrevented: true,
+        newlySent: false,
+        partIndex: normalizedPartIndex,
+      };
+    }
+    throw err;
+  }
+}
+
+async function markBotOutboundSubmitted(outboundId, result, ids) {
   const nowUp = new Date();
-
-  if (result && result.success) {
-    await WhatsAppOutboundMessage.updateOne(
-      { _id: outbound._id },
-      {
-        $set: {
-          status: 'submitted',
-          gupshupMessageId: ids.canonicalMessageId || null,
-          gupshupInternalMessageId: ids.gupshupInternalMessageId || null,
-          whatsappWaMessageId: ids.whatsappWaMessageId || null,
-          providerPayloadSnippet: snippetFromResult(result),
-          sentAt: nowUp,
-          updatedAt: nowUp,
-        },
-      }
-    );
-    return { success: true, outboundId: outbound._id, result };
-  }
-
+  const status = result && result.stub ? 'simulated' : 'submitted';
   await WhatsAppOutboundMessage.updateOne(
-    { _id: outbound._id },
+    { _id: outboundId },
+    {
+      $set: {
+        status,
+        gupshupMessageId: ids.canonicalMessageId || null,
+        gupshupInternalMessageId: ids.gupshupInternalMessageId || null,
+        whatsappWaMessageId: ids.whatsappWaMessageId || null,
+        providerPayloadSnippet: snippetFromResult(result),
+        sentAt: nowUp,
+        updatedAt: nowUp,
+      },
+    }
+  );
+  return status;
+}
+
+async function markBotOutboundFailed(outboundId, result) {
+  const nowUp = new Date();
+  await WhatsAppOutboundMessage.updateOne(
+    { _id: outboundId },
     {
       $set: {
         status: 'failed',
@@ -180,71 +216,142 @@ async function sendBotTextReply({
       },
     }
   );
+}
+
+/**
+ * Mark failed, then optionally promote to submitted on session-template fallback
+ * so a later webhook retry does not reclaim the row as a failed send.
+ */
+async function finishBotSendFailure(phone10, messageType, outbound, result) {
+  await markBotOutboundFailed(outbound._id, result);
   logOutboundFailure(phone10, messageType, result);
   const fallback = await attemptSessionFallbackOnFailure(phone10, result);
   if (fallback && fallback.success) {
-    return {
-      success: true,
-      outboundId: outbound._id,
-      sessionFallback: true,
-      result: fallback,
-    };
-  }
-  return { success: false, outboundId: outbound._id, error: result && result.error, result };
-}
-
-async function sendBotButtonReply({ conversationId, phone10, body, buttons, inReplyToInboundId }) {
-  const outbound = await WhatsAppOutboundMessage.create({
-    conversationId,
-    phone: phone10,
-    senderType: 'bot',
-    messageType: 'interactive_button',
-    content: { type: 'interactive_button', body, buttons },
-    textPreview: String(body || '').slice(0, 500),
-    status: 'queued',
-    inReplyToInboundId: inReplyToInboundId || null,
-  });
-
-  const result = await gupshupSession.sendButtonMessage(phone10, body, buttons);
-  const ids = parseGupshupTemplateSendResponse(result && result.data);
-  const nowUp = new Date();
-
-  if (result && result.success) {
+    const nowUp = new Date();
     await WhatsAppOutboundMessage.updateOne(
       { _id: outbound._id },
       {
         $set: {
           status: 'submitted',
-          gupshupMessageId: ids.canonicalMessageId || null,
-          gupshupInternalMessageId: ids.gupshupInternalMessageId || null,
-          whatsappWaMessageId: ids.whatsappWaMessageId || null,
-          providerPayloadSnippet: snippetFromResult(result),
+          webhookErrorReason: null,
+          failedAt: null,
           sentAt: nowUp,
           updatedAt: nowUp,
+          providerPayloadSnippet: snippetFromResult(fallback) || snippetFromResult(result),
         },
       }
     );
-    return { success: true, outboundId: outbound._id };
+    return {
+      success: true,
+      outboundId: outbound._id,
+      sessionFallback: true,
+      newlySent: true,
+      partIndex: outbound.partIndex,
+      result: fallback,
+    };
+  }
+  return {
+    success: false,
+    outboundId: outbound._id,
+    error: result && result.error,
+    newlySent: true,
+    partIndex: outbound.partIndex,
+    result,
+  };
+}
+
+function duplicatePreventedResult(outbound, partIndex) {
+  return {
+    success: true,
+    outboundId: outbound._id,
+    duplicatePrevented: true,
+    newlySent: false,
+    partIndex: normalizePartIndex(partIndex ?? outbound.partIndex),
+  };
+}
+
+/**
+ * Send bot text reply and persist outbound row.
+ */
+async function sendBotTextReply({
+  conversationId,
+  phone10,
+  text,
+  inReplyToInboundId = null,
+  partIndex = 0,
+  handoffId = null,
+  messageType = 'text',
+}) {
+  const claim = await createOrClaimBotOutbound({
+    conversationId,
+    phone10,
+    messageType,
+    content: { type: 'text', text },
+    textPreview: String(text || '').slice(0, 500),
+    inReplyToInboundId,
+    partIndex,
+    handoffId,
+  });
+  if (claim.duplicatePrevented) {
+    return duplicatePreventedResult(claim.outbound, claim.partIndex);
   }
 
-  await WhatsAppOutboundMessage.updateOne(
-    { _id: outbound._id },
-    {
-      $set: {
-        status: 'failed',
-        webhookErrorReason: (result && result.error) || 'send failed',
-        failedAt: nowUp,
-        updatedAt: nowUp,
-      },
-    }
-  );
-  logOutboundFailure(phone10, 'interactive_button', result);
-  const fallback = await attemptSessionFallbackOnFailure(phone10, result);
-  if (fallback && fallback.success) {
-    return { success: true, outboundId: outbound._id, sessionFallback: true };
+  const outbound = claim.outbound;
+  const result = await gupshupSession.sendTextMessage(phone10, text);
+  const ids = parseGupshupTemplateSendResponse(result && result.data);
+
+  if (result && result.success) {
+    await markBotOutboundSubmitted(outbound._id, result, ids);
+    return {
+      success: true,
+      outboundId: outbound._id,
+      newlySent: true,
+      partIndex: claim.partIndex,
+      result,
+    };
   }
-  return { success: false, outboundId: outbound._id, error: result && result.error };
+
+  return finishBotSendFailure(phone10, messageType, outbound, result);
 }
+
+async function sendBotButtonReply({
+  conversationId,
+  phone10,
+  body,
+  buttons,
+  inReplyToInboundId = null,
+  partIndex = 0,
+}) {
+  const claim = await createOrClaimBotOutbound({
+    conversationId,
+    phone10,
+    messageType: 'interactive_button',
+    content: { type: 'interactive_button', body, buttons },
+    textPreview: String(body || '').slice(0, 500),
+    inReplyToInboundId,
+    partIndex,
+  });
+  if (claim.duplicatePrevented) {
+    return duplicatePreventedResult(claim.outbound, claim.partIndex);
+  }
+
+  const outbound = claim.outbound;
+  const result = await gupshupSession.sendButtonMessage(phone10, body, buttons);
+  const ids = parseGupshupTemplateSendResponse(result && result.data);
+
+  if (result && result.success) {
+    await markBotOutboundSubmitted(outbound._id, result, ids);
+    return {
+      success: true,
+      outboundId: outbound._id,
+      newlySent: true,
+      partIndex: claim.partIndex,
+    };
+  }
+
+  return finishBotSendFailure(phone10, 'interactive_button', outbound, result);
+}
+
 async function sendAgentTextReply({
   conversationId,
   phone10,
@@ -329,6 +436,19 @@ async function sendAgentTextReply({
   logOutboundFailure(phone10, 'agent_text', result);
   const fallback = await attemptSessionFallbackOnFailure(phone10, result);
   if (fallback && fallback.success) {
+    // Promote off failed so webhook retries do not treat template fallback as reclaimable.
+    await WhatsAppOutboundMessage.updateOne(
+      { _id: outbound._id },
+      {
+        $set: {
+          status: 'submitted',
+          webhookErrorReason: null,
+          failedAt: null,
+          sentAt: nowUp,
+          updatedAt: nowUp,
+        },
+      }
+    );
     return {
       success: true,
       outboundId: outbound._id,
@@ -348,10 +468,7 @@ async function sendAgentTextReply({
 
 /**
  * Send a bot image (optionally captioned) and persist the outbound row.
- *
- * Callers pass `inReplyToInboundId: null` when the same turn also sends a
- * text/interactive reply — the unique bot-reply index allows only one row
- * per inbound.
+ * Multipart envelopes pass inReplyToInboundId + partIndex like text/interactive.
  */
 async function sendBotImageReply({
   conversationId,
@@ -359,57 +476,36 @@ async function sendBotImageReply({
   url,
   caption = null,
   inReplyToInboundId = null,
+  partIndex = 0,
 }) {
-  const outbound = await WhatsAppOutboundMessage.create({
+  const claim = await createOrClaimBotOutbound({
     conversationId,
-    phone: phone10,
-    senderType: 'bot',
+    phone10,
     messageType: 'image',
     content: { type: 'image', url, caption },
     textPreview: String(caption || url || '').slice(0, 500),
-    status: 'queued',
-    inReplyToInboundId: inReplyToInboundId || null,
+    inReplyToInboundId,
+    partIndex,
   });
+  if (claim.duplicatePrevented) {
+    return duplicatePreventedResult(claim.outbound, claim.partIndex);
+  }
 
+  const outbound = claim.outbound;
   const result = await gupshupSession.sendImageMessage(phone10, url, caption);
   const ids = parseGupshupTemplateSendResponse(result && result.data);
-  const nowUp = new Date();
 
   if (result && result.success) {
-    await WhatsAppOutboundMessage.updateOne(
-      { _id: outbound._id },
-      {
-        $set: {
-          status: result.stub ? 'simulated' : 'submitted',
-          gupshupMessageId: ids.canonicalMessageId || null,
-          gupshupInternalMessageId: ids.gupshupInternalMessageId || null,
-          whatsappWaMessageId: ids.whatsappWaMessageId || null,
-          providerPayloadSnippet: snippetFromResult(result),
-          sentAt: nowUp,
-          updatedAt: nowUp,
-        },
-      }
-    );
-    return { success: true, outboundId: outbound._id };
+    await markBotOutboundSubmitted(outbound._id, result, ids);
+    return {
+      success: true,
+      outboundId: outbound._id,
+      newlySent: true,
+      partIndex: claim.partIndex,
+    };
   }
 
-  await WhatsAppOutboundMessage.updateOne(
-    { _id: outbound._id },
-    {
-      $set: {
-        status: 'failed',
-        webhookErrorReason: (result && result.error) || 'send failed',
-        failedAt: nowUp,
-        updatedAt: nowUp,
-      },
-    }
-  );
-  logOutboundFailure(phone10, 'image', result);
-  const fallback = await attemptSessionFallbackOnFailure(phone10, result);
-  if (fallback && fallback.success) {
-    return { success: true, outboundId: outbound._id, sessionFallback: true };
-  }
-  return { success: false, outboundId: outbound._id, error: result && result.error };
+  return finishBotSendFailure(phone10, 'image', outbound, result);
 }
 
 async function sendBotListReply({
@@ -419,60 +515,39 @@ async function sendBotListReply({
   buttonText,
   sections,
   title,
-  inReplyToInboundId,
+  inReplyToInboundId = null,
+  partIndex = 0,
 }) {
-  const outbound = await WhatsAppOutboundMessage.create({
+  const claim = await createOrClaimBotOutbound({
     conversationId,
-    phone: phone10,
-    senderType: 'bot',
+    phone10,
     messageType: 'interactive_list',
     content: { type: 'interactive_list', body, buttonText, sections, title },
     textPreview: String(body || '').slice(0, 500),
-    status: 'queued',
-    inReplyToInboundId: inReplyToInboundId || null,
+    inReplyToInboundId,
+    partIndex,
   });
+  if (claim.duplicatePrevented) {
+    return duplicatePreventedResult(claim.outbound, claim.partIndex);
+  }
 
+  const outbound = claim.outbound;
   const result = await gupshupSession.sendListMessage(phone10, body, buttonText, sections, {
     title,
   });
   const ids = parseGupshupTemplateSendResponse(result && result.data);
-  const nowUp = new Date();
 
   if (result && result.success) {
-    await WhatsAppOutboundMessage.updateOne(
-      { _id: outbound._id },
-      {
-        $set: {
-          status: 'submitted',
-          gupshupMessageId: ids.canonicalMessageId || null,
-          gupshupInternalMessageId: ids.gupshupInternalMessageId || null,
-          whatsappWaMessageId: ids.whatsappWaMessageId || null,
-          providerPayloadSnippet: snippetFromResult(result),
-          sentAt: nowUp,
-          updatedAt: nowUp,
-        },
-      }
-    );
-    return { success: true, outboundId: outbound._id };
+    await markBotOutboundSubmitted(outbound._id, result, ids);
+    return {
+      success: true,
+      outboundId: outbound._id,
+      newlySent: true,
+      partIndex: claim.partIndex,
+    };
   }
 
-  await WhatsAppOutboundMessage.updateOne(
-    { _id: outbound._id },
-    {
-      $set: {
-        status: 'failed',
-        webhookErrorReason: (result && result.error) || 'send failed',
-        failedAt: nowUp,
-        updatedAt: nowUp,
-      },
-    }
-  );
-  logOutboundFailure(phone10, 'interactive_list', result);
-  const fallback = await attemptSessionFallbackOnFailure(phone10, result);
-  if (fallback && fallback.success) {
-    return { success: true, outboundId: outbound._id, sessionFallback: true };
-  }
-  return { success: false, outboundId: outbound._id, error: result && result.error };
+  return finishBotSendFailure(phone10, 'interactive_list', outbound, result);
 }
 
 module.exports = {
@@ -482,4 +557,6 @@ module.exports = {
   sendBotImageReply,
   sendAgentTextReply,
   isReengagementSendError,
+  normalizePartIndex,
+  SUCCESSFUL_OUTBOUND_STATUSES,
 };

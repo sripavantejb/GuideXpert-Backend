@@ -5,6 +5,9 @@ const {
   OUTBOUND_STATUSES,
 } = require('../constants/chatbotStates');
 
+/** Explicit name for G-2b compound unique partial index (migration + schema). */
+const BOT_REPLY_INBOUND_PART_INDEX_NAME = 'bot_reply_inbound_part_unique';
+
 const whatsAppOutboundMessageSchema = new mongoose.Schema(
   {
     conversationId: {
@@ -66,6 +69,16 @@ const whatsAppOutboundMessageSchema = new mongoose.Schema(
       ref: 'WhatsAppInboundMessage',
       default: null,
     },
+    /**
+     * Zero-based envelope part index for multi-bubble bot replies.
+     * Single-reply callers omit this (defaults to 0). Compound unique with
+     * inReplyToInboundId for bot rows (see bot_reply_inbound_part_unique).
+     */
+    partIndex: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     handoffId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'WhatsAppAgentHandoff',
@@ -83,12 +96,14 @@ whatsAppOutboundMessageSchema.index({ conversationId: 1, createdAt: -1 });
 whatsAppOutboundMessageSchema.index({ phone: 1, createdAt: -1 });
 whatsAppOutboundMessageSchema.index({ status: 1, updatedAt: -1 });
 whatsAppOutboundMessageSchema.index(
-  { inReplyToInboundId: 1 },
+  { inReplyToInboundId: 1, partIndex: 1 },
   {
+    name: BOT_REPLY_INBOUND_PART_INDEX_NAME,
     unique: true,
     partialFilterExpression: {
       senderType: 'bot',
       inReplyToInboundId: { $type: 'objectId' },
+      partIndex: { $type: 'number' },
     },
   }
 );
@@ -102,4 +117,9 @@ whatsAppOutboundMessageSchema.index(
   }
 );
 
-module.exports = mongoose.model('WhatsAppOutboundMessage', whatsAppOutboundMessageSchema);
+const WhatsAppOutboundMessage = mongoose.model(
+  'WhatsAppOutboundMessage',
+  whatsAppOutboundMessageSchema
+);
+WhatsAppOutboundMessage.BOT_REPLY_INBOUND_PART_INDEX_NAME = BOT_REPLY_INBOUND_PART_INDEX_NAME;
+module.exports = WhatsAppOutboundMessage;
