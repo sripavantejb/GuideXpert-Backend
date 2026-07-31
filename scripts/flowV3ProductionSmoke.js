@@ -22,9 +22,12 @@
  * validation, render, outbound records, turn log) still runs for real.
  *
  * Usage:
- *   node scripts/flowV3ProductionSmoke.js --phone=9347763131
+ *   node scripts/flowV3ProductionSmoke.js --phone=9347763131                  # happy-path scenario
+ *   node scripts/flowV3ProductionSmoke.js --phone=9347763131 --scenario=all   # every scenario, fresh profile each
+ *   node scripts/flowV3ProductionSmoke.js --phone=9347763131 --scenario=curious
  *   node scripts/flowV3ProductionSmoke.js --phone=9347763131 --keep-state
  *   node scripts/flowV3ProductionSmoke.js --phone=9347763131 --message="custom single turn"
+ *   node scripts/flowV3ProductionSmoke.js --phone=9347763131 --min-llm-rate=90
  */
 
 require('../config/mongooseSafety');
@@ -45,19 +48,50 @@ const { HOLDING_REPLY, STATIC_ACK } = require('../services/chatbot/flowV3LLM/val
 const FlowV3TurnLog = require('../models/FlowV3TurnLog');
 const WhatsAppOutboundMessage = require('../models/WhatsAppOutboundMessage');
 
-// Conformance report variant-A happy path: the conversation that used to
-// stall forever in Tier A fallback loops. Every turn should be a genuine
-// Tier 3 LLM reply and the beat walk should advance each time.
-const DEFAULT_TURNS = [
-  'Hi',
-  'I am in class 12 with MPC',
-  'I am looking for proper direction in choosing a college',
-  'I enjoy coding and robotics',
-  'Placements matter to me the most',
-  'Our budget is around 2 to 3 lakhs per year',
-  'Hyderabad would be best',
-  'ok sounds good, show me the colleges',
-];
+// Production-level scenario set. Every turn should be a genuine Tier 3 LLM
+// reply on the admin-panel prompt; fallback tiers only on provider outages.
+const SCENARIOS = {
+  // Conformance report variant-A happy path: the conversation that used to
+  // stall forever in Tier A fallback loops.
+  happy: [
+    'Hi',
+    'I am in class 12 with MPC',
+    'I am looking for proper direction in choosing a college',
+    'I enjoy coding and robotics',
+    'Placements matter to me the most',
+    'Our budget is around 2 to 3 lakhs per year',
+    'Hyderabad would be best',
+    'ok sounds good, show me the colleges',
+  ],
+  // Student who interrupts the slot walk with free-form questions — the LLM
+  // must answer in its own words (admin prompt voice) and still bring the
+  // conversation back to the beat walk.
+  curious: [
+    'Hello',
+    'I just finished 12th with MPC',
+    'Honestly I am confused about which college to join',
+    'I like AI and coding',
+    'What makes these new-age colleges different from normal engineering colleges?',
+    'Placements are the priority for me',
+    'We can spend about 3 lakhs a year',
+    'I prefer Bangalore',
+    'Do these colleges accept JEE scores?',
+    'Okay, show me the best options for me',
+  ],
+  // Parent-led journey: third-person answers, family budget framing, and a
+  // direct recommendation ask at the end.
+  parent: [
+    'Hi, I am a parent looking for options for my son',
+    'He completed 12th with MPC this year',
+    'We want proper guidance on choosing the right college',
+    'He is interested in software and computers',
+    'A good job after graduation matters most to us',
+    'Our budget is around 4 lakhs per year',
+    'We are in Vijayawada but open to nearby cities',
+    'Which colleges do you suggest for him?',
+  ],
+};
+const DEFAULT_SCENARIO = 'happy';
 
 const TURN_LOG_POLL_MS = 500;
 const TURN_LOG_POLL_TIMEOUT_MS = 15000;
@@ -153,13 +187,25 @@ async function injectInboundTurn({ phone10, message, resetState, caseId }) {
 }
 
 function parseArgs(argv) {
-  const args = { phone: null, keepState: false, message: null };
+  const args = { phone: null, keepState: false, message: null, scenario: DEFAULT_SCENARIO, minLlmRate: 100 };
   for (const raw of argv.slice(2)) {
     if (raw.startsWith('--phone=')) args.phone = raw.slice('--phone='.length);
     else if (raw === '--keep-state') args.keepState = true;
     else if (raw.startsWith('--message=')) args.message = raw.slice('--message='.length);
+    else if (raw.startsWith('--scenario=')) args.scenario = raw.slice('--scenario='.length);
+    else if (raw.startsWith('--min-llm-rate=')) args.minLlmRate = Number(raw.slice('--min-llm-rate='.length));
   }
   return args;
+}
+
+/**
+ * A production-level run must start from a virgin lead: the previous run's
+ * profile makes the beat walk skip slots and hides regressions.
+ */
+async function resetLeadProfile(phone10) {
+  const FlowV3LeadProfile = require('../models/FlowV3LeadProfile');
+  const del = await FlowV3LeadProfile.deleteMany({ phone: phone10 });
+  return del.deletedCount || 0;
 }
 
 function hr(label) {
@@ -334,53 +380,90 @@ async function main() {
     console.log('                            runs for real; only the final WhatsApp HTTP send is simulated.');
   }
 
-  const turns = args.message ? [args.message] : DEFAULT_TURNS;
+  let scenarioPlan;
+  if (args.message) {
+    scenarioPlan = [{ name: 'custom', turns: [args.message] }];
+  } else if (args.scenario === 'all') {
+    scenarioPlan = Object.entries(SCENARIOS).map(([name, turns]) => ({ name, turns }));
+  } else if (SCENARIOS[args.scenario]) {
+    scenarioPlan = [{ name: args.scenario, turns: SCENARIOS[args.scenario] }];
+  } else {
+    console.error(`Unknown scenario "${args.scenario}". Available: ${Object.keys(SCENARIOS).join(', ')}, all`);
+    await mongoose.disconnect();
+    process.exit(2);
+  }
+
   const results = [];
 
-  for (let i = 0; i < turns.length; i++) {
-    const message = turns[i];
-    const resetState = i === 0 && !args.keepState;
-
-    let sendResult;
-    try {
-      sendResult = await injectInboundTurn({
-        phone10,
-        message,
-        resetState,
-        caseId: `flowv3-smoke-turn-${i + 1}`,
-      });
-    } catch (err) {
-      hr(`TURN ${i + 1}: "${message}"`);
-      console.error(`SEND FAILED: ${err.message}`);
-      results.push({ turn: i + 1, message, genuineLlm: false, promptHashMatch: false, verdict: `SEND_FAILED: ${err.message}` });
-      continue;
+  for (const scenario of scenarioPlan) {
+    hr(`SCENARIO: ${scenario.name} (${scenario.turns.length} turns)`);
+    if (!args.keepState) {
+      const deleted = await resetLeadProfile(phone10);
+      console.log(`  lead profile reset      : ${deleted} document(s) deleted — starting from a virgin lead`);
     }
 
-    const turnLog = await pollTurnLog(sendResult.inboundId);
-    const outbounds = await WhatsAppOutboundMessage.find({
-      inReplyToInboundId: sendResult.inboundId,
-      senderType: 'bot',
-    })
-      .sort({ partIndex: 1, createdAt: 1 })
-      .lean();
+    for (let i = 0; i < scenario.turns.length; i++) {
+      const message = scenario.turns[i];
+      const resetState = i === 0 && !args.keepState;
 
-    const report = printTurnReport(i + 1, message, sendResult, turnLog, outbounds, adminPrompt.hash);
-    results.push({ turn: i + 1, message, ...report });
+      let sendResult;
+      try {
+        sendResult = await injectInboundTurn({
+          phone10,
+          message,
+          resetState,
+          caseId: `flowv3-smoke-${scenario.name}-turn-${i + 1}`,
+        });
+      } catch (err) {
+        hr(`TURN ${i + 1}: "${message}"`);
+        console.error(`SEND FAILED: ${err.message}`);
+        results.push({ scenario: scenario.name, turn: i + 1, message, genuineLlm: false, promptHashMatch: false, verdict: `SEND_FAILED: ${err.message}` });
+        continue;
+      }
 
-    if (i < turns.length - 1) await sleep(INTER_TURN_DELAY_MS);
+      const turnLog = await pollTurnLog(sendResult.inboundId);
+      const outbounds = await WhatsAppOutboundMessage.find({
+        inReplyToInboundId: sendResult.inboundId,
+        senderType: 'bot',
+      })
+        .sort({ partIndex: 1, createdAt: 1 })
+        .lean();
+
+      const report = printTurnReport(i + 1, message, sendResult, turnLog, outbounds, adminPrompt.hash);
+      results.push({ scenario: scenario.name, turn: i + 1, message, ...report });
+
+      if (i < scenario.turns.length - 1) await sleep(INTER_TURN_DELAY_MS);
+    }
   }
 
   hr('FINAL SUMMARY');
-  let allPass = true;
+  let llmCount = 0;
+  let hashCount = 0;
+  let currentScenario = null;
   for (const r of results) {
+    if (r.scenario !== currentScenario) {
+      currentScenario = r.scenario;
+      console.log(`\n  [${currentScenario}]`);
+    }
     const pass = r.genuineLlm && r.promptHashMatch;
-    if (!pass) allPass = false;
+    if (r.genuineLlm) llmCount += 1;
+    if (r.promptHashMatch) hashCount += 1;
     console.log(`  Turn ${r.turn}: ${pass ? 'PASS' : 'FAIL'} — ${r.verdict}${r.promptHashMatch ? ' | prompt hash matched' : ' | prompt hash NOT matched'}`);
   }
-  console.log(`\n  OVERALL: ${allPass ? 'PASS — replies are genuine LLM output using your new system prompt' : 'FAIL — see turn details above'}`);
+
+  const total = results.length;
+  const llmRate = total ? Math.round((llmCount / total) * 100) : 0;
+  const hashRate = total ? Math.round((hashCount / total) * 100) : 0;
+  const minRate = Number.isFinite(args.minLlmRate) ? args.minLlmRate : 100;
+  const overallPass = llmRate >= minRate && hashCount === llmCount;
+
+  console.log('\n  ------------------------------------------------------------');
+  console.log(`  Genuine LLM replies     : ${llmCount}/${total} (${llmRate}%)  [required: >= ${minRate}%]`);
+  console.log(`  Admin prompt hash match : ${hashCount}/${total} (${hashRate}%)`);
+  console.log(`\n  OVERALL: ${overallPass ? 'PASS — replies are genuine LLM output using your admin-panel system prompt' : 'FAIL — see turn details above'}`);
 
   await mongoose.disconnect();
-  process.exit(allPass ? 0 : 1);
+  process.exit(overallPass ? 0 : 1);
 }
 
 main().catch(async (err) => {
