@@ -315,7 +315,10 @@ async function processCareerCounsellingFlowV3Turn({
     try {
       const { loadLeadProfile, ensureLeadProfile } = require('../flowV3LLM/profile');
       let loaded = await loadLeadProfile(phone);
-      if (!loaded && isNewEntry) {
+      if (!loaded) {
+        // Create-if-missing regardless of isNewEntry: conversations upgraded
+        // from V2 mid-flight enter with isNewEntry=false, and without a durable
+        // doc every extractor CAS write fails with not_found (slots lost).
         loaded = await ensureLeadProfile(phone, {});
       }
       if (loaded) {

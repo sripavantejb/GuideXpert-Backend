@@ -74,7 +74,12 @@ async function runLlmLoop(input = {}) {
       responseFormat: null,
       temperature: 0.4,
       maxTokens: 1200,
-      timeoutMs: Math.min(4000, left),
+      // Up to 8s of the remaining wall, no SDK retries: a cold first call can
+      // take >4s, and a 4s timeout retried twice burned the whole 12s wall,
+      // forcing Tier A fallback on every cold start. The fallback ladder is
+      // the retry policy here — an SDK retry never fits the remaining budget.
+      timeoutMs: Math.min(8000, left),
+      maxRetries: 0,
     });
 
     if (completion.toolCalls && completion.toolCalls.length) {
@@ -154,7 +159,11 @@ async function runLlmLoop(input = {}) {
         responseFormat: JSON_RESPONSE_FORMAT,
         temperature: 0.2,
         maxTokens: 1200,
-        timeoutMs: Math.min(4000, remainingMs(startedAt, wallMs) || 1000),
+        // 4s was too tight for a full envelope (large prompt + parts): the
+        // forced pass timed out and the whole turn fell back. 8s still fits
+        // the wall after a ~2-3s first call.
+        timeoutMs: Math.min(8000, remainingMs(startedAt, wallMs) || 1000),
+        maxRetries: 0,
       });
       finalText = forced.text;
       messages.push({ role: 'assistant', content: finalText });
@@ -175,7 +184,8 @@ async function runLlmLoop(input = {}) {
           responseFormat: JSON_RESPONSE_FORMAT,
           temperature: 0.1,
           maxTokens: 1200,
-          timeoutMs: Math.min(4000, repairLeft),
+          timeoutMs: Math.min(8000, repairLeft),
+          maxRetries: 0,
         });
         parsed = parseEnvelope(repaired.text);
         finalText = repaired.text;

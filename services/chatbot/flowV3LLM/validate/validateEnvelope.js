@@ -12,7 +12,12 @@ const {
 } = require('../../../../constants/careerCounsellingV2ExploreModernColleges');
 
 const URL_PATTERN = /https?:\/\/\S+|guidexpert\.co\.in\/\S+/i;
-const COLLEGE_HINT = /\b(college|university|institute|kalvium|plaksha|niat|iit|nit)\b/i;
+// V-2a guards hard rule 1 ("never invent a college NAME"): known institution
+// names need tool grounding. The generic words college/university/institute
+// alone blocked ordinary counselling copy (including the greeting "choose a
+// college that truly fits") on every turn; proper-noun college mentions are
+// covered by V-2d's COLLEGE_NAME_CAPTURE against the cited corpus.
+const COLLEGE_HINT = /\b(kalvium|plaksha|niat|iit|nit)\b/i;
 const NUMERIC_CLAIM = /\b\d+(\.\d+)?\s*(%|lpa|lakhs?|crores?|k)\b/i;
 
 // V-2 college-mention capture: "<Proper Noun(s)> University|College|Institute…"
