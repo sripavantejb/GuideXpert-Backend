@@ -77,7 +77,12 @@ async function updateRollingSummary(state = {}, turns = [], options = {}) {
         summary = String(generated).trim().slice(0, options.maxChars || MAX_SUMMARY_CHARS);
         source = 'generated';
       }
-    } catch {
+    } catch (err) {
+      // F-9: the extractive fallback below is by design, but the generator
+      // failure itself must be visible, not swallowed.
+      console.error('[flowV3] SUMMARY_GENERATOR_FAILED', {
+        error: err && err.message ? err.message : String(err),
+      });
       summary = null;
     }
   }

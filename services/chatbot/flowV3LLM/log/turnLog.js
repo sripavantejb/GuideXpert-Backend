@@ -10,6 +10,13 @@ const { generateCallId } = require('../tools/toolBroker');
 async function writeTurnLog(entry = {}, deps = {}) {
   try {
     const FlowV3TurnLog = deps.FlowV3TurnLog || require('../../../../models/FlowV3TurnLog');
+    // Fail FAST and VISIBLY when the connection is down instead of letting
+    // mongoose buffer for 10s and time out — the caller checks this result
+    // and logs it as an alertable failure (F-3).
+    const readyState = FlowV3TurnLog.db && FlowV3TurnLog.db.readyState;
+    if (readyState !== undefined && readyState !== 1) {
+      return { ok: false, error: `db_not_connected:readyState=${readyState}` };
+    }
     const phoneHash =
       entry.phoneHash != null
         ? entry.phoneHash

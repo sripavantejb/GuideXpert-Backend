@@ -266,21 +266,32 @@ function maybeRunFlowV3Shadow({ phone, inboundText, inbound, conversationId, con
     });
     if (!routing.useV3 || routing.mode !== 'shadow') return;
     const { processFlowV3Turn } = require('../flowV3LLM/flowV3Dispatcher');
-    Promise.resolve(
-      processFlowV3Turn({
-        text: inboundText,
-        phone,
-        conversationId: conversationId || inbound?.conversationId || null,
-        inboundId: inbound?._id ? String(inbound._id) : null,
-        profile: contextPatch?.flowV3?.profile || {},
-        slotMeta: contextPatch?.flowV3?.slotMeta || {},
-        promptVersion: contextPatch?.flowV3?.promptVersion || null,
-        mode: 'shadow',
-        history: contextPatch?.flowV3?.history || [],
-      })
-    ).catch((err) => {
-      console.warn('[flowV3] shadow turn failed', err?.message || err);
+    const { resolveWaitUntil } = require('../flowV3LLM/log/flushTurnLog');
+    // F-9/F-3: a bare floating promise dies with the serverless freeze —
+    // register the shadow turn with waitUntil so it actually completes.
+    // Failures are logged visibly either way.
+    const shadowTurn = processFlowV3Turn({
+      text: inboundText,
+      phone,
+      conversationId: conversationId || inbound?.conversationId || null,
+      inboundId: inbound?._id ? String(inbound._id) : null,
+      profile: contextPatch?.flowV3?.profile || {},
+      slotMeta: contextPatch?.flowV3?.slotMeta || {},
+      promptVersion: contextPatch?.flowV3?.promptVersion || null,
+      mode: 'shadow',
+      history: contextPatch?.flowV3?.history || [],
+    }).catch((err) => {
+      console.error('[flowV3] SHADOW_TURN_FAILED', { error: err?.message || String(err) });
     });
+    const waitUntil = resolveWaitUntil();
+    if (typeof waitUntil === 'function') {
+      try {
+        waitUntil(shadowTurn);
+      } catch {
+        // outside a request context waitUntil can refuse — the catch above
+        // still surfaces failures; shadow output is advisory by design.
+      }
+    }
   } catch (err) {
     console.warn('[flowV3] shadow wiring failed', err?.message || err);
   }

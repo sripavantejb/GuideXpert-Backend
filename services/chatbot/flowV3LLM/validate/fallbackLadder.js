@@ -17,9 +17,14 @@ const STATIC_ACK = "Got it — I'm still here with you. One moment.";
 function runFallbackLadder(input = {}) {
   const profile = input.profile || {};
   let slot = null;
+  let slotError = null;
   try {
     slot = nextFlowV3Slot(profile, { slotMeta: input.slotMeta || {} });
-  } catch {
+  } catch (err) {
+    // F-9: a broken slot engine degrades every fallback to Tier B — that is a
+    // visible incident, not a silent downgrade.
+    slotError = err && err.message ? err.message : String(err);
+    console.error('[flowV3] FALLBACK_SLOT_ENGINE_FAILED', { error: slotError });
     slot = null;
   }
 
@@ -45,6 +50,7 @@ function runFallbackLadder(input = {}) {
       intent: 'escalate',
       escalate: true,
       reason: input.reason || null,
+      slotError,
     };
   }
 
