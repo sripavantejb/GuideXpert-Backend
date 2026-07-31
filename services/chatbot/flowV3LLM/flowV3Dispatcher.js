@@ -287,6 +287,59 @@ async function processFlowV3Turn(input = {}) {
     rendered = renderEnvelope(envelope, { toolTrace: loopResult.toolTrace || [] });
   }
 
+  // F-6 — envelope.profile_patch was parsed, validated and then DROPPED.
+  // Filter it through the LLM write policy in-memory (allowlist, capture
+  // meta) so profileAfter is honest in every mode; the live caller persists
+  // the accepted keys through the CAS store. LLM restatements are captured
+  // as source 'inferred' — NON-authoritative by contract, so an LLM claim
+  // can never satisfy a routing/predictor gate the way a student's actual
+  // answer (button/typed/extracted) does.
+  let llmPatch = null;
+  let profileFinal = mergedProfile;
+  const rawLlmPatch = !fallback && validation?.ok && envelope ? envelope.profile_patch : null;
+  if (rawLlmPatch && typeof rawLlmPatch === 'object' && Object.keys(rawLlmPatch).length) {
+    try {
+      const { validateProfilePatch } = require('./profile/flowV3ProfileWritePolicy');
+      const meta = {};
+      for (const key of Object.keys(rawLlmPatch)) {
+        meta[key] = {
+          source: 'inferred',
+          confidence: 0.6,
+          verbatimQuote: String(input.text || ''),
+        };
+      }
+      const verdict = validateProfilePatch({
+        patch: rawLlmPatch,
+        meta,
+        channel: 'llm_tool',
+        turnId,
+      });
+      llmPatch = {
+        accepted: verdict.accepted || {},
+        acceptedMeta: verdict.acceptedMeta || {},
+        rejected: verdict.rejected || [],
+        dropped: verdict.dropped || [],
+      };
+      if (llmPatch.rejected.length || llmPatch.dropped.length) {
+        console.warn('[flowV3] LLM_PROFILE_PATCH_FILTERED', {
+          turnId,
+          rejected: llmPatch.rejected.map((r) => `${r.field}:${r.code}`),
+          dropped: llmPatch.dropped.map((d) => d.field),
+        });
+      }
+      if (Object.keys(llmPatch.accepted).length) {
+        profileFinal = mergeFlowV3Profile(mergedProfile, llmPatch.accepted).profile;
+      }
+    } catch (err) {
+      console.error('[flowV3] LLM_PROFILE_PATCH_FAILED', {
+        turnId,
+        error: err && err.message ? err.message : String(err),
+      });
+      llmPatch = null;
+      profileFinal = mergedProfile;
+    }
+  }
+
   const latencyMs = Date.now() - startedAt;
   await flushTurnLog({
     turnId,
@@ -298,8 +351,8 @@ async function processFlowV3Turn(input = {}) {
     inboundText: input.text,
     gateVerdicts: gateResult.verdicts,
     profileBefore: profile,
-    slotPatch: extractedPatch,
-    profileAfter: mergedProfile,
+    slotPatch: { ...extractedPatch, ...(llmPatch ? llmPatch.accepted : {}) },
+    profileAfter: profileFinal,
     toolTrace: loopResult.toolTrace || [],
     envelope: envelope || null,
     validationVerdicts: (validation?.violations || []).map((v) => ({
@@ -338,6 +391,7 @@ async function processFlowV3Turn(input = {}) {
     fallback,
     gateResult,
     extractedPatch,
+    llmPatch,
     toolTrace: loopResult.toolTrace || [],
     latencyMs,
     localizationTier: 'static',

@@ -384,6 +384,41 @@ async function processCareerCounsellingFlowV3Turn({
     }
   }
 
+  // F-6: persist the allowlist-accepted envelope.profile_patch through the
+  // same CAS path as the update_lead_profile tool (channel llm_tool, strict
+  // allowlist). The dispatcher already filtered it; this write enforces the
+  // policy again at the store boundary.
+  const llmAccepted = result.llmPatch?.accepted || {};
+  if (phone && Object.keys(llmAccepted).length) {
+    try {
+      const { casUpdateLeadProfile } = require('../flowV3LLM/profile');
+      const writeOutcome = await casUpdateLeadProfile({
+        phone,
+        expectedVersion: casVersion,
+        profilePatch: llmAccepted,
+        metaByPath: result.llmPatch.acceptedMeta || {},
+        enforceLlmAllowlist: true,
+        turnId: result.turnId || null,
+      });
+      if (writeOutcome.ok) {
+        persistedProfile = writeOutcome.doc?.profile || persistedProfile;
+        slotMeta = writeOutcome.doc?.slotMeta || slotMeta;
+        casVersion = writeOutcome.doc?.casVersion ?? casVersion;
+      } else {
+        console.error('[flowV3] llm profile patch persist failed', {
+          turnId: result.turnId,
+          reason: writeOutcome.reason,
+          rejected: writeOutcome.rejected || null,
+        });
+      }
+    } catch (err) {
+      console.error('[flowV3] llm profile patch persist failed', {
+        turnId: result.turnId,
+        error: err?.message || String(err),
+      });
+    }
+  }
+
   const nextFlowV3 = {
     ...(contextPatch.flowV3 || {}),
     engine: 'flow_v3',
