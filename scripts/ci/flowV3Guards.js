@@ -47,17 +47,40 @@ function checkFrozen() {
 }
 
 function checkPepper() {
-  // Scan the working tree (tracked + untracked). `git grep` misses untracked
-  // files, which is exactly how a bad env name could land in a new module.
   let hits = '';
-  try {
-    hits = execSync(
-      "rg -n --glob '!node_modules' --glob '!.git' --glob '!scripts/ci/flowV3Guards.js' 'FLOW_V3_PHONE_PEPPER' . || true",
-      { cwd: ROOT, encoding: 'utf8' }
-    ).trim();
-  } catch (err) {
-    hits = (err.stdout || '').trim();
+  const needle = 'FLOW_V3_PHONE_PEPPER';
+  const excluded = new Set(['node_modules', '.git']);
+  const selfFile = path.join('scripts', 'ci', 'flowV3Guards.js');
+
+  function walk(relDir) {
+    const absDir = path.join(ROOT, relDir);
+    for (const entry of fs.readdirSync(absDir, { withFileTypes: true })) {
+      if (excluded.has(entry.name)) continue;
+      const rel = relDir ? path.join(relDir, entry.name) : entry.name;
+      if (entry.isDirectory()) {
+        walk(rel);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const relNorm = rel.replace(/\\/g, '/');
+      if (relNorm === selfFile) continue;
+      let src = '';
+      try {
+        src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+      } catch {
+        continue;
+      }
+      const lines = src.split('\n');
+      for (let i = 0; i < lines.length; i += 1) {
+        if (lines[i].includes(needle)) {
+          hits += `${relNorm}:${i + 1}:${lines[i]}\n`;
+        }
+      }
+    }
   }
+
+  walk('');
+  hits = hits.trim();
   if (hits) {
     fail(
       `FLOW_V3_PHONE_PEPPER must not appear anywhere (canonical is FLOW_V3_PHONE_HASH_PEPPER):\n${hits}`
