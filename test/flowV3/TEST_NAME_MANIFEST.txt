@@ -31,6 +31,16 @@ gatesAndContext.test.js :: tier 3 is ABSENT from the prompt on an ordinary turn
 gatesAndContext.test.js :: tier 3 appears only for an allowed purpose
 gatesAndContext.test.js :: an unrecognised purpose does not unlock tier 3
 gatesAndContext.test.js :: tier 4 fields are withheld from the prompt view
+groundingVerification.test.js :: fabricated grounding id is BLOCKED
+groundingVerification.test.js :: college absent from every tool result is BLOCKED
+groundingVerification.test.js :: placement % appearing in no tool result is BLOCKED
+groundingVerification.test.js :: a REAL id cited but a claim that id does not support is BLOCKED
+groundingVerification.test.js :: claims with zero grounding at all are BLOCKED
+groundingVerification.test.js :: college + fee grounded in a cited result passes
+groundingVerification.test.js :: the student's own numbers (rank, budget) are not treated as fabrications
+groundingVerification.test.js :: a plain slot question with no claims needs no grounding
+groundingVerification.test.js :: detects catalog brands and generic proper-noun college names
+groundingVerification.test.js :: does not flag question phrasing like "Which university"
 golden/goldenReplay.test.js :: crisis golden: gate terminates before LLM
 golden/goldenReplay.test.js :: AP-OC-male golden: demographic gate blocks predictor path
 golden/goldenReplay.test.js :: grounding block golden: college claim without grounding fails V-2

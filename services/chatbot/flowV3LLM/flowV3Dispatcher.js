@@ -219,6 +219,8 @@ async function processFlowV3Turn(input = {}) {
     validation = validateEnvelope(envelope, {
       toolTrace: loopResult.toolTrace || [],
       nextSlotHint: turnContext?.nextSlot || null,
+      inboundText: input.text,
+      profile: mergedProfile,
     });
     if (!validation.ok) {
       // One regeneration with violation feedback
@@ -242,7 +244,11 @@ async function processFlowV3Turn(input = {}) {
           repairFeedback: validation.violations.map((v) => `${v.code}:${v.detail}`).join('; '),
         });
         if (retry.ok && retry.envelope) {
-          const v2 = validateEnvelope(retry.envelope, { toolTrace: retry.toolTrace || [] });
+          const v2 = validateEnvelope(retry.envelope, {
+            toolTrace: retry.toolTrace || [],
+            inboundText: input.text,
+            profile: mergedProfile,
+          });
           if (v2.ok) {
             envelope = v2.envelope;
             validation = v2;
