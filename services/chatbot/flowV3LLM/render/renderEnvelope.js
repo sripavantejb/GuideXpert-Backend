@@ -30,34 +30,41 @@ function renderEnvelope(envelope, opts = {}) {
     }
   }
 
+  // F-5: never coerce non-strings into student-facing text — a boolean body
+  // would render as "true". Validation already blocks these; the renderer
+  // drops them defensively as the last line of defense.
+  const asString = (value) => (typeof value === 'string' ? value : '');
+
   for (const part of envelope.parts || []) {
     if (part.type === 'text') {
-      let body = String(part.body || '');
-      if (bookingUrl && envelope.booking_url_slot != null && !/https?:\/\//i.test(body)) {
+      let body = asString(part.body);
+      if (bookingUrl && envelope.booking_url_slot != null && body && !/https?:\/\//i.test(body)) {
         body = `${body}\n\n👉 ${bookingUrl}`.trim();
       }
       if (body) replyParts.push(body);
     } else if (part.type === 'buttons') {
       interactive = {
         type: 'button',
-        body: String(part.body || ''),
+        body: asString(part.body),
         buttons: (part.options || []).slice(0, 3).map((o) => ({
-          id: String(o.id || o.title || 'opt'),
-          title: String(o.title || 'OK').slice(0, 20),
+          id: asString(o.id) || asString(o.title) || 'opt',
+          title: (asString(o.title) || 'OK').slice(0, 20),
         })),
       };
     } else if (part.type === 'list') {
       interactive = {
         type: 'list',
-        body: String(part.body || ''),
-        buttonText: String(part.button || 'Select').slice(0, 20),
+        body: asString(part.body),
+        buttonText: (asString(part.button) || 'Select').slice(0, 20),
         sections: [
           {
             title: 'Options',
             rows: (part.rows || []).slice(0, 10).map((r) => ({
-              id: String(r.id || r.title || 'row'),
-              title: String(r.title || 'Option').slice(0, 24),
-              description: r.description ? String(r.description).slice(0, 72) : undefined,
+              id: asString(r.id) || asString(r.title) || 'row',
+              title: (asString(r.title) || 'Option').slice(0, 24),
+              description: asString(r.description)
+                ? asString(r.description).slice(0, 72)
+                : undefined,
             })),
           },
         ],
