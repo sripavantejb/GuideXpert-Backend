@@ -38,6 +38,7 @@ const ADMIN_SECTION_KEYS = [
   'student-workspace-updates',
   'student-testimonials',
   'settings',
+  'system-prompt',
 ];
 
 module.exports = { ADMIN_SECTION_KEYS };
