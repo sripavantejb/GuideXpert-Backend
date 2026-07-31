@@ -8,7 +8,12 @@ const { GUARANTEE_FORBIDDEN } = require('../../../../constants/flowV3/flowV3Guar
 const { ENVELOPE_INTENTS, PART_TYPES } = require('../llm/parseEnvelope');
 
 const URL_PATTERN = /https?:\/\/\S+|guidexpert\.co\.in\/\S+/i;
-const COLLEGE_HINT = /\b(college|university|institute|kalvium|plaksha|niat|iit|nit)\b/i;
+// V-2 guards hard rule 1 ("never invent a college NAME"): specific institution
+// names / proper-noun institutions need tool grounding. The generic words
+// college/university/institute alone blocked ordinary counselling copy
+// (including the greeting "choose a college that truly fits") on every turn.
+const COLLEGE_HINT = /\b(kalvium|plaksha|niat|iit|nit)\b/i;
+const PROPER_INSTITUTION = /\b[A-Z][a-z]{2,}\s+(?:College|University|Institute)\b/;
 const NUMERIC_CLAIM = /\b\d+(\.\d+)?\s*(%|lpa|lakhs?|crores?|k)\b/i;
 
 // V-6 disclosure — reuse V2 editorial shortlist framing (not legal consent).
@@ -77,7 +82,10 @@ function validateEnvelope(envelope, { toolTrace = [], nextSlotHint = null } = {}
   const knownIds = toolResultIds(toolTrace);
 
   // V-2 grounding for claims
-  if ((COLLEGE_HINT.test(joined) || NUMERIC_CLAIM.test(joined)) && grounding.size === 0) {
+  if (
+    (COLLEGE_HINT.test(joined) || PROPER_INSTITUTION.test(joined) || NUMERIC_CLAIM.test(joined)) &&
+    grounding.size === 0
+  ) {
     violations.push({ code: 'V-2', detail: 'grounding_required' });
   }
   for (const g of grounding) {

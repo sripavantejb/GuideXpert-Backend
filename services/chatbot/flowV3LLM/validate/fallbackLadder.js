@@ -24,9 +24,9 @@ function runFallbackLadder(input = {}) {
   }
 
   if (slot && slot.slot && !slot.done) {
-    const ask =
-      slot.askable ||
-      `Quick check — can you share your ${slot.slot.replace(/([A-Z])/g, ' $1').toLowerCase().trim()}?`;
+    // NOTE: slot.askable is a boolean flag (may this slot be asked?), NOT ask
+    // copy — using it as text sent the literal string "true" to students.
+    const ask = `Quick check — can you share your ${slot.slot.replace(/([A-Z])/g, ' $1').toLowerCase().trim()}?`;
     return {
       tier: 'A',
       replyText: ask,

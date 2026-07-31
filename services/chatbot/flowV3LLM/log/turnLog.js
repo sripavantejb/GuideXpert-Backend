@@ -13,7 +13,7 @@ async function writeTurnLog(entry = {}, deps = {}) {
     const phoneHash =
       entry.phoneHash != null
         ? entry.phoneHash
-        : resolveTurnLogPhoneHash(entry.phone);
+        : resolveTurnLogPhoneHash(entry.phone).phoneHash;
     const conversationId = entry.conversationId;
     if (!conversationId) {
       return { ok: false, error: 'conversationId_required' };
