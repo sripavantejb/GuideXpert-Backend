@@ -16,7 +16,7 @@ const { runFallbackLadder } = require('./validate/fallbackLadder');
 const { renderEnvelope } = require('./render/renderEnvelope');
 const { flushTurnLog } = require('./log/flushTurnLog');
 const { createToolBroker } = require('./tools/toolBroker');
-const { latestVersion } = require('./llm/promptLoader');
+const { latestVersion, refreshPromptOverrideFromDb } = require('./llm/promptLoader');
 
 function newTurnId() {
   return typeof crypto.randomUUID === 'function'
@@ -74,6 +74,14 @@ async function processFlowV3Turn(input = {}) {
   const startedAt = Date.now();
   const profile = input.profile || {};
   const mode = input.mode === 'live' ? 'live' : 'shadow';
+
+  // Pull latest admin-edited prompt from Mongo (TTL-cached) before building messages.
+  try {
+    await refreshPromptOverrideFromDb();
+  } catch (_) {
+    // File / existing override remain the fallback.
+  }
+
   const promptVersion = input.promptVersion || latestVersion() || 'v1';
 
   const gateResult = runGateChain({
