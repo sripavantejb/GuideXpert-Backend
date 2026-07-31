@@ -505,8 +505,11 @@ async function processInboundCore({
   const facts = await h.retrieveFacts(leadLinks, leadContext);
   let botState = await h.getBotState(activeConversation._id);
   if (botStateService.isStateExpired(botState)) {
+    // A permanent crisis lock outlives the 30-minute subflow expiry: without
+    // this the expired turn routes as if the student was never locked.
+    const preservedCrisis = botStateService.preserveCrisisLock(botState);
     await resetToMainMenu(activeConversation._id, activeConversation.phone);
-    botState = { state: 'main_menu', context: emptySubflows() };
+    botState = { state: 'main_menu', context: { ...emptySubflows(), ...preservedCrisis } };
   }
 
   const collegeRoutingText =
