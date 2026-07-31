@@ -98,6 +98,14 @@ const {
   setAdminSidebarConfig,
 } = require('../utils/appSettings');
 const {
+  resolveSystemPromptForAdmin,
+  setSystemPromptSetting,
+} = require('../utils/systemPromptSettings');
+const {
+  clearPromptCache,
+  setPromptOverride,
+} = require('../services/chatbot/flowV3LLM/llm/promptLoader');
+const {
   getCertifiedCounsellors,
   getCertifiedCounsellorDetail,
 } = require('../controllers/certifiedCounsellorsController');
@@ -436,6 +444,64 @@ router.patch('/app-settings/sidebar', requireAdmin, requireSuperAdmin, async (re
   } catch (err) {
     console.error('[AppSettings] PATCH sidebar error:', err);
     return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// Flow V3 chatbot system prompt (Mongo source of truth; .md mirrored when writable)
+router.get('/system-prompt', requireAdmin, async (req, res) => {
+  try {
+    const prompt = await resolveSystemPromptForAdmin();
+    return res.json({
+      success: true,
+      text: prompt.text,
+      hash: prompt.hash,
+      bytes: prompt.bytes,
+      updatedAt: prompt.updatedAt,
+      updatedByEmail: prompt.updatedByEmail,
+      source: prompt.source,
+    });
+  } catch (err) {
+    console.error('[SystemPrompt] GET error:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+router.put('/system-prompt', requireAdmin, requireSuperAdmin, async (req, res) => {
+  try {
+    const { text } = req.body || {};
+    if (typeof text !== 'string' || !text.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Provide non-empty `text` (string)',
+      });
+    }
+
+    const saved = await setSystemPromptSetting(text, req.admin || null);
+    clearPromptCache();
+    setPromptOverride(saved.text);
+
+    console.log('[SystemPrompt] Updated by admin', {
+      hash: saved.hash,
+      bytes: saved.bytes,
+      mirroredToFile: saved.mirroredToFile,
+      by: saved.updatedByEmail,
+    });
+
+    return res.json({
+      success: true,
+      text: saved.text,
+      hash: saved.hash,
+      bytes: saved.bytes,
+      updatedAt: saved.updatedAt,
+      updatedByEmail: saved.updatedByEmail,
+      source: saved.source,
+      mirroredToFile: saved.mirroredToFile,
+    });
+  } catch (err) {
+    const msg = err && err.message ? err.message : 'Internal server error';
+    const status = /must be|exceeds|non-empty/i.test(msg) ? 400 : 500;
+    console.error('[SystemPrompt] PUT error:', err);
+    return res.status(status).json({ success: false, message: msg });
   }
 });
 
