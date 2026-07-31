@@ -52,7 +52,12 @@ const DEFAULT_HANDLERS = Object.freeze({
 function stableArgsKey(value) {
   try {
     return crypto.createHash('sha256').update(JSON.stringify(value || {})).digest('hex').slice(0, 16);
-  } catch {
+  } catch (err) {
+    // F-9: an unserializable args object collapses idempotency keys onto '0'.
+    // Rare (circular refs only), but it must be visible when it happens.
+    console.warn('[flowV3] ARGS_KEY_FALLBACK', {
+      error: err && err.message ? err.message : String(err),
+    });
     return '0';
   }
 }

@@ -55,7 +55,13 @@ function listAvailableVersions(dir = PROMPT_DIR) {
   let files = [];
   try {
     files = fs.readdirSync(dir);
-  } catch {
+  } catch (err) {
+    // F-9: a deploy that drops prompts/ must be VISIBLE — an empty version
+    // list silently degrades every turn to the fallback prompt path.
+    console.error('[flowV3] PROMPT_DIR_UNREADABLE', {
+      dir,
+      error: err && err.message ? err.message : String(err),
+    });
     return [];
   }
   return files

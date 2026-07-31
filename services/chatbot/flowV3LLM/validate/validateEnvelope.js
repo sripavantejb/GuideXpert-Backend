@@ -51,6 +51,27 @@ function normalizeClaimText(value) {
   return String(value || '').toLowerCase().replace(/,/g, '');
 }
 
+// V-8 — which named slot is a reply asking about? Patterns are anchored to
+// the distinctive vocabulary of each askable slot's V2 question so a generic
+// coaching line never false-positives.
+const SLOT_ASK_PATTERNS = Object.freeze({
+  qualification: /\b(current qualification|which (class|grade|year) are you|studying in (class|which))\b/i,
+  goalPriority: /\bwhat matters (to you )?(the )?most\b/i,
+  goal: /\bwhat are you looking for\b/i,
+  interests: /\b(which )?topics (excite|interest) you\b/i,
+  budgetBand: /\b(budget|comfortable for your family|fee range|afford per year)\b/i,
+  cityPref: /\b(which city|near home,? or open to moving|preferred (city|location))\b/i,
+});
+
+/** @returns {string[]} slots whose ask-vocabulary appears in the text */
+function detectAskedSlots(text) {
+  const found = [];
+  for (const [slotKey, pattern] of Object.entries(SLOT_ASK_PATTERNS)) {
+    if (pattern.test(text)) found.push(slotKey);
+  }
+  return found;
+}
+
 /** Extract college mentions from reply text: catalog brands + generic captures. */
 function extractCollegeMentions(text) {
   const raw = String(text || '');
@@ -147,6 +168,31 @@ function validateEnvelope(
   }
   if (!Array.isArray(envelope.parts) || !envelope.parts.length) {
     violations.push({ code: 'V-1', detail: 'parts' });
+  }
+
+  // F-5: student-facing strings must BE strings. A boolean or object body
+  // would otherwise coerce ("true") on render — reject at validation instead.
+  for (const [index, part] of (Array.isArray(envelope.parts) ? envelope.parts : []).entries()) {
+    if (!part || typeof part !== 'object' || !PART_TYPES.includes(part.type)) {
+      violations.push({ code: 'V-1', detail: `part_type:${index}` });
+      continue;
+    }
+    if (part.body != null && typeof part.body !== 'string') {
+      violations.push({ code: 'V-1', detail: `part_body_not_string:${index}` });
+    }
+    if (part.caption != null && typeof part.caption !== 'string') {
+      violations.push({ code: 'V-1', detail: `part_caption_not_string:${index}` });
+    }
+    for (const opt of Array.isArray(part.options) ? part.options : []) {
+      if (opt && opt.title != null && typeof opt.title !== 'string') {
+        violations.push({ code: 'V-1', detail: `part_option_title_not_string:${index}` });
+      }
+    }
+    for (const row of Array.isArray(part.rows) ? part.rows : []) {
+      if (row && row.title != null && typeof row.title !== 'string') {
+        violations.push({ code: 'V-1', detail: `part_row_title_not_string:${index}` });
+      }
+    }
   }
 
   const bodies = collectBodies(envelope);
@@ -259,11 +305,20 @@ function validateEnvelope(
     }
   }
 
-  // V-8 beat discipline
+  // V-8 beat discipline (F-8): an ask_slot envelope must ask the slot the
+  // deterministic walk selected — one beat ahead, never a different one.
+  // Conservative on purpose: blocks only when the reply UNAMBIGUOUSLY asks a
+  // different named slot (exactly one foreign slot pattern matches and the
+  // expected slot's pattern does not).
   if (envelope.intent === 'ask_slot' && nextSlotHint && nextSlotHint.slot) {
-    const targets = envelope.profile_patch && Object.keys(envelope.profile_patch);
-    // Soft check — only block if parts clearly ask a different named slot
-    void targets;
+    const asked = detectAskedSlots(joined);
+    const expected = nextSlotHint.slot;
+    if (asked.length === 1 && asked[0] !== expected) {
+      violations.push({
+        code: 'V-8',
+        detail: `beat_discipline:asked=${asked[0]},expected=${expected}`,
+      });
+    }
   }
 
   const blocking = violations.filter((v) => v.code !== 'V-7');
@@ -288,4 +343,5 @@ module.exports = {
   entryResultIds,
   groundingIdResolves,
   extractCollegeMentions,
+  detectAskedSlots,
 };
