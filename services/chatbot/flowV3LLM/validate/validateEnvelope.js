@@ -149,6 +149,31 @@ function validateEnvelope(
     violations.push({ code: 'V-1', detail: 'parts' });
   }
 
+  // F-5: student-facing strings must BE strings. A boolean or object body
+  // would otherwise coerce ("true") on render — reject at validation instead.
+  for (const [index, part] of (Array.isArray(envelope.parts) ? envelope.parts : []).entries()) {
+    if (!part || typeof part !== 'object' || !PART_TYPES.includes(part.type)) {
+      violations.push({ code: 'V-1', detail: `part_type:${index}` });
+      continue;
+    }
+    if (part.body != null && typeof part.body !== 'string') {
+      violations.push({ code: 'V-1', detail: `part_body_not_string:${index}` });
+    }
+    if (part.caption != null && typeof part.caption !== 'string') {
+      violations.push({ code: 'V-1', detail: `part_caption_not_string:${index}` });
+    }
+    for (const opt of Array.isArray(part.options) ? part.options : []) {
+      if (opt && opt.title != null && typeof opt.title !== 'string') {
+        violations.push({ code: 'V-1', detail: `part_option_title_not_string:${index}` });
+      }
+    }
+    for (const row of Array.isArray(part.rows) ? part.rows : []) {
+      if (row && row.title != null && typeof row.title !== 'string') {
+        violations.push({ code: 'V-1', detail: `part_row_title_not_string:${index}` });
+      }
+    }
+  }
+
   const bodies = collectBodies(envelope);
   const joined = bodies.join('\n');
   const grounding = new Set((envelope.grounding || []).map(String));
