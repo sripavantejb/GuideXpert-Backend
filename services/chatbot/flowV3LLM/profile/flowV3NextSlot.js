@@ -62,6 +62,12 @@ function nextFlowV3Slot(profile = {}, options = {}) {
     askable: def ? def.askable === true : false,
     isStale: stale,
     reason,
+    // Schema guidance so the LLM can SAVE the answer correctly: without the
+    // value type/description the model guessed field names ("topics") and
+    // free-form values for enum-ish slots, so update_lead_profile writes were
+    // denied and the walk never advanced past free-text slots.
+    valueType: def ? def.type || 'string' : 'string',
+    valueHint: def ? def.description || null : null,
   };
 }
 

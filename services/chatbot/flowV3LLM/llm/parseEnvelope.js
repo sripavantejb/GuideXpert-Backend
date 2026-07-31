@@ -16,8 +16,12 @@ const ENVELOPE_INTENTS = Object.freeze([
 const PART_TYPES = Object.freeze(['text', 'buttons', 'list', 'image']);
 
 function extractJsonObject(text) {
-  const raw = String(text || '').trim();
+  let raw = String(text || '').trim();
   if (!raw) return { ok: false, error: 'empty', envelope: null };
+  // Models routinely wrap the envelope in ```json fences despite instructions;
+  // a fence is a formatting tic, not a malformed envelope.
+  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(raw);
+  if (fenced) raw = fenced[1].trim();
   try {
     return { ok: true, envelope: JSON.parse(raw), error: null };
   } catch {

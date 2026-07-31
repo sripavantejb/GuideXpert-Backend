@@ -44,18 +44,24 @@ const CATALOG_TRACE = [
 ];
 
 describe('F-2: V-2 grounding verification blocks fabrication', () => {
-  test('fabricated grounding id is BLOCKED', () => {
-    const out = validateEnvelope(
-      envelope({
-        parts: [{ type: 'text', body: 'Plaksha University is a great fit for you.' }],
-        grounding: ['curated:hogwarts'],
-      }),
-      { toolTrace: CATALOG_TRACE }
-    );
-    assert.equal(out.ok, false);
+  test('fabricated grounding id is STRIPPED and traceable claims auto-ground', () => {
+    // Citation strings are model bookkeeping, not the safety boundary: the
+    // junk id is stripped, and the reply survives because its only claim
+    // (Plaksha) traces to a real catalog result from this turn. Fabricated
+    // CLAIMS are still blocked — see the Stanford and 97% tests below.
+    const env = envelope({
+      parts: [{ type: 'text', body: 'Plaksha University is a great fit for you.' }],
+      grounding: ['curated:hogwarts'],
+    });
+    const out = validateEnvelope(env, { toolTrace: CATALOG_TRACE });
+    assert.equal(out.ok, true);
     assert.ok(
-      out.violations.some((v) => v.code === 'V-2' && String(v.detail).includes('unresolved_grounding_id')),
-      `expected unresolved_grounding_id, got ${JSON.stringify(out.violations)}`
+      !(env.grounding || []).includes('curated:hogwarts'),
+      `expected junk citation stripped, got ${JSON.stringify(env.grounding)}`
+    );
+    assert.ok(
+      (env.grounding || []).includes('plaksha'),
+      `expected auto-grounded plaksha id, got ${JSON.stringify(env.grounding)}`
     );
   });
 
@@ -89,24 +95,24 @@ describe('F-2: V-2 grounding verification blocks fabrication', () => {
     );
   });
 
-  test('a REAL id cited but a claim that id does not support is BLOCKED', () => {
-    // The envelope cites only the booking tool result, then names a college —
-    // the college claim does not trace to the CITED result.
+  test('a claim not supported by the cited id but present in a real tool result is AUTO-GROUNDED', () => {
+    // The envelope cites only the booking tool result, then names a college.
+    // The college DID come back from get_curated_catalog this turn — server
+    // truth, not fabrication — so the validator repairs the citation instead
+    // of discarding the reply (auto-grounding policy).
     const trace = [
       ...CATALOG_TRACE,
       { name: 'create_booking_link', callId: 'bk_1', ok: true, result: { serviceKey: 'one_on_one' } },
     ];
-    const out = validateEnvelope(
-      envelope({
-        parts: [{ type: 'text', body: 'Kalvium is your best match.' }],
-        grounding: ['booking:one_on_one'],
-      }),
-      { toolTrace: trace }
-    );
-    assert.equal(out.ok, false);
+    const env = envelope({
+      parts: [{ type: 'text', body: 'Kalvium is your best match.' }],
+      grounding: ['booking:one_on_one'],
+    });
+    const out = validateEnvelope(env, { toolTrace: trace });
+    assert.equal(out.ok, true);
     assert.ok(
-      out.violations.some((v) => v.code === 'V-2' && String(v.detail).includes('ungrounded_college:kalvium')),
-      `expected ungrounded_college:kalvium, got ${JSON.stringify(out.violations)}`
+      (env.grounding || []).includes('kalvium'),
+      `expected auto-grounded kalvium id, got ${JSON.stringify(env.grounding)}`
     );
   });
 

@@ -21,7 +21,11 @@ function providerWithPatch(patch) {
       return {
         text: JSON.stringify({
           intent: 'ask_slot',
-          parts: [{ type: 'text', body: 'Noted! What matters most to you when choosing where to study?' }],
+          // Beat-neutral coaching line: this suite tests patch WIRING, not V-8
+          // beat discipline. A named-slot ask here (e.g. "what matters most to
+          // you") is correctly blocked now that the regeneration retry also
+          // validates with the nextSlot hint.
+          parts: [{ type: 'text', body: 'Noted! Tell me a bit more so I can guide you better.' }],
           grounding: [],
           profile_patch: patch,
           booking_url_slot: null,

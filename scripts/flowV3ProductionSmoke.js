@@ -45,10 +45,18 @@ const { HOLDING_REPLY, STATIC_ACK } = require('../services/chatbot/flowV3LLM/val
 const FlowV3TurnLog = require('../models/FlowV3TurnLog');
 const WhatsAppOutboundMessage = require('../models/WhatsAppOutboundMessage');
 
+// Conformance report variant-A happy path: the conversation that used to
+// stall forever in Tier A fallback loops. Every turn should be a genuine
+// Tier 3 LLM reply and the beat walk should advance each time.
 const DEFAULT_TURNS = [
   'Hi',
-  'I just finished 12th with MPC, got 78%. I am confused about which engineering branch to choose.',
-  'Which is better for an AI career, CSE or ECE?',
+  'I am in class 12 with MPC',
+  'I am looking for proper direction in choosing a college',
+  'I enjoy coding and robotics',
+  'Placements matter to me the most',
+  'Our budget is around 2 to 3 lakhs per year',
+  'Hyderabad would be best',
+  'ok sounds good, show me the colleges',
 ];
 
 const TURN_LOG_POLL_MS = 500;

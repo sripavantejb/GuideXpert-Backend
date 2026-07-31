@@ -24,6 +24,30 @@ function newTurnId() {
     : `v3_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 }
 
+/**
+ * Recompute the expected-slot hint AFTER the model's update_lead_profile
+ * writes this turn. Only reloads the store when a write actually succeeded,
+ * so canned-provider tests (no tool calls) never touch Mongo.
+ */
+async function resolvePostWriteSlotHint({ baseHint, toolTrace, phone, slotMeta, deps }) {
+  const wrote = (toolTrace || []).some(
+    (t) => t && t.name === 'update_lead_profile' && t.ok && t.result && t.result.ok === true
+  );
+  if (!wrote || !phone) return baseHint;
+  try {
+    const load = (deps && deps.loadLeadProfile) || require('./profile').loadLeadProfile;
+    const fresh = await load(phone);
+    if (!fresh) return baseHint;
+    const { nextFlowV3Slot } = require('./profile/flowV3NextSlot');
+    return nextFlowV3Slot(fresh.profile || {}, { slotMeta: fresh.slotMeta || slotMeta || {} });
+  } catch (err) {
+    console.warn('[flowV3] POST_WRITE_SLOT_HINT_FAILED', {
+      error: err && err.message ? err.message : String(err),
+    });
+    return baseHint;
+  }
+}
+
 function terminalFromGate(terminal, gateResult) {
   if (!terminal) return null;
   if (terminal.kind === 'opt_out' || gateResult.verdicts?.some((v) => v.verdict === 'silent')) {
@@ -115,6 +139,37 @@ async function processFlowV3Turn(input = {}) {
   let mergedProfile = profile;
   try {
     extractedPatch = extractFlowV2Slots(input.text, profile) || {};
+
+    // Asked-slot capture, reusing the FROZEN V2 node parsers verbatim: when
+    // the beat walk is waiting on goal (B2) or interests (B3), the student's
+    // reply — free text or a V2 button/list postback id — is the answer to
+    // that slot. The generic extractor never covered these, the LLM saved
+    // them only unreliably, and the walk looped on the same question forever
+    // (conformance finding G-2). Deterministic code capturing the student's
+    // own answer is the V2 node behaviour, not new product logic.
+    try {
+      const { nextFlowV3Slot } = require('./profile/flowV3NextSlot');
+      const askedSlot = nextFlowV3Slot(profile, { slotMeta: input.slotMeta || {} });
+      if (askedSlot && askedSlot.slot === 'goal' && extractedPatch.goal == null) {
+        const { extractGoal } = require('../flowV2/nodes/b2Goal');
+        const goal = extractGoal(input.text);
+        if (goal) extractedPatch.goal = goal;
+      } else if (
+        askedSlot &&
+        askedSlot.slot === 'interests' &&
+        extractedPatch.interests == null
+      ) {
+        const { matchInterest } = require('../flowV2/nodes/b2Branch');
+        const def = matchInterest(input.text);
+        if (def) extractedPatch.interests = [def.label];
+      }
+    } catch (err) {
+      console.warn('[flowV3] asked-slot capture failed', {
+        turnId,
+        error: err && err.message ? err.message : String(err),
+      });
+    }
+
     if (Object.keys(extractedPatch).length) {
       mergedProfile = mergeFlowV3Profile(profile, extractedPatch).profile;
     }
@@ -213,6 +268,8 @@ async function processFlowV3Turn(input = {}) {
         turnId,
         profile: mergedProfile,
         slotMeta: input.slotMeta || {},
+        casVersion: input.casVersion ?? null,
+        inboundText: input.text,
       },
       broker,
       provider: input.provider,
@@ -228,10 +285,24 @@ async function processFlowV3Turn(input = {}) {
   let regenerated = false;
   let fallback = null;
 
+  // V-8 must judge beat discipline against the walk AFTER this turn's tool
+  // writes: when the model persisted the asked slot via update_lead_profile
+  // and then asked the NEXT beat, the stale pre-turn hint called that correct
+  // reply a wrong-slot ask and threw the whole LLM turn away (observed:
+  // "I enjoy coding and robotics" → interests saved by the model →
+  // goalPriority asked → Tier A fallback).
+  const nextSlotHint = await resolvePostWriteSlotHint({
+    baseHint: turnContext?.nextSlot || null,
+    toolTrace: loopResult.toolTrace || [],
+    phone: input.phone,
+    slotMeta: input.slotMeta || {},
+    deps: input.deps,
+  });
+
   if (loopResult.ok && envelope) {
     validation = validateEnvelope(envelope, {
       toolTrace: loopResult.toolTrace || [],
-      nextSlotHint: turnContext?.nextSlot || null,
+      nextSlotHint,
       inboundText: input.text,
       profile: mergedProfile,
     });
@@ -239,7 +310,7 @@ async function processFlowV3Turn(input = {}) {
       // One regeneration with violation feedback
       regenerated = true;
       try {
-        const { messages } = buildTurnMessages({
+        const { messages, prompt: retryPrompt } = buildTurnMessages({
           promptVersion,
           userText: input.text,
           turnContext,
@@ -251,20 +322,51 @@ async function processFlowV3Turn(input = {}) {
             conversationId: input.conversationId,
             turnId,
             profile: mergedProfile,
+            slotMeta: input.slotMeta || {},
+            casVersion: input.casVersion ?? null,
+            inboundText: input.text,
           },
           broker,
           provider: input.provider,
-          repairFeedback: validation.violations.map((v) => `${v.code}:${v.detail}`).join('; '),
+          // Actionable feedback: the bare code string ("V-8:beat_discipline…")
+          // was routinely ignored and the retry repeated the same violation.
+          repairFeedback: [
+            validation.violations.map((v) => `${v.code}:${v.detail}`).join('; '),
+            validation.violations.some((v) => String(v.detail || '').startsWith('beat_discipline')) &&
+            nextSlotHint?.slot
+              ? `You MUST ask about the "${nextSlotHint.slot}" slot and nothing else.`
+              : '',
+            validation.violations.some((v) => String(v.detail || '').includes('grounding'))
+              ? 'Remove every college name and number that does not come from a tool result cited in "grounding". If you used no data tools, "grounding" must be [].'
+              : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
         });
         if (retry.ok && retry.envelope) {
+          // The retry validates with the nextSlot hint as well: omitting it
+          // opened the V-8 hole where a repeated wrong-slot ask passed on
+          // attempt 2 (conformance finding 4). Recomputed because the retry
+          // may have written more slots through update_lead_profile.
+          const retryHint = await resolvePostWriteSlotHint({
+            baseHint: nextSlotHint,
+            toolTrace: retry.toolTrace || [],
+            phone: input.phone,
+            slotMeta: input.slotMeta || {},
+            deps: input.deps,
+          });
           const v2 = validateEnvelope(retry.envelope, {
             toolTrace: retry.toolTrace || [],
+            nextSlotHint: retryHint,
             inboundText: input.text,
             profile: mergedProfile,
           });
           if (v2.ok) {
             envelope = v2.envelope;
             validation = v2;
+            // Keep the prompt identity: replacing loopResult dropped it, so
+            // regenerated turns logged promptHash null and failed the audit.
+            retry.prompt = retry.prompt || retryPrompt;
             loopResult = retry;
           } else {
             validation = v2;

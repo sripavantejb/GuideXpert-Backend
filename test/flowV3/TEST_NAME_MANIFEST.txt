@@ -54,10 +54,10 @@ golden/goldenReplay.test.js :: crisis golden: gate terminates before LLM
 golden/goldenReplay.test.js :: AP-OC-male golden: demographic gate blocks predictor path
 golden/goldenReplay.test.js :: grounding block golden: college claim without grounding fails V-2
 golden/goldenReplay.test.js :: beat order golden: fallback A asks next slot from empty profile
-groundingVerification.test.js :: fabricated grounding id is BLOCKED
+groundingVerification.test.js :: fabricated grounding id is STRIPPED and traceable claims auto-ground
 groundingVerification.test.js :: college absent from every tool result is BLOCKED
 groundingVerification.test.js :: placement % appearing in no tool result is BLOCKED
-groundingVerification.test.js :: a REAL id cited but a claim that id does not support is BLOCKED
+groundingVerification.test.js :: a claim not supported by the cited id but present in a real tool result is AUTO-GROUNDED
 groundingVerification.test.js :: claims with zero grounding at all are BLOCKED
 groundingVerification.test.js :: college + fee grounded in a cited result passes
 groundingVerification.test.js :: the student's own numbers (rank, budget) are not treated as fabrications
