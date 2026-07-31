@@ -333,12 +333,52 @@ async function processCareerCounsellingFlowV3Turn({
     deps: { leadContext },
   });
 
+  // §3 step 6 persistence (F-7): the dispatcher merged the deterministic
+  // extraction in-memory; persist it here through the CAS store so the durable
+  // profile matches what the turn was gated and answered against. Channel
+  // 'extractor' with authoritative 'extracted' capture meta per the contract.
+  let persistedProfile = profile;
+  const extractedPatch = result.extractedPatch || {};
+  if (phone && Object.keys(extractedPatch).length) {
+    try {
+      const { casUpdateLeadProfile } = require('../flowV3LLM/profile');
+      const metaByPath = {};
+      for (const key of Object.keys(extractedPatch)) {
+        metaByPath[key] = { source: 'extracted', verbatimQuote: String(inboundText || '') };
+      }
+      const writeOutcome = await casUpdateLeadProfile({
+        phone,
+        expectedVersion: casVersion,
+        profilePatch: extractedPatch,
+        metaByPath,
+        channel: 'extractor',
+        turnId: result.turnId || null,
+      });
+      if (writeOutcome.ok) {
+        persistedProfile = writeOutcome.doc?.profile || persistedProfile;
+        slotMeta = writeOutcome.doc?.slotMeta || slotMeta;
+        casVersion = writeOutcome.doc?.casVersion ?? casVersion;
+      } else {
+        console.error('[flowV3] extractor patch persist failed', {
+          turnId: result.turnId,
+          reason: writeOutcome.reason,
+          rejected: writeOutcome.rejected || null,
+        });
+      }
+    } catch (err) {
+      console.error('[flowV3] extractor patch persist failed', {
+        turnId: result.turnId,
+        error: err?.message || String(err),
+      });
+    }
+  }
+
   const nextFlowV3 = {
     ...(contextPatch.flowV3 || {}),
     engine: 'flow_v3',
     mode: 'live',
     promptVersion,
-    profile,
+    profile: persistedProfile,
     slotMeta,
     casVersion,
     lastTurnId: result.turnId,

@@ -4,7 +4,6 @@ const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
 
 const mongoose = require('mongoose');
 const { isLocalUri } = require('../config/mongooseSafety');
@@ -14,16 +13,26 @@ const SAFETY_MODULE = path.join(ROOT, 'config', 'mongooseSafety.js');
 const EXEMPT = new Set(['config/db.js', 'config/mongooseSafety.js']);
 
 function filesCallingConnect() {
-  const out = execFileSync(
-    'rg',
-    ['-l', 'mongoose\\.connect\\(', '--glob', '!node_modules', '.'],
-    { cwd: ROOT, encoding: 'utf8' }
-  );
-  return out
-    .trim()
-    .split('\n')
-    .map((f) => f.replace(/^\.\//, ''))
-    .filter((f) => f && !EXEMPT.has(f));
+  const out = [];
+  const re = /\bmongoose\.connect\s*\(/;
+
+  function walk(relDir) {
+    const absDir = path.join(ROOT, relDir);
+    for (const entry of fs.readdirSync(absDir, { withFileTypes: true })) {
+      if (entry.name === '.git' || entry.name === 'node_modules') continue;
+      const rel = relDir ? path.join(relDir, entry.name) : entry.name;
+      if (entry.isDirectory()) {
+        walk(rel);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+      if (re.test(src)) out.push(rel.replace(/\\/g, '/'));
+    }
+  }
+
+  walk('');
+  return out.filter((f) => !EXEMPT.has(f));
 }
 
 describe('mongoose index safety', () => {

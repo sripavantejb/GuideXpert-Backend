@@ -59,6 +59,13 @@ pipeline.test.js :: crisis terminates without calling the provider
 pipeline.test.js :: V-3 guarantee language blocks
 pipeline.test.js :: fallback ladder A asks next slot
 pipeline.test.js :: render injects booking URL only from tool result
+postMergeDemographic.test.js :: blocked at entry when the loaded profile already matches
+postMergeDemographic.test.js :: blocked when the condition becomes true only after the mid-conversation merge
+postMergeDemographic.test.js :: refusal copy is the verbatim r4pPredictor text, never paraphrased
+postMergeDemographic.test.js :: lowercase ap_eamcet in the stored profile is normalized and still blocks
+postMergeDemographic.test.js :: non-blocked demographic proceeds to the LLM (no over-blocking)
+postMergeDemographic.test.js :: extracted slots are surfaced for persistence and visible to the turn
+postMergeDemographic.test.js :: extraction failure does not take the turn down
 profileAuthority.test.js :: an inferred value does not satisfy the next question
 profileAuthority.test.js :: the same value captured as typed does satisfy it
 profileAuthority.test.js :: an unset slot is empty regardless of meta
