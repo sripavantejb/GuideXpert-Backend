@@ -6,10 +6,69 @@
 
 const { GUARANTEE_FORBIDDEN } = require('../../../../constants/flowV3/flowV3Guardrails');
 const { ENVELOPE_INTENTS, PART_TYPES } = require('../llm/parseEnvelope');
+const { extractNumericClaims } = require('../../aiGuardrailService');
+const {
+  CURATED_MODERN_CATALOG,
+} = require('../../../../constants/careerCounsellingV2ExploreModernColleges');
 
 const URL_PATTERN = /https?:\/\/\S+|guidexpert\.co\.in\/\S+/i;
 const COLLEGE_HINT = /\b(college|university|institute|kalvium|plaksha|niat|iit|nit)\b/i;
 const NUMERIC_CLAIM = /\b\d+(\.\d+)?\s*(%|lpa|lakhs?|crores?|k)\b/i;
+
+// V-2 college-mention capture: "<Proper Noun(s)> University|College|Institute…"
+const COLLEGE_NAME_CAPTURE =
+  /\b([A-Z][A-Za-z&.'-]*(?:\s+(?:of|for|and|[A-Z][A-Za-z&.'-]*)){0,4})\s+(University|College|Institute|Institution)\b/g;
+
+// Known catalog vocabulary — single-token brand ids (plaksha, kalvium, niat…)
+// and two-word name phrases (masters union, ahmedabad university, srm ap).
+// A brand mentioned in a reply must trace to a cited tool result. Two-word
+// phrases avoid false hits on common words ("masters degree", "in Ahmedabad").
+const CATALOG_BRAND_TOKENS = (() => {
+  const tokens = new Set();
+  const phrases = new Set();
+  for (const row of CURATED_MODERN_CATALOG || []) {
+    const id = String(row?.id || '').toLowerCase();
+    if (id && !id.includes('_')) tokens.add(id);
+    const nameWords = String(row?.name || '')
+      .toLowerCase()
+      .replace(/[()]/g, ' ')
+      .split(/\s+/)
+      .filter(Boolean);
+    if (nameWords.length >= 2) phrases.add(`${nameWords[0]} ${nameWords[1]}`);
+    else if (nameWords.length === 1 && nameWords[0].length >= 4) tokens.add(nameWords[0]);
+  }
+  return Object.freeze({ tokens: [...tokens], phrases: [...phrases] });
+})();
+
+// Generic-capture first words that are questions/qualifiers, not proper nouns.
+const CAPTURE_STOPWORDS = new Set([
+  'which', 'what', 'your', 'the', 'a', 'an', 'this', 'that', 'any', 'best',
+  'top', 'good', 'great', 'private', 'government', 'every', 'each', 'other',
+  'partner', 'right', 'my', 'our', 'their',
+]);
+
+function normalizeClaimText(value) {
+  return String(value || '').toLowerCase().replace(/,/g, '');
+}
+
+/** Extract college mentions from reply text: catalog brands + generic captures. */
+function extractCollegeMentions(text) {
+  const raw = String(text || '');
+  const lower = raw.toLowerCase();
+  const mentions = new Set();
+  for (const token of CATALOG_BRAND_TOKENS.tokens) {
+    if (new RegExp(`\\b${token}\\b`, 'i').test(lower)) mentions.add(token);
+  }
+  for (const phrase of CATALOG_BRAND_TOKENS.phrases) {
+    if (lower.includes(phrase)) mentions.add(phrase);
+  }
+  for (const match of raw.matchAll(COLLEGE_NAME_CAPTURE)) {
+    const firstWord = match[1].split(/\s+/)[0].toLowerCase();
+    if (CAPTURE_STOPWORDS.has(firstWord)) continue;
+    mentions.add(`${match[1]} ${match[2]}`.toLowerCase());
+  }
+  return [...mentions];
+}
 
 // V-6 disclosure — reuse V2 editorial shortlist framing (not legal consent).
 const SHORTLIST_DISCLOSURE =
@@ -31,35 +90,54 @@ function collectBodies(envelope) {
   return bodies;
 }
 
+/** Ids one toolTrace entry can be cited by. */
+function entryResultIds(t) {
+  const ids = new Set();
+  if (t.callId) ids.add(String(t.callId));
+  const result = t.result;
+  if (!result || typeof result !== 'object') return ids;
+  if (result.id) ids.add(String(result.id));
+  if (Array.isArray(result.rows)) {
+    for (const row of result.rows) {
+      if (row?.id) ids.add(String(row.id));
+      if (row?.catalog) ids.add(`${row.catalog}:${row.id || row.slug || ''}`);
+      if (row?.tag) ids.add(`${row.tag}:${row.id || row.slug || ''}`);
+    }
+  }
+  if (Array.isArray(result.chunks)) {
+    for (const c of result.chunks) {
+      if (c?.id) ids.add(`knowledge:${c.id}`);
+    }
+  }
+  if (result.url) ids.add(`booking:${result.url}`);
+  if (result.serviceKey) ids.add(`booking:${result.serviceKey}`);
+  return ids;
+}
+
 function toolResultIds(toolTrace = []) {
   const ids = new Set();
   for (const t of toolTrace) {
-    if (t.callId) ids.add(String(t.callId));
-    const result = t.result;
-    if (!result || typeof result !== 'object') continue;
-    if (result.id) ids.add(String(result.id));
-    if (Array.isArray(result.rows)) {
-      for (const row of result.rows) {
-        if (row?.id) ids.add(String(row.id));
-        if (row?.catalog) ids.add(`${row.catalog}:${row.id || row.slug || ''}`);
-        if (row?.tag) ids.add(`${row.tag}:${row.id || row.slug || ''}`);
-      }
-    }
-    if (Array.isArray(result.chunks)) {
-      for (const c of result.chunks) {
-        if (c?.id) ids.add(`knowledge:${c.id}`);
-      }
-    }
-    if (result.url) ids.add(`booking:${result.url}`);
-    if (result.serviceKey) ids.add(`booking:${result.serviceKey}`);
+    for (const id of entryResultIds(t)) ids.add(id);
   }
   return ids;
+}
+
+/** A cited grounding id resolves to a known id exactly or by suffix (`curated:x` ↔ `x`). */
+function groundingIdResolves(cited, knownIds) {
+  for (const id of knownIds) {
+    if (cited === id) return true;
+    if (id.endsWith(`:${cited}`) || cited.endsWith(`:${id}`)) return true;
+  }
+  return false;
 }
 
 /**
  * @returns {{ ok: boolean, verdict: 'pass'|'block'|'clamp'|'warn', violations: Array, envelope: object, clamped: object }}
  */
-function validateEnvelope(envelope, { toolTrace = [], nextSlotHint = null } = {}) {
+function validateEnvelope(
+  envelope,
+  { toolTrace = [], nextSlotHint = null, inboundText = '', profile = null } = {}
+) {
   const violations = [];
   if (!envelope || typeof envelope !== 'object') {
     return { ok: false, verdict: 'block', violations: [{ code: 'V-1', detail: 'missing' }], envelope, clamped: null };
@@ -76,13 +154,46 @@ function validateEnvelope(envelope, { toolTrace = [], nextSlotHint = null } = {}
   const grounding = new Set((envelope.grounding || []).map(String));
   const knownIds = toolResultIds(toolTrace);
 
-  // V-2 grounding for claims
+  // V-2 grounding — the anti-fabrication property (F-2).
+  // V-2a: claims require citations at all.
   if ((COLLEGE_HINT.test(joined) || NUMERIC_CLAIM.test(joined)) && grounding.size === 0) {
     violations.push({ code: 'V-2', detail: 'grounding_required' });
   }
+
+  // V-2b: every cited grounding id must resolve to an ACTUAL tool result
+  // returned this turn. A fabricated citation is a BLOCK, not a warning.
   for (const g of grounding) {
-    if (knownIds.size && ![...knownIds].some((id) => id === g || id.endsWith(g) || g.includes(id))) {
-      // Soft: allow grounding ids that tools tagged explicitly even if callId differs
+    if (!groundingIdResolves(g, knownIds)) {
+      violations.push({ code: 'V-2', detail: `unresolved_grounding_id:${g}` });
+    }
+  }
+
+  // Corpus of results the envelope actually cited — claims must trace HERE,
+  // not to any result that merely happened to be fetched this turn.
+  const citedEntries = (toolTrace || []).filter((t) => {
+    const ids = entryResultIds(t);
+    return [...grounding].some((g) => groundingIdResolves(g, ids));
+  });
+  const citedCorpus = normalizeClaimText(JSON.stringify(citedEntries.map((t) => t.result)));
+
+  // Values the student supplied themselves (their own rank, budget…) are not
+  // fabrications — mirrors aiGuardrailService's user-provided-numbers carve-out.
+  const userCorpus = normalizeClaimText(
+    `${inboundText || ''} ${profile ? JSON.stringify(profile) : ''}`
+  );
+
+  // V-2c: every numeric / price / placement claim must appear in a cited result.
+  for (const claim of extractNumericClaims(joined)) {
+    const normalized = normalizeClaimText(claim);
+    if (!citedCorpus.includes(normalized) && !userCorpus.includes(normalized)) {
+      violations.push({ code: 'V-2', detail: `ungrounded_numeric:${claim}` });
+    }
+  }
+
+  // V-2d: every college mention must appear in a cited result.
+  for (const mention of extractCollegeMentions(joined)) {
+    if (!citedCorpus.includes(normalizeClaimText(mention))) {
+      violations.push({ code: 'V-2', detail: `ungrounded_college:${mention}` });
     }
   }
 
@@ -174,4 +285,7 @@ module.exports = {
   validateEnvelope,
   collectBodies,
   toolResultIds,
+  entryResultIds,
+  groundingIdResolves,
+  extractCollegeMentions,
 };
