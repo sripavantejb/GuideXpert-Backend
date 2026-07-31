@@ -22,7 +22,11 @@ const {
 } = require('../../../../constants/flowV3/flowV3LeadProfileSchema');
 
 const { deriveAcademicYear } = require('../../../../constants/flowV3/flowV3SlotMetaContract');
-const { LLM_WRITE_CHANNEL } = require('../../../../constants/flowV3/flowV3ProfileEnums');
+const {
+  LLM_WRITE_CHANNEL,
+  isAuthoritativeSource,
+  isNonAuthoritativeSource,
+} = require('../../../../constants/flowV3/flowV3ProfileEnums');
 
 const { mergeFlowV3Profile } = require('./flowV3ProfileMerge');
 const { validateProfilePatch } = require('./flowV3ProfileWritePolicy');
@@ -189,11 +193,44 @@ async function applyProfilePatch(input = {}) {
     phone,
     (doc, now) => {
       const profileBefore = doc.profile || {};
-      const merge = mergeFlowV3Profile(profileBefore, validation.accepted);
+
+      // AUTHORITY DOWNGRADE GUARD (S-1 hardening): a non-authoritative write
+      // (source 'inferred' — e.g. an LLM envelope patch or tool call) can
+      // NEVER replace a value that was captured from an authoritative source
+      // (button / typed / extracted / counsellor). Without this, a
+      // hallucinated `examType` could overwrite the student's own
+      // "I wrote AP EAMCET" and silently un-arm the AP-OC-male gate.
+      const existingMeta = normalizeSlotMetaStore(doc.slotMeta);
+      const accepted = { ...validation.accepted };
+      const acceptedMeta = { ...validation.acceptedMeta };
+      const downgradeRejected = [];
+      for (const field of Object.keys(accepted)) {
+        const incoming = acceptedMeta[field];
+        const current = existingMeta[field];
+        const existingValue = profileBefore[field];
+        if (
+          incoming &&
+          isNonAuthoritativeSource(incoming.source) &&
+          current &&
+          isAuthoritativeSource(current.source) &&
+          existingValue !== null &&
+          existingValue !== undefined
+        ) {
+          downgradeRejected.push({
+            field,
+            code: 'WRITE_AUTHORITY_DOWNGRADE',
+            message: `${field} was captured from authoritative source '${current.source}' — an inferred write cannot replace it`,
+          });
+          delete accepted[field];
+          delete acceptedMeta[field];
+        }
+      }
+
+      const merge = mergeFlowV3Profile(profileBefore, accepted);
 
       const metaUpdates = {};
       for (const field of merge.applied) {
-        if (validation.acceptedMeta[field]) metaUpdates[field] = validation.acceptedMeta[field];
+        if (acceptedMeta[field]) metaUpdates[field] = acceptedMeta[field];
       }
       // Mirrored legacy slots are code-written derivations, not captures: they
       // are recorded with source='system' so a counsellor never sees a joined
@@ -221,14 +258,17 @@ async function applyProfilePatch(input = {}) {
           schemaVersion: FLOW_V3_PROFILE_SCHEMA_VERSION,
         },
         result: {
-          ok: validation.rejected.length === 0 && metaResult.rejected.length === 0,
+          ok:
+            validation.rejected.length === 0 &&
+            metaResult.rejected.length === 0 &&
+            downgradeRejected.length === 0,
           profile: merge.profile,
           slotMeta: metaResult.slotMeta,
           applied: merge.applied,
           mirrored: merge.mirrored,
           droppedByMerge: merge.dropped,
           warnings: merge.warnings,
-          rejected: [...validation.rejected, ...metaResult.rejected],
+          rejected: [...validation.rejected, ...downgradeRejected, ...metaResult.rejected],
           dropped: validation.dropped,
         },
       };
