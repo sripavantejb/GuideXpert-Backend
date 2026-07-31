@@ -6,6 +6,9 @@
 
 const crypto = require('crypto');
 const { runGateChain } = require('./gates/gateChain');
+const { evaluateDemographicGate } = require('./gates/demographicGate');
+const { extractFlowV2Slots } = require('../flowV2/flowV2SlotExtractor');
+const { mergeFlowV3Profile } = require('./profile/flowV3ProfileMerge');
 const { buildTurnContext } = require('./context/buildTurnContext');
 const { runLlmLoop, buildTurnMessages } = require('./llm/llmLoop');
 const { validateEnvelope } = require('./validate/validateEnvelope');
@@ -97,10 +100,79 @@ async function processFlowV3Turn(input = {}) {
     return { ...terminalReply, turnId, mode, shadowOnly: mode === 'shadow' };
   }
 
+  // §3 step 6 — deterministic slot extraction pre-pass (F-7). Sparse patch
+  // merged in-memory so gating and the LLM context see THIS turn's slots.
+  // Persistence is the live caller's job (CAS store, channel 'extractor').
+  let extractedPatch = {};
+  let mergedProfile = profile;
+  try {
+    extractedPatch = extractFlowV2Slots(input.text, profile) || {};
+    if (Object.keys(extractedPatch).length) {
+      mergedProfile = mergeFlowV3Profile(profile, extractedPatch).profile;
+    }
+  } catch (err) {
+    console.error('[flowV3] slot extraction pre-pass failed', {
+      turnId,
+      error: err && err.message ? err.message : String(err),
+    });
+    extractedPatch = {};
+    mergedProfile = profile;
+  }
+
+  // §3 step 7 — S-1 re-check AFTER the merge (F-1). The condition can become
+  // true mid-conversation as category and gender arrive on different turns.
+  // Blocked → verbatim refusal, human route, ZERO LLM and predictor calls.
+  const postMergeDemo = evaluateDemographicGate(mergedProfile);
+  if (postMergeDemo.blocked) {
+    const demoVerdict = {
+      gate: 'G-DEMOGRAPHIC-POST-MERGE',
+      verdict: 'terminate',
+      terminatedTurn: true,
+      reason: 'ap_oc_male_blocked_post_merge',
+    };
+    const gateVerdicts = [...gateResult.verdicts, demoVerdict];
+    writeTurnLog({
+      turnId,
+      conversationId: input.conversationId,
+      phone: input.phone,
+      inboundId: input.inboundId,
+      promptVersion,
+      inboundText: input.text,
+      gateVerdicts,
+      profileBefore: profile,
+      slotPatch: extractedPatch,
+      profileAfter: mergedProfile,
+      blocked: true,
+      mode,
+      latencyMs: Date.now() - startedAt,
+      deliveryStatus: 'gate_terminated',
+    }).catch(() => {});
+    return {
+      turnId,
+      mode,
+      shadowOnly: mode === 'shadow',
+      replyText: postMergeDemo.copy,
+      replyParts: [postMergeDemo.copy],
+      interactive: postMergeDemo.buttons
+        ? { type: 'button', body: postMergeDemo.copy, buttons: [...postMergeDemo.buttons] }
+        : null,
+      nextState: 'career_counselling_flow_v3',
+      intent: 'career_counselling_flow_v3',
+      extractedPatch,
+      gateResult: { ...gateResult, passed: false, verdicts: gateVerdicts },
+      terminal: {
+        kind: 'demographic_blocked',
+        route: 'human_agent',
+        copy: postMergeDemo.copy,
+        buttons: postMergeDemo.buttons,
+      },
+    };
+  }
+
   let turnContext = null;
   try {
     turnContext = buildTurnContext({
-      profile,
+      profile: mergedProfile,
       slotMeta: input.slotMeta || {},
       turns: input.history || input.turns || [],
       text: input.text,
@@ -126,7 +198,7 @@ async function processFlowV3Turn(input = {}) {
         phone: input.phone,
         conversationId: input.conversationId,
         turnId,
-        profile,
+        profile: mergedProfile,
         slotMeta: input.slotMeta || {},
       },
       broker,
@@ -163,7 +235,7 @@ async function processFlowV3Turn(input = {}) {
             phone: input.phone,
             conversationId: input.conversationId,
             turnId,
-            profile,
+            profile: mergedProfile,
           },
           broker,
           provider: input.provider,
@@ -177,19 +249,19 @@ async function processFlowV3Turn(input = {}) {
             loopResult = retry;
           } else {
             validation = v2;
-            fallback = runFallbackLadder({ profile, slotMeta: input.slotMeta, reason: 'validation_block' });
+            fallback = runFallbackLadder({ profile: mergedProfile, slotMeta: input.slotMeta, reason: 'validation_block' });
           }
         } else {
-          fallback = runFallbackLadder({ profile, slotMeta: input.slotMeta, reason: loopResult.reason || 'parse_failed' });
+          fallback = runFallbackLadder({ profile: mergedProfile, slotMeta: input.slotMeta, reason: loopResult.reason || 'parse_failed' });
         }
       } catch {
-        fallback = runFallbackLadder({ profile, slotMeta: input.slotMeta, reason: 'regen_failed' });
+        fallback = runFallbackLadder({ profile: mergedProfile, slotMeta: input.slotMeta, reason: 'regen_failed' });
       }
     } else {
       envelope = validation.envelope;
     }
   } else {
-    fallback = runFallbackLadder({ profile, slotMeta: input.slotMeta, reason: loopResult.reason || 'llm_failed' });
+    fallback = runFallbackLadder({ profile: mergedProfile, slotMeta: input.slotMeta, reason: loopResult.reason || 'llm_failed' });
   }
 
   let rendered;
@@ -215,7 +287,8 @@ async function processFlowV3Turn(input = {}) {
     inboundText: input.text,
     gateVerdicts: gateResult.verdicts,
     profileBefore: profile,
-    profileAfter: profile,
+    slotPatch: extractedPatch,
+    profileAfter: mergedProfile,
     toolTrace: loopResult.toolTrace || [],
     envelope: envelope || null,
     validationVerdicts: (validation?.violations || []).map((v) => ({
@@ -253,6 +326,7 @@ async function processFlowV3Turn(input = {}) {
     validation,
     fallback,
     gateResult,
+    extractedPatch,
     toolTrace: loopResult.toolTrace || [],
     latencyMs,
     localizationTier: 'static',
