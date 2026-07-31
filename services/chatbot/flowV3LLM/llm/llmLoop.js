@@ -85,11 +85,30 @@ async function runLlmLoop(input = {}) {
         tool_calls: completion.toolCalls,
       });
       for (const tc of completion.toolCalls) {
-        let args = {};
+        // F-9: NEVER execute a tool with guessed args. A malformed tool_call
+        // fails closed — the failure is logged, recorded in the trace, and
+        // fed back to the model as an explicit { failed } result.
+        let args = null;
         try {
           args = JSON.parse(tc.function.arguments || '{}');
-        } catch {
-          args = {};
+        } catch (err) {
+          console.error('[flowV3] TOOL_ARGS_PARSE_FAILED', {
+            tool: tc.function.name,
+            error: err && err.message ? err.message : String(err),
+          });
+          toolTrace.push({
+            name: tc.function.name,
+            callId: tc.id || null,
+            ok: false,
+            result: null,
+            error: 'malformed_tool_args',
+          });
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: JSON.stringify({ failed: 'malformed_tool_args' }),
+          });
+          continue;
         }
         const invoked = await broker.invokeTool(tc.function.name, args, input.toolContext || {});
         toolTrace.push({

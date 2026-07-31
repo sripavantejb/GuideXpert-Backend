@@ -14,7 +14,7 @@ const { runLlmLoop, buildTurnMessages } = require('./llm/llmLoop');
 const { validateEnvelope } = require('./validate/validateEnvelope');
 const { runFallbackLadder } = require('./validate/fallbackLadder');
 const { renderEnvelope } = require('./render/renderEnvelope');
-const { writeTurnLog } = require('./log/turnLog');
+const { flushTurnLog } = require('./log/flushTurnLog');
 const { createToolBroker } = require('./tools/toolBroker');
 const { latestVersion } = require('./llm/promptLoader');
 
@@ -83,7 +83,7 @@ async function processFlowV3Turn(input = {}) {
   });
   if (!gateResult.passed) {
     const terminalReply = terminalFromGate(gateResult.terminal, gateResult);
-    writeTurnLog({
+    await flushTurnLog({
       turnId,
       conversationId: input.conversationId,
       phone: input.phone,
@@ -96,7 +96,7 @@ async function processFlowV3Turn(input = {}) {
       mode,
       latencyMs: Date.now() - startedAt,
       deliveryStatus: 'gate_terminated',
-    }).catch(() => {});
+    }, input.deps || {});
     return { ...terminalReply, turnId, mode, shadowOnly: mode === 'shadow' };
   }
 
@@ -131,7 +131,7 @@ async function processFlowV3Turn(input = {}) {
       reason: 'ap_oc_male_blocked_post_merge',
     };
     const gateVerdicts = [...gateResult.verdicts, demoVerdict];
-    writeTurnLog({
+    await flushTurnLog({
       turnId,
       conversationId: input.conversationId,
       phone: input.phone,
@@ -146,7 +146,7 @@ async function processFlowV3Turn(input = {}) {
       mode,
       latencyMs: Date.now() - startedAt,
       deliveryStatus: 'gate_terminated',
-    }).catch(() => {});
+    }, input.deps || {});
     return {
       turnId,
       mode,
@@ -180,6 +180,11 @@ async function processFlowV3Turn(input = {}) {
       purpose: input.purpose || null,
     });
   } catch (err) {
+    // F-9: the turn proceeds on a degraded context, but the failure is logged.
+    console.error('[flowV3] TURN_CONTEXT_BUILD_FAILED', {
+      turnId,
+      error: err && err.message ? err.message : String(err),
+    });
     turnContext = { error: err.message };
   }
 
@@ -283,7 +288,7 @@ async function processFlowV3Turn(input = {}) {
   }
 
   const latencyMs = Date.now() - startedAt;
-  writeTurnLog({
+  await flushTurnLog({
     turnId,
     conversationId: input.conversationId,
     phone: input.phone,
@@ -308,7 +313,7 @@ async function processFlowV3Turn(input = {}) {
     mode,
     latencyMs,
     deliveryStatus: mode === 'shadow' ? 'shadow_only' : 'ready',
-  }).catch(() => {});
+  }, input.deps || {});
 
   return {
     turnId,
