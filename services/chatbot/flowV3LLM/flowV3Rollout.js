@@ -1,18 +1,17 @@
 'use strict';
 
 /**
- * Flow V3 rollout controls — kill switch, shadow/live mode, canary cohort.
+ * Flow V3 rollout controls.
  *
- * V3 (LLM engine) is the DEFAULT counselling experience: enabled, live, 100%
- * unless env explicitly overrides. Flow V2 remains only as the kill-switch
- * escape hatch (CHATBOT_FLOW_V3_ENABLED=0) and as frozen library code that V3
- * reuses (slot extractor, nextSlot walk, fallback beat copy).
+ * V3 (LLM engine) is UNCONDITIONAL for all counselling. Env vars
+ * CHATBOT_FLOW_V3_ENABLED / MODE / CANARY_PERCENT are ignored so stale
+ * Vercel overrides can never route anyone back to Flow V2.
  *
- * CHATBOT_FLOW_V3_ENABLED=0 → V3 never starts for NEW conversations.
- * CHATBOT_FLOW_V3_MODE=shadow|live (default live).
- * CHATBOT_FLOW_V3_CANARY_PERCENT=0..100 (live cohort by phone hash; default 100).
+ * Flow V2 remains only as frozen library code that V3 reuses
+ * (slot extractor, nextSlot walk, fallback beat copy).
  *
- * Locked canary steps (architecture §12): 5 → 25 → 100.
+ * Helpers phoneCanaryBucket / nextCanaryStep / CANARY_STEPS are kept for
+ * ops tooling and tests; they no longer gate live traffic.
  */
 
 const crypto = require('crypto');
@@ -20,26 +19,19 @@ const crypto = require('crypto');
 const CANARY_STEPS = Object.freeze([5, 25, 100]);
 
 function isFlowV3Enabled() {
-  // Enabled by default — only an explicit '0' (kill switch) turns V3 off.
-  return String(process.env.CHATBOT_FLOW_V3_ENABLED ?? '1').trim() !== '0';
+  return true;
 }
 
 function getFlowV3Mode() {
-  const mode = String(process.env.CHATBOT_FLOW_V3_MODE || 'live').trim().toLowerCase();
-  return mode === 'shadow' ? 'shadow' : 'live';
+  return 'live';
 }
 
 function getCanaryPercent() {
-  const raw = process.env.CHATBOT_FLOW_V3_CANARY_PERCENT;
-  if (raw === undefined || String(raw).trim() === '') return 100;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return 0;
-  if (n >= 100) return 100;
-  return Math.floor(n);
+  return 100;
 }
 
 /**
- * Stable 0..99 bucket from phone (conversation-pinned externally at turn 1).
+ * Stable 0..99 bucket from phone (ops helper; unused for live gating).
  */
 function phoneCanaryBucket(phone) {
   const digits = String(phone || '').replace(/\D/g, '').slice(-10);
@@ -65,36 +57,23 @@ function nextCanaryStep(current = 0) {
  * @returns {{ useV3: boolean, mode: 'shadow'|'live'|null, reason: string, canaryPercent?: number, bucket?: number }}
  */
 function resolveFlowV3Routing({ phone, pinnedEngine = null, pinnedMode = null } = {}) {
-  // In-flight pin wins (kill switch does not tear down pinned V3).
+  // Preserve pin reason for in-flight V3 conversations (observability).
   if (pinnedEngine === 'flow_v3') {
     return {
       useV3: true,
-      mode: pinnedMode === 'live' ? 'live' : 'shadow',
+      mode: 'live',
       reason: 'pinned',
     };
   }
-  if (pinnedEngine === 'flow_v2') {
-    return { useV3: false, mode: null, reason: 'pinned_v2' };
-  }
 
-  if (!isFlowV3Enabled()) {
-    return { useV3: false, mode: null, reason: 'disabled' };
-  }
-
-  const mode = getFlowV3Mode();
-  if (mode === 'shadow') {
-    return { useV3: true, mode: 'shadow', reason: 'shadow_all' };
-  }
-
-  const pct = getCanaryPercent();
-  if (pct <= 0) {
-    return { useV3: false, mode: null, reason: 'canary_zero', canaryPercent: 0 };
-  }
-  const bucket = phoneCanaryBucket(phone);
-  if (bucket < pct) {
-    return { useV3: true, mode: 'live', reason: 'canary_hit', canaryPercent: pct, bucket };
-  }
-  return { useV3: false, mode: null, reason: 'canary_miss', canaryPercent: pct, bucket };
+  void phone;
+  void pinnedMode;
+  return {
+    useV3: true,
+    mode: 'live',
+    reason: 'forced_live',
+    canaryPercent: 100,
+  };
 }
 
 module.exports = {
