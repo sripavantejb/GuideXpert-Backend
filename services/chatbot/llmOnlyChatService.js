@@ -9,6 +9,8 @@
  * saved prompt). No flows, no knowledge bases, no routing, no translation.
  *
  * The only deterministic behavior kept is WhatsApp STOP/START compliance.
+ * Lead facts are extracted each turn and injected as a KNOWN_PROFILE block so
+ * the model never re-asks answered questions (Section 4 of the system prompt).
  */
 
 const WhatsAppInboundMessage = require('../../models/WhatsAppInboundMessage');
@@ -17,6 +19,12 @@ const { getSystemPromptSetting, readPromptFileSync } = require('../../utils/syst
 const { chatCompletion } = require('../ai/llmClient');
 const whatsappOutbound = require('./whatsappOutboundService');
 const { getBotState, transitionState } = require('./botStateService');
+const {
+  extractProfilePatch,
+  mergeProfile,
+  buildKnownProfileBlock,
+  sanitizeProfile,
+} = require('./leadProfileMemoryService');
 const { maskPhoneTail } = require('../../utils/chatbotPhone');
 
 const STOP_RE = /^\s*(stop|unsubscribe|opt\s*out|optout)\s*$/i;
@@ -165,13 +173,54 @@ async function processInbound({ conversation, inbound }) {
     return { outboundSuccess: Boolean(sent?.success), error: 'system_prompt_missing' };
   }
 
+  const storedProfile = sanitizeProfile(botState?.context?.leadProfile);
+  let history = [];
+  try {
+    history = await loadConversationHistory(conversation._id, inbound._id);
+  } catch (err) {
+    console.error(
+      '[llmOnlyChat] history load failed',
+      maskPhoneTail(conversation.phone),
+      err?.message || err
+    );
+  }
+
+  const lastBotMessage =
+    [...history].reverse().find((m) => m.role === 'assistant')?.content || '';
+  let patch = {};
+  try {
+    patch = await extractProfilePatch({
+      knownProfile: storedProfile,
+      lastBotMessage,
+      userText: userText || '',
+    });
+  } catch (err) {
+    console.error(
+      '[llmOnlyChat] leadProfile extract failed',
+      maskPhoneTail(conversation.phone),
+      err?.message || err
+    );
+  }
+  const leadProfile = mergeProfile(storedProfile, patch);
+  try {
+    await transitionState(conversation._id, conversation.phone, botState?.state || 'idle', {
+      leadProfile,
+    });
+  } catch (err) {
+    console.error(
+      '[llmOnlyChat] leadProfile persist failed',
+      maskPhoneTail(conversation.phone),
+      err?.message || err
+    );
+  }
+
   let replyText = null;
   try {
-    const history = await loadConversationHistory(conversation._id, inbound._id);
     const result = await chatCompletion({
       messages: [
         { role: 'system', content: systemPrompt },
         ...history,
+        { role: 'system', content: buildKnownProfileBlock(leadProfile) },
         { role: 'user', content: userText || '[non-text message]' },
       ],
       temperature: llmTemperature(),
@@ -195,6 +244,7 @@ async function processInbound({ conversation, inbound }) {
   return {
     outboundSuccess: Boolean(sent?.success),
     llmUsed: Boolean(replyText),
+    leadProfile,
   };
 }
 
@@ -207,4 +257,5 @@ module.exports = {
   DEFAULT_HISTORY_SINCE,
   OPT_OUT_REPLY,
   ERROR_REPLY,
+  buildKnownProfileBlock,
 };

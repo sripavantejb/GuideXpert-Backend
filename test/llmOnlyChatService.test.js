@@ -9,6 +9,7 @@ const promptSettingsPath = require.resolve('../utils/systemPromptSettings');
 const llmClientPath = require.resolve('../services/ai/llmClient');
 const outboundPath = require.resolve('../services/chatbot/whatsappOutboundService');
 const botStatePath = require.resolve('../services/chatbot/botStateService');
+const memoryPath = require.resolve('../services/chatbot/leadProfileMemoryService');
 
 const CONVERSATION_ID = new mongoose.Types.ObjectId();
 const INBOUND_ID = new mongoose.Types.ObjectId();
@@ -23,6 +24,20 @@ function emptyQueryChain(result = []) {
   return chain;
 }
 
+function replyCall(llmCalls) {
+  return llmCalls.find(
+    (c) =>
+      Array.isArray(c.messages) &&
+      c.messages.some((m) => m.role === 'system' && m.content === 'ADMIN PANEL PROMPT')
+  );
+}
+
+function knownProfileMessage(call) {
+  return (call?.messages || []).find(
+    (m) => m.role === 'system' && String(m.content || '').startsWith('KNOWN_PROFILE')
+  );
+}
+
 describe('llmOnlyChatService', () => {
   let sentTexts;
   let llmCalls;
@@ -32,6 +47,7 @@ describe('llmOnlyChatService', () => {
   let inboundFindQueries;
   let outboundFindQueries;
   let prevHistorySince;
+  let extractPatch;
 
   beforeEach(() => {
     sentTexts = [];
@@ -41,10 +57,18 @@ describe('llmOnlyChatService', () => {
     dbPrompt = { text: 'ADMIN PANEL PROMPT' };
     inboundFindQueries = [];
     outboundFindQueries = [];
+    extractPatch = {};
     prevHistorySince = process.env.CHATBOT_HISTORY_SINCE;
     delete process.env.CHATBOT_HISTORY_SINCE;
 
-    for (const p of [servicePath, promptSettingsPath, llmClientPath, outboundPath, botStatePath]) {
+    for (const p of [
+      servicePath,
+      promptSettingsPath,
+      llmClientPath,
+      outboundPath,
+      botStatePath,
+      memoryPath,
+    ]) {
       delete require.cache[p];
     }
 
@@ -64,11 +88,17 @@ describe('llmOnlyChatService', () => {
     });
 
     const botState = require(botStatePath);
-    mock.method(botState, 'getBotState', async () => ({ context: botContext }));
+    mock.method(botState, 'getBotState', async () => ({
+      state: 'idle',
+      context: botContext,
+    }));
     mock.method(botState, 'transitionState', async (_id, _phone, _state, patch) => {
       transitions.push(patch);
       Object.assign(botContext, patch);
     });
+
+    const memory = require(memoryPath);
+    mock.method(memory, 'extractProfilePatch', async () => extractPatch);
 
     const WhatsAppInboundMessage = require('../models/WhatsAppInboundMessage');
     mock.method(WhatsAppInboundMessage, 'find', (query) => {
@@ -101,11 +131,60 @@ describe('llmOnlyChatService', () => {
 
     assert.equal(result.outboundSuccess, true);
     assert.equal(result.llmUsed, true);
-    assert.equal(llmCalls.length, 1);
-    assert.equal(llmCalls[0].messages[0].role, 'system');
-    assert.equal(llmCalls[0].messages[0].content, 'ADMIN PANEL PROMPT');
-    assert.equal(llmCalls[0].messages.at(-1).content, 'hello');
+    const main = replyCall(llmCalls);
+    assert.ok(main, 'main reply LLM call missing');
+    assert.equal(main.messages[0].role, 'system');
+    assert.equal(main.messages[0].content, 'ADMIN PANEL PROMPT');
+    assert.equal(main.messages.at(-1).content, 'hello');
+    assert.ok(knownProfileMessage(main), 'KNOWN_PROFILE system message missing');
     assert.deepEqual(sentTexts, ['LLM REPLY']);
+  });
+
+  test('KNOWN_PROFILE includes previously stored facts and merged extraction patch', async () => {
+    botContext.leadProfile = {
+      qualification: '12th - MPC',
+      city_pref: 'Hyderabad',
+    };
+    extractPatch = { budget: '3 lakhs', course_interest: 'CSE' };
+
+    const result = await svc().processInbound({
+      conversation,
+      inbound: inbound('budget around 3 lakhs, want cse'),
+    });
+
+    assert.equal(result.leadProfile.qualification, '12th - MPC');
+    assert.equal(result.leadProfile.city_pref, 'Hyderabad');
+    assert.equal(result.leadProfile.budget, '3 lakhs');
+    assert.equal(result.leadProfile.course_interest, 'CSE');
+
+    const persisted = transitions.find((t) => t.leadProfile);
+    assert.ok(persisted);
+    assert.equal(persisted.leadProfile.budget, '3 lakhs');
+    assert.equal(persisted.leadProfile.qualification, '12th - MPC');
+
+    const main = replyCall(llmCalls);
+    const block = knownProfileMessage(main);
+    assert.ok(block);
+    assert.match(block.content, /12th - MPC/);
+    assert.match(block.content, /Hyderabad/);
+    assert.match(block.content, /3 lakhs/);
+    assert.match(block.content, /CSE/);
+  });
+
+  test('extraction failure does not block the reply; stored profile is still injected', async () => {
+    botContext.leadProfile = { qualification: '12th - MPC' };
+    const memory = require(memoryPath);
+    mock.method(memory, 'extractProfilePatch', async () => {
+      throw new Error('extract boom');
+    });
+
+    const result = await svc().processInbound({ conversation, inbound: inbound('hello') });
+
+    assert.equal(result.llmUsed, true);
+    assert.equal(result.leadProfile.qualification, '12th - MPC');
+    assert.deepEqual(sentTexts, ['LLM REPLY']);
+    const main = replyCall(llmCalls);
+    assert.match(knownProfileMessage(main).content, /12th - MPC/);
   });
 
   test('STOP opts the user out and sends confirmation without calling the LLM', async () => {
@@ -118,13 +197,14 @@ describe('llmOnlyChatService', () => {
     assert.deepEqual(sentTexts, [service.OPT_OUT_REPLY]);
   });
 
-  test('opted-out user gets no reply until START', async () => {
+  test('opted-out user gets no reply until START (no extraction / no LLM)', async () => {
     botContext.optedOut = true;
     const result = await svc().processInbound({ conversation, inbound: inbound('hi again') });
 
     assert.equal(result.suppressed, true);
     assert.equal(llmCalls.length, 0);
     assert.equal(sentTexts.length, 0);
+    assert.equal(transitions.length, 0);
   });
 
   test('START resumes an opted-out user and replies via LLM', async () => {
@@ -132,7 +212,8 @@ describe('llmOnlyChatService', () => {
     const result = await svc().processInbound({ conversation, inbound: inbound('START') });
 
     assert.equal(result.llmUsed, true);
-    assert.deepEqual(transitions, [{ optedOut: false }]);
+    assert.ok(transitions.some((t) => t.optedOut === false));
+    assert.ok(transitions.some((t) => t.leadProfile));
     assert.deepEqual(sentTexts, ['LLM REPLY']);
   });
 
@@ -186,5 +267,51 @@ describe('llmOnlyChatService', () => {
       outboundFindQueries[0].createdAt.$gte.getTime(),
       expectedEpoch.getTime()
     );
+  });
+});
+
+describe('leadProfileMemoryService helpers', () => {
+  const memory = require('../services/chatbot/leadProfileMemoryService');
+
+  test('mergeProfile ignores empty patch values and keeps prior facts', () => {
+    const merged = memory.mergeProfile(
+      { qualification: '12th - MPC', budget: '3L' },
+      { budget: '', city_pref: 'Hyderabad', rank: null }
+    );
+    assert.deepEqual(merged, {
+      qualification: '12th - MPC',
+      budget: '3L',
+      city_pref: 'Hyderabad',
+    });
+  });
+
+  test('parseJsonObject strips fences and returns sanitized object', () => {
+    const parsed = memory.parseJsonObject(
+      '```json\n{"qualification":"12th - MPC","budget":"","topics":["Coding"]}\n```'
+    );
+    assert.deepEqual(parsed, {
+      qualification: '12th - MPC',
+      topics: ['Coding'],
+    });
+  });
+
+  test('buildKnownProfileBlock wraps JSON for the system prompt contract', () => {
+    const block = memory.buildKnownProfileBlock({ qualification: '12th - MPC' });
+    assert.match(block, /^KNOWN_PROFILE/);
+    assert.match(block, /"qualification": "12th - MPC"/);
+  });
+
+  test('extractProfilePatch returns {} when OpenAI throws', async () => {
+    const llmClient = require('../services/ai/llmClient');
+    mock.method(llmClient, 'chatCompletion', async () => {
+      throw new Error('down');
+    });
+    const patch = await memory.extractProfilePatch({
+      knownProfile: {},
+      lastBotMessage: 'What class are you in?',
+      userText: '12th mpc',
+    });
+    assert.deepEqual(patch, {});
+    mock.restoreAll();
   });
 });
