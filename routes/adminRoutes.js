@@ -102,6 +102,10 @@ const {
   setSystemPromptSetting,
 } = require('../utils/systemPromptSettings');
 const {
+  resolveWebChatPromptForAdmin,
+  setWebChatPromptSetting,
+} = require('../utils/webChatPromptSettings');
+const {
   clearPromptCache,
   setPromptOverride,
 } = require('../services/chatbot/flowV3LLM/llm/promptLoader');
@@ -501,6 +505,60 @@ router.put('/system-prompt', requireAdmin, requireSuperAdmin, async (req, res) =
     const msg = err && err.message ? err.message : 'Internal server error';
     const status = /must be|exceeds|non-empty/i.test(msg) ? 400 : 500;
     console.error('[SystemPrompt] PUT error:', err);
+    return res.status(status).json({ success: false, message: msg });
+  }
+});
+
+// Website chatbot (student panel web chat) system prompt (Mongo source of truth; default fallback)
+router.get('/web-chat-system-prompt', requireAdmin, async (req, res) => {
+  try {
+    const prompt = await resolveWebChatPromptForAdmin();
+    return res.json({
+      success: true,
+      text: prompt.text,
+      hash: prompt.hash,
+      bytes: prompt.bytes,
+      updatedAt: prompt.updatedAt,
+      updatedByEmail: prompt.updatedByEmail,
+      source: prompt.source,
+    });
+  } catch (err) {
+    console.error('[WebChatPrompt] GET error:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+router.put('/web-chat-system-prompt', requireAdmin, requireSuperAdmin, async (req, res) => {
+  try {
+    const { text } = req.body || {};
+    if (typeof text !== 'string' || !text.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Provide non-empty `text` (string)',
+      });
+    }
+
+    const saved = await setWebChatPromptSetting(text, req.admin || null);
+
+    console.log('[WebChatPrompt] Updated by admin', {
+      hash: saved.hash,
+      bytes: saved.bytes,
+      by: saved.updatedByEmail,
+    });
+
+    return res.json({
+      success: true,
+      text: saved.text,
+      hash: saved.hash,
+      bytes: saved.bytes,
+      updatedAt: saved.updatedAt,
+      updatedByEmail: saved.updatedByEmail,
+      source: saved.source,
+    });
+  } catch (err) {
+    const msg = err && err.message ? err.message : 'Internal server error';
+    const status = /must be|exceeds|non-empty/i.test(msg) ? 400 : 500;
+    console.error('[WebChatPrompt] PUT error:', err);
     return res.status(status).json({ success: false, message: msg });
   }
 });
