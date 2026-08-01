@@ -2,14 +2,14 @@
 
 const { searchKnowledge } = require('../chatbot/knowledgeSearchService');
 const { chatCompletion } = require('../ai/llmClient');
+const {
+  getActiveWebChatSystemPrompt,
+  DEFAULT_WEB_CHAT_SYSTEM_PROMPT,
+} = require('../../utils/webChatPromptSettings');
 
 const KB_DIRECT_SCORE = Number(process.env.WEB_CHAT_KB_DIRECT_SCORE) || 42;
 const LLM_MAX_TOKENS = Number(process.env.WEB_CHAT_LLM_MAX_TOKENS) || 180;
 const LLM_TIMEOUT_MS = Number(process.env.WEB_CHAT_LLM_TIMEOUT_MS) || 12000;
-
-const SYSTEM_PROMPT = `You are GuideXpert's website assistant. Answer briefly using ONLY the provided knowledge snippets.
-If the snippets do not contain the answer, say you are not sure and suggest opening the relevant tool on GuideXpert or booking a counselling session.
-Do not invent fees, cutoffs, placements, or guarantees. Keep answers under 80 words.`;
 
 function isKnowledgeLike(text) {
   const t = String(text || '').trim();
@@ -59,8 +59,15 @@ async function tryLlmAnswer(message, kbHits = []) {
     .map((h, i) => `[${i + 1}] Q: ${h.question}\nA: ${h.answer}`)
     .join('\n\n');
 
+  let systemPrompt = DEFAULT_WEB_CHAT_SYSTEM_PROMPT;
+  try {
+    systemPrompt = await getActiveWebChatSystemPrompt();
+  } catch (err) {
+    console.warn('[WebChat] Failed to load configurable system prompt, using default:', err.message);
+  }
+
   const completion = await chatCompletion({
-    systemPrompt: SYSTEM_PROMPT,
+    systemPrompt,
     userPrompt: `Knowledge:\n${snippets || 'No snippets.'}\n\nUser: ${message}`,
     temperature: 0.2,
     maxTokens: LLM_MAX_TOKENS,
