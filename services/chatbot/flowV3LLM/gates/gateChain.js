@@ -75,16 +75,16 @@ function runGateChain(input = {}, options = {}) {
   }
   verdicts.push(verdict('G-CRISIS-LOCKED', GATE_VERDICTS.PASS));
 
-  // 2. Tier-2 crisis text — before slot extraction, before any LLM call.
+  // 2. Tier-2 crisis text — before slot extraction. Terminal route is
+  // llm_crisis: the dispatcher runs a CRISIS_MODE LLM reply (must include
+  // Tele-MANAS 14416) instead of canned copy. Handoff remains eager.
   if (text && crisisCheck(text)) {
     return stop(
       verdict('G-CRISIS', GATE_VERDICTS.TERMINATE, { reason: 'tier2_crisis' }),
       {
         kind: 'crisis',
-        route: 'human_handoff',
+        route: 'llm_crisis',
         setCrisisLocked: true,
-        // Handoff is fired eagerly and deliberately NOT awaited by the caller,
-        // so a DB outage cannot suppress the safety reply.
         handoffEager: true,
       }
     );
@@ -100,21 +100,32 @@ function runGateChain(input = {}, options = {}) {
   }
   verdicts.push(verdict('G-OPTOUT', GATE_VERDICTS.PASS));
 
-  // 4. Scope firewall — policy/prompt-injection categories deny unconditionally.
+  // 4. Scope firewall — ONLY prompt-injection / security terminates here.
+  // Medical, math, jokes, off-topic and other soft denies pass through so the
+  // LLM can answer under the admin system prompt (LLM-only product contract).
   if (text) {
     const scopeResult = scope.evaluateScope({
       originalText: text,
       englishMessage: input.englishMessage || null,
     });
-    if (scope.shouldBlockLlm(scopeResult)) {
+    const isSecurityBlock =
+      scopeResult &&
+      (scopeResult.category === 'prompt_injection' ||
+        /prompt.?injection|security/i.test(String(scopeResult.reason || '')));
+    if (isSecurityBlock && scope.shouldBlockLlm(scopeResult)) {
       return stop(
         verdict('G-SCOPE', GATE_VERDICTS.TERMINATE, {
-          reason: scopeResult.category || 'out_of_scope',
+          reason: scopeResult.category || 'prompt_injection',
         }),
-        { kind: 'out_of_scope', route: 'deterministic_refusal', scope: scopeResult }
+        { kind: 'security_block', route: 'security_refusal', scope: scopeResult }
       );
     }
-    verdicts.push(verdict('G-SCOPE', GATE_VERDICTS.PASS));
+    verdicts.push(
+      verdict('G-SCOPE', GATE_VERDICTS.PASS, {
+        reason: scopeResult?.allowed === false ? 'soft_scope_to_llm' : null,
+        category: scopeResult?.category || null,
+      })
+    );
   } else {
     verdicts.push(verdict('G-SCOPE', GATE_VERDICTS.PASS, { reason: 'no_text' }));
   }
