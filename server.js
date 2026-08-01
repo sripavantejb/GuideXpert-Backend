@@ -57,7 +57,6 @@ const osviRoutes = require('./routes/osviRoutes');
 const counsellorSupportRoutes = require('./routes/counsellorSupportRoutes');
 const gupshupWebhookRoutes = require('./routes/gupshupWebhookRoutes');
 const whatsappChatAdminRoutes = require('./routes/whatsappChatAdminRoutes');
-const humanCopilotRoutes = require('./routes/humanCopilotRoutes');
 const aiCallsAdminRoutes = require('./routes/aiCallsAdminRoutes');
 const whatsappChatBdaRoutes = require('./routes/whatsappChatBdaRoutes');
 const { configStatus: counsellorConfigStatus } = require('./controllers/counsellorAuthController');
@@ -69,32 +68,6 @@ const {
   getWhatsAppConfigStatus,
   logWhatsAppConfigWarnings,
 } = require('./utils/whatsappConfigStatus');
-const {
-  getKnowledgeAssistantConfigStatus,
-  logKnowledgeAssistantConfigStatus,
-} = require('./utils/knowledgeAssistantConfigStatus');
-const {
-  getLeadEventExtractionConfigStatus,
-  logLeadEventExtractionConfigStatus,
-} = require('./utils/leadEventExtractionConfigStatus');
-const {
-  getLeadProfileConfigStatus,
-  logLeadProfileConfigStatus,
-} = require('./utils/leadProfileConfigStatus');
-const {
-  getLeadScoringConfigStatus,
-  logLeadScoringConfigStatus,
-} = require('./utils/leadScoringConfigStatus');
-const {
-  getScopeFirewallConfigStatus,
-  logScopeFirewallConfigStatus,
-} = require('./utils/scopeFirewallConfigStatus');
-const {
-  getHumanCopilotConfigStatus,
-  getHumanCopilotHealthStatus,
-  logHumanCopilotConfigStatus,
-} = require('./utils/humanCopilotConfigStatus');
-
 const app = express();
 
 // OTP (MSG91): required in production only; in dev allow startup without them
@@ -126,12 +99,6 @@ if (!process.env.WEBINAR_JWT_SECRET && !process.env.COUNSELLOR_JWT_SECRET) {
   console.warn('[env] WEBINAR_JWT_SECRET and COUNSELLOR_JWT_SECRET are both missing — webinar login will fail. Set at least one in .env / Vercel env vars.');
 }
 logWhatsAppConfigWarnings();
-logKnowledgeAssistantConfigStatus();
-logLeadEventExtractionConfigStatus();
-logLeadProfileConfigStatus();
-logLeadScoringConfigStatus();
-logHumanCopilotConfigStatus();
-logScopeFirewallConfigStatus();
 
 const allowedOrigins = [
   process.env.FRONTEND_URL,
@@ -238,74 +205,12 @@ app.use(async (req, res, next) => {
 // Register specific /api routes before any broad `app.use('/api', router)` mounts.
 app.get('/api/health', async (req, res) => {
   const whatsapp = getWhatsAppConfigStatus();
-  const knowledgeAssistant = getKnowledgeAssistantConfigStatus();
-  const leadEventExtraction = getLeadEventExtractionConfigStatus();
-  const leadProfile = getLeadProfileConfigStatus();
-  const leadScoring = getLeadScoringConfigStatus();
-  const scopeFirewall = getScopeFirewallConfigStatus();
-  const humanCopilot = await getHumanCopilotHealthStatus();
-  let flowV3 = { enabled: false, mode: 'shadow', canaryPercent: 0 };
-  try {
-    const {
-      isFlowV3Enabled,
-      getFlowV3Mode,
-      getCanaryPercent,
-    } = require('./services/chatbot/flowV3LLM/flowV3Rollout');
-    flowV3 = {
-      enabled: isFlowV3Enabled(),
-      mode: getFlowV3Mode(),
-      canaryPercent: getCanaryPercent(),
-    };
-  } catch {
-    flowV3 = { enabled: false, mode: null, canaryPercent: 0, error: true };
-  }
   res.json({
     status: 'ok',
     message: 'GuideXpert API is running',
     features: { posterDownloadAdmin: true },
     whatsapp,
-    flowV3,
-    knowledgeAssistant: {
-      enabled: knowledgeAssistant.enabled,
-      llmKeyPresent: knowledgeAssistant.llmKeyPresent,
-      ready: knowledgeAssistant.ready,
-    },
-    leadEventExtraction: {
-      enabled: leadEventExtraction.enabled,
-      ready: leadEventExtraction.ready,
-    },
-    leadProfile: {
-      enabled: leadProfile.enabled,
-      ready: leadProfile.ready,
-    },
-    leadScoring: {
-      enabled: leadScoring.enabled,
-      ready: leadScoring.ready,
-    },
-    scopeFirewall: {
-      enabled: scopeFirewall.enabled,
-      shadowMode: scopeFirewall.shadowMode,
-      enforceMode: scopeFirewall.enforceMode,
-      ready: scopeFirewall.ready,
-      productionReady: scopeFirewall.productionReady,
-    },
-    scopeClassifier: {
-      enabled: scopeFirewall.scopeClassifier.enabled,
-      ready: scopeFirewall.scopeClassifier.ready,
-    },
-    humanCopilot: {
-      enabled: humanCopilot.enabled,
-      suggestedReplies: humanCopilot.suggestedReplies,
-      ready: humanCopilot.ready,
-      suggestedRepliesReady: humanCopilot.suggestedRepliesReady,
-      hotLeadThreshold: humanCopilot.hotLeadThreshold,
-      outboundReady: humanCopilot.outboundReady,
-      integrationStub: humanCopilot.integrationStub,
-      credentialsValid: humanCopilot.credentialsValid,
-      credentialIssues: humanCopilot.credentialIssues || [],
-      queueHealthy: humanCopilot.queueHealthy,
-      notificationsHealthy: humanCopilot.notificationsHealthy,
-    },
+    chatbot: { mode: 'llm_only_admin_prompt' },
   });
 });
 app.get('/api/admin/poster-downloads/stats', requireAdmin, getPosterDownloadStats);
@@ -349,7 +254,6 @@ app.use('/api/posters', posterTemplatePublicRoutes);
 // WhatsApp Messaging Ops console — explicit mount before generic /api/admin (same middleware stack elsewhere).
 app.use('/api/admin/whatsapp-ops', requireAdmin, whatsappOpsAdminRoutes);
 app.use('/api/admin/whatsapp-chat', requireAdmin, whatsappChatAdminRoutes);
-app.use('/api/admin/human-copilot', requireAdmin, humanCopilotRoutes);
 app.use('/api/admin/ai-calls', requireAdmin, aiCallsAdminRoutes);
 app.use('/api/admin/lead-insights', requireAdmin, leadInsightsRoutes);
 app.use('/api/admin/analytics', requireAdmin, analyticsExecutiveRoutes);

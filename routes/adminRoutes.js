@@ -106,10 +106,6 @@ const {
   setWebChatPromptSetting,
 } = require('../utils/webChatPromptSettings');
 const {
-  clearPromptCache,
-  setPromptOverride,
-} = require('../services/chatbot/flowV3LLM/llm/promptLoader');
-const {
   getCertifiedCounsellors,
   getCertifiedCounsellorDetail,
 } = require('../controllers/certifiedCounsellorsController');
@@ -481,8 +477,8 @@ router.put('/system-prompt', requireAdmin, requireSuperAdmin, async (req, res) =
     }
 
     const saved = await setSystemPromptSetting(text, req.admin || null);
-    clearPromptCache();
-    setPromptOverride(saved.text);
+    // The LLM-only chatbot reads the prompt from Mongo on every message,
+    // so the save is live immediately — no cache to clear.
 
     console.log('[SystemPrompt] Updated by admin', {
       hash: saved.hash,

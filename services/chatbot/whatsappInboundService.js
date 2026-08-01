@@ -9,8 +9,7 @@ const {
 const { maskPhoneTail } = require('../../utils/chatbotPhone');
 const { verifyGupshupWebhookRequest } = require('../../utils/gupshupWebhookAuth');
 const { getOrCreateConversation, touchInbound } = require('./conversationService');
-const { processInbound } = require('./chatbotOrchestratorService');
-const { DEFAULT_TIMEOUT_MS } = require('./knowledgeAssistantService');
+const { processInbound } = require('./llmOnlyChatService');
 
 const rateLimitMap = new Map();
 
@@ -21,8 +20,7 @@ function inboundProcessingStaleMs() {
   if (Number.isFinite(configured) && configured > 0) {
     return configured;
   }
-  const kaTimeout = Number(process.env.KNOWLEDGE_ASSISTANT_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS;
-  return Math.max(120000, kaTimeout * 2);
+  return 120000;
 }
 
 function resolveInboundProcessUpdate(result) {

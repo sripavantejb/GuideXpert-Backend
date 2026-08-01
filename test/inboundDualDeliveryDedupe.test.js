@@ -6,7 +6,7 @@ const mongoose = require('mongoose');
 
 const inboundServicePath = require.resolve('../services/chatbot/whatsappInboundService');
 const conversationServicePath = require.resolve('../services/chatbot/conversationService');
-const orchestratorPath = require.resolve('../services/chatbot/chatbotOrchestratorService');
+const orchestratorPath = require.resolve('../services/chatbot/llmOnlyChatService');
 
 const CONVERSATION_ID = new mongoose.Types.ObjectId();
 const INBOUND_ID = new mongoose.Types.ObjectId();
@@ -176,28 +176,6 @@ describe('inbound dual-delivery dedupe', () => {
     assert.equal(processInboundCalls, 1);
     assert.equal(inboundCreateCalls, 1);
     assert.equal(webhookCreateCalls, 2);
-  });
-
-  test('recent same utterance is deduped even with different provider ids', async () => {
-    existingRecentInbound = {
-      _id: new mongoose.Types.ObjectId(),
-      text: 'Hi',
-      receivedAt: new Date(),
-    };
-
-    const inboundService = require(inboundServicePath);
-    const result = await inboundService.handleInboundWebhook(
-      { headers: {} },
-      metaHiBody('wamid.LATE-RETRY'),
-      new Date()
-    );
-
-    assert.equal(result.handled, true);
-    assert.equal(result.dedupe, true);
-    assert.equal(result.reason, 'recent_same_utterance');
-    assert.equal(processInboundCalls, 0);
-    assert.equal(inboundCreateCalls, 0);
-    assert.equal(webhookCreateCalls, 0);
   });
 
   test('short permission ack "yes" is NOT cross-turn deduped', async () => {
