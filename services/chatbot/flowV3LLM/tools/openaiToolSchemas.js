@@ -48,10 +48,7 @@ const TOOL_PARAMETERS = Object.freeze({
         description:
           'One entry per profilePatch field: { "<field>": { "source": "typed", "verbatimQuote": "<the student\'s exact words>" } }.',
         additionalProperties: {
-          type: 'object',
-          properties: {
-            source: { type: 'string', enum: ['typed', 'inferred'] },
-            verbatimQuote: { type: 'string' },
+            source: { type: 'string', enum: ['typed', 'button', 'inferred'] },
             confidence: { type: 'number' },
           },
           required: ['source', 'verbatimQuote'],
