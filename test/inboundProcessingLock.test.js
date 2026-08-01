@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const mongoose = require('mongoose');
 
 const inboundServicePath = require.resolve('../services/chatbot/whatsappInboundService');
-const orchestratorPath = require.resolve('../services/chatbot/chatbotOrchestratorService');
+const orchestratorPath = require.resolve('../services/chatbot/llmOnlyChatService');
 
 const INBOUND_ID = new mongoose.Types.ObjectId();
 const CONVERSATION_ID = new mongoose.Types.ObjectId();

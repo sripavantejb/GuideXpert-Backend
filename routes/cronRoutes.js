@@ -442,22 +442,6 @@ router.get('/process-chatbot-inbound', verifyCronSecret, async (req, res) => {
   }
 });
 
-router.get('/process-booking-followups', verifyCronSecret, async (req, res) => {
-  try {
-    const { processDueBookingFollowups } = require('../services/chatbot/flowV2/processBookingFollowups');
-    const stats = await processDueBookingFollowups({
-      limit: parseInt(req.query.limit || '50', 10) || 50,
-    });
-    return res.status(200).json({ success: true, stats });
-  } catch (error) {
-    console.error('[Cron] process-booking-followups:', error);
-    return res.status(500).json({
-      success: false,
-      message: error.message || 'Internal server error',
-    });
-  }
-});
-
 router.get('/analytics/evaluate-alerts', verifyCronSecret, async (req, res) => {
   try {
     const { evaluateAllAlerts } = require('../services/analytics/smartAlertsService');

@@ -33,15 +33,6 @@ async function determineRoute(leadContext) {
     }
   }
 
-  try {
-    const { isHumanCopilotEnabled } = require('./humanCopilot/humanCopilotFlags');
-    if (isHumanCopilotEnabled()) {
-      return { route: 'admin_pool', assignedBdaId };
-    }
-  } catch {
-    // flags module unavailable — fall through to legacy routing
-  }
-
   if (assignedBdaId) {
     return { route: 'bda', assignedBdaId };
   }
@@ -132,13 +123,6 @@ async function createHandoff({
       text: `Thanks — I've connected you with a human agent. ${routeLabel}\n\nPlease wait; we will reply here on WhatsApp.`,
       handoffId: handoff._id,
     });
-  }
-
-  try {
-    const { maybeAutoAssign } = require('./humanCopilot/humanCopilotService');
-    await maybeAutoAssign(handoff._id);
-  } catch (autoAssignErr) {
-    console.warn('[handoff] auto-assign skipped', autoAssignErr?.message || autoAssignErr);
   }
 
   return handoff;
