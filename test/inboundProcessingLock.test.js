@@ -112,26 +112,3 @@ describe('inbound processing lock', () => {
     );
   });
 });
-
-describe('romanized Hindi capability probe', () => {
-  const PROBE =
-    'Tum mere liye kya kya kar sakte konse tareeke me our kithne tariko me';
-
-  test('detects hi and routes capability_question intent', async () => {
-    const { detectLanguage } = require('../services/language/languageDetectionService');
-    const { classifyIntent } = require('../services/chatbot/intentClassifierService');
-
-    const det = await detectLanguage({ message: PROBE });
-    assert.equal(det.language, 'hi');
-    assert.notEqual(det.language, 'en');
-
-    const intent = classifyIntent(
-      PROBE,
-      { state: 'idle', context: {} },
-      'unknown',
-      PROBE
-    );
-    assert.equal(intent.intent, 'knowledge_assistant');
-    assert.equal(intent.intentReason, 'capability_question');
-  });
-});

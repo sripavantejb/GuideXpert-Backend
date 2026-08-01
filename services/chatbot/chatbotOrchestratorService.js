@@ -16,30 +16,6 @@ const { listExamsMessage } = require('./rankPredictorChatService');
 const handoffService = require('./handoffService');
 const whatsappOutbound = require('./whatsappOutboundService');
 const { tryLlmReply } = require('./llmReplyService');
-const { answerWithTimeout } = require('./knowledgeAssistantService');
-const {
-  answerWithTimeout: answerCounsellorProgramWithTimeout,
-} = require('./counsellorProgram/counsellorProgramAssistantService');
-const { isCounsellorProgramAssistantEnabled } = require('./counsellorProgram/counsellorProgramFlags');
-const {
-  CPA_EMPTY_FALLBACK: COUNSELLOR_PROGRAM_FALLBACK,
-} = require('./counsellorProgram/counsellorProgramGuardrailService');
-const {
-  answerWithTimeout: answerIitCounsellingWithTimeout,
-} = require('./iitCounsellingExpert/iitCounsellingExpertService');
-const { isIitCounsellingExpertEnabled } = require('./iitCounsellingExpert/iitCounsellingFlags');
-const {
-  ICE_EMPTY_FALLBACK: IIT_COUNSELLING_FALLBACK,
-} = require('./iitCounsellingExpert/iitCounsellingGuardrailService');
-const { isIitCounsellingExpertQuestion } = require('./iitCounsellingExpert/iitCounsellingIntentService');
-const {
-  answerWithTimeout: answerIitCounsellingStrategyWithTimeout,
-} = require('./iitCounsellingStrategy/iitCounsellingStrategyService');
-const { isIitCounsellingStrategyEnabled } = require('./iitCounsellingStrategy/iitCounsellingStrategyFlags');
-const {
-  ICS_EMPTY_FALLBACK: IIT_COUNSELLING_STRATEGY_FALLBACK,
-} = require('./iitCounsellingStrategy/iitCounsellingStrategyGuardrailService');
-const { isIitCounsellingStrategyQuestion } = require('./iitCounsellingStrategy/iitCounsellingStrategyIntentService');
 const { isLeadEventExtractionEnabled } = require('./leadEventExtraction/leadEventExtractionFlags');
 const { extractAndPersist } = require('./leadEventExtraction/leadEventExtractionService');
 const { buildWelcomeMenuText } = require('./welcomeMessageService');
@@ -52,12 +28,8 @@ const {
   prepareMultilingualInbound,
   applyMultilingualOutbound,
 } = require('../../middleware/multilingualMiddleware');
-const { detectRomanizedLanguage } = require('../language/romanizedLanguageDetectionService');
 const {
   seedPreferredLanguageFromLead,
-  resolveSessionAwareLanguage,
-  resolveIitCounsellingSessionAwareLanguage,
-  resolveIitCounsellingStrategySessionAwareLanguage,
   updatePreferredLanguage,
 } = require('./conversationLanguageService');
 const { incrementLanguageRequest } = require('../analytics/languageRequestAnalyticsService');
@@ -532,121 +504,6 @@ async function processInboundCore({
     return guidedResult;
   }
 
-  if (multilingualInbound && botState?.context?.iitCounsellingExpertActive) {
-    const detectedLang = normalizeLanguageCode(multilingualInbound.detectedLanguage);
-    const minConfidence = Number(process.env.LANGUAGE_DETECT_MIN_CONFIDENCE) || 0.75;
-    const iitLanguageSwitch =
-      detectedLang &&
-      detectedLang !== 'en' &&
-      isSupportedLanguage(detectedLang) &&
-      Number(multilingualInbound.confidence || 0) >= minConfidence &&
-      isIitCounsellingExpertQuestion(inbound.text, inbound.text);
-
-    if (iitLanguageSwitch) {
-      multilingualInbound.resolvedLanguage = detectedLang;
-      multilingualInbound.language = detectedLang;
-      multilingualInbound.resolutionReason = 'iit_counselling_language_detected';
-      multilingualInbound.resolutionSource = 'iit_counselling_session';
-    } else if (botState.context.iitCounsellingExpertSessionLanguage) {
-      const sessionResolved = resolveIitCounsellingSessionAwareLanguage({
-        conversation: activeConversation,
-        leadContext,
-        detected: {
-          language: multilingualInbound.detectedLanguage,
-          confidence: multilingualInbound.confidence,
-        },
-        message: inbound.text,
-        sessionLanguage: botState.context.iitCounsellingExpertSessionLanguage,
-      });
-      multilingualInbound.resolvedLanguage = sessionResolved.language;
-      multilingualInbound.language = sessionResolved.language;
-      multilingualInbound.resolutionReason = sessionResolved.resolutionReason;
-      multilingualInbound.resolutionSource = sessionResolved.source;
-    }
-  }
-
-  if (
-    multilingualInbound &&
-    (botState?.context?.iitCounsellingStrategyActive ||
-      isIitCounsellingStrategyQuestion(inbound.text, inbound.text))
-  ) {
-    const romanized = detectRomanizedLanguage(inbound.text);
-    if (romanized?.language && isSupportedLanguage(romanized.language)) {
-      multilingualInbound.detectedLanguage = romanized.language;
-      multilingualInbound.confidence = Math.max(
-        Number(multilingualInbound.confidence || 0),
-        Number(romanized.confidence || 0)
-      );
-    }
-
-    const detectedLang = normalizeLanguageCode(multilingualInbound.detectedLanguage);
-    const minConfidence = Number(process.env.LANGUAGE_DETECT_MIN_CONFIDENCE) || 0.75;
-    const inStrategyConversation =
-      botState?.context?.iitCounsellingStrategyActive ||
-      isIitCounsellingStrategyQuestion(inbound.text, inbound.text);
-    const strategyLanguageSwitch =
-      detectedLang &&
-      detectedLang !== 'en' &&
-      isSupportedLanguage(detectedLang) &&
-      Number(multilingualInbound.confidence || 0) >= minConfidence &&
-      inStrategyConversation;
-
-    if (strategyLanguageSwitch) {
-      multilingualInbound.resolvedLanguage = detectedLang;
-      multilingualInbound.language = detectedLang;
-      multilingualInbound.resolutionReason = 'iit_counselling_strategy_language_detected';
-      multilingualInbound.resolutionSource = 'iit_counselling_strategy_session';
-    } else if (botState.context.iitCounsellingStrategySessionLanguage) {
-      const sessionResolved = resolveIitCounsellingStrategySessionAwareLanguage({
-        conversation: activeConversation,
-        leadContext,
-        detected: {
-          language: multilingualInbound.detectedLanguage,
-          confidence: multilingualInbound.confidence,
-        },
-        message: inbound.text,
-        sessionLanguage: botState.context.iitCounsellingStrategySessionLanguage,
-      });
-      multilingualInbound.resolvedLanguage = sessionResolved.language;
-      multilingualInbound.language = sessionResolved.language;
-      multilingualInbound.resolutionReason = sessionResolved.resolutionReason;
-      multilingualInbound.resolutionSource = sessionResolved.source;
-    }
-  }
-
-  if (multilingualInbound && botState?.context?.counsellorProgramAssistantActive) {
-    const detectedLang = normalizeLanguageCode(multilingualInbound.detectedLanguage);
-    const minConfidence = Number(process.env.LANGUAGE_DETECT_MIN_CONFIDENCE) || 0.75;
-    const programLanguageSwitch =
-      detectedLang &&
-      detectedLang !== 'en' &&
-      isSupportedLanguage(detectedLang) &&
-      Number(multilingualInbound.confidence || 0) >= minConfidence &&
-      isCounsellorProgramQuestion(inbound.text, inbound.text);
-
-    if (programLanguageSwitch) {
-      multilingualInbound.resolvedLanguage = detectedLang;
-      multilingualInbound.language = detectedLang;
-      multilingualInbound.resolutionReason = 'cpa_program_language_detected';
-      multilingualInbound.resolutionSource = 'cpa_session';
-    } else if (botState.context.counsellorProgramSessionLanguage) {
-      const sessionResolved = resolveSessionAwareLanguage({
-        conversation: activeConversation,
-        leadContext,
-        detected: {
-          language: multilingualInbound.detectedLanguage,
-          confidence: multilingualInbound.confidence,
-        },
-        message: inbound.text,
-        sessionLanguage: botState.context.counsellorProgramSessionLanguage,
-      });
-      multilingualInbound.resolvedLanguage = sessionResolved.language;
-      multilingualInbound.language = sessionResolved.language;
-      multilingualInbound.resolutionReason = sessionResolved.resolutionReason;
-      multilingualInbound.resolutionSource = sessionResolved.source;
-    }
-  }
-
   const intentText =
     multilingualInbound?.englishMessage ||
     String(inbound.text || '').trim();
@@ -974,10 +831,6 @@ async function processInboundCore({
   let nextState = botState?.state || 'main_menu';
   let contextPatch = botState?.context || {};
   let upstreamStatus = null;
-  let knowledgeAssistantResult = null;
-  let counsellorProgramResult = null;
-  let iitCounsellingResult = null;
-  let iitCounsellingStrategyResult = null;
   let unknownLlmResult = null;
   let unknownLlmUsed = false;
 
@@ -1059,171 +912,6 @@ async function processInboundCore({
       };
       break;
     }
-    case 'iit_counselling_expert': {
-      const assistantInboundText = routingInboundText;
-      const languageMetadata = multilingualInbound
-        ? {
-            originalMessage: multilingualInbound.originalMessage,
-            detectedLanguage: multilingualInbound.detectedLanguage,
-            resolvedLanguage: multilingualInbound.resolvedLanguage,
-            translatedQuery: assistantInboundText,
-            translationApplied: multilingualInbound.translationApplied,
-          }
-        : null;
-
-      if (!isIitCounsellingExpertEnabled()) {
-        knowledgeAssistantResult = await answerWithTimeout({
-          inboundText: assistantInboundText,
-          conversationId: activeConversation._id,
-          leadContext,
-          languageMetadata,
-        });
-        replyText = knowledgeAssistantResult?.text
-          ? knowledgeAssistantResult.text
-          : resolveKnowledgeAssistantFallback(resolvedLanguageFrom(multilingualInbound));
-        nextState = 'idle';
-        break;
-      }
-
-      iitCounsellingResult = await answerIitCounsellingWithTimeout({
-        inboundText: assistantInboundText,
-        conversationId: activeConversation._id,
-        leadContext,
-        languageMetadata,
-      });
-      replyText = iitCounsellingResult?.text || IIT_COUNSELLING_FALLBACK;
-      nextState = 'idle';
-      break;
-    }
-    case 'iit_counselling_strategy': {
-      const assistantInboundText = routingInboundText;
-      const languageMetadata = multilingualInbound
-        ? {
-            originalMessage: multilingualInbound.originalMessage,
-            detectedLanguage: multilingualInbound.detectedLanguage,
-            resolvedLanguage: multilingualInbound.resolvedLanguage,
-            translatedQuery: assistantInboundText,
-            translationApplied: multilingualInbound.translationApplied,
-          }
-        : null;
-
-      if (!isIitCounsellingStrategyEnabled()) {
-        if (isIitCounsellingExpertEnabled() && isIitCounsellingExpertQuestion(assistantInboundText, inbound.text)) {
-          iitCounsellingResult = await answerIitCounsellingWithTimeout({
-            inboundText: assistantInboundText,
-            conversationId: activeConversation._id,
-            leadContext,
-            languageMetadata,
-          });
-          replyText = iitCounsellingResult?.text || IIT_COUNSELLING_FALLBACK;
-        } else {
-          knowledgeAssistantResult = await answerWithTimeout({
-            inboundText: assistantInboundText,
-            conversationId: activeConversation._id,
-            leadContext,
-            languageMetadata,
-          });
-          replyText = knowledgeAssistantResult?.text
-            ? knowledgeAssistantResult.text
-            : resolveKnowledgeAssistantFallback(resolvedLanguageFrom(multilingualInbound));
-        }
-        nextState = 'idle';
-        break;
-      }
-
-      iitCounsellingStrategyResult = await answerIitCounsellingStrategyWithTimeout({
-        inboundText: assistantInboundText,
-        conversationId: activeConversation._id,
-        leadContext,
-        languageMetadata,
-      });
-      replyText = iitCounsellingStrategyResult?.text || IIT_COUNSELLING_STRATEGY_FALLBACK;
-      nextState = 'idle';
-      break;
-    }
-    case 'counsellor_program_assistant': {
-      const assistantInboundText = routingInboundText;
-      const languageMetadata = multilingualInbound
-        ? {
-            originalMessage: multilingualInbound.originalMessage,
-            detectedLanguage: multilingualInbound.detectedLanguage,
-            resolvedLanguage: multilingualInbound.resolvedLanguage,
-            translatedQuery: assistantInboundText,
-            translationApplied: multilingualInbound.translationApplied,
-          }
-        : null;
-
-      if (!isCounsellorProgramAssistantEnabled()) {
-        knowledgeAssistantResult = await answerWithTimeout({
-          inboundText: assistantInboundText,
-          conversationId: activeConversation._id,
-          leadContext,
-          languageMetadata,
-        });
-        replyText = knowledgeAssistantResult?.text
-          ? knowledgeAssistantResult.text
-          : resolveKnowledgeAssistantFallback(resolvedLanguageFrom(multilingualInbound));
-        nextState = 'idle';
-        break;
-      }
-
-      counsellorProgramResult = await answerCounsellorProgramWithTimeout({
-        inboundText: assistantInboundText,
-        conversationId: activeConversation._id,
-        leadContext,
-        languageMetadata,
-      });
-      replyText = counsellorProgramResult?.text || COUNSELLOR_PROGRAM_FALLBACK;
-      nextState = 'idle';
-      break;
-    }
-    case 'knowledge_assistant': {
-      const assistantInboundText = routingInboundText;
-      knowledgeAssistantResult = await answerWithTimeout({
-        inboundText: assistantInboundText,
-        conversationId: activeConversation._id,
-        leadContext,
-        languageMetadata: multilingualInbound
-          ? {
-              originalMessage: multilingualInbound.originalMessage,
-              detectedLanguage: multilingualInbound.detectedLanguage,
-              resolvedLanguage: multilingualInbound.resolvedLanguage,
-              translatedQuery: assistantInboundText,
-              translationApplied: multilingualInbound.translationApplied,
-            }
-          : null,
-      });
-      const escalationText = String(inbound.text || multilingualInbound?.originalMessage || '').toLowerCase();
-      const wantsHuman =
-        /\b(counsellor|counselor|human|agent|call me|talk to someone|speak to someone)\b/i.test(
-          escalationText
-        );
-      if (knowledgeAssistantResult?.guardrailModified && wantsHuman) {
-        await h.createHandoff({
-          conversation: activeConversation,
-          leadContext,
-          reason: 'low_confidence',
-          userLastMessage: inbound.text,
-        });
-        logInboundResult({
-          event: 'inbound_processed',
-          conversation: activeConversation,
-          botState,
-          intent: intentResult.intent,
-          contextPatch: emptySubflows(),
-          durationMs: Date.now() - startedAt,
-        });
-        return { handoff: true };
-      }
-      if (knowledgeAssistantResult?.text) {
-        replyText = knowledgeAssistantResult.text;
-      } else {
-        console.warn('[chatbot] knowledge_assistant_fallback using orchestrator reply');
-        replyText = resolveKnowledgeAssistantFallback(resolvedLanguageFrom(multilingualInbound));
-      }
-      nextState = 'idle';
-      break;
-    }
     default: {
       const assistantInboundText = routingInboundText;
       const languageMetadata = multilingualInbound
@@ -1262,122 +950,16 @@ async function processInboundCore({
     }
   }
 
-  if (intentResult.intent === 'iit_counselling_expert') {
-    const kaFallbackActive =
-      !isIitCounsellingExpertEnabled() &&
-      Boolean(knowledgeAssistantResult?.model && knowledgeAssistantResult?.text);
-    const iceReplyOk = Boolean(iitCounsellingResult?.model && iitCounsellingResult?.text);
-    const hadIceSession = Boolean(botState?.context?.iitCounsellingExpertActive);
-    const iceActive =
-      isIitCounsellingExpertEnabled() && (iceReplyOk || hadIceSession);
-    const sessionLanguage = resolvedLanguageFrom(multilingualInbound);
-    const persistedSessionLanguage =
-      sessionLanguage ||
-      botState?.context?.iitCounsellingExpertSessionLanguage ||
-      contextPatch.iitCounsellingExpertSessionLanguage ||
-      null;
-
-    if (iceActive && persistedSessionLanguage && persistedSessionLanguage !== 'en') {
-      updatePreferredLanguage(activeConversation._id, persistedSessionLanguage).catch(() => {});
-    }
-
-    contextPatch = {
-      ...contextPatch,
-      iitCounsellingExpertActive: iceActive,
-      iitCounsellingExpertSessionLanguage: iceActive ? persistedSessionLanguage : null,
-      iitCounsellingStrategyActive: false,
-      iitCounsellingStrategySessionLanguage: null,
-      knowledgeAssistantActive: kaFallbackActive,
-      counsellorProgramAssistantActive: false,
-      counsellorProgramSessionLanguage: null,
-    };
-  } else if (intentResult.intent === 'iit_counselling_strategy') {
-    const iceFallbackActive =
-      !isIitCounsellingStrategyEnabled() &&
-      Boolean(iitCounsellingResult?.model && iitCounsellingResult?.text);
-    const kaFallbackActive =
-      !isIitCounsellingStrategyEnabled() &&
-      !iceFallbackActive &&
-      Boolean(knowledgeAssistantResult?.model && knowledgeAssistantResult?.text);
-    const icsReplyOk = Boolean(iitCounsellingStrategyResult?.model && iitCounsellingStrategyResult?.text);
-    const hadIcsSession = Boolean(botState?.context?.iitCounsellingStrategyActive);
-    const icsActive =
-      isIitCounsellingStrategyEnabled() && (icsReplyOk || hadIcsSession);
-    const sessionLanguage = resolvedLanguageFrom(multilingualInbound);
-    const persistedSessionLanguage =
-      sessionLanguage ||
-      botState?.context?.iitCounsellingStrategySessionLanguage ||
-      contextPatch.iitCounsellingStrategySessionLanguage ||
-      null;
-
-    if (icsActive && persistedSessionLanguage && persistedSessionLanguage !== 'en') {
-      updatePreferredLanguage(activeConversation._id, persistedSessionLanguage).catch(() => {});
-    }
-
-    contextPatch = {
-      ...contextPatch,
-      iitCounsellingStrategyActive: icsActive,
-      iitCounsellingStrategySessionLanguage: icsActive ? persistedSessionLanguage : null,
-      iitCounsellingExpertActive: iceFallbackActive,
-      iitCounsellingExpertSessionLanguage: iceFallbackActive ? persistedSessionLanguage : null,
-      knowledgeAssistantActive: kaFallbackActive,
-      counsellorProgramAssistantActive: false,
-      counsellorProgramSessionLanguage: null,
-    };
-  } else if (intentResult.intent === 'counsellor_program_assistant') {
-    const kaFallbackActive =
-      !isCounsellorProgramAssistantEnabled() &&
-      Boolean(knowledgeAssistantResult?.model && knowledgeAssistantResult?.text);
-    const cpaReplyOk = Boolean(counsellorProgramResult?.model && counsellorProgramResult?.text);
-    const hadCpaSession = Boolean(botState?.context?.counsellorProgramAssistantActive);
-    const cpaActive =
-      isCounsellorProgramAssistantEnabled() && (cpaReplyOk || hadCpaSession);
-    const sessionLanguage = resolvedLanguageFrom(multilingualInbound);
-    const persistedSessionLanguage =
-      sessionLanguage ||
-      botState?.context?.counsellorProgramSessionLanguage ||
-      contextPatch.counsellorProgramSessionLanguage ||
-      null;
-
-    if (cpaActive && persistedSessionLanguage && persistedSessionLanguage !== 'en') {
-      updatePreferredLanguage(activeConversation._id, persistedSessionLanguage).catch(() => {});
-    }
-
-    contextPatch = {
-      ...contextPatch,
-      counsellorProgramAssistantActive: cpaActive,
-      knowledgeAssistantActive: kaFallbackActive,
-      counsellorProgramSessionLanguage: cpaActive ? persistedSessionLanguage : null,
-      iitCounsellingExpertActive: false,
-      iitCounsellingExpertSessionLanguage: null,
-      iitCounsellingStrategyActive: false,
-      iitCounsellingStrategySessionLanguage: null,
-    };
-  } else if (intentResult.intent === 'knowledge_assistant') {
-    contextPatch = {
-      ...contextPatch,
-      knowledgeAssistantActive: Boolean(
-        knowledgeAssistantResult?.model && knowledgeAssistantResult?.text
-      ),
-      counsellorProgramAssistantActive: false,
-      counsellorProgramSessionLanguage: null,
-      iitCounsellingExpertActive: false,
-      iitCounsellingExpertSessionLanguage: null,
-      iitCounsellingStrategyActive: false,
-      iitCounsellingStrategySessionLanguage: null,
-    };
-  } else {
-    contextPatch = {
-      ...contextPatch,
-      knowledgeAssistantActive: false,
-      counsellorProgramAssistantActive: false,
-      counsellorProgramSessionLanguage: null,
-      iitCounsellingExpertActive: false,
-      iitCounsellingExpertSessionLanguage: null,
-      iitCounsellingStrategyActive: false,
-      iitCounsellingStrategySessionLanguage: null,
-    };
-  }
+  contextPatch = {
+    ...contextPatch,
+    knowledgeAssistantActive: false,
+    counsellorProgramAssistantActive: false,
+    counsellorProgramSessionLanguage: null,
+    iitCounsellingExpertActive: false,
+    iitCounsellingExpertSessionLanguage: null,
+    iitCounsellingStrategyActive: false,
+    iitCounsellingStrategySessionLanguage: null,
+  };
 
   await transitionState(activeConversation._id, activeConversation.phone, nextState, contextPatch);
 
@@ -1385,12 +967,7 @@ async function processInboundCore({
     replyText = listExamsMessage();
   }
 
-  const assistantResult =
-    iitCounsellingStrategyResult ||
-    iitCounsellingResult ||
-    counsellorProgramResult ||
-    knowledgeAssistantResult ||
-    unknownLlmResult;
+  const assistantResult = unknownLlmResult;
   const knowledgeAssistantResponse =
     assistantResult?.languageLog?.englishResponse ||
     (assistantResult?.text ? String(assistantResult.text) : null);
@@ -1433,18 +1010,6 @@ async function processInboundCore({
       outboundTrace,
     });
 
-    if (iitCounsellingStrategyResult?.languageLog) {
-      iitCounsellingStrategyResult.languageLog.finalResponse = replyText;
-    }
-    if (iitCounsellingResult?.languageLog) {
-      iitCounsellingResult.languageLog.finalResponse = replyText;
-    }
-    if (counsellorProgramResult?.languageLog) {
-      counsellorProgramResult.languageLog.finalResponse = replyText;
-    }
-    if (knowledgeAssistantResult?.languageLog) {
-      knowledgeAssistantResult.languageLog.finalResponse = replyText;
-    }
     if (unknownLlmResult?.languageLog) {
       unknownLlmResult.languageLog.finalResponse = replyText;
     }

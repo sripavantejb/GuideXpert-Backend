@@ -1,21 +1,5 @@
 const { GLOBAL_KEYWORDS } = require('../../constants/chatbotStates');
 const {
-  isIitCounsellingExpertEnabled,
-} = require('./iitCounsellingExpert/iitCounsellingFlags');
-const {
-  isIitCounsellingExpertSessionActive,
-  isIitCounsellingExpertQuestion,
-} = require('./iitCounsellingExpert/iitCounsellingIntentService');
-const {
-  isIitCounsellingStrategyEnabled,
-} = require('./iitCounsellingStrategy/iitCounsellingStrategyFlags');
-const {
-  isFactualIceDelegation,
-  isIitCounsellingStrategySessionActive,
-  isIitCounsellingStrategyQuestion,
-  isIitCounsellingStrategyShortFollowUp,
-} = require('./iitCounsellingStrategy/iitCounsellingStrategyIntentService');
-const {
   getGuidedFlowByBotState,
   shouldBypassScopeFirewall,
 } = require('./guidedFlows/guidedFlowRegistry');
@@ -464,7 +448,6 @@ module.exports = {
   isGuideXpertIdentityQuestion,
   isCounsellorProgramSessionActive,
   isIitLeadSupportQuery,
-  isIitCounsellingExpertEnabled,
   isKnowledgeSessionActive,
   isNativeSocialGreeting,
   isSocialGreeting,

@@ -5,10 +5,10 @@ const {
   OPPORTUNITY_FALLBACK,
   UNSUPPORTED_CLAIM_FALLBACK,
 } = require('../services/chatbot/aiGuardrailService');
-const {
-  OSVI_BLOCKED_FALLBACK,
-  COMPETITOR_BLOCKED_FALLBACK,
-} = require('../services/chatbot/counsellorProgram/counsellorProgramGuardrailService');
+const OSVI_BLOCKED_FALLBACK =
+  "I can't share internal system details here. I can help with GuideXpert counselling programs, fees, and how to join—what would you like to know?";
+const COMPETITOR_BLOCKED_FALLBACK =
+  "I focus on explaining GuideXpert's counselling programs rather than comparing other providers. Tell me what you're looking for and I'll suggest the right GuideXpert option.";
 
 const KNOWLEDGE_ASSISTANT_FALLBACK_REPLY =
   'I am not sure I understood. Reply MENU for options or AGENT to speak with our team.';
