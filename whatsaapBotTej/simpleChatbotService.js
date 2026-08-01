@@ -9,18 +9,18 @@
 'use strict';
 
 const { parseInboundWebhook } = require('../utils/gupshupInboundPayload');
-const { resolveSystemPromptForAdmin } = require('../utils/systemPromptSettings');
+const { getActiveSystemPrompt } = require('./promptSettings');
 const { chatCompletion } = require('../services/ai/llmClient');
-const { sendTextMessage } = require('../services/chatbot/gupshupSessionService');
+const {
+  sendTextMessage,
+  sendButtonMessage,
+  sendListMessage,
+} = require('../services/chatbot/gupshupSessionService');
 const SimpleChatSession = require('./SimpleChatSession');
 
 const MAX_HISTORY_MESSAGES = 20; // messages kept per phone (user + assistant)
 const MAX_PROCESSED_IDS = 50; // provider message ids kept for dedup
 const RESET_COMMANDS = new Set(['reset', '/reset', 'restart', 'clear']);
-
-const DEFAULT_SYSTEM_PROMPT =
-  'You are a helpful assistant for GuideXpert answering questions over WhatsApp. ' +
-  'Keep replies short, friendly and plain-text (no markdown).';
 
 const NON_TEXT_REPLY =
   'Sorry, I can only understand text messages right now. Please type your question.';
@@ -41,15 +41,71 @@ function llmTimeoutMs() {
 }
 
 async function loadSystemPrompt() {
-  try {
-    const resolved = await resolveSystemPromptForAdmin();
-    if (resolved && resolved.text && resolved.text.trim()) {
-      return resolved.text;
+  return getActiveSystemPrompt();
+}
+
+/**
+ * The system prompt instructs the model to end option-bearing messages with
+ * "OPTIONS: [A] [B] ..." or "OPTIONS_MULTI: [...]" for the platform layer.
+ * Parse that trailing line so we can render real WhatsApp buttons/lists
+ * instead of sending it as literal text.
+ */
+function parseOptionsFromReply(replyText) {
+  const lines = String(replyText || '').split('\n');
+  let optIdx = -1;
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    if (/^\s*OPTIONS(_MULTI)?\s*:/.test(lines[i])) {
+      optIdx = i;
+      break;
     }
-  } catch (err) {
-    console.error('[whatsaapBotTej] failed to load admin system prompt:', err.message);
+    if (lines[i].trim()) break; // last non-empty line is not an OPTIONS line
   }
-  return DEFAULT_SYSTEM_PROMPT;
+  if (optIdx === -1) return null;
+
+  const optLine = lines[optIdx];
+  const multi = /^\s*OPTIONS_MULTI\s*:/.test(optLine);
+  const labels = [...optLine.matchAll(/\[([^\]]+)\]/g)]
+    .map((m) => m[1].trim())
+    .filter(Boolean)
+    .slice(0, 10);
+  if (!labels.length) return null;
+
+  const body = lines.slice(0, optIdx).join('\n').trim();
+  if (!body) return null;
+  return { body, labels, multi };
+}
+
+/** Send the reply, rendering OPTIONS as quick-reply buttons (<=3) or a list (4-10). */
+async function sendBotReply(phone10, replyText) {
+  const parsed = parseOptionsFromReply(replyText);
+  if (!parsed) {
+    return sendTextMessage(phone10, replyText);
+  }
+
+  const { body, labels, multi } = parsed;
+  let result;
+  if (labels.length <= 3 && !multi) {
+    result = await sendButtonMessage(
+      phone10,
+      body,
+      labels.map((l) => ({ id: l, title: l.slice(0, 20) }))
+    );
+  } else {
+    result = await sendListMessage(
+      phone10,
+      body,
+      multi ? 'Choose (multiple ok)' : 'Choose an option',
+      [{ title: 'Options', rows: labels.map((l) => ({ id: l, title: l.slice(0, 24) })) }],
+      { title: '' }
+    );
+  }
+
+  // Interactive send failed (e.g. formatting rejection) — fall back to plain text.
+  if (!result.success) {
+    console.warn('[whatsaapBotTej] interactive send failed, falling back to text:', result.error);
+    return sendTextMessage(phone10, replyText);
+  }
+  return result;
 }
 
 async function getOrCreateSession(phone10) {
@@ -84,9 +140,10 @@ async function handleInboundWebhook(body) {
     }
   }
 
-  // Only text (and interactive replies that carry text) are supported.
+  // Text plus button/list taps (the parser turns taps into their label text).
+  const TEXTUAL_TYPES = ['text', 'button_reply', 'list_reply', 'interactive'];
   const userText = String(parsed.text || '').trim();
-  if (parsed.messageType !== 'text' || !userText) {
+  if (!TEXTUAL_TYPES.includes(parsed.messageType) || !userText) {
     await session.save();
     const send = await sendTextMessage(phone10, NON_TEXT_REPLY);
     return { handled: true, reason: 'non_text_message', phone10, sent: send.success };
@@ -133,7 +190,7 @@ async function handleInboundWebhook(body) {
   session.lastMessageAt = new Date();
   await session.save();
 
-  const send = await sendTextMessage(phone10, replyText);
+  const send = await sendBotReply(phone10, replyText);
   if (!send.success) {
     console.error('[whatsaapBotTej] WhatsApp send failed:', send.error);
   }
