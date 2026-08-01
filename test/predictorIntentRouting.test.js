@@ -111,10 +111,14 @@ describe('predictor intent routing', () => {
 describe('predictor intent orchestrator college rank+branch routing', () => {
   beforeEach(() => {
     process.env.CHATBOT_MULTILINGUAL_ENABLED = '1';
+    // No LLM provider in unit tests — keep the V3 wall short so the turn falls
+    // back deterministically instead of waiting out the production budget.
+    process.env.FLOW_V3_WALL_MS = '500';
   });
 
   afterEach(() => {
     delete process.env.CHATBOT_MULTILINGUAL_ENABLED;
+    delete process.env.FLOW_V3_WALL_MS;
     setCollegePredictionIdempotencyDeps({});
     mock.restoreAll();
     [orchestratorPath, middlewarePath, conversationLangPath].forEach((p) => delete require.cache[p]);
@@ -180,7 +184,7 @@ describe('predictor intent orchestrator college rank+branch routing', () => {
     assert.match(String(outbound[0]), expectedSnippet);
   }
 
-  test('English rank+branch enters Master Flow v2', async () => {
+  test('English rank+branch enters counselling flow (V3 LLM engine)', async () => {
     await runCase({
       text: 'Can I get CSE with rank 15000?',
       mockInbound: {
@@ -192,11 +196,13 @@ describe('predictor intent orchestrator college rank+branch routing', () => {
         translationApplied: false,
         resolvedLanguage: 'en',
       },
-      expectedSnippet: /Rithika|Class 12|name|entrance exam|predict/i,
+      // Without a provider the V3 fallback ladder re-asks the open slot with
+      // verbatim beat copy — still proof the turn entered the counselling flow.
+      expectedSnippet: /qualification|Rithika|Class 12|name|entrance exam|predict|counsellor/i,
     });
   });
 
-  test('Telugu rank+branch enters Master Flow v2 with Telugu inbound', async () => {
+  test('Telugu rank+branch enters counselling flow (V3) with Telugu inbound', async () => {
     await runCase({
       text: '15000 ర్యాంక్‌తో CSE వస్తుందా?',
       mockInbound: {
@@ -208,7 +214,7 @@ describe('predictor intent orchestrator college rank+branch routing', () => {
         translationApplied: true,
         resolvedLanguage: 'te',
       },
-      expectedSnippet: /Rithika|Class 12|name|entrance exam|predict/i,
+      expectedSnippet: /qualification|Rithika|Class 12|name|entrance exam|predict|counsellor/i,
     });
   });
 });

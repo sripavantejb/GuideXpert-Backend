@@ -43,9 +43,11 @@ function renderEnvelope(envelope, opts = {}) {
       }
       if (body) replyParts.push(body);
     } else if (part.type === 'buttons') {
+      // WhatsApp rejects interactive messages with an empty body, and an empty
+      // body rendered as a blank bubble in delivery. Never send one.
       interactive = {
         type: 'button',
-        body: asString(part.body),
+        body: asString(part.body) || 'Please choose an option:',
         buttons: (part.options || []).slice(0, 3).map((o) => ({
           id: asString(o.id) || asString(o.title) || 'opt',
           title: (asString(o.title) || 'OK').slice(0, 20),
@@ -54,7 +56,7 @@ function renderEnvelope(envelope, opts = {}) {
     } else if (part.type === 'list') {
       interactive = {
         type: 'list',
-        body: asString(part.body),
+        body: asString(part.body) || 'Please choose an option:',
         buttonText: (asString(part.button) || 'Select').slice(0, 20),
         sections: [
           {

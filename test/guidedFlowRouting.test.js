@@ -174,7 +174,7 @@ describe('guided flow orchestrator routing', () => {
     );
   });
 
-  test('college_predictor: MENU exits into Master Flow v2', async () => {
+  test('college_predictor: MENU exits into counselling flow (V3 LLM engine)', async () => {
     await processInbound({
       conversation: { _id: CONVERSATION_ID, phone: PHONE, productLine: 'iit_counselling' },
       inbound: { _id: new mongoose.Types.ObjectId(), messageType: 'text', text: 'menu' },
@@ -182,7 +182,7 @@ describe('guided flow orchestrator routing', () => {
     });
 
     assert.equal(outboundCalls.length, 1);
-    assert.ok(transitionLog.some((t) => t.state === 'career_counselling_flow_v2'));
+    assert.ok(transitionLog.some((t) => t.state === 'career_counselling_flow_v3'));
   });
 
   test('rank_predictor: numeric score routes past scope firewall', async () => {

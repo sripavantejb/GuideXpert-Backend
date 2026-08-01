@@ -39,6 +39,49 @@ function buildInferredLimitationNote(existingSlotMeta = {}, metaByPath = {}, rej
   };
 }
 
+const AUTHORITATIVE_LLM_CLAIMS = Object.freeze(['typed', 'button']);
+
+/**
+ * The model may claim an authoritative source ONLY when it can prove it: the
+ * verbatimQuote must actually appear in the student's message this turn.
+ * Unproven claims (and 'extracted'/'counsellor', which the model can never
+ * be) are downgraded to 'inferred' — non-authoritative by contract. This is
+ * what lets goal/interests advance the beat walk when the student really
+ * answered, while closing the source-spoofing hole (a model cannot mint a
+ * rank the student never typed).
+ */
+function verifyClaimedSources(metaByPath = {}, inboundText) {
+  if (typeof inboundText !== 'string') return { metaByPath, downgraded: [] };
+  const haystack = inboundText.toLowerCase();
+  const verified = {};
+  const downgraded = [];
+  for (const [path, meta] of Object.entries(metaByPath)) {
+    if (!meta || typeof meta !== 'object') {
+      verified[path] = meta;
+      continue;
+    }
+    const source = String(meta.source || '');
+    const quote = String(meta.verbatimQuote || '').trim().toLowerCase();
+    const quoteProven = quote.length >= 2 && haystack.includes(quote);
+    if (AUTHORITATIVE_LLM_CLAIMS.includes(source) && quoteProven) {
+      verified[path] = meta;
+      continue;
+    }
+    if (source === 'inferred') {
+      verified[path] = meta;
+      continue;
+    }
+    downgraded.push({ path, claimed: source, reason: quoteProven ? 'source_not_claimable' : 'quote_not_in_message' });
+    verified[path] = {
+      ...meta,
+      source: 'inferred',
+      confidence: typeof meta.confidence === 'number' ? meta.confidence : 0.6,
+      verbatimQuote: meta.verbatimQuote || inboundText,
+    };
+  }
+  return { metaByPath: verified, downgraded };
+}
+
 /**
  * M-1 profile CAS update — enforce LLM write allowlist + slot meta contract.
  * @param {{
@@ -51,20 +94,47 @@ function buildInferredLimitationNote(existingSlotMeta = {}, metaByPath = {}, rej
  *   conversationPins?: object,
  *   slotMeta?: object,
  * }} args
- * @param {{ deps?: { casUpdateLeadProfile?: Function } }} [_ctx]
+ * @param {{ phone?: string, casVersion?: number, inboundText?: string, deps?: { casUpdateLeadProfile?: Function, loadLeadProfile?: Function } }} [_ctx]
  */
 async function run(args = {}, _ctx = {}) {
   const casUpdate =
     (_ctx.deps && _ctx.deps.casUpdateLeadProfile) || defaultProfileStore.casUpdateLeadProfile;
 
-  const phone = String(args.phone || '').trim();
+  // Server context wins over model args: the model was never a reliable
+  // carrier for phone or the CAS version (conformance finding G-2 — the
+  // version was never exposed, so every faithful write failed).
+  const phone = String(_ctx.phone || args.phone || '').trim();
   if (!phone) return { ok: false, error: 'missing_phone' };
-  if (args.expectedVersion == null || Number.isNaN(Number(args.expectedVersion))) {
+
+  let expectedVersion = args.expectedVersion;
+  if (expectedVersion == null || Number.isNaN(Number(expectedVersion))) {
+    // Fresh server-side read first (correct even after an earlier write this
+    // turn), then the turn-start version from the dispatcher context. The
+    // model is never asked to know the version.
+    try {
+      const load = (_ctx.deps && _ctx.deps.loadLeadProfile) || defaultProfileStore.loadLeadProfile;
+      const loaded = await load(phone);
+      if (loaded && loaded.casVersion != null) expectedVersion = loaded.casVersion;
+    } catch (_) {
+      // fall through to the context version below
+    }
+  }
+  if (expectedVersion == null || Number.isNaN(Number(expectedVersion))) {
+    expectedVersion = _ctx.casVersion;
+  }
+  if (expectedVersion == null || Number.isNaN(Number(expectedVersion))) {
     return { ok: false, error: 'missing_expected_version' };
   }
 
   const profilePatch = args.profilePatch || {};
-  const metaByPath = args.metaByPath || {};
+  const sourceCheck = verifyClaimedSources(args.metaByPath || {}, _ctx.inboundText);
+  const metaByPath = sourceCheck.metaByPath;
+  if (sourceCheck.downgraded.length) {
+    console.warn('[flowV3] LLM_SOURCE_CLAIM_DOWNGRADED', {
+      turnId: args.turnId || _ctx.turnId || null,
+      downgraded: sourceCheck.downgraded,
+    });
+  }
   const preflightRejected = [];
 
   for (const path of Object.keys(profilePatch)) {
@@ -85,7 +155,7 @@ async function run(args = {}, _ctx = {}) {
 
   const outcome = await casUpdate({
     phone,
-    expectedVersion: Number(args.expectedVersion),
+    expectedVersion: Number(expectedVersion),
     profilePatch,
     metaByPath,
     enforceLlmAllowlist: true,
@@ -95,11 +165,13 @@ async function run(args = {}, _ctx = {}) {
   });
 
   if (!outcome.ok) {
+    // Never return the full document to the model: cas_conflict responses
+    // leaked the whole profile including casVersion (conformance E-5 note).
     return {
       ok: false,
       reason: outcome.reason,
       rejected: outcome.rejected || [],
-      doc: outcome.doc || null,
+      currentVersion: outcome.doc ? outcome.doc.casVersion ?? null : null,
     };
   }
 
@@ -111,9 +183,10 @@ async function run(args = {}, _ctx = {}) {
 
   return {
     ok: true,
-    doc: outcome.doc,
+    applied: outcome.applied || Object.keys(profilePatch),
     rejected: outcome.rejected || [],
     casVersion: outcome.doc ? outcome.doc.casVersion : null,
+    ...(sourceCheck.downgraded.length ? { sourceDowngraded: sourceCheck.downgraded } : {}),
     ...(inferredNote ? { inferredNote } : {}),
   };
 }

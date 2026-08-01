@@ -3,9 +3,14 @@
 /**
  * Flow V3 rollout controls — kill switch, shadow/live mode, canary cohort.
  *
+ * V3 (LLM engine) is the DEFAULT counselling experience: enabled, live, 100%
+ * unless env explicitly overrides. Flow V2 remains only as the kill-switch
+ * escape hatch (CHATBOT_FLOW_V3_ENABLED=0) and as frozen library code that V3
+ * reuses (slot extractor, nextSlot walk, fallback beat copy).
+ *
  * CHATBOT_FLOW_V3_ENABLED=0 → V3 never starts for NEW conversations.
- * CHATBOT_FLOW_V3_MODE=shadow|live (default shadow when enabled).
- * CHATBOT_FLOW_V3_CANARY_PERCENT=0..100 (live cohort by phone hash).
+ * CHATBOT_FLOW_V3_MODE=shadow|live (default live).
+ * CHATBOT_FLOW_V3_CANARY_PERCENT=0..100 (live cohort by phone hash; default 100).
  *
  * Locked canary steps (architecture §12): 5 → 25 → 100.
  */
@@ -15,16 +20,19 @@ const crypto = require('crypto');
 const CANARY_STEPS = Object.freeze([5, 25, 100]);
 
 function isFlowV3Enabled() {
-  return String(process.env.CHATBOT_FLOW_V3_ENABLED || '0').trim() === '1';
+  // Enabled by default — only an explicit '0' (kill switch) turns V3 off.
+  return String(process.env.CHATBOT_FLOW_V3_ENABLED ?? '1').trim() !== '0';
 }
 
 function getFlowV3Mode() {
-  const mode = String(process.env.CHATBOT_FLOW_V3_MODE || 'shadow').trim().toLowerCase();
-  return mode === 'live' ? 'live' : 'shadow';
+  const mode = String(process.env.CHATBOT_FLOW_V3_MODE || 'live').trim().toLowerCase();
+  return mode === 'shadow' ? 'shadow' : 'live';
 }
 
 function getCanaryPercent() {
-  const n = Number(process.env.CHATBOT_FLOW_V3_CANARY_PERCENT);
+  const raw = process.env.CHATBOT_FLOW_V3_CANARY_PERCENT;
+  if (raw === undefined || String(raw).trim() === '') return 100;
+  const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return 0;
   if (n >= 100) return 100;
   return Math.floor(n);

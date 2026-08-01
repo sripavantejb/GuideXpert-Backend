@@ -315,7 +315,10 @@ async function processCareerCounsellingFlowV3Turn({
     try {
       const { loadLeadProfile, ensureLeadProfile } = require('../flowV3LLM/profile');
       let loaded = await loadLeadProfile(phone);
-      if (!loaded && isNewEntry) {
+      if (!loaded) {
+        // Create-if-missing regardless of isNewEntry: conversations upgraded
+        // from V2 mid-flight enter with isNewEntry=false, and without a durable
+        // doc every extractor CAS write fails with not_found (slots lost).
         loaded = await ensureLeadProfile(phone, {});
       }
       if (loaded) {
@@ -338,50 +341,103 @@ async function processCareerCounsellingFlowV3Turn({
     inboundId: inbound?._id ? String(inbound._id) : null,
     profile,
     slotMeta,
+    casVersion,
     promptVersion,
     mode,
     history: contextPatch?.flowV3?.history || [],
     deps: { leadContext },
   });
 
-  // §3 step 6 persistence (F-7): the dispatcher merged the deterministic
-  // extraction in-memory; persist it here through the CAS store so the durable
-  // profile matches what the turn was gated and answered against. Channel
-  // 'extractor' with authoritative 'extracted' capture meta per the contract.
-  let persistedProfile = profile;
-  const extractedPatch = result.extractedPatch || {};
-  if (phone && Object.keys(extractedPatch).length) {
+  // A-1: the crisis gate signals setCrisisLocked but nothing persisted it, so
+  // the LLM ran again on the very next turn of a crisis conversation. The lock
+  // is permanent by contract — write it to the durable profile (system
+  // channel; the merge layer refuses to ever unset it).
+  if (phone && result.terminal?.setCrisisLocked === true) {
     try {
       const { casUpdateLeadProfile } = require('../flowV3LLM/profile');
-      const metaByPath = {};
-      for (const key of Object.keys(extractedPatch)) {
-        metaByPath[key] = { source: 'extracted', verbatimQuote: String(inboundText || '') };
-      }
-      const writeOutcome = await casUpdateLeadProfile({
+      const lockOutcome = await casUpdateLeadProfile({
         phone,
-        expectedVersion: casVersion,
-        profilePatch: extractedPatch,
-        metaByPath,
-        channel: 'extractor',
+        expectedVersion: null,
+        profilePatch: { crisisLocked: true },
+        metaByPath: { crisisLocked: { source: 'system' } },
+        channel: 'system',
         turnId: result.turnId || null,
       });
-      if (writeOutcome.ok) {
-        persistedProfile = writeOutcome.doc?.profile || persistedProfile;
-        slotMeta = writeOutcome.doc?.slotMeta || slotMeta;
-        casVersion = writeOutcome.doc?.casVersion ?? casVersion;
-      } else {
-        console.error('[flowV3] extractor patch persist failed', {
+      if (!lockOutcome.ok) {
+        console.error('[flowV3] CRISIS_LOCK_PERSIST_FAILED', {
           turnId: result.turnId,
-          reason: writeOutcome.reason,
-          rejected: writeOutcome.rejected || null,
+          reason: lockOutcome.reason,
+          rejected: lockOutcome.rejected || null,
         });
       }
     } catch (err) {
-      console.error('[flowV3] extractor patch persist failed', {
+      console.error('[flowV3] CRISIS_LOCK_PERSIST_FAILED', {
         turnId: result.turnId,
         error: err?.message || String(err),
       });
     }
+  }
+
+  // §3 step 6 persistence (F-7): the dispatcher merged the deterministic
+  // extraction in-memory; persist it here through the CAS store so the durable
+  // profile matches what the turn was gated and answered against. Channel
+  // 'extractor' with authoritative 'extracted' capture meta per the contract.
+  //
+  // Conflict retry: a model tool-write mid-turn bumps the CAS version, which
+  // made this persist fail with cas_conflict and silently DROP the student's
+  // actual answer (conformance finding 5). One retry against the fresh
+  // version returned by the conflict is safe — the merge layer is additive.
+  let persistedProfile = profile;
+  async function persistPatch(label, { profilePatch, metaByPath, channel, enforceLlmAllowlist }) {
+    if (!phone || !Object.keys(profilePatch).length) return;
+    try {
+      const { casUpdateLeadProfile } = require('../flowV3LLM/profile');
+      let writeOutcome = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        writeOutcome = await casUpdateLeadProfile({
+          phone,
+          expectedVersion: casVersion,
+          profilePatch,
+          metaByPath,
+          ...(channel ? { channel } : {}),
+          ...(enforceLlmAllowlist ? { enforceLlmAllowlist: true } : {}),
+          turnId: result.turnId || null,
+        });
+        if (writeOutcome.ok || writeOutcome.reason !== 'cas_conflict') break;
+        const freshVersion = writeOutcome.doc?.casVersion;
+        if (freshVersion == null || freshVersion === casVersion) break;
+        casVersion = freshVersion;
+      }
+      if (writeOutcome?.ok) {
+        persistedProfile = writeOutcome.doc?.profile || persistedProfile;
+        slotMeta = writeOutcome.doc?.slotMeta || slotMeta;
+        casVersion = writeOutcome.doc?.casVersion ?? casVersion;
+      } else {
+        console.error(`[flowV3] ${label} persist failed`, {
+          turnId: result.turnId,
+          reason: writeOutcome?.reason,
+          rejected: writeOutcome?.rejected || null,
+        });
+      }
+    } catch (err) {
+      console.error(`[flowV3] ${label} persist failed`, {
+        turnId: result.turnId,
+        error: err?.message || String(err),
+      });
+    }
+  }
+
+  const extractedPatch = result.extractedPatch || {};
+  if (Object.keys(extractedPatch).length) {
+    const metaByPath = {};
+    for (const key of Object.keys(extractedPatch)) {
+      metaByPath[key] = { source: 'extracted', verbatimQuote: String(inboundText || '') };
+    }
+    await persistPatch('extractor patch', {
+      profilePatch: extractedPatch,
+      metaByPath,
+      channel: 'extractor',
+    });
   }
 
   // F-6: persist the allowlist-accepted envelope.profile_patch through the
@@ -389,35 +445,34 @@ async function processCareerCounsellingFlowV3Turn({
   // allowlist). The dispatcher already filtered it; this write enforces the
   // policy again at the store boundary.
   const llmAccepted = result.llmPatch?.accepted || {};
-  if (phone && Object.keys(llmAccepted).length) {
-    try {
-      const { casUpdateLeadProfile } = require('../flowV3LLM/profile');
-      const writeOutcome = await casUpdateLeadProfile({
-        phone,
-        expectedVersion: casVersion,
-        profilePatch: llmAccepted,
-        metaByPath: result.llmPatch.acceptedMeta || {},
-        enforceLlmAllowlist: true,
-        turnId: result.turnId || null,
-      });
-      if (writeOutcome.ok) {
-        persistedProfile = writeOutcome.doc?.profile || persistedProfile;
-        slotMeta = writeOutcome.doc?.slotMeta || slotMeta;
-        casVersion = writeOutcome.doc?.casVersion ?? casVersion;
-      } else {
-        console.error('[flowV3] llm profile patch persist failed', {
-          turnId: result.turnId,
-          reason: writeOutcome.reason,
-          rejected: writeOutcome.rejected || null,
-        });
-      }
-    } catch (err) {
-      console.error('[flowV3] llm profile patch persist failed', {
-        turnId: result.turnId,
-        error: err?.message || String(err),
-      });
-    }
+  if (Object.keys(llmAccepted).length) {
+    await persistPatch('llm profile patch', {
+      profilePatch: llmAccepted,
+      metaByPath: result.llmPatch.acceptedMeta || {},
+      enforceLlmAllowlist: true,
+    });
   }
+
+  // Conversation history for the LLM context. Nothing ever WROTE history, so
+  // the model saw only the profile and the current message on every turn — it
+  // could not know it had already asked a question, and re-asked the same
+  // slot forever instead of saving the student's answer. 16 entries = the
+  // architecture's 8-turn window (§9.2); the context builder trims further.
+  const HISTORY_MAX_ENTRIES = 16;
+  const priorHistory = Array.isArray(contextPatch?.flowV3?.history)
+    ? contextPatch.flowV3.history
+    : [];
+  const replyTextForHistory = result.silent
+    ? null
+    : result.replyText ||
+      (Array.isArray(result.replyParts) ? result.replyParts.filter(Boolean).join('\n') : null);
+  const history = [
+    ...priorHistory,
+    { role: 'user', text: String(inboundText || ''), at: new Date().toISOString() },
+    ...(replyTextForHistory
+      ? [{ role: 'assistant', text: replyTextForHistory, at: new Date().toISOString() }]
+      : []),
+  ].slice(-HISTORY_MAX_ENTRIES);
 
   const nextFlowV3 = {
     ...(contextPatch.flowV3 || {}),
@@ -427,6 +482,7 @@ async function processCareerCounsellingFlowV3Turn({
     profile: persistedProfile,
     slotMeta,
     casVersion,
+    history,
     lastTurnId: result.turnId,
     ...(result.contextPatch?.flowV3 || {}),
   };

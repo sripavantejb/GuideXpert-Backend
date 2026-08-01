@@ -12,7 +12,12 @@ const {
 } = require('../../../../constants/careerCounsellingV2ExploreModernColleges');
 
 const URL_PATTERN = /https?:\/\/\S+|guidexpert\.co\.in\/\S+/i;
-const COLLEGE_HINT = /\b(college|university|institute|kalvium|plaksha|niat|iit|nit)\b/i;
+// V-2a guards hard rule 1 ("never invent a college NAME"): known institution
+// names need tool grounding. The generic words college/university/institute
+// alone blocked ordinary counselling copy (including the greeting "choose a
+// college that truly fits") on every turn; proper-noun college mentions are
+// covered by V-2d's COLLEGE_NAME_CAPTURE against the cited corpus.
+const COLLEGE_HINT = /\b(kalvium|plaksha|niat|iit|nit)\b/i;
 const NUMERIC_CLAIM = /\b\d+(\.\d+)?\s*(%|lpa|lakhs?|crores?|k)\b/i;
 
 // V-2 college-mention capture: "<Proper Noun(s)> University|College|Institute…"
@@ -123,6 +128,12 @@ function entryResultIds(t) {
       if (row?.id) ids.add(String(row.id));
       if (row?.catalog) ids.add(`${row.catalog}:${row.id || row.slug || ''}`);
       if (row?.tag) ids.add(`${row.tag}:${row.id || row.slug || ''}`);
+      // Models cite by display name as often as by id ("curated:Krea
+      // University"); the row is real server data either way.
+      if (row?.name) {
+        ids.add(String(row.name));
+        if (row.catalog) ids.add(`${row.catalog}:${row.name}`);
+      }
     }
   }
   if (Array.isArray(result.chunks)) {
@@ -145,9 +156,11 @@ function toolResultIds(toolTrace = []) {
 
 /** A cited grounding id resolves to a known id exactly or by suffix (`curated:x` ↔ `x`). */
 function groundingIdResolves(cited, knownIds) {
+  const c = String(cited).toLowerCase();
   for (const id of knownIds) {
-    if (cited === id) return true;
-    if (id.endsWith(`:${cited}`) || cited.endsWith(`:${id}`)) return true;
+    const k = String(id).toLowerCase();
+    if (c === k) return true;
+    if (k.endsWith(`:${c}`) || c.endsWith(`:${k}`)) return true;
   }
   return false;
 }
@@ -196,22 +209,69 @@ function validateEnvelope(
   }
 
   const bodies = collectBodies(envelope);
-  const joined = bodies.join('\n');
+  // The separator must break \s+ adjacency: joined with plain whitespace,
+  // consecutive title-case button titles ("Career Scope" + "College Fit")
+  // formed phantom college names for COLLEGE_NAME_CAPTURE and blocked benign
+  // option lists as ungrounded college mentions.
+  const joined = bodies.join('\n|\n');
   const grounding = new Set((envelope.grounding || []).map(String));
   const knownIds = toolResultIds(toolTrace);
 
+  // Full-turn tool corpus: everything ANY successful tool returned this turn.
+  // The anti-fabrication property (F-2) is about the model inventing facts;
+  // a name/number that appears verbatim in a server tool result this turn is
+  // server truth even when the model forgot the grounding-id bookkeeping.
+  const fullToolCorpus = normalizeClaimText(
+    JSON.stringify((toolTrace || []).filter((t) => t.ok !== false).map((t) => t.result))
+  );
+
+  // Values the student supplied themselves (their own rank, budget…) are not
+  // fabrications — mirrors aiGuardrailService's user-provided-numbers carve-out.
+  const userCorpus = normalizeClaimText(
+    `${inboundText || ''} ${profile ? JSON.stringify(profile) : ''}`
+  );
+
   // V-2 grounding — the anti-fabrication property (F-2).
-  // V-2a: claims require citations at all.
-  if ((COLLEGE_HINT.test(joined) || NUMERIC_CLAIM.test(joined)) && grounding.size === 0) {
-    violations.push({ code: 'V-2', detail: 'grounding_required' });
+  // V-2a: claims require citations at all. Numbers the student stated
+  // themselves don't (echoing "your budget is 2-3 lakhs" back is not a claim
+  // the model invented — blocking it pushed benign acks into fallback).
+  const numericNeedsGrounding =
+    NUMERIC_CLAIM.test(joined) &&
+    extractNumericClaims(joined).some((claim) => !userCorpus.includes(normalizeClaimText(claim)));
+  if ((COLLEGE_HINT.test(joined) || numericNeedsGrounding) && grounding.size === 0) {
+    // Missing citations are only a violation when the content can't be traced
+    // to this turn's tool results — V-2c/V-2d below auto-ground traceable
+    // mentions, so blocking here would discard a reply built from real data.
+    const allTraceable =
+      extractCollegeMentions(joined).every((m) =>
+        fullToolCorpus.includes(normalizeClaimText(m))
+      ) &&
+      extractNumericClaims(joined).every(
+        (c) =>
+          userCorpus.includes(normalizeClaimText(c)) ||
+          fullToolCorpus.includes(normalizeClaimText(c))
+      );
+    if (!allTraceable) {
+      violations.push({ code: 'V-2', detail: 'grounding_required' });
+    }
   }
 
-  // V-2b: every cited grounding id must resolve to an ACTUAL tool result
-  // returned this turn. A fabricated citation is a BLOCK, not a warning.
+  // V-2b: a cited grounding id that resolves to an ACTUAL tool result from
+  // this turn stays; anything else is stripped as citation noise. Models cite
+  // eagerly and in odd shapes ("curated: Name1, Name2, …", "knowledge:
+  // placements") — the anti-fabrication property lives on the CLAIMS in the
+  // reply (V-2c numeric, V-2d college), which must trace to server tool
+  // results regardless of what the citation strings say. Blocking on citation
+  // shape discarded replies whose every fact was real (observed: a shortlist
+  // of 10 genuine catalog rows fell to Tier B over a comma-joined citation).
   for (const g of grounding) {
     if (!groundingIdResolves(g, knownIds)) {
-      violations.push({ code: 'V-2', detail: `unresolved_grounding_id:${g}` });
+      grounding.delete(g);
+      console.warn('[flowV3] V2_UNRESOLVED_GROUNDING_STRIPPED', { id: g });
     }
+  }
+  if (Array.isArray(envelope.grounding)) {
+    envelope.grounding = envelope.grounding.filter((g) => grounding.has(String(g)));
   }
 
   // Corpus of results the envelope actually cited — claims must trace HERE,
@@ -222,31 +282,64 @@ function validateEnvelope(
   });
   const citedCorpus = normalizeClaimText(JSON.stringify(citedEntries.map((t) => t.result)));
 
-  // Values the student supplied themselves (their own rank, budget…) are not
-  // fabrications — mirrors aiGuardrailService's user-provided-numbers carve-out.
-  const userCorpus = normalizeClaimText(
-    `${inboundText || ''} ${profile ? JSON.stringify(profile) : ''}`
-  );
+  // Auto-grounding: instead of discarding an otherwise correct reply
+  // (observed: a shortlist built FROM get_curated_catalog rows blocked as
+  // "ungrounded" because envelope.grounding was empty), attach the ids of the
+  // tool-result rows the mention actually traces to.
+  const autoGrounded = new Set();
+  const autoGroundIdsFor = (needle) => {
+    for (const t of toolTrace || []) {
+      if (t.ok === false || !t.result) continue;
+      if (!normalizeClaimText(JSON.stringify(t.result)).includes(needle)) continue;
+      const rows = Array.isArray(t.result.rows) ? t.result.rows : [];
+      let added = false;
+      for (const row of rows) {
+        if (row?.id && normalizeClaimText(JSON.stringify(row)).includes(needle)) {
+          autoGrounded.add(String(row.id));
+          added = true;
+        }
+      }
+      if (!added && t.callId) autoGrounded.add(String(t.callId));
+    }
+  };
 
-  // V-2c: every numeric / price / placement claim must appear in a cited result.
+  // V-2c: every numeric / price / placement claim must trace to a tool result
+  // from this turn (cited or auto-grounded) or to the student's own words.
   for (const claim of extractNumericClaims(joined)) {
     const normalized = normalizeClaimText(claim);
-    if (!citedCorpus.includes(normalized) && !userCorpus.includes(normalized)) {
-      violations.push({ code: 'V-2', detail: `ungrounded_numeric:${claim}` });
+    if (citedCorpus.includes(normalized) || userCorpus.includes(normalized)) continue;
+    if (fullToolCorpus.includes(normalized)) {
+      autoGroundIdsFor(normalized);
+      continue;
     }
+    violations.push({ code: 'V-2', detail: `ungrounded_numeric:${claim}` });
   }
 
-  // V-2d: every college mention must appear in a cited result.
+  // V-2d: every college mention must trace to a tool result from this turn.
   for (const mention of extractCollegeMentions(joined)) {
-    if (!citedCorpus.includes(normalizeClaimText(mention))) {
-      violations.push({ code: 'V-2', detail: `ungrounded_college:${mention}` });
+    const normalized = normalizeClaimText(mention);
+    if (citedCorpus.includes(normalized)) continue;
+    if (fullToolCorpus.includes(normalized)) {
+      autoGroundIdsFor(normalized);
+      continue;
     }
+    violations.push({ code: 'V-2', detail: `ungrounded_college:${mention}` });
   }
 
-  // V-3 guardrails
+  if (autoGrounded.size) {
+    console.warn('[flowV3] V2_AUTO_GROUNDED', { ids: [...autoGrounded] });
+    envelope.grounding = [...new Set([...(envelope.grounding || []), ...autoGrounded])];
+  }
+
+  // V-3 guardrails. The mandated V-6 disclosure line contains "guaranteed"
+  // ("…not a guaranteed admission list"), so a compliant shortlist envelope
+  // tripped V-3 — the validator forbade the exact line the system requires
+  // (conformance finding 8). Strip the disclosure before scanning; every
+  // OTHER occurrence of guarantee language still blocks.
   for (const body of bodies) {
+    const scannable = body.split(SHORTLIST_DISCLOSURE).join(' ');
     for (const re of GUARANTEE_FORBIDDEN) {
-      if (re.test(body)) {
+      if (re.test(scannable)) {
         violations.push({ code: 'V-3', detail: String(re) });
         break;
       }
@@ -271,11 +364,19 @@ function validateEnvelope(
     }
   }
 
-  // V-6 disclosure
+  // V-6 disclosure — mandatory on shortlist replies. Appending it is a
+  // deterministic server-side fix, so a compliant-but-forgetful envelope gets
+  // corrected rather than thrown away for a Tier B holding reply.
   if (envelope.intent === 'show_shortlist') {
     const hasDisclosure = bodies.some((b) => /editorial|not a guaranteed admission/i.test(b));
-    if (!hasDisclosure) {
-      violations.push({ code: 'V-6', detail: 'missing_disclosure' });
+    if (!hasDisclosure && Array.isArray(envelope.parts)) {
+      const lastText = [...envelope.parts].reverse().find((p) => p && p.type === 'text');
+      if (lastText) {
+        lastText.body = `${lastText.body || ''}\n\n${SHORTLIST_DISCLOSURE}`.trim();
+      } else {
+        envelope.parts.push({ type: 'text', body: SHORTLIST_DISCLOSURE });
+      }
+      console.warn('[flowV3] V6_DISCLOSURE_APPENDED');
     }
   }
 

@@ -6,10 +6,29 @@ allowlistExclusionComplete.test.js :: writable-set snapshot matches LLM_WRITABLE
 allowlistExclusionComplete.test.js :: blocked-set snapshot matches schema exports (fails loudly on drift)
 allowlistExclusionComplete.test.js :: every writable field is intentional: known, not blocked, canLlmWriteField true
 allowlistExclusionComplete.test.js :: fixture files exist on disk next to this suite
+authorityDowngrade.test.js :: an inferred LLM write CANNOT replace an authoritative examType
+authorityDowngrade.test.js :: the extractor CAN still correct a previously inferred value (upgrade allowed)
+authorityDowngrade.test.js :: authoritative-over-authoritative updates stay allowed (student changes answer)
+beatDiscipline.test.js :: asking budget when the walk expects qualification is BLOCKED
+beatDiscipline.test.js :: asking the EXPECTED slot passes
+beatDiscipline.test.js :: a generic coaching line with no named slot passes (conservative)
+beatDiscipline.test.js :: ambiguous multi-slot text does not block (conservative by design)
+beatDiscipline.test.js :: non-ask_slot intents are exempt from V-8
+beatDiscipline.test.js :: maps distinctive V2 question vocabulary to slots
 contractDoNotBuild.test.js :: excluded categories are documented on the schema module
 contractDoNotBuild.test.js :: no schema field name matches an excluded pattern
 contractDoNotBuild.test.js :: forbidden example names are not known fields and are not in the schema object
 durableProfileIdle.test.js :: schema has no TTL; saved profile remains loadable after simulated 30-minute idle
+fallbackAndTypes.test.js :: empty profile asks the V2 qualification question verbatim — never "true"
+fallbackAndTypes.test.js :: mid-journey profile asks the V2 copy for the NEXT slot
+fallbackAndTypes.test.js :: every mapped copy string is the live V2 export (verbatim by construction)
+fallbackAndTypes.test.js :: every askable slot in the V3 walk has V2 copy — Tier A is fully covered
+fallbackAndTypes.test.js :: tier reachability: complete profile → Tier B holding + escalate
+fallbackAndTypes.test.js :: tier reachability: free_form reason → Tier B even with open slots
+fallbackAndTypes.test.js :: boolean part body is a validation BLOCK
+fallbackAndTypes.test.js :: object body and non-string option titles are BLOCKED
+fallbackAndTypes.test.js :: renderer drops a boolean body instead of sending "true"
+fallbackAndTypes.test.js :: valid string bodies still render normally
 gatesAndContext.test.js :: crisis beats booking intent in the same message
 gatesAndContext.test.js :: permanent crisis lock terminates before anything else runs
 gatesAndContext.test.js :: opt-out is silence, not a reply
@@ -31,20 +50,20 @@ gatesAndContext.test.js :: tier 3 is ABSENT from the prompt on an ordinary turn
 gatesAndContext.test.js :: tier 3 appears only for an allowed purpose
 gatesAndContext.test.js :: an unrecognised purpose does not unlock tier 3
 gatesAndContext.test.js :: tier 4 fields are withheld from the prompt view
-groundingVerification.test.js :: fabricated grounding id is BLOCKED
+golden/goldenReplay.test.js :: crisis golden: gate terminates before LLM
+golden/goldenReplay.test.js :: AP-OC-male golden: demographic gate blocks predictor path
+golden/goldenReplay.test.js :: grounding block golden: college claim without grounding fails V-2
+golden/goldenReplay.test.js :: beat order golden: fallback A asks next slot from empty profile
+groundingVerification.test.js :: fabricated grounding id is STRIPPED and traceable claims auto-ground
 groundingVerification.test.js :: college absent from every tool result is BLOCKED
 groundingVerification.test.js :: placement % appearing in no tool result is BLOCKED
-groundingVerification.test.js :: a REAL id cited but a claim that id does not support is BLOCKED
+groundingVerification.test.js :: a claim not supported by the cited id but present in a real tool result is AUTO-GROUNDED
 groundingVerification.test.js :: claims with zero grounding at all are BLOCKED
 groundingVerification.test.js :: college + fee grounded in a cited result passes
 groundingVerification.test.js :: the student's own numbers (rank, budget) are not treated as fabrications
 groundingVerification.test.js :: a plain slot question with no claims needs no grounding
 groundingVerification.test.js :: detects catalog brands and generic proper-noun college names
 groundingVerification.test.js :: does not flag question phrasing like "Which university"
-golden/goldenReplay.test.js :: crisis golden: gate terminates before LLM
-golden/goldenReplay.test.js :: AP-OC-male golden: demographic gate blocks predictor path
-golden/goldenReplay.test.js :: grounding block golden: college claim without grounding fails V-2
-golden/goldenReplay.test.js :: beat order golden: fallback A asks next slot from empty profile
 guardrailsUnion.test.js :: re-exports exact 14-pattern union
 guardrailsUnion.test.js :: contains every exact pattern from Phase 10/11/12/13 + NIAT
 guardrailsUnion.test.js :: union has no duplicate source+flag pairs
@@ -145,6 +164,11 @@ profileMerge.test.js :: bookingStatus follows null → link_sent → done only (
 profileMerge.test.js :: crisisLocked can never be unset (S-2)
 profileMerge.test.js :: crisisLocked can still be set to true
 profileMerge.test.js :: inputs are never mutated
+profilePatchWiring.test.js :: allowlisted keys are accepted with inferred (non-authoritative) meta
+profilePatchWiring.test.js :: allowlist-blocked and unknown keys are filtered, never written
+profilePatchWiring.test.js :: profileAfter in the turn log includes the accepted patch (honest logging)
+profilePatchWiring.test.js :: a blocked (fallback) turn applies NO llm patch
+profilePatchWiring.test.js :: S-1 routing fields (gender) are REJECTED on the LLM channel — extractor-only
 profilePhoneHash.test.js :: is sha256(phone + pepper)
 profilePhoneHash.test.js :: reads the pepper from the environment when not injected
 profilePhoneHash.test.js :: a missing pepper returns a config error and NO hash
@@ -274,3 +298,12 @@ turnLog.test.js :: fallbackTier is limited to the §7.3 ladder
 turnLog.test.js :: validation verdicts are limited to pass/block/clamp/warn
 turnLog.test.js :: the collection has NO TTL index — the eval corpus is never swept
 turnLog.test.js :: a turn is replayable: prompt version, model and profileBefore are all stored
+turnLogDurability.test.js :: a write failure is logged loudly, never swallowed
+turnLogDurability.test.js :: waitUntil path: flush returns before the insert, and the registered promise lands the write
+turnLogDurability.test.js :: await path: the dispatcher completes the write before returning
+turnLogDurability.test.js :: gate-terminated turns also land a turn log
+turnLogDurability.test.js :: a dead DB fails fast and visibly instead of buffering
+turnLogDurability.test.js :: malformed tool args: tool NOT executed, failure logged and fed back
+turnLogDurability.test.js :: fallback ladder: slot engine failure is logged and surfaced, not a silent downgrade
+turnLogDurability.test.js :: rolling summary: generator failure is logged, extractive fallback still used
+turnLogDurability.test.js :: prompt loader: unreadable prompts dir is logged loudly
