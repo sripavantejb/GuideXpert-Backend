@@ -52,7 +52,6 @@ const TOOL_PARAMETERS = Object.freeze({
             confidence: { type: 'number' },
           },
           required: ['source', 'verbatimQuote'],
-        },
       },
     },
     required: ['profilePatch', 'metaByPath'],
