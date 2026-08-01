@@ -12,7 +12,6 @@ const nextQuestion = require('../../services/chatbot/flowV3LLM/tools/nextQuestio
 const getCuratedCatalog = require('../../services/chatbot/flowV3LLM/tools/getCuratedCatalog');
 const getPredictorMatches = require('../../services/chatbot/flowV3LLM/tools/getPredictorMatches');
 const getBookingSlots = require('../../services/chatbot/flowV3LLM/tools/getBookingSlots');
-const searchKnowledge = require('../../services/chatbot/flowV3LLM/tools/searchKnowledge');
 const updateLeadProfile = require('../../services/chatbot/flowV3LLM/tools/updateLeadProfile');
 const createBookingLink = require('../../services/chatbot/flowV3LLM/tools/createBookingLink');
 const escalateToHuman = require('../../services/chatbot/flowV3LLM/tools/escalateToHuman');
@@ -21,9 +20,11 @@ const { emptyFlowV2Profile } = require('../../constants/careerCounsellingFlowV2P
 const collegeDostFixture = require('./fixtures/collegeDostEnvelope.json');
 
 describe('tool broker', () => {
-  test('allowlist is exactly eight tools and rejects unknown', async () => {
-    assert.equal(FLOW_V3_TOOL_ALLOWLIST.length, 8);
+  test('allowlist is exactly seven tools and rejects unknown', async () => {
+    assert.equal(FLOW_V3_TOOL_ALLOWLIST.length, 7);
     assert.equal(FLOW_V3_TOOL_ALLOWLIST.includes('check_guardrails'), false);
+    // Removed on product decision: replies come from the admin prompt only.
+    assert.equal(FLOW_V3_TOOL_ALLOWLIST.includes('search_knowledge'), false);
     const broker = createToolBroker();
     const denied = await broker.invokeTool('check_guardrails', {});
     assert.equal(denied.ok, false);
@@ -161,24 +162,6 @@ describe('get_booking_slots tool', () => {
     assert.equal(result.ok, true);
     assert.equal(result.slots[0].slotTime, '10:00 AM');
     assert.equal(result.slots[0].slotDate, '2026-08-01');
-  });
-});
-
-describe('search_knowledge tool', () => {
-  test('preserves chunk ids', async () => {
-    const result = await searchKnowledge.run(
-      { query: 'NIAT fees' },
-      {
-        deps: {
-          searchKnowledgeAsync: async () => ({
-            results: [{ id: 'chunk-42', answer: 'x' }],
-          }),
-        },
-      }
-    );
-    assert.equal(result.ok, true);
-    assert.equal(result.results[0].id, 'chunk-42');
-    assert.deepEqual(result.resultIds, ['chunk-42']);
   });
 });
 

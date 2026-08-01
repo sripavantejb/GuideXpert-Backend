@@ -278,13 +278,12 @@ rollout.test.js :: shadow mode enables V3 logging path for all phones
 rollout.test.js :: live canary uses stable phone bucket
 rollout.test.js :: canary steps are 5 → 25 → 100
 rollout.test.js :: registry exposes career_counselling_flow_v3
-tools.test.js :: allowlist is exactly eight tools and rejects unknown
+tools.test.js :: allowlist is exactly seven tools and rejects unknown
 tools.test.js :: returns synthesized slot shape or done
 tools.test.js :: returns 10 curated rows tagged catalog:curated
 tools.test.js :: AP + OC + male refuses with verbatim copy and zero predictor calls
 tools.test.js :: returns needs rather than guessing; tags predictor catalog on success
 tools.test.js :: quotes slot times verbatim from guidance service
-tools.test.js :: preserves chunk ids
 tools.test.js :: enforces allowlist + CAS via deps
 tools.test.js :: requires serviceKey; never invents from slotId alone
 tools.test.js :: crisis maps to valid reason with CRISIS_HANDOFF marker

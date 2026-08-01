@@ -11,18 +11,18 @@ const nextQuestion = require('./nextQuestion');
 const getCuratedCatalog = require('./getCuratedCatalog');
 const getPredictorMatches = require('./getPredictorMatches');
 const getBookingSlots = require('./getBookingSlots');
-const searchKnowledge = require('./searchKnowledge');
 const updateLeadProfile = require('./updateLeadProfile');
 const createBookingLink = require('./createBookingLink');
 const escalateToHuman = require('./escalateToHuman');
 
-/** Fixed allowlist — exactly 8 tools, snake_case names for turn-log / M-2. */
+/** Fixed allowlist — exactly 7 tools, snake_case names for turn-log / M-2.
+ * search_knowledge was removed on product decision: WhatsApp replies must come
+ * from the admin-panel system prompt only, never the knowledge base. */
 const FLOW_V3_TOOL_ALLOWLIST = Object.freeze([
   'next_question',
   'get_curated_catalog',
   'get_predictor_matches',
   'get_booking_slots',
-  'search_knowledge',
   'update_lead_profile',
   'create_booking_link',
   'escalate_to_human',
@@ -43,7 +43,6 @@ const DEFAULT_HANDLERS = Object.freeze({
   get_curated_catalog: getCuratedCatalog.run,
   get_predictor_matches: getPredictorMatches.run,
   get_booking_slots: getBookingSlots.run,
-  search_knowledge: searchKnowledge.run,
   update_lead_profile: updateLeadProfile.run,
   create_booking_link: createBookingLink.run,
   escalate_to_human: escalateToHuman.run,

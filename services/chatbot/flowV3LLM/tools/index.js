@@ -5,7 +5,6 @@ const nextQuestion = require('./nextQuestion');
 const getCuratedCatalog = require('./getCuratedCatalog');
 const getPredictorMatches = require('./getPredictorMatches');
 const getBookingSlots = require('./getBookingSlots');
-const searchKnowledge = require('./searchKnowledge');
 const updateLeadProfile = require('./updateLeadProfile');
 const createBookingLink = require('./createBookingLink');
 const escalateToHuman = require('./escalateToHuman');
@@ -17,7 +16,6 @@ module.exports = {
     get_curated_catalog: getCuratedCatalog,
     get_predictor_matches: getPredictorMatches,
     get_booking_slots: getBookingSlots,
-    search_knowledge: searchKnowledge,
     update_lead_profile: updateLeadProfile,
     create_booking_link: createBookingLink,
     escalate_to_human: escalateToHuman,
@@ -26,7 +24,6 @@ module.exports = {
   getCuratedCatalog,
   getPredictorMatches,
   getBookingSlots,
-  searchKnowledge,
   updateLeadProfile,
   createBookingLink,
   escalateToHuman,
