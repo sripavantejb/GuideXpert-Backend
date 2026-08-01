@@ -82,19 +82,44 @@ Rules:
   the renderer injects the URL.
 - Return ONLY the JSON object. No prose before or after it, no markdown fences.`;
 
+const INTERACTIVE_BODY_MARKER = 'INTERACTIVE BODY RULE';
+
+// Appended ALWAYS (own marker), even when the stored prompt embeds its own
+// copy of the platform contract — so admin prompt edits can never silence it.
+const INTERACTIVE_BODY_RULE = `=================== INTERACTIVE BODY RULE (MANDATORY) ===================
+
+Every "buttons" and "list" part MUST include a non-empty "body" that YOU write
+in your own counsellor voice, phrased for this exact moment of the conversation.
+The body is a student-facing bubble — treat it with the same care as a text part.
+- NEVER leave "body" empty and NEVER write generic filler like
+  "Please choose an option" or "Please select". The platform's bland default
+  only exists as a technical fallback; if it appears, you failed this rule.
+- Good: "Which of these matters most to you right now?" ·
+  "Tap the exam you're preparing for 👇" · "Which stream did you study?"
+- Keep it to one short, warm line consistent with your persona and the
+  question you just asked in the text part (do not repeat it word-for-word).`;
+
 /**
- * Append the contract to a system prompt unless it already contains one.
+ * Append the platform contract (unless embedded already) and the interactive
+ * body rule (always) to a system prompt.
  * @param {string} promptText
  * @returns {string}
  */
 function withOutputContract(promptText) {
-  const text = String(promptText || '');
-  if (text.includes(CONTRACT_MARKER)) return text;
-  return `${text}\n\n${PLATFORM_OUTPUT_CONTRACT}`;
+  let text = String(promptText || '');
+  if (!text.includes(CONTRACT_MARKER)) {
+    text = `${text}\n\n${PLATFORM_OUTPUT_CONTRACT}`;
+  }
+  if (!text.includes(INTERACTIVE_BODY_MARKER)) {
+    text = `${text}\n\n${INTERACTIVE_BODY_RULE}`;
+  }
+  return text;
 }
 
 module.exports = {
   CONTRACT_MARKER,
   PLATFORM_OUTPUT_CONTRACT,
+  INTERACTIVE_BODY_MARKER,
+  INTERACTIVE_BODY_RULE,
   withOutputContract,
 };
