@@ -29,6 +29,9 @@ describe('llmOnlyChatService', () => {
   let botContext;
   let transitions;
   let dbPrompt;
+  let inboundFindQueries;
+  let outboundFindQueries;
+  let prevHistorySince;
 
   beforeEach(() => {
     sentTexts = [];
@@ -36,6 +39,10 @@ describe('llmOnlyChatService', () => {
     transitions = [];
     botContext = {};
     dbPrompt = { text: 'ADMIN PANEL PROMPT' };
+    inboundFindQueries = [];
+    outboundFindQueries = [];
+    prevHistorySince = process.env.CHATBOT_HISTORY_SINCE;
+    delete process.env.CHATBOT_HISTORY_SINCE;
 
     for (const p of [servicePath, promptSettingsPath, llmClientPath, outboundPath, botStatePath]) {
       delete require.cache[p];
@@ -64,13 +71,21 @@ describe('llmOnlyChatService', () => {
     });
 
     const WhatsAppInboundMessage = require('../models/WhatsAppInboundMessage');
-    mock.method(WhatsAppInboundMessage, 'find', () => emptyQueryChain([]));
+    mock.method(WhatsAppInboundMessage, 'find', (query) => {
+      inboundFindQueries.push(query);
+      return emptyQueryChain([]);
+    });
     const WhatsAppOutboundMessage = require('../models/WhatsAppOutboundMessage');
-    mock.method(WhatsAppOutboundMessage, 'find', () => emptyQueryChain([]));
+    mock.method(WhatsAppOutboundMessage, 'find', (query) => {
+      outboundFindQueries.push(query);
+      return emptyQueryChain([]);
+    });
   });
 
   afterEach(() => {
     mock.restoreAll();
+    if (prevHistorySince === undefined) delete process.env.CHATBOT_HISTORY_SINCE;
+    else process.env.CHATBOT_HISTORY_SINCE = prevHistorySince;
   });
 
   function svc() {
@@ -132,5 +147,44 @@ describe('llmOnlyChatService', () => {
 
     assert.equal(result.llmUsed, false);
     assert.deepEqual(sentTexts, [service.ERROR_REPLY]);
+  });
+
+  test('history queries filter createdAt to the default cutover epoch', async () => {
+    const service = svc();
+    const expectedEpoch = new Date(service.DEFAULT_HISTORY_SINCE);
+
+    await service.processInbound({ conversation, inbound: inbound('hello') });
+
+    assert.equal(inboundFindQueries.length, 1);
+    assert.equal(outboundFindQueries.length, 1);
+    assert.ok(inboundFindQueries[0].createdAt);
+    assert.ok(outboundFindQueries[0].createdAt);
+    assert.equal(
+      inboundFindQueries[0].createdAt.$gte.getTime(),
+      expectedEpoch.getTime()
+    );
+    assert.equal(
+      outboundFindQueries[0].createdAt.$gte.getTime(),
+      expectedEpoch.getTime()
+    );
+  });
+
+  test('CHATBOT_HISTORY_SINCE overrides the history epoch', async () => {
+    process.env.CHATBOT_HISTORY_SINCE = '2026-08-01T18:00:00.000Z';
+    const service = svc();
+    const expectedEpoch = new Date('2026-08-01T18:00:00.000Z');
+
+    assert.equal(service.historyEpoch().getTime(), expectedEpoch.getTime());
+
+    await service.processInbound({ conversation, inbound: inbound('hello') });
+
+    assert.equal(
+      inboundFindQueries[0].createdAt.$gte.getTime(),
+      expectedEpoch.getTime()
+    );
+    assert.equal(
+      outboundFindQueries[0].createdAt.$gte.getTime(),
+      expectedEpoch.getTime()
+    );
   });
 });

@@ -27,6 +27,22 @@ const OPT_OUT_REPLY =
 const ERROR_REPLY =
   'Sorry, I could not process that right now. Please try again in a moment.';
 
+/** Default: LLM-only pipeline production cutover (2026-08-01T13:30:00Z). */
+const DEFAULT_HISTORY_SINCE = '2026-08-01T13:30:00.000Z';
+
+/**
+ * Messages created before this epoch never reach the LLM (old-flow pollution
+ * filter). Override with env CHATBOT_HISTORY_SINCE (ISO-8601).
+ */
+function historyEpoch() {
+  const raw = String(process.env.CHATBOT_HISTORY_SINCE || '').trim();
+  if (raw) {
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+  return new Date(DEFAULT_HISTORY_SINCE);
+}
+
 function historyLimit() {
   const n = parseInt(process.env.CHATBOT_HISTORY_MESSAGES || '16', 10);
   return Number.isFinite(n) && n > 0 ? Math.min(n, 40) : 16;
@@ -71,15 +87,18 @@ function extractInboundText(inbound) {
 
 /**
  * Chronological user/assistant history for the conversation, excluding the
- * current inbound message.
+ * current inbound message. Only messages on/after the history epoch are
+ * included so deleted-flow replies cannot contaminate the LLM context.
  */
 async function loadConversationHistory(conversationId, excludeInboundId) {
   const limit = historyLimit();
+  const since = historyEpoch();
   const [inbounds, outbounds] = await Promise.all([
     WhatsAppInboundMessage.find({
       conversationId,
       _id: { $ne: excludeInboundId },
       text: { $nin: [null, ''] },
+      createdAt: { $gte: since },
     })
       .sort({ createdAt: -1 })
       .limit(limit)
@@ -89,6 +108,7 @@ async function loadConversationHistory(conversationId, excludeInboundId) {
       conversationId,
       senderType: 'bot',
       textPreview: { $nin: [null, ''] },
+      createdAt: { $gte: since },
     })
       .sort({ createdAt: -1 })
       .limit(limit)
@@ -183,6 +203,8 @@ module.exports = {
   loadSystemPrompt,
   loadConversationHistory,
   extractInboundText,
+  historyEpoch,
+  DEFAULT_HISTORY_SINCE,
   OPT_OUT_REPLY,
   ERROR_REPLY,
 };
