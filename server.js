@@ -56,7 +56,6 @@ const posterTemplatePublicRoutes = require('./routes/posterTemplatePublicRoutes'
 const osviRoutes = require('./routes/osviRoutes');
 const counsellorSupportRoutes = require('./routes/counsellorSupportRoutes');
 const gupshupWebhookRoutes = require('./routes/gupshupWebhookRoutes');
-const simpleChatbotWebhookRoutes = require('./whatsaapBotTej/webhookRoutes');
 const whatsappChatAdminRoutes = require('./routes/whatsappChatAdminRoutes');
 const humanCopilotRoutes = require('./routes/humanCopilotRoutes');
 const aiCallsAdminRoutes = require('./routes/aiCallsAdminRoutes');
@@ -413,11 +412,6 @@ app.use('/api/osvi', osviRoutes);
 app.use('/api/counsellor-support', counsellorSupportRoutes);
 // Gupshup app callback URL (production): POST https://<API_HOST>/webhook/gupshup — configure in Gupshup console; no admin auth.
 app.use('/webhook/gupshup', gupshupWebhookRoutes);
-// whatsaapBotTej simple AI chatbot webhook (enabled via SIMPLE_CHATBOT_ENABLED=true).
-if (String(process.env.SIMPLE_CHATBOT_ENABLED || '').toLowerCase() === 'true') {
-  app.use('/webhook/gupshup-simple', simpleChatbotWebhookRoutes);
-}
-
 app.use((req, res) => {
   res.status(404).json({ success: false, message: 'Not found' });
 });

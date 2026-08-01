@@ -106,10 +106,6 @@ const {
   setWebChatPromptSetting,
 } = require('../utils/webChatPromptSettings');
 const {
-  resolvePromptForAdmin: resolveSimpleChatbotPromptForAdmin,
-  setPromptSetting: setSimpleChatbotPromptSetting,
-} = require('../whatsaapBotTej/promptSettings');
-const {
   clearPromptCache,
   setPromptOverride,
 } = require('../services/chatbot/flowV3LLM/llm/promptLoader');
@@ -563,60 +559,6 @@ router.put('/web-chat-system-prompt', requireAdmin, requireSuperAdmin, async (re
     const msg = err && err.message ? err.message : 'Internal server error';
     const status = /must be|exceeds|non-empty/i.test(msg) ? 400 : 500;
     console.error('[WebChatPrompt] PUT error:', err);
-    return res.status(status).json({ success: false, message: msg });
-  }
-});
-
-// whatsaapBotTej simple WhatsApp chatbot system prompt (own key; bundled systemPrompt.md as default)
-router.get('/simple-chatbot-system-prompt', requireAdmin, async (req, res) => {
-  try {
-    const prompt = await resolveSimpleChatbotPromptForAdmin();
-    return res.json({
-      success: true,
-      text: prompt.text,
-      hash: prompt.hash,
-      bytes: prompt.bytes,
-      updatedAt: prompt.updatedAt,
-      updatedByEmail: prompt.updatedByEmail,
-      source: prompt.source,
-    });
-  } catch (err) {
-    console.error('[SimpleChatbotPrompt] GET error:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
-  }
-});
-
-router.put('/simple-chatbot-system-prompt', requireAdmin, requireSuperAdmin, async (req, res) => {
-  try {
-    const { text } = req.body || {};
-    if (typeof text !== 'string' || !text.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Provide non-empty `text` (string)',
-      });
-    }
-
-    const saved = await setSimpleChatbotPromptSetting(text, req.admin || null);
-
-    console.log('[SimpleChatbotPrompt] Updated by admin', {
-      hash: saved.hash,
-      bytes: saved.bytes,
-      by: saved.updatedByEmail,
-    });
-
-    return res.json({
-      success: true,
-      text: saved.text,
-      hash: saved.hash,
-      bytes: saved.bytes,
-      updatedAt: saved.updatedAt,
-      updatedByEmail: saved.updatedByEmail,
-      source: saved.source,
-    });
-  } catch (err) {
-    const msg = err && err.message ? err.message : 'Internal server error';
-    const status = /must be|exceeds|non-empty/i.test(msg) ? 400 : 500;
-    console.error('[SimpleChatbotPrompt] PUT error:', err);
     return res.status(status).json({ success: false, message: msg });
   }
 });
