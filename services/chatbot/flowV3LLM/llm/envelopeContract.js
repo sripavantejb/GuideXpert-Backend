@@ -34,7 +34,7 @@ Your final assistant message MUST be a single JSON reply envelope:
     { "type": "image", "assetKey": "two_models_frame", "caption": "..." }
   ],
   "profile_patch": {},
-  "grounding": ["curated:…", "knowledge:…"],
+  "grounding": ["curated:…"],
   "booking_url_slot": null
 }
 

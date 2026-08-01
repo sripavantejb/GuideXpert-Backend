@@ -74,18 +74,6 @@ const {
   logKnowledgeAssistantConfigStatus,
 } = require('./utils/knowledgeAssistantConfigStatus');
 const {
-  getCounsellorProgramAssistantConfigStatus,
-  logCounsellorProgramAssistantConfigStatus,
-} = require('./utils/counsellorProgramConfigStatus');
-const {
-  getIitCounsellingExpertConfigStatus,
-  logIitCounsellingExpertConfigStatus,
-} = require('./utils/iitCounsellingExpertConfigStatus');
-const {
-  getIitCounsellingStrategyConfigStatus,
-  logIitCounsellingStrategyConfigStatus,
-} = require('./utils/iitCounsellingStrategyConfigStatus');
-const {
   getLeadEventExtractionConfigStatus,
   logLeadEventExtractionConfigStatus,
 } = require('./utils/leadEventExtractionConfigStatus');
@@ -139,9 +127,6 @@ if (!process.env.WEBINAR_JWT_SECRET && !process.env.COUNSELLOR_JWT_SECRET) {
 }
 logWhatsAppConfigWarnings();
 logKnowledgeAssistantConfigStatus();
-logCounsellorProgramAssistantConfigStatus();
-logIitCounsellingExpertConfigStatus();
-logIitCounsellingStrategyConfigStatus();
 logLeadEventExtractionConfigStatus();
 logLeadProfileConfigStatus();
 logLeadScoringConfigStatus();
@@ -254,9 +239,6 @@ app.use(async (req, res, next) => {
 app.get('/api/health', async (req, res) => {
   const whatsapp = getWhatsAppConfigStatus();
   const knowledgeAssistant = getKnowledgeAssistantConfigStatus();
-  const counsellorProgramAssistant = getCounsellorProgramAssistantConfigStatus();
-  const iitCounsellingExpert = getIitCounsellingExpertConfigStatus();
-  const iitCounsellingStrategy = getIitCounsellingStrategyConfigStatus();
   const leadEventExtraction = getLeadEventExtractionConfigStatus();
   const leadProfile = getLeadProfileConfigStatus();
   const leadScoring = getLeadScoringConfigStatus();
@@ -287,18 +269,6 @@ app.get('/api/health', async (req, res) => {
       enabled: knowledgeAssistant.enabled,
       llmKeyPresent: knowledgeAssistant.llmKeyPresent,
       ready: knowledgeAssistant.ready,
-    },
-    counsellorProgramAssistant: {
-      enabled: counsellorProgramAssistant.enabled,
-      ready: counsellorProgramAssistant.ready,
-    },
-    iitCounsellingExpert: {
-      enabled: iitCounsellingExpert.enabled,
-      ready: iitCounsellingExpert.ready,
-    },
-    iitCounsellingStrategy: {
-      enabled: iitCounsellingStrategy.enabled,
-      ready: iitCounsellingStrategy.ready,
     },
     leadEventExtraction: {
       enabled: leadEventExtraction.enabled,
