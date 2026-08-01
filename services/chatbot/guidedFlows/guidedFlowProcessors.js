@@ -376,6 +376,39 @@ async function processCareerCounsellingFlowV3Turn({
         error: err?.message || String(err),
       });
     }
+
+    // Eager silent handoff — LLM already sent the crisis reply; do NOT send
+    // the mechanical "Thanks — I've connected you…" ack on top of it.
+    if (result.terminal?.handoffEager === true && inbound?.conversationId) {
+      try {
+        const handoffService = require('../handoffService');
+        const WhatsAppConversation = require('../../../models/WhatsAppConversation');
+        const conversation =
+          (await WhatsAppConversation.findById(inbound.conversationId)) ||
+          { _id: inbound.conversationId, phone };
+        // Fire-and-forget: a DB outage must not suppress the crisis reply.
+        Promise.resolve(
+          handoffService.createHandoff({
+            conversation,
+            leadContext,
+            reason: 'crisis',
+            userLastMessage: inboundText,
+            createdBy: 'bot',
+            silent: true,
+          })
+        ).catch((err) => {
+          console.error('[flowV3] CRISIS_HANDOFF_FAILED', {
+            turnId: result.turnId,
+            error: err?.message || String(err),
+          });
+        });
+      } catch (err) {
+        console.error('[flowV3] CRISIS_HANDOFF_FAILED', {
+          turnId: result.turnId,
+          error: err?.message || String(err),
+        });
+      }
+    }
   }
 
   // §3 step 6 persistence (F-7): the dispatcher merged the deterministic

@@ -196,9 +196,10 @@ describe('predictor intent orchestrator college rank+branch routing', () => {
         translationApplied: false,
         resolvedLanguage: 'en',
       },
-      // Without a provider the V3 fallback ladder re-asks the open slot with
-      // verbatim beat copy — still proof the turn entered the counselling flow.
-      expectedSnippet: /qualification|Rithika|Class 12|name|entrance exam|predict|counsellor/i,
+      // Without a provider the LLM-only recovery path returns the brief outage
+      // apology — still proof the turn entered Flow V3 (not a predictor script).
+      expectedSnippet:
+        /qualification|Rithika|Class 12|name|entrance exam|predict|counsellor|connection issue/i,
     });
   });
 
@@ -214,7 +215,8 @@ describe('predictor intent orchestrator college rank+branch routing', () => {
         translationApplied: true,
         resolvedLanguage: 'te',
       },
-      expectedSnippet: /qualification|Rithika|Class 12|name|entrance exam|predict|counsellor/i,
+      expectedSnippet:
+        /qualification|Rithika|Class 12|name|entrance exam|predict|counsellor|connection issue/i,
     });
   });
 });

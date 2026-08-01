@@ -350,25 +350,61 @@ function isRankBranchRecommendationQuery(text) {
  * divert narratives are retired as live WhatsApp doors.
  * @returns {{ intent: string, confidence: 'high'|'medium'|'low', intentReason?: string }}
  */
+/**
+ * Explicit human-handoff only. Bare substrings like "counsellor" / "support"
+ * used to hijack booking asks ("how do I book a session with a counsellor?")
+ * out of Flow V3 into a silent/mechanical handoff. Mid-flow, only clear
+ * "talk to a real person / human / agent" phrasing leaves the LLM path.
+ */
+function isExplicitHumanHandoffRequest(normalizedText, originalText) {
+  const t = String(normalizedText || '');
+  const original = String(originalText || '');
+  if (/^(agent|human|person|counsellor|counselor|support)$/i.test(t.trim())) return true;
+  // Explicit transfer / talk-to-human phrasing (NOT "book a session with a counsellor").
+  if (
+    /\b(talk|speak|connect|transfer|handoff|hand off)\b.{0,40}\b(real )?(person|human|agent|counsellor|counselor)\b/i.test(
+      t
+    )
+  ) {
+    // Booking / how-to questions about counsellors stay in the LLM flow.
+    if (/\b(book|booking|schedule|session|appointment|how do i|how can i)\b/i.test(t)) {
+      return false;
+    }
+    return true;
+  }
+  if (/\b(real person|human agent|live agent|live person)\b/i.test(t)) return true;
+  if (/\bi want (to talk to |a )?(real )?(person|human|agent)\b/i.test(t)) return true;
+  if (/^(please )?(connect me to|call) (a )?(counsellor|counselor|agent|human)\b/i.test(t)) {
+    return true;
+  }
+  // Preserve legacy AGENT keyword when the whole message is clearly AGENT.
+  if (/^agent\b/i.test(original.trim()) && original.trim().length <= 20) return true;
+  return false;
+}
+
 function classifyIntent(text, botState, productLine, originalText = null) {
   const t = normalizeText(text);
   const original = String(originalText || text || '').trim();
 
-  if (
-    matchesAny(t, GLOBAL_KEYWORDS.agent) &&
-    !isCounsellorProgramQuestion(t, original)
-  ) {
-    return { intent: 'human_handoff', confidence: 'high' };
-  }
   if (matchesAny(t, GLOBAL_KEYWORDS.stop)) {
     return { intent: 'opt_out', confidence: 'high' };
   }
 
   const activeGuidedFlow = getGuidedFlowByBotState(botState?.state);
-  if (
+  const inCounsellingFlow =
     activeGuidedFlow?.id === 'career_counselling_flow_v2' ||
-    activeGuidedFlow?.id === 'career_counselling_flow_v3'
+    activeGuidedFlow?.id === 'career_counselling_flow_v3';
+
+  // Explicit handoff may interrupt counselling. Booking / "counsellor" questions
+  // stay in the LLM flow so the student always gets a prompt-authored reply.
+  if (
+    isExplicitHumanHandoffRequest(t, original) &&
+    !isCounsellorProgramQuestion(t, original)
   ) {
+    return { intent: 'human_handoff', confidence: 'high' };
+  }
+
+  if (inCounsellingFlow) {
     return { intent: activeGuidedFlow.continueIntent, confidence: 'high' };
   }
 

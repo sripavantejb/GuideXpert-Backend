@@ -12,11 +12,15 @@ const { mergeFlowV3Profile } = require('./profile/flowV3ProfileMerge');
 const { buildTurnContext } = require('./context/buildTurnContext');
 const { runLlmLoop, buildTurnMessages } = require('./llm/llmLoop');
 const { validateEnvelope } = require('./validate/validateEnvelope');
-const { runFallbackLadder } = require('./validate/fallbackLadder');
 const { renderEnvelope } = require('./render/renderEnvelope');
 const { flushTurnLog } = require('./log/flushTurnLog');
 const { createToolBroker } = require('./tools/toolBroker');
 const { latestVersion, refreshPromptOverrideFromDb } = require('./llm/promptLoader');
+const {
+  recoverWithSafeMode,
+  recoverWithCrisisMode,
+} = require('./llm/llmOnlyRecovery');
+const { SECURITY_REFUSAL, OUTAGE_APOLOGY } = require('./llm/modeAddenda');
 
 function newTurnId() {
   return typeof crypto.randomUUID === 'function'
@@ -61,20 +65,42 @@ function terminalFromGate(terminal, gateResult) {
       gateResult,
     };
   }
-  const copy =
-    terminal.copy ||
-    terminal.replyText ||
-    (terminal.kind === 'crisis' || terminal.route === 'human_handoff'
-      ? "I'm really glad you reached out. Please contact Tele-MANAS at 14416 — a human counsellor can help right away."
-      : "I can't help with that here — happy to stick to college and career questions.");
+  // Security / prompt-injection only — never feed the injected prompt to the LLM.
+  if (terminal.kind === 'security_block' || terminal.route === 'security_refusal') {
+    return {
+      replyText: SECURITY_REFUSAL,
+      replyParts: [SECURITY_REFUSAL],
+      interactive: null,
+      nextState: 'career_counselling_flow_v3',
+      intent: 'career_counselling_flow_v3',
+      gateResult,
+      terminal,
+    };
+  }
+  // Demographic business-rule refusal (kept verbatim by product contract).
+  const copy = terminal.copy || terminal.replyText || SECURITY_REFUSAL;
   return {
     replyText: copy,
     replyParts: [copy],
-    interactive: null,
-    nextState: terminal.route === 'human_handoff' ? 'human_handoff' : 'career_counselling_flow_v3',
+    interactive: terminal.buttons
+      ? { type: 'button', body: copy, buttons: [...terminal.buttons] }
+      : null,
+    nextState: terminal.route === 'human_agent' ? 'career_counselling_flow_v3' : 'career_counselling_flow_v3',
     intent: 'career_counselling_flow_v3',
     gateResult,
     terminal,
+  };
+}
+
+function recoveryToolContext(input, turnId, profile) {
+  return {
+    phone: input.phone,
+    conversationId: input.conversationId,
+    turnId,
+    profile,
+    slotMeta: input.slotMeta || {},
+    casVersion: input.casVersion ?? null,
+    inboundText: input.text,
   };
 }
 
@@ -114,7 +140,135 @@ async function processFlowV3Turn(input = {}) {
     budget: input.budget,
   });
   if (!gateResult.passed) {
-    const terminalReply = terminalFromGate(gateResult.terminal, gateResult);
+    const terminal = gateResult.terminal || {};
+
+    // Crisis → LLM CRISIS_MODE (admin prompt + crisis addendum). Fixed
+    // Tele-MANAS line is only the last backstop if the model fails twice.
+    if (terminal.kind === 'crisis' || terminal.route === 'llm_crisis') {
+      let crisisTurnContext = null;
+      try {
+        crisisTurnContext = buildTurnContext({
+          profile,
+          slotMeta: input.slotMeta || {},
+          turns: input.history || input.turns || [],
+          text: input.text,
+          promptVersion,
+          purpose: 'crisis',
+        });
+      } catch (_) {
+        crisisTurnContext = { error: 'context_build_failed' };
+      }
+      const broker = createToolBroker({ deps: input.deps || {} });
+      const crisis = await recoverWithCrisisMode({
+        promptVersion,
+        userText: input.text,
+        turnContext: crisisTurnContext,
+        toolContext: recoveryToolContext(input, turnId, profile),
+        broker,
+        provider: input.provider,
+        deps: input.deps,
+        profile,
+      });
+      await flushTurnLog({
+        turnId,
+        conversationId: input.conversationId,
+        phone: input.phone,
+        inboundId: input.inboundId,
+        promptVersion,
+        promptHash: crisis.prompt?.hash || null,
+        inboundText: input.text,
+        gateVerdicts: gateResult.verdicts,
+        profileBefore: profile,
+        envelope: crisis.envelope || null,
+        blocked: !crisis.ok,
+        fallbackTier: crisis.source || null,
+        mode,
+        latencyMs: Date.now() - startedAt,
+        deliveryStatus: crisis.ok ? 'ready' : 'crisis_backstop',
+      }, input.deps || {});
+      return {
+        turnId,
+        mode,
+        shadowOnly: mode === 'shadow',
+        replyText: crisis.rendered.replyText,
+        replyParts: crisis.rendered.replyParts,
+        interactive: crisis.rendered.interactive,
+        replyMedia: crisis.rendered.replyMedia,
+        nextState: 'human_handoff',
+        intent: 'career_counselling_flow_v3',
+        gateResult,
+        terminal: { ...terminal, setCrisisLocked: true },
+        envelope: crisis.envelope || null,
+        fallback: crisis.ok ? null : { tier: 'crisis_backstop', replyText: crisis.rendered.replyText },
+        latencyMs: Date.now() - startedAt,
+        localizationTier: 'static',
+        preLocalized: true,
+      };
+    }
+
+    // Budget exhausted → safe-mode LLM (or outage apology), never canned beat copy.
+    if (terminal.kind === 'budget_exhausted') {
+      let budgetCtx = null;
+      try {
+        budgetCtx = buildTurnContext({
+          profile,
+          slotMeta: input.slotMeta || {},
+          turns: input.history || input.turns || [],
+          text: input.text,
+          promptVersion,
+        });
+      } catch (_) {
+        budgetCtx = {};
+      }
+      const broker = createToolBroker({ deps: input.deps || {} });
+      const recovered = await recoverWithSafeMode({
+        promptVersion,
+        userText: input.text,
+        turnContext: budgetCtx,
+        toolContext: recoveryToolContext(input, turnId, profile),
+        broker,
+        provider: input.provider,
+        deps: input.deps,
+        profile,
+      });
+      await flushTurnLog({
+        turnId,
+        conversationId: input.conversationId,
+        phone: input.phone,
+        inboundId: input.inboundId,
+        promptVersion,
+        promptHash: recovered.prompt?.hash || null,
+        inboundText: input.text,
+        gateVerdicts: gateResult.verdicts,
+        profileBefore: profile,
+        envelope: recovered.envelope || null,
+        blocked: !recovered.ok,
+        fallbackTier: recovered.source || null,
+        mode,
+        latencyMs: Date.now() - startedAt,
+        deliveryStatus: recovered.ok ? 'ready' : 'outage_apology',
+      }, input.deps || {});
+      return {
+        turnId,
+        mode,
+        shadowOnly: mode === 'shadow',
+        replyText: recovered.rendered.replyText,
+        replyParts: recovered.rendered.replyParts,
+        interactive: recovered.rendered.interactive,
+        replyMedia: recovered.rendered.replyMedia,
+        nextState: 'career_counselling_flow_v3',
+        intent: 'career_counselling_flow_v3',
+        gateResult,
+        terminal,
+        envelope: recovered.envelope || null,
+        latencyMs: Date.now() - startedAt,
+        localizationTier: 'static',
+        preLocalized: true,
+      };
+    }
+
+    // Opt-out silence, security refusal, demographic verbatim — non-LLM by design.
+    const terminalReply = terminalFromGate(terminal, gateResult);
     await flushTurnLog({
       turnId,
       conversationId: input.conversationId,
@@ -284,6 +438,7 @@ async function processFlowV3Turn(input = {}) {
   let validation = null;
   let regenerated = false;
   let fallback = null;
+  let recovery = null;
 
   // V-8 must judge beat discipline against the walk AFTER this turn's tool
   // writes: when the model persisted the asked slot via update_lead_profile
@@ -317,15 +472,7 @@ async function processFlowV3Turn(input = {}) {
         });
         const retry = await runLlmLoop({
           messages,
-          toolContext: {
-            phone: input.phone,
-            conversationId: input.conversationId,
-            turnId,
-            profile: mergedProfile,
-            slotMeta: input.slotMeta || {},
-            casVersion: input.casVersion ?? null,
-            inboundText: input.text,
-          },
+          toolContext: recoveryToolContext(input, turnId, mergedProfile),
           broker,
           provider: input.provider,
           // Actionable feedback: the bare code string ("V-8:beat_discipline…")
@@ -338,6 +485,9 @@ async function processFlowV3Turn(input = {}) {
               : '',
             validation.violations.some((v) => String(v.detail || '').includes('grounding'))
               ? 'Remove every college name and number that does not come from a tool result cited in "grounding". If you used no data tools, "grounding" must be [].'
+              : '',
+            validation.violations.some((v) => /guarante/i.test(String(v.detail || '')) || v.code === 'V-3')
+              ? 'Never use the words guarantee/guaranteed. Reframe honestly without those words.'
               : '',
           ]
             .filter(Boolean)
@@ -370,29 +520,82 @@ async function processFlowV3Turn(input = {}) {
             loopResult = retry;
           } else {
             validation = v2;
-            fallback = runFallbackLadder({ profile: mergedProfile, slotMeta: input.slotMeta, reason: 'validation_block' });
+            recovery = await recoverWithSafeMode({
+              promptVersion,
+              userText: input.text,
+              turnContext,
+              toolContext: recoveryToolContext(input, turnId, mergedProfile),
+              broker,
+              provider: input.provider,
+              deps: input.deps,
+              nextSlotHint: retryHint,
+              profile: mergedProfile,
+            });
           }
         } else {
-          fallback = runFallbackLadder({ profile: mergedProfile, slotMeta: input.slotMeta, reason: loopResult.reason || 'parse_failed' });
+          recovery = await recoverWithSafeMode({
+            promptVersion,
+            userText: input.text,
+            turnContext,
+            toolContext: recoveryToolContext(input, turnId, mergedProfile),
+            broker,
+            provider: input.provider,
+            deps: input.deps,
+            nextSlotHint,
+            profile: mergedProfile,
+          });
         }
       } catch {
-        fallback = runFallbackLadder({ profile: mergedProfile, slotMeta: input.slotMeta, reason: 'regen_failed' });
+        recovery = await recoverWithSafeMode({
+          promptVersion,
+          userText: input.text,
+          turnContext,
+          toolContext: recoveryToolContext(input, turnId, mergedProfile),
+          broker,
+          provider: input.provider,
+          deps: input.deps,
+          nextSlotHint,
+          profile: mergedProfile,
+        });
       }
     } else {
       envelope = validation.envelope;
     }
   } else {
-    fallback = runFallbackLadder({ profile: mergedProfile, slotMeta: input.slotMeta, reason: loopResult.reason || 'llm_failed' });
+    recovery = await recoverWithSafeMode({
+      promptVersion,
+      userText: input.text,
+      turnContext,
+      toolContext: recoveryToolContext(input, turnId, mergedProfile),
+      broker,
+      provider: input.provider,
+      deps: input.deps,
+      nextSlotHint,
+      profile: mergedProfile,
+    });
   }
 
   let rendered;
-  if (fallback) {
-    rendered = {
-      replyText: fallback.replyText,
-      replyParts: fallback.replyParts,
-      interactive: null,
-      replyMedia: null,
-    };
+  if (recovery) {
+    rendered = recovery.rendered;
+    if (recovery.ok && recovery.envelope) {
+      envelope = recovery.envelope;
+      if (recovery.loopResult) {
+        recovery.loopResult.prompt = recovery.loopResult.prompt || recovery.prompt;
+        loopResult = recovery.loopResult;
+      } else if (recovery.prompt) {
+        loopResult = { ...loopResult, prompt: recovery.prompt, toolTrace: recovery.toolTrace || [] };
+      }
+      fallback = null;
+    } else {
+      // Outage apology — last non-LLM exception when OpenAI is unreachable.
+      fallback = {
+        tier: 'outage',
+        replyText: rendered.replyText || OUTAGE_APOLOGY,
+        replyParts: rendered.replyParts || [OUTAGE_APOLOGY],
+        reason: recovery.reason || 'llm_failed',
+      };
+    }
   } else {
     rendered = renderEnvelope(envelope, { toolTrace: loopResult.toolTrace || [] });
   }
@@ -472,7 +675,7 @@ async function processFlowV3Turn(input = {}) {
     })),
     blocked: Boolean(fallback),
     regenerated,
-    fallbackTier: fallback?.tier || null,
+    fallbackTier: recovery?.source || fallback?.tier || null,
     mode,
     latencyMs,
     deliveryStatus: mode === 'shadow' ? 'shadow_only' : 'ready',

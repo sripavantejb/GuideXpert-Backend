@@ -54,6 +54,9 @@ async function createHandoff({
   reason = 'user_requested',
   userLastMessage = null,
   createdBy = 'bot',
+  /** When true, create the handoff record without the mechanical WhatsApp ack
+   *  (used when Flow V3 already sent an LLM-authored crisis / escalate reply). */
+  silent = false,
 }) {
   const now = new Date();
   const routing = await determineRoute(leadContext);
@@ -118,16 +121,18 @@ async function createHandoff({
   await setConversationHandoff(conversation._id, handoff._id, now);
   await transitionState(conversation._id, conversation.phone, 'human_handoff', emptySubflows(), { now });
 
-  const routeLabel = routing.assignedBdaId
-    ? 'Your assigned counsellor team will respond shortly.'
-    : 'Our support team will respond shortly.';
+  if (!silent) {
+    const routeLabel = routing.assignedBdaId
+      ? 'Your assigned counsellor team will respond shortly.'
+      : 'Our support team will respond shortly.';
 
-  await whatsappOutbound.sendBotTextReply({
-    conversationId: conversation._id,
-    phone10: conversation.phone,
-    text: `Thanks — I've connected you with a human agent. ${routeLabel}\n\nPlease wait; we will reply here on WhatsApp.`,
-    handoffId: handoff._id,
-  });
+    await whatsappOutbound.sendBotTextReply({
+      conversationId: conversation._id,
+      phone10: conversation.phone,
+      text: `Thanks — I've connected you with a human agent. ${routeLabel}\n\nPlease wait; we will reply here on WhatsApp.`,
+      handoffId: handoff._id,
+    });
+  }
 
   try {
     const { maybeAutoAssign } = require('./humanCopilot/humanCopilotService');
