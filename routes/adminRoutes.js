@@ -505,6 +505,68 @@ router.put('/system-prompt', requireAdmin, requireSuperAdmin, async (req, res) =
   }
 });
 
+/**
+ * Clear WhatsApp chatbot profile/session state for one phone.
+ * Removes bot state (leadProfile, predictor session, opt-out flags) and
+ * WhatsAppLeadProfile row. Does not delete conversation message history.
+ */
+router.post('/chatbot/clear-profile', requireAdmin, requireSuperAdmin, async (req, res) => {
+  try {
+    const { normalizePhone10 } = require('../utils/chatbotPhone');
+    const phone10 = normalizePhone10(req.body?.phone);
+    if (!phone10 || phone10.length !== 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'Provide a valid 10-digit Indian mobile number in `phone`.',
+      });
+    }
+
+    const WhatsAppBotState = require('../models/WhatsAppBotState');
+    const WhatsAppConversation = require('../models/WhatsAppConversation');
+
+    const conversations = await WhatsAppConversation.find({ phone: phone10 }).select('_id').lean();
+    const conversationIds = conversations.map((c) => c._id);
+
+    const botStateResult = await WhatsAppBotState.deleteMany({
+      $or: [{ phone: phone10 }, ...(conversationIds.length ? [{ conversationId: { $in: conversationIds } }] : [])],
+    });
+
+    let leadProfileDeleted = 0;
+    try {
+      const WhatsAppLeadProfile = require('../models/WhatsAppLeadProfile');
+      const leadRes = await WhatsAppLeadProfile.deleteMany({ phone: phone10 });
+      leadProfileDeleted = leadRes.deletedCount || 0;
+    } catch (err) {
+      console.warn('[ClearChatbotProfile] lead profile clear skipped', err?.message || err);
+    }
+
+    console.log('[ClearChatbotProfile] cleared by admin', {
+      phoneSuffix: phone10.slice(-4),
+      botStatesDeleted: botStateResult.deletedCount || 0,
+      leadProfilesDeleted: leadProfileDeleted,
+      conversationCount: conversationIds.length,
+      by: req.admin?.email || req.admin?.username || null,
+    });
+
+    return res.json({
+      success: true,
+      phone: phone10,
+      deleted: {
+        botStates: botStateResult.deletedCount || 0,
+        leadProfiles: leadProfileDeleted,
+        conversationsMatched: conversationIds.length,
+      },
+      message:
+        (botStateResult.deletedCount || 0) + leadProfileDeleted > 0
+          ? `Cleared chatbot profile for ${phone10}.`
+          : `No chatbot profile found for ${phone10}.`,
+    });
+  } catch (err) {
+    console.error('[ClearChatbotProfile] error:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
 // Website chatbot (student panel web chat) system prompt (Mongo source of truth; default fallback)
 router.get('/web-chat-system-prompt', requireAdmin, async (req, res) => {
   try {
