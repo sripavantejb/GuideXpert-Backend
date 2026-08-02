@@ -3,15 +3,20 @@
 /**
  * Flow V3 system prompt — MongoDB source of truth (Vercel-safe) with optional
  * best-effort mirror to prompts/system_prompt.v1.md for local/dev.
+ * Every successful save is also appended to SystemPromptHistory.
  */
 
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 const AppSettings = require('../models/AppSettings');
+const SystemPromptHistory = require('../models/SystemPromptHistory');
 
 const SYSTEM_PROMPT_KEY = 'flowV3SystemPrompt';
 const MAX_PROMPT_BYTES = 100 * 1024; // ~100 KB
+const HISTORY_LIST_LIMIT = 50;
+const PREVIEW_CHARS = 120;
 const PROMPT_FILE = path.join(__dirname, '..', 'prompts', 'system_prompt.v1.md');
 
 function hashPrompt(text) {
@@ -61,6 +66,23 @@ function mirrorPromptToFile(text) {
   }
 }
 
+function previewText(text) {
+  const flat = String(text || '').replace(/\s+/g, ' ').trim();
+  if (flat.length <= PREVIEW_CHARS) return flat;
+  return `${flat.slice(0, PREVIEW_CHARS)}…`;
+}
+
+async function insertHistorySnapshot({ text, bytes, hash, updatedAt, updatedByEmail }) {
+  const at = updatedAt ? new Date(updatedAt) : new Date();
+  await SystemPromptHistory.create({
+    text,
+    hash: hash || hashPrompt(text),
+    bytes: bytes != null ? bytes : Buffer.byteLength(text, 'utf8'),
+    updatedAt: Number.isNaN(at.getTime()) ? new Date() : at,
+    updatedByEmail: updatedByEmail || null,
+  });
+}
+
 /**
  * @returns {Promise<null|{ text: string, updatedAt: string|null, updatedByEmail: string|null }>}
  */
@@ -82,7 +104,7 @@ async function getSystemPromptSetting() {
 }
 
 /**
- * Persist prompt to Mongo and best-effort mirror to .md.
+ * Persist prompt to Mongo, snapshot history, and best-effort mirror to .md.
  * @param {string} rawText
  * @param {{ email?: string, username?: string }|null} admin
  */
@@ -91,6 +113,7 @@ async function setSystemPromptSetting(rawText, admin = null) {
   const updatedAt = new Date().toISOString();
   const updatedByEmail =
     (admin && (admin.email || admin.username)) || null;
+  const hash = hashPrompt(text);
 
   const value = {
     text,
@@ -104,12 +127,18 @@ async function setSystemPromptSetting(rawText, admin = null) {
     { upsert: true, new: true }
   );
 
+  try {
+    await insertHistorySnapshot({ text, bytes, hash, updatedAt, updatedByEmail });
+  } catch (err) {
+    console.error('[SystemPrompt] history snapshot failed:', err.message);
+  }
+
   const mirror = mirrorPromptToFile(text);
 
   return {
     text,
     bytes,
-    hash: hashPrompt(text),
+    hash,
     updatedAt,
     updatedByEmail,
     mirroredToFile: mirror.mirrored,
@@ -155,15 +184,81 @@ async function resolveSystemPromptForAdmin() {
   };
 }
 
+async function seedHistoryFromCurrentIfEmpty() {
+  const count = await SystemPromptHistory.countDocuments();
+  if (count > 0) return;
+  const current = await getSystemPromptSetting();
+  if (!current || !current.text) return;
+  await insertHistorySnapshot({
+    text: current.text,
+    bytes: Buffer.byteLength(current.text, 'utf8'),
+    hash: hashPrompt(current.text),
+    updatedAt: current.updatedAt || new Date().toISOString(),
+    updatedByEmail: current.updatedByEmail,
+  });
+}
+
+/**
+ * List recent prompt versions (preview only — no full text).
+ * @param {{ limit?: number }} [opts]
+ */
+async function listSystemPromptHistory(opts = {}) {
+  const limitRaw = Number(opts.limit);
+  const limit =
+    Number.isFinite(limitRaw) && limitRaw > 0
+      ? Math.min(Math.floor(limitRaw), HISTORY_LIST_LIMIT)
+      : HISTORY_LIST_LIMIT;
+
+  await seedHistoryFromCurrentIfEmpty();
+
+  const rows = await SystemPromptHistory.find({})
+    .sort({ updatedAt: -1 })
+    .limit(limit)
+    .select('hash bytes updatedAt updatedByEmail text')
+    .lean();
+
+  return rows.map((row) => ({
+    id: String(row._id),
+    hash: row.hash,
+    bytes: row.bytes,
+    updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : null,
+    updatedByEmail: row.updatedByEmail || null,
+    textPreview: previewText(row.text),
+  }));
+}
+
+/**
+ * Full history item for modal / copy.
+ * @param {string} id
+ */
+async function getSystemPromptHistoryById(id) {
+  if (!id || !mongoose.Types.ObjectId.isValid(String(id))) {
+    return null;
+  }
+  const row = await SystemPromptHistory.findById(id).lean();
+  if (!row) return null;
+  return {
+    id: String(row._id),
+    text: row.text,
+    hash: row.hash,
+    bytes: row.bytes,
+    updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : null,
+    updatedByEmail: row.updatedByEmail || null,
+  };
+}
+
 module.exports = {
   SYSTEM_PROMPT_KEY,
   MAX_PROMPT_BYTES,
+  HISTORY_LIST_LIMIT,
   PROMPT_FILE,
   hashPrompt,
   validatePromptText,
   getSystemPromptSetting,
   setSystemPromptSetting,
   resolveSystemPromptForAdmin,
+  listSystemPromptHistory,
+  getSystemPromptHistoryById,
   readPromptFileSync,
   mirrorPromptToFile,
 };
