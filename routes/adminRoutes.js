@@ -100,6 +100,8 @@ const {
 const {
   resolveSystemPromptForAdmin,
   setSystemPromptSetting,
+  listSystemPromptHistory,
+  getSystemPromptHistoryById,
 } = require('../utils/systemPromptSettings');
 const {
   resolveWebChatPromptForAdmin,
@@ -502,6 +504,31 @@ router.put('/system-prompt', requireAdmin, requireSuperAdmin, async (req, res) =
     const status = /must be|exceeds|non-empty/i.test(msg) ? 400 : 500;
     console.error('[SystemPrompt] PUT error:', err);
     return res.status(status).json({ success: false, message: msg });
+  }
+});
+
+router.get('/system-prompt/history', requireAdmin, async (req, res) => {
+  try {
+    const items = await listSystemPromptHistory({
+      limit: req.query?.limit != null ? Number(req.query.limit) : undefined,
+    });
+    return res.json({ success: true, items });
+  } catch (err) {
+    console.error('[SystemPrompt] GET history error:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+router.get('/system-prompt/history/:id', requireAdmin, async (req, res) => {
+  try {
+    const item = await getSystemPromptHistoryById(req.params.id);
+    if (!item) {
+      return res.status(404).json({ success: false, message: 'History item not found' });
+    }
+    return res.json({ success: true, ...item });
+  } catch (err) {
+    console.error('[SystemPrompt] GET history item error:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
