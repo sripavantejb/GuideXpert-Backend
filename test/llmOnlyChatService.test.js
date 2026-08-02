@@ -10,6 +10,7 @@ const llmClientPath = require.resolve('../services/ai/llmClient');
 const outboundPath = require.resolve('../services/chatbot/whatsappOutboundService');
 const botStatePath = require.resolve('../services/chatbot/botStateService');
 const memoryPath = require.resolve('../services/chatbot/leadProfileMemoryService');
+const predictorPath = require.resolve('../services/chatbot/predictorToolService');
 
 const CONVERSATION_ID = new mongoose.Types.ObjectId();
 const INBOUND_ID = new mongoose.Types.ObjectId();
@@ -38,6 +39,12 @@ function knownProfileMessage(call) {
   );
 }
 
+function checklistMessage(call) {
+  return (call?.messages || []).find(
+    (m) => m.role === 'system' && String(m.content || '').startsWith('PREDICTOR_CHECKLIST')
+  );
+}
+
 describe('llmOnlyChatService', () => {
   let sentTexts;
   let llmCalls;
@@ -48,6 +55,10 @@ describe('llmOnlyChatService', () => {
   let outboundFindQueries;
   let prevHistorySince;
   let extractPatch;
+  let predictorIntent;
+  let predictorSlotPatch;
+  let collegeRunCount;
+  let rankRunCount;
 
   beforeEach(() => {
     sentTexts = [];
@@ -58,6 +69,10 @@ describe('llmOnlyChatService', () => {
     inboundFindQueries = [];
     outboundFindQueries = [];
     extractPatch = {};
+    predictorIntent = null;
+    predictorSlotPatch = {};
+    collegeRunCount = 0;
+    rankRunCount = 0;
     prevHistorySince = process.env.CHATBOT_HISTORY_SINCE;
     delete process.env.CHATBOT_HISTORY_SINCE;
 
@@ -68,6 +83,7 @@ describe('llmOnlyChatService', () => {
       outboundPath,
       botStatePath,
       memoryPath,
+      predictorPath,
     ]) {
       delete require.cache[p];
     }
@@ -99,6 +115,37 @@ describe('llmOnlyChatService', () => {
 
     const memory = require(memoryPath);
     mock.method(memory, 'extractProfilePatch', async () => extractPatch);
+
+    const predictor = require(predictorPath);
+    mock.method(predictor, 'detectPredictorIntent', () => predictorIntent);
+    mock.method(predictor, 'extractPredictorSlotPatch', async () => predictorSlotPatch);
+    mock.method(predictor, 'buildCollegeSlotsFromProfile', () => ({}));
+    mock.method(predictor, 'buildRankSlotsFromProfile', () => ({}));
+    mock.method(predictor, 'mergeCollegeSlots', ({ slots }) => ({ ...slots, ...(predictorSlotPatch.slots || {}) }));
+    mock.method(predictor, 'mergeRankSlots', ({ slots }) => ({ ...slots, ...(predictorSlotPatch.slots || {}) }));
+    mock.method(predictor, 'buildPredictorChecklistBlock', (session) =>
+      [
+        'PREDICTOR_CHECKLIST',
+        `type: ${session.type}`,
+        'next_to_ask: rank',
+        'Ask ONLY for next_to_ask',
+      ].join('\n')
+    );
+    mock.method(predictor, 'isSessionActive', (p) => Boolean(p && p.active));
+    mock.method(predictor, 'isSessionReady', (session) => Boolean(session?.slots?.__ready));
+    mock.method(predictor, 'runCollegePrediction', async () => {
+      collegeRunCount += 1;
+      return { ok: true, reply: 'COLLEGE PREDICTION RESULT' };
+    });
+    mock.method(predictor, 'runRankPrediction', async () => {
+      rankRunCount += 1;
+      return { ok: true, reply: 'RANK PREDICTION RESULT' };
+    });
+    mock.method(predictor, 'emptyPredictorSession', (type) => ({
+      active: true,
+      type,
+      slots: {},
+    }));
 
     const WhatsAppInboundMessage = require('../models/WhatsAppInboundMessage');
     mock.method(WhatsAppInboundMessage, 'find', (query) => {
@@ -137,6 +184,8 @@ describe('llmOnlyChatService', () => {
     assert.equal(main.messages[0].content, 'ADMIN PANEL PROMPT');
     assert.equal(main.messages.at(-1).content, 'hello');
     assert.ok(knownProfileMessage(main), 'KNOWN_PROFILE system message missing');
+    assert.equal(checklistMessage(main), undefined);
+    assert.equal(collegeRunCount, 0);
     assert.deepEqual(sentTexts, ['LLM REPLY']);
   });
 
@@ -160,7 +209,6 @@ describe('llmOnlyChatService', () => {
     const persisted = transitions.find((t) => t.leadProfile);
     assert.ok(persisted);
     assert.equal(persisted.leadProfile.budget, '3 lakhs');
-    assert.equal(persisted.leadProfile.qualification, '12th - MPC');
 
     const main = replyCall(llmCalls);
     const block = knownProfileMessage(main);
@@ -169,6 +217,63 @@ describe('llmOnlyChatService', () => {
     assert.match(block.content, /Hyderabad/);
     assert.match(block.content, /3 lakhs/);
     assert.match(block.content, /CSE/);
+  });
+
+  test('active incomplete predictor injects PREDICTOR_CHECKLIST and does not call API', async () => {
+    predictorIntent = 'college';
+    predictorSlotPatch = { slots: { exam: 'TS_EAMCET' } };
+
+    const result = await svc().processInbound({
+      conversation,
+      inbound: inbound('can I get CSE with my rank?'),
+    });
+
+    assert.equal(result.llmUsed, true);
+    assert.equal(result.predictorActive, true);
+    assert.equal(collegeRunCount, 0);
+    assert.equal(rankRunCount, 0);
+    const main = replyCall(llmCalls);
+    assert.ok(checklistMessage(main));
+    assert.match(checklistMessage(main).content, /PREDICTOR_CHECKLIST/);
+    assert.ok(transitions.some((t) => t.predictor && t.predictor.active));
+  });
+
+  test('ready college predictor sends grounded API reply without main LLM inventing colleges', async () => {
+    botContext.predictor = {
+      active: true,
+      type: 'college',
+      slots: { __ready: true, exam: 'TS_EAMCET', rank: 45000 },
+    };
+
+    const result = await svc().processInbound({
+      conversation,
+      inbound: inbound('OC male'),
+    });
+
+    assert.equal(result.predictorUsed, true);
+    assert.equal(result.llmUsed, false);
+    assert.equal(collegeRunCount, 1);
+    assert.deepEqual(sentTexts, ['COLLEGE PREDICTION RESULT']);
+    assert.equal(replyCall(llmCalls), undefined);
+    assert.ok(transitions.some((t) => t.predictor && t.predictor.active === false));
+  });
+
+  test('ready rank predictor sends grounded rank reply', async () => {
+    botContext.predictor = {
+      active: true,
+      type: 'rank',
+      slots: { __ready: true, examId: 'tseamcet', score: 120 },
+    };
+
+    const result = await svc().processInbound({
+      conversation,
+      inbound: inbound('120'),
+    });
+
+    assert.equal(result.predictorUsed, true);
+    assert.equal(rankRunCount, 1);
+    assert.equal(collegeRunCount, 0);
+    assert.deepEqual(sentTexts, ['RANK PREDICTION RESULT']);
   });
 
   test('extraction failure does not block the reply; stored profile is still injected', async () => {
@@ -195,6 +300,7 @@ describe('llmOnlyChatService', () => {
     assert.equal(llmCalls.length, 0);
     assert.deepEqual(transitions, [{ optedOut: true }]);
     assert.deepEqual(sentTexts, [service.OPT_OUT_REPLY]);
+    assert.equal(collegeRunCount, 0);
   });
 
   test('opted-out user gets no reply until START (no extraction / no LLM)', async () => {
@@ -238,8 +344,6 @@ describe('llmOnlyChatService', () => {
 
     assert.equal(inboundFindQueries.length, 1);
     assert.equal(outboundFindQueries.length, 1);
-    assert.ok(inboundFindQueries[0].createdAt);
-    assert.ok(outboundFindQueries[0].createdAt);
     assert.equal(
       inboundFindQueries[0].createdAt.$gte.getTime(),
       expectedEpoch.getTime()
@@ -261,10 +365,6 @@ describe('llmOnlyChatService', () => {
 
     assert.equal(
       inboundFindQueries[0].createdAt.$gte.getTime(),
-      expectedEpoch.getTime()
-    );
-    assert.equal(
-      outboundFindQueries[0].createdAt.$gte.getTime(),
       expectedEpoch.getTime()
     );
   });

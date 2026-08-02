@@ -25,6 +25,22 @@ const {
   buildKnownProfileBlock,
   sanitizeProfile,
 } = require('./leadProfileMemoryService');
+const {
+  TYPE_COLLEGE,
+  TYPE_RANK,
+  emptyPredictorSession,
+  detectPredictorIntent,
+  buildCollegeSlotsFromProfile,
+  buildRankSlotsFromProfile,
+  extractPredictorSlotPatch,
+  mergeCollegeSlots,
+  mergeRankSlots,
+  buildPredictorChecklistBlock,
+  runCollegePrediction,
+  runRankPrediction,
+  isSessionActive,
+  isSessionReady,
+} = require('./predictorToolService');
 const { maskPhoneTail } = require('../../utils/chatbotPhone');
 
 const STOP_RE = /^\s*(stop|unsubscribe|opt\s*out|optout)\s*$/i;
@@ -214,15 +230,109 @@ async function processInbound({ conversation, inbound }) {
     );
   }
 
+  // --- College / rank predictor session (LLM asks missing slots; API when ready) ---
+  let predictor = isSessionActive(botState?.context?.predictor)
+    ? { ...botState.context.predictor, slots: { ...(botState.context.predictor.slots || {}) } }
+    : null;
+
+  if (!predictor) {
+    const intent = detectPredictorIntent(userText || '');
+    if (intent === TYPE_RANK) {
+      predictor = emptyPredictorSession(TYPE_RANK);
+      predictor.slots = buildRankSlotsFromProfile(leadProfile);
+    } else if (intent === TYPE_COLLEGE) {
+      predictor = emptyPredictorSession(TYPE_COLLEGE);
+      predictor.slots = buildCollegeSlotsFromProfile(leadProfile);
+    }
+  }
+
+  let predictorChecklist = null;
+  let groundedPredictorReply = null;
+
+  if (predictor) {
+    let llmPatch = {};
+    try {
+      llmPatch = await extractPredictorSlotPatch({
+        knownSlots: predictor.slots,
+        lastBotMessage,
+        userText: userText || '',
+        type: predictor.type,
+      });
+    } catch (err) {
+      console.error(
+        '[llmOnlyChat] predictor slot extract failed',
+        maskPhoneTail(conversation.phone),
+        err?.message || err
+      );
+    }
+
+    if (predictor.type === TYPE_RANK) {
+      predictor.slots = mergeRankSlots({
+        slots: predictor.slots,
+        userText: userText || '',
+        llmPatch,
+      });
+    } else {
+      predictor.slots = mergeCollegeSlots({
+        slots: predictor.slots,
+        userText: userText || '',
+        llmPatch,
+      });
+    }
+
+    if (isSessionReady(predictor)) {
+      const result =
+        predictor.type === TYPE_RANK
+          ? await runRankPrediction(predictor.slots)
+          : await runCollegePrediction(predictor.slots);
+      groundedPredictorReply = result?.reply || ERROR_REPLY;
+      predictor = { active: false, type: predictor.type, slots: {}, completedAt: new Date().toISOString() };
+    } else {
+      predictorChecklist = buildPredictorChecklistBlock(predictor);
+    }
+
+    try {
+      await transitionState(conversation._id, conversation.phone, botState?.state || 'idle', {
+        leadProfile,
+        predictor,
+      });
+    } catch (err) {
+      console.error(
+        '[llmOnlyChat] predictor persist failed',
+        maskPhoneTail(conversation.phone),
+        err?.message || err
+      );
+    }
+  }
+
+  if (groundedPredictorReply) {
+    const sent = await sendReply({
+      conversation,
+      inbound,
+      text: groundedPredictorReply,
+    });
+    return {
+      outboundSuccess: Boolean(sent?.success),
+      llmUsed: false,
+      predictorUsed: true,
+      leadProfile,
+    };
+  }
+
   let replyText = null;
   try {
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...history,
+      { role: 'system', content: buildKnownProfileBlock(leadProfile) },
+    ];
+    if (predictorChecklist) {
+      messages.push({ role: 'system', content: predictorChecklist });
+    }
+    messages.push({ role: 'user', content: userText || '[non-text message]' });
+
     const result = await chatCompletion({
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...history,
-        { role: 'system', content: buildKnownProfileBlock(leadProfile) },
-        { role: 'user', content: userText || '[non-text message]' },
-      ],
+      messages,
       temperature: llmTemperature(),
       maxTokens: llmMaxTokens(),
       timeoutMs: llmTimeoutMs(),
@@ -244,6 +354,7 @@ async function processInbound({ conversation, inbound }) {
   return {
     outboundSuccess: Boolean(sent?.success),
     llmUsed: Boolean(replyText),
+    predictorActive: Boolean(predictorChecklist),
     leadProfile,
   };
 }

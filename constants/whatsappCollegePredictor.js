@@ -214,6 +214,7 @@ module.exports = {
   resolveReservationCode,
   mapRegionChoice,
   formatGenderLabel,
+  pickBranchDetails,
   buildPredictorRequestBody,
   formatPredictionReply,
   initialContext,
