@@ -108,7 +108,7 @@ async function attachSenderNames(messages) {
  * @param {{ limit?: number, before?: string|Date, beforeId?: string, after?: string|Date, afterId?: string }} options
  */
 async function getConversationTranscriptPage(conversationId, options = {}) {
-  const limit = Math.min(Math.max(parseInt(options.limit, 10) || 50, 1), 100);
+  const limit = Math.min(Math.max(parseInt(options.limit, 10) || 50, 1), 200);
   const { before, beforeId, after, afterId } = options;
   const fetchN = limit + 1;
 

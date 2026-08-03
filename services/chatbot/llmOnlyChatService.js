@@ -41,6 +41,7 @@ const {
   isSessionActive,
   isSessionReady,
 } = require('./predictorToolService');
+const { syncLeadIntelligenceSafe } = require('./leadIntelligence/leadIntelligenceSyncService');
 const { maskPhoneTail } = require('../../utils/chatbotPhone');
 
 const STOP_RE = /^\s*(stop|unsubscribe|opt\s*out|optout)\s*$/i;
@@ -229,6 +230,9 @@ async function processInbound({ conversation, inbound }) {
       err?.message || err
     );
   }
+
+  // Lead Intelligence sidecar — never blocks or alters the LLM-only reply path.
+  syncLeadIntelligenceSafe({ conversation, leadProfile });
 
   // --- College / rank predictor session (LLM asks missing slots; API when ready) ---
   let predictor = isSessionActive(botState?.context?.predictor)
