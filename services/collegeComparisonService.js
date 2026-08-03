@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const { COLLEGE_COMPARISON_CATALOG } = require('../data/collegeComparisonCatalog');
 const CollegeComparisonProfile = require('../models/CollegeComparisonProfile');
 const CollegeComparisonSearchEvent = require('../models/CollegeComparisonSearchEvent');
-const { chatCompletion } = require('./ai/llmClient');
+const { collegeComparisonChatCompletion: chatCompletion } = require('./ai/llmClient');
 const { buildCollegeComparisonSystemPrompt } = require('./ai/prompts/collegeComparison.system');
 const {
   buildCollegeComparisonProfileSystemPrompt,

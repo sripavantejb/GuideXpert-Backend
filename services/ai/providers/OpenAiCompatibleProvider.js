@@ -4,17 +4,56 @@ const OpenAI = require('openai');
 const { aiDebugLog } = require('../../chatbot/aiDebugLog');
 
 class OpenAiCompatibleProvider {
-  constructor() {
+  /**
+   * @param {{
+   *   apiKey?: string,
+   *   apiKeyEnv?: string,
+   *   baseURL?: string,
+   *   baseUrlEnv?: string,
+   *   model?: string,
+   *   modelEnv?: string,
+   *   fallbackBaseUrlEnv?: string,
+   *   fallbackModelEnv?: string,
+   * }} [opts]
+   */
+  constructor(opts = {}) {
+    this._opts = opts || {};
     this._client = null;
+  }
+
+  _resolveApiKey() {
+    if (this._opts.apiKey) return String(this._opts.apiKey).trim();
+    const envName = this._opts.apiKeyEnv || 'LLM_API_KEY';
+    return String(process.env[envName] || '').trim();
+  }
+
+  _resolveBaseURL() {
+    if (this._opts.baseURL) return String(this._opts.baseURL).trim();
+    const envName = this._opts.baseUrlEnv || 'LLM_BASE_URL';
+    const primary = String(process.env[envName] || '').trim();
+    if (primary) return primary;
+    const fallbackEnv = this._opts.fallbackBaseUrlEnv;
+    return fallbackEnv ? String(process.env[fallbackEnv] || '').trim() : '';
+  }
+
+  _resolveModel() {
+    if (this._opts.model) return String(this._opts.model).trim();
+    const envName = this._opts.modelEnv || 'LLM_MODEL';
+    const primary = String(process.env[envName] || '').trim();
+    if (primary) return primary;
+    const fallbackEnv = this._opts.fallbackModelEnv;
+    return fallbackEnv ? String(process.env[fallbackEnv] || '').trim() : '';
   }
 
   _getClient() {
     if (this._client) return this._client;
 
-    const apiKey = String(process.env.LLM_API_KEY || '').trim();
-    const baseURL = String(process.env.LLM_BASE_URL || '').trim();
+    const apiKey = this._resolveApiKey();
+    const baseURL = this._resolveBaseURL();
+    const apiKeyLabel = this._opts.apiKeyEnv || 'LLM_API_KEY';
+    const baseUrlLabel = this._opts.baseUrlEnv || 'LLM_BASE_URL';
     if (!apiKey || !baseURL) {
-      throw new Error('LLM_API_KEY and LLM_BASE_URL are required');
+      throw new Error(`${apiKeyLabel} and ${baseUrlLabel} (or fallback) are required`);
     }
 
     this._client = new OpenAI({
@@ -50,9 +89,10 @@ class OpenAiCompatibleProvider {
     responseFormat = null,
   }) {
     aiDebugLog('LLM-DEBUG', 'entered OpenAiCompatibleProvider');
-    const model = String(process.env.LLM_MODEL || '').trim();
+    const model = this._resolveModel();
     if (!model) {
-      throw new Error('LLM_MODEL is required');
+      const modelLabel = this._opts.modelEnv || 'LLM_MODEL';
+      throw new Error(`${modelLabel} (or fallback) is required`);
     }
 
     aiDebugLog('LLM-DEBUG', 'calling model =', model);
