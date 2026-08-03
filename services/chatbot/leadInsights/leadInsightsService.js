@@ -71,6 +71,75 @@ function parseAwaitingReply(value) {
   return { error: 'Invalid awaitingReply. Expected true or false.' };
 }
 
+/** IST offset from UTC (no DST). Used for calendar day boundaries. */
+const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+
+function parseActivityDate(value) {
+  if (value == null || value === '') {
+    return { activityDate: null };
+  }
+  const raw = String(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return { error: 'Invalid activityDate. Expected YYYY-MM-DD.' };
+  }
+  const [y, m, d] = raw.split('-').map(Number);
+  const probe = new Date(Date.UTC(y, m - 1, d));
+  if (probe.getUTCFullYear() !== y || probe.getUTCMonth() !== m - 1 || probe.getUTCDate() !== d) {
+    return { error: 'Invalid activityDate. Expected YYYY-MM-DD.' };
+  }
+  return { activityDate: raw };
+}
+
+function getIstDayRange(dateStr) {
+  const [y, m, d] = String(dateStr).split('-').map(Number);
+  const startMs = Date.UTC(y, m - 1, d) - IST_OFFSET_MS;
+  const endMs = Date.UTC(y, m - 1, d + 1) - IST_OFFSET_MS;
+  return { start: new Date(startMs), end: new Date(endMs) };
+}
+
+function getIstMonthRange(year, month) {
+  const startMs = Date.UTC(year, month - 1, 1) - IST_OFFSET_MS;
+  const endMs = Date.UTC(year, month, 1) - IST_OFFSET_MS;
+  return { start: new Date(startMs), end: new Date(endMs) };
+}
+
+function toIstDateKey(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+function conversationActivityAt(conversation = {}) {
+  const inbound = conversation.lastInboundAt ? new Date(conversation.lastInboundAt) : null;
+  if (inbound && !Number.isNaN(inbound.getTime())) return inbound;
+  const updated = conversation.updatedAt ? new Date(conversation.updatedAt) : null;
+  if (updated && !Number.isNaN(updated.getTime())) return updated;
+  return null;
+}
+
+function getCurrentIstYearMonth(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(now);
+  const year = Number(parts.find((p) => p.type === 'year')?.value);
+  const month = Number(parts.find((p) => p.type === 'month')?.value);
+  return { year, month };
+}
+
+function activityAtInIstDay(activityAt, activityDate) {
+  if (!activityAt || !activityDate) return false;
+  const { start, end } = getIstDayRange(activityDate);
+  const ms = activityAt.getTime();
+  return ms >= start.getTime() && ms < end.getTime();
+}
+
 function computeNoReplyFields(conversation, now = new Date()) {
   if (!conversation) {
     return {
@@ -107,9 +176,17 @@ function computeNoReplyFields(conversation, now = new Date()) {
   };
 }
 
-function mapListItem(scoreDoc = {}, profileDoc = {}, name = null, noReply = {}) {
+const CONVERSATION_ACTIVITY_MATCH = {
+  $or: [
+    { messageCount: { $gt: 0 } },
+    { lastInboundAt: { $ne: null } },
+    { lastOutboundAt: { $ne: null } },
+  ],
+};
+
+function mapListItem(scoreDoc = {}, profileDoc = {}, name = null, noReply = {}, phone = null) {
   return {
-    phone: scoreDoc.phone || profileDoc.phone || null,
+    phone: phone || scoreDoc.phone || profileDoc.phone || null,
     name: name || null,
     leadScore: scoreDoc.leadScore ?? null,
     leadStage: scoreDoc.leadStage ?? null,
@@ -129,6 +206,152 @@ function mapListItem(scoreDoc = {}, profileDoc = {}, name = null, noReply = {}) 
     lastInboundAt: noReply.lastInboundAt ?? null,
     lastOutboundAt: noReply.lastOutboundAt ?? null,
   };
+}
+
+function mapAggregatedConversationRow(row = {}) {
+  const scoreDoc = row.score || {};
+  const profileDoc = row.profile || {};
+  const conversation = row.conversation || {};
+  const phone = row.phone || row._id || null;
+  const noReply = computeNoReplyFields(conversation);
+  const activityAt = conversationActivityAt(conversation);
+  return {
+    ...mapListItem(scoreDoc, profileDoc, null, noReply, phone),
+    activityAt: activityAt ? activityAt.toISOString() : null,
+  };
+}
+
+async function buildLeadItemForPhone(phone10, now = new Date()) {
+  const [conversation, score, profile, nameByPhone] = await Promise.all([
+    WhatsAppConversation.findOne({ phone: phone10, ...CONVERSATION_ACTIVITY_MATCH })
+      .sort({ updatedAt: -1 })
+      .select('phone lastInboundAt lastOutboundAt messageCount status updatedAt')
+      .lean(),
+    WhatsAppLeadScore.findOne({ phone: phone10 }).select(SCORE_LIST_PROJECTION).lean(),
+    WhatsAppLeadProfile.findOne({ phone: phone10 }).select(PROFILE_LIST_PROJECTION).lean(),
+    loadDisplayNamesByPhone([phone10]),
+  ]);
+
+  if (!conversation) {
+    return null;
+  }
+
+  const noReply = computeNoReplyFields(conversation, now);
+  const activityAt = conversationActivityAt(conversation);
+  return {
+    ...mapListItem(score || {}, profile || {}, nameByPhone.get(phone10) || null, noReply, phone10),
+    ...noReply,
+    activityAt: activityAt ? activityAt.toISOString() : null,
+    conversationId:
+      noReply.conversationId ||
+      (profile?.conversationId ? String(profile.conversationId) : null) ||
+      (score?.conversationId ? String(score.conversationId) : null),
+  };
+}
+
+function passesScoreFilters(item, { stage = null, minScore = null } = {}) {
+  if (!stage && minScore == null) {
+    return true;
+  }
+  if (item.leadScore == null || item.leadStage == null) {
+    return false;
+  }
+  if (stage && item.leadStage !== stage) {
+    return false;
+  }
+  if (minScore != null && (item.leadScore ?? 0) < minScore) {
+    return false;
+  }
+  return true;
+}
+
+function sortListItems(items = []) {
+  return [...items].sort((a, b) => {
+    const aInbound = a.lastInboundAt ? new Date(a.lastInboundAt).getTime() : 0;
+    const bInbound = b.lastInboundAt ? new Date(b.lastInboundAt).getTime() : 0;
+    if (bInbound !== aInbound) {
+      return bInbound - aInbound;
+    }
+    return (b.leadScore ?? -1) - (a.leadScore ?? -1);
+  });
+}
+
+async function loadConversationLeadRows() {
+  const rows = await WhatsAppConversation.aggregate([
+    { $match: CONVERSATION_ACTIVITY_MATCH },
+    { $sort: { updatedAt: -1 } },
+    {
+      $group: {
+        _id: '$phone',
+        conversation: { $first: '$$ROOT' },
+        phone: { $first: '$phone' },
+      },
+    },
+    {
+      $lookup: {
+        from: WhatsAppLeadScore.collection.name,
+        localField: 'phone',
+        foreignField: 'phone',
+        as: 'scoreRows',
+      },
+    },
+    {
+      $lookup: {
+        from: WhatsAppLeadProfile.collection.name,
+        localField: 'phone',
+        foreignField: 'phone',
+        as: 'profileRows',
+      },
+    },
+    {
+      $addFields: {
+        score: { $arrayElemAt: ['$scoreRows', 0] },
+        profile: { $arrayElemAt: ['$profileRows', 0] },
+      },
+    },
+    {
+      $project: {
+        phone: 1,
+        conversation: 1,
+        score: {
+          phone: 1,
+          leadScore: 1,
+          leadStage: 1,
+          scoreReasons: 1,
+          confidence: 1,
+          lastScoredAt: 1,
+          conversationId: 1,
+        },
+        profile: {
+          phone: 1,
+          branchInterest: 1,
+          collegeInterest: 1,
+          exam: 1,
+          languagePreference: 1,
+          priceSensitive: 1,
+          demoInterested: 1,
+          handoffRequested: 1,
+          eventCount: 1,
+          lastInteractionAt: 1,
+          conversationId: 1,
+        },
+      },
+    },
+  ]);
+
+  const phones = rows.map((row) => row.phone).filter(Boolean);
+  const nameByPhone = await loadDisplayNamesByPhone(phones);
+
+  return rows.map((row) => {
+    const item = mapAggregatedConversationRow(row);
+    return {
+      ...item,
+      name: nameByPhone.get(item.phone) || item.name || null,
+      conversationId:
+        item.conversationId ||
+        (row.conversation?._id ? String(row.conversation._id) : null),
+    };
+  });
 }
 
 async function loadDisplayNamesByPhone(phones = []) {
@@ -241,172 +464,213 @@ async function getLeadDetails(phone) {
   };
 }
 
-const LIST_PROJECT = {
-  phone: 1,
-  leadScore: 1,
-  leadStage: 1,
-  conversationId: 1,
-  branchInterest: '$profile.branchInterest',
-  collegeInterest: '$profile.collegeInterest',
-  exam: '$profile.exam',
-  languagePreference: '$profile.languagePreference',
-  priceSensitive: { $ifNull: ['$profile.priceSensitive', false] },
-  demoInterested: { $ifNull: ['$profile.demoInterested', false] },
-  handoffRequested: { $ifNull: ['$profile.handoffRequested', false] },
-  eventCount: { $ifNull: ['$profile.eventCount', 0] },
-  lastInteractionAt: '$profile.lastInteractionAt',
-};
-
 async function listLeads({
   stage = null,
   minScore = null,
   page = DEFAULT_PAGE,
   limit = DEFAULT_LIMIT,
   awaitingReply = null,
+  phone = null,
+  activityDate = null,
 } = {}) {
-  const match = {};
-  if (stage) {
-    match.leadStage = stage;
-  }
-  if (minScore != null) {
-    match.leadScore = { $gte: minScore };
-  }
-
   const safePage = parsePositiveInt(page, DEFAULT_PAGE);
   const safeLimit = parsePositiveInt(limit, DEFAULT_LIMIT, MAX_LIMIT);
   const skip = (safePage - 1) * safeLimit;
 
-  // When filtering by awaitingReply we must enrich first, then filter + paginate.
-  if (awaitingReply != null) {
-    const rows = await WhatsAppLeadScore.aggregate([
-      { $match: match },
-      {
-        $lookup: {
-          from: WhatsAppLeadProfile.collection.name,
-          localField: 'phone',
-          foreignField: 'phone',
-          as: 'profile',
-        },
-      },
-      { $addFields: { profile: { $arrayElemAt: ['$profile', 0] } } },
-      { $sort: { leadScore: -1, 'profile.lastInteractionAt': -1 } },
-      { $project: LIST_PROJECT },
-    ]);
-
-    let items = await enrichLeadListItems(rows);
-    items = items.filter((row) => Boolean(row.awaitingReply) === awaitingReply);
-
+  const phone10 = normalizePhone10(phone);
+  if (phone != null && phone !== '') {
+    if (!phone10) {
+      return { error: 'Invalid phone. Expected 10 digits.' };
+    }
+    const item = await buildLeadItemForPhone(phone10);
+    let items = item ? [item] : [];
+    if (activityDate) {
+      items = items.filter((row) => {
+        const at = row.activityAt ? new Date(row.activityAt) : null;
+        return activityAtInIstDay(at, activityDate);
+      });
+    }
     return {
       total: items.length,
-      page: safePage,
+      page: 1,
       limit: safeLimit,
-      items: items.slice(skip, skip + safeLimit),
+      items,
     };
   }
 
-  const [result] = await WhatsAppLeadScore.aggregate([
-    { $match: match },
-    {
-      $lookup: {
-        from: WhatsAppLeadProfile.collection.name,
-        localField: 'phone',
-        foreignField: 'phone',
-        as: 'profile',
-      },
-    },
-    { $addFields: { profile: { $arrayElemAt: ['$profile', 0] } } },
-    { $sort: { leadScore: -1, 'profile.lastInteractionAt': -1 } },
-    {
-      $facet: {
-        items: [{ $skip: skip }, { $limit: safeLimit }, { $project: LIST_PROJECT }],
-        total: [{ $count: 'count' }],
-      },
-    },
-  ]);
+  let items = sortListItems(await loadConversationLeadRows());
+  items = items.filter((row) => passesScoreFilters(row, { stage, minScore }));
+
+  if (awaitingReply != null) {
+    items = items.filter((row) => Boolean(row.awaitingReply) === awaitingReply);
+  }
+
+  if (activityDate) {
+    items = items.filter((row) => {
+      const at = row.activityAt ? new Date(row.activityAt) : null;
+      return activityAtInIstDay(at, activityDate);
+    });
+  }
 
   return {
-    total: result?.total?.[0]?.count || 0,
+    total: items.length,
     page: safePage,
     limit: safeLimit,
-    items: await enrichLeadListItems(result?.items || []),
+    items: items.slice(skip, skip + safeLimit),
   };
 }
 
-async function getLeadStats() {
-  const [stats] = await WhatsAppLeadScore.aggregate([
+async function getActivityCalendar({ year, month } = {}) {
+  const current = getCurrentIstYearMonth();
+  const safeYear = parsePositiveInt(year, current.year, 2100);
+  const parsedMonth = parseInt(month, 10);
+  const safeMonth =
+    Number.isFinite(parsedMonth) && parsedMonth >= 1 && parsedMonth <= 12
+      ? parsedMonth
+      : current.month;
+
+  if (year != null && year !== '' && (!Number.isFinite(Number(year)) || Number(year) < 2000)) {
+    return { error: 'Invalid year.' };
+  }
+  if (month != null && month !== '' && (!Number.isFinite(parsedMonth) || parsedMonth < 1 || parsedMonth > 12)) {
+    return { error: 'Invalid month. Expected 1-12.' };
+  }
+
+  const { start, end } = getIstMonthRange(safeYear, safeMonth);
+
+  const rows = await WhatsAppConversation.aggregate([
+    { $match: CONVERSATION_ACTIVITY_MATCH },
+    { $sort: { updatedAt: -1 } },
     {
       $group: {
-        _id: null,
-        totalLeads: { $sum: 1 },
-        coldLeads: {
-          $sum: {
-            $cond: [{ $eq: ['$leadStage', 'cold'] }, 1, 0],
-          },
-        },
-        warmLeads: {
-          $sum: {
-            $cond: [{ $eq: ['$leadStage', 'warm'] }, 1, 0],
-          },
-        },
-        hotLeads: {
-          $sum: {
-            $cond: [{ $eq: ['$leadStage', 'hot'] }, 1, 0],
-          },
-        },
-        averageScore: { $avg: '$leadScore' },
+        _id: '$phone',
+        lastInboundAt: { $first: '$lastInboundAt' },
+        updatedAt: { $first: '$updatedAt' },
+      },
+    },
+    {
+      $addFields: {
+        activityAt: { $ifNull: ['$lastInboundAt', '$updatedAt'] },
+      },
+    },
+    {
+      $match: {
+        activityAt: { $gte: start, $lt: end },
       },
     },
     {
       $project: {
         _id: 0,
-        totalLeads: 1,
-        coldLeads: 1,
-        warmLeads: 1,
-        hotLeads: 1,
-        averageScore: {
-          $round: ['$averageScore', 1],
-        },
+        phone: '$_id',
+        activityAt: 1,
       },
     },
   ]);
 
-  const phones = await WhatsAppLeadScore.find({}).select('phone').lean();
-  const conversationByPhone = await loadConversationsByPhone(phones.map((p) => p.phone));
+  const counts = new Map();
+  for (const row of rows) {
+    const key = toIstDateKey(row.activityAt);
+    if (!key) continue;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+
+  const days = [...counts.entries()]
+    .map(([date, count]) => ({ date, count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  return {
+    year: safeYear,
+    month: safeMonth,
+    days,
+  };
+}
+
+async function getLeadStats() {
+  const [scoreStats, conversationCount, scoredPhoneCount] = await Promise.all([
+    WhatsAppLeadScore.aggregate([
+      {
+        $group: {
+          _id: null,
+          scoredLeads: { $sum: 1 },
+          coldLeads: {
+            $sum: {
+              $cond: [{ $eq: ['$leadStage', 'cold'] }, 1, 0],
+            },
+          },
+          warmLeads: {
+            $sum: {
+              $cond: [{ $eq: ['$leadStage', 'warm'] }, 1, 0],
+            },
+          },
+          hotLeads: {
+            $sum: {
+              $cond: [{ $eq: ['$leadStage', 'hot'] }, 1, 0],
+            },
+          },
+          averageScore: { $avg: '$leadScore' },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          scoredLeads: 1,
+          coldLeads: 1,
+          warmLeads: 1,
+          hotLeads: 1,
+          averageScore: {
+            $round: ['$averageScore', 1],
+          },
+        },
+      },
+    ]),
+    WhatsAppConversation.aggregate([
+      { $match: CONVERSATION_ACTIVITY_MATCH },
+      { $group: { _id: '$phone' } },
+      { $count: 'count' },
+    ]),
+    WhatsAppLeadScore.countDocuments({}),
+  ]);
+
+  const stats = scoreStats?.[0] || {};
+  const totalLeads = conversationCount?.[0]?.count || 0;
+  const scoredLeads = stats.scoredLeads || scoredPhoneCount || 0;
+  const unscoredLeads = Math.max(0, totalLeads - scoredLeads);
+
+  const conversationRows = await WhatsAppConversation.find(CONVERSATION_ACTIVITY_MATCH)
+    .select('phone lastInboundAt lastOutboundAt updatedAt')
+    .sort({ updatedAt: -1 })
+    .lean();
+  const conversationByPhone = new Map();
+  for (const row of conversationRows) {
+    if (row?.phone && !conversationByPhone.has(row.phone)) {
+      conversationByPhone.set(row.phone, row);
+    }
+  }
+
   const now = new Date();
   let awaitingReplyCount = 0;
-  for (const row of phones) {
-    const fields = computeNoReplyFields(conversationByPhone.get(row.phone), now);
+  for (const conversation of conversationByPhone.values()) {
+    const fields = computeNoReplyFields(conversation, now);
     if (fields.awaitingReply) awaitingReplyCount += 1;
   }
 
   return {
-    totalLeads: stats?.totalLeads || 0,
-    coldLeads: stats?.coldLeads || 0,
-    warmLeads: stats?.warmLeads || 0,
-    hotLeads: stats?.hotLeads || 0,
-    averageScore: stats?.averageScore ?? 0,
+    totalLeads,
+    scoredLeads,
+    unscoredLeads,
+    coldLeads: stats.coldLeads || 0,
+    warmLeads: stats.warmLeads || 0,
+    hotLeads: stats.hotLeads || 0,
+    averageScore: stats.averageScore ?? 0,
     awaitingReplyCount,
   };
 }
 
 async function getHotLeads() {
-  const rows = await WhatsAppLeadScore.aggregate([
-    { $match: { leadStage: 'hot' } },
-    { $sort: { leadScore: -1 } },
-    { $limit: HOT_LEADS_LIMIT },
-    {
-      $lookup: {
-        from: WhatsAppLeadProfile.collection.name,
-        localField: 'phone',
-        foreignField: 'phone',
-        as: 'profile',
-      },
-    },
-    { $addFields: { profile: { $arrayElemAt: ['$profile', 0] } } },
-    { $project: { ...LIST_PROJECT, scoreReasons: 1, confidence: 1, lastScoredAt: 1 } },
-  ]);
-
-  return enrichLeadListItems(rows);
+  const items = sortListItems(await loadConversationLeadRows()).filter(
+    (row) => row.leadStage === 'hot'
+  );
+  return items.slice(0, HOT_LEADS_LIMIT);
 }
 
 async function getLeadTranscript(phone, { limit = TRANSCRIPT_DEFAULT_LIMIT } = {}) {
@@ -454,13 +718,26 @@ module.exports = {
   parseMinScore,
   parseStage,
   parseAwaitingReply,
+  parseActivityDate,
+  getIstDayRange,
+  getIstMonthRange,
+  toIstDateKey,
+  conversationActivityAt,
+  activityAtInIstDay,
+  getCurrentIstYearMonth,
   computeNoReplyFields,
   mapListItem,
+  mapAggregatedConversationRow,
+  buildLeadItemForPhone,
+  passesScoreFilters,
+  sortListItems,
+  loadConversationLeadRows,
   loadDisplayNamesByPhone,
   enrichLeadListItems,
   getLeadDetails,
   listLeads,
   getLeadStats,
+  getActivityCalendar,
   getHotLeads,
   getLeadTranscript,
 };

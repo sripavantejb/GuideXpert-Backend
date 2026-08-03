@@ -47,13 +47,24 @@ async function listLeadInsights(req, res) {
       return res.status(400).json({ success: false, message: awaitingResult.error });
     }
 
+    const activityDateResult = leadInsightsService.parseActivityDate(req.query.activityDate);
+    if (activityDateResult.error) {
+      return res.status(400).json({ success: false, message: activityDateResult.error });
+    }
+
     const result = await leadInsightsService.listLeads({
       stage: stageResult.stage,
       minScore: minScoreResult.minScore,
       page: req.query.page,
       limit: req.query.limit,
       awaitingReply: awaitingResult.awaitingReply,
+      phone: req.query.phone,
+      activityDate: activityDateResult.activityDate,
     });
+
+    if (result.error) {
+      return res.status(400).json({ success: false, message: result.error });
+    }
 
     return res.status(200).json({
       success: true,
@@ -74,6 +85,25 @@ async function getLeadInsightsStats(req, res) {
     });
   } catch (error) {
     console.error('[leadInsights.getLeadInsightsStats] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+}
+
+async function getLeadActivityCalendar(req, res) {
+  try {
+    const result = await leadInsightsService.getActivityCalendar({
+      year: req.query.year,
+      month: req.query.month,
+    });
+    if (result.error) {
+      return res.status(400).json({ success: false, message: result.error });
+    }
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    console.error('[leadInsights.getLeadActivityCalendar] Error:', error);
     return res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 }
@@ -119,6 +149,7 @@ module.exports = {
   getLeadDetailsByPhone,
   listLeadInsights,
   getLeadInsightsStats,
+  getLeadActivityCalendar,
   getHotLeadInsights,
   getLeadTranscriptByPhone,
 };
