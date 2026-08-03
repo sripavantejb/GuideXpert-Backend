@@ -557,13 +557,13 @@ router.get('/system-prompt/history/:id', requireAdmin, async (req, res) => {
 });
 
 /**
- * Clear WhatsApp chatbot profile/session state for one phone.
- * Removes bot state (leadProfile, predictor session, opt-out flags) and
- * WhatsAppLeadProfile row. Does not delete conversation message history.
+ * Reset WhatsApp chatbot lead for one phone — profile, chats, handoffs, scoring.
+ * Next inbound message is treated as a brand-new lead.
  */
 router.post('/chatbot/clear-profile', requireAdmin, requireSuperAdmin, async (req, res) => {
   try {
     const { normalizePhone10 } = require('../utils/chatbotPhone');
+    const { clearWhatsAppChatbotLead } = require('../services/chatbot/clearChatbotLeadService');
     const phone10 = normalizePhone10(req.body?.phone);
     if (!phone10 || phone10.length !== 10) {
       return res.status(400).json({
@@ -572,45 +572,23 @@ router.post('/chatbot/clear-profile', requireAdmin, requireSuperAdmin, async (re
       });
     }
 
-    const WhatsAppBotState = require('../models/WhatsAppBotState');
-    const WhatsAppConversation = require('../models/WhatsAppConversation');
+    const result = await clearWhatsAppChatbotLead(phone10);
+    const { deleted, totalRemoved } = result;
 
-    const conversations = await WhatsAppConversation.find({ phone: phone10 }).select('_id').lean();
-    const conversationIds = conversations.map((c) => c._id);
-
-    const botStateResult = await WhatsAppBotState.deleteMany({
-      $or: [{ phone: phone10 }, ...(conversationIds.length ? [{ conversationId: { $in: conversationIds } }] : [])],
-    });
-
-    let leadProfileDeleted = 0;
-    try {
-      const WhatsAppLeadProfile = require('../models/WhatsAppLeadProfile');
-      const leadRes = await WhatsAppLeadProfile.deleteMany({ phone: phone10 });
-      leadProfileDeleted = leadRes.deletedCount || 0;
-    } catch (err) {
-      console.warn('[ClearChatbotProfile] lead profile clear skipped', err?.message || err);
-    }
-
-    console.log('[ClearChatbotProfile] cleared by admin', {
+    console.log('[ClearChatbotProfile] full lead reset by admin', {
       phoneSuffix: phone10.slice(-4),
-      botStatesDeleted: botStateResult.deletedCount || 0,
-      leadProfilesDeleted: leadProfileDeleted,
-      conversationCount: conversationIds.length,
+      ...deleted,
       by: req.admin?.email || req.admin?.username || null,
     });
 
     return res.json({
       success: true,
       phone: phone10,
-      deleted: {
-        botStates: botStateResult.deletedCount || 0,
-        leadProfiles: leadProfileDeleted,
-        conversationsMatched: conversationIds.length,
-      },
+      deleted,
       message:
-        (botStateResult.deletedCount || 0) + leadProfileDeleted > 0
-          ? `Cleared chatbot profile for ${phone10}.`
-          : `No chatbot profile found for ${phone10}.`,
+        totalRemoved > 0
+          ? `Reset lead ${phone10}: removed ${deleted.inboundMessages} inbound and ${deleted.outboundMessages} outbound messages, profile, and bot state.`
+          : `No chatbot data found for ${phone10}.`,
     });
   } catch (err) {
     console.error('[ClearChatbotProfile] error:', err);

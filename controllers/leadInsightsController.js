@@ -12,9 +12,16 @@ async function getLeadDetailsByPhone(req, res) {
     return res.status(200).json({
       success: true,
       data: {
+        name: result.name,
         profile: result.profile,
         score: result.score,
         recentEvents: result.recentEvents,
+        conversationId: result.conversationId,
+        awaitingReply: result.awaitingReply,
+        noReplyMs: result.noReplyMs,
+        noReplySince: result.noReplySince,
+        lastInboundAt: result.lastInboundAt,
+        lastOutboundAt: result.lastOutboundAt,
       },
     });
   } catch (error) {
@@ -35,11 +42,17 @@ async function listLeadInsights(req, res) {
       return res.status(400).json({ success: false, message: minScoreResult.error });
     }
 
+    const awaitingResult = leadInsightsService.parseAwaitingReply(req.query.awaitingReply);
+    if (awaitingResult.error) {
+      return res.status(400).json({ success: false, message: awaitingResult.error });
+    }
+
     const result = await leadInsightsService.listLeads({
       stage: stageResult.stage,
       minScore: minScoreResult.minScore,
       page: req.query.page,
       limit: req.query.limit,
+      awaitingReply: awaitingResult.awaitingReply,
     });
 
     return res.status(200).json({
@@ -78,9 +91,34 @@ async function getHotLeadInsights(req, res) {
   }
 }
 
+async function getLeadTranscriptByPhone(req, res) {
+  try {
+    const result = await leadInsightsService.getLeadTranscript(req.params.phone, {
+      limit: req.query.limit,
+    });
+    if (result.error) {
+      return res.status(400).json({ success: false, message: result.error });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        phone: result.phone,
+        conversation: result.conversation,
+        messages: result.messages,
+        message: result.message || null,
+      },
+    });
+  } catch (error) {
+    console.error('[leadInsights.getLeadTranscriptByPhone] Error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+}
+
 module.exports = {
   getLeadDetailsByPhone,
   listLeadInsights,
   getLeadInsightsStats,
   getHotLeadInsights,
+  getLeadTranscriptByPhone,
 };
