@@ -258,6 +258,7 @@ app.use('/api/admin/ai-calls', requireAdmin, aiCallsAdminRoutes);
 app.use('/api/admin/lead-insights', requireAdmin, leadInsightsRoutes);
 app.use('/api/admin/analytics', requireAdmin, analyticsExecutiveRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/resources', require('./routes/resourceRoutes'));
 app.get('/api/student-workspace-updates', require('./controllers/studentWorkspaceUpdateController').publicList);
 app.get('/api/student-live-activity', require('./controllers/studentLiveActivityController').publicLiveFeed);
 app.get('/api/student-testimonials', require('./controllers/studentTestimonialController').publicList);

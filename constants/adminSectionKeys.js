@@ -37,6 +37,7 @@ const ADMIN_SECTION_KEYS = [
   'student-workspace',
   'student-workspace-updates',
   'student-testimonials',
+  'resources',
   'settings',
   'system-prompt',
 ];

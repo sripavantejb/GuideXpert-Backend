@@ -74,6 +74,19 @@ const {
   adminPublish: studentTestimonialsAdminPublish,
   adminUnpublish: studentTestimonialsAdminUnpublish,
 } = require('../controllers/studentTestimonialController');
+const {
+  adminList: resourcesAdminList,
+  adminUploadInit,
+  adminUploadChunk,
+  adminUploadComplete,
+  adminUploadDirect,
+  adminUpdate: resourcesAdminUpdate,
+  adminPublish: resourcesAdminPublish,
+  adminUnpublish: resourcesAdminUnpublish,
+  adminDelete: resourcesAdminDelete,
+  adminDownloadLogs,
+} = require('../controllers/studentResourceController');
+const { uploadMiddleware } = require('./resourceRoutes');
 const requireAdmin = require('../middleware/requireAdmin');
 const requireSuperAdmin = require('../middleware/requireSuperAdmin');
 const requireOsviAdminToken = require('../middleware/requireOsviAdminToken');
@@ -295,6 +308,17 @@ router.patch('/student-testimonials/:id', requireAdmin, studentTestimonialsAdmin
 router.delete('/student-testimonials/:id', requireAdmin, studentTestimonialsAdminDelete);
 router.post('/student-testimonials/:id/publish', requireAdmin, studentTestimonialsAdminPublish);
 router.post('/student-testimonials/:id/unpublish', requireAdmin, studentTestimonialsAdminUnpublish);
+
+router.get('/resources/downloads', requireAdmin, adminDownloadLogs);
+router.get('/resources', requireAdmin, resourcesAdminList);
+router.post('/resources/upload/init', requireAdmin, adminUploadInit);
+router.post('/resources/upload/direct', requireAdmin, adminUploadDirect);
+router.post('/resources/upload/chunk', requireAdmin, uploadMiddleware.single('chunk'), adminUploadChunk);
+router.post('/resources/upload/complete', requireAdmin, adminUploadComplete);
+router.patch('/resources/:id', requireAdmin, resourcesAdminUpdate);
+router.post('/resources/:id/publish', requireAdmin, resourcesAdminPublish);
+router.post('/resources/:id/unpublish', requireAdmin, resourcesAdminUnpublish);
+router.delete('/resources/:id', requireAdmin, resourcesAdminDelete);
 
 router.get('/posters', requireAdmin, listPosters);
 router.post('/posters', requireAdmin, createPoster);
