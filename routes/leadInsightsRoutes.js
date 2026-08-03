@@ -6,11 +6,13 @@ const {
   getLeadDetailsByPhone,
   listLeadInsights,
   getLeadInsightsStats,
+  getLeadActivityCalendar,
   getHotLeadInsights,
   getLeadTranscriptByPhone,
 } = require('../controllers/leadInsightsController');
 
 router.get('/stats', getLeadInsightsStats);
+router.get('/activity', getLeadActivityCalendar);
 router.get('/hot', getHotLeadInsights);
 router.get('/', listLeadInsights);
 router.get('/:phone/transcript', getLeadTranscriptByPhone);
