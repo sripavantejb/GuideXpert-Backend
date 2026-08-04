@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { attachRouteIndex } = require('../utils/routeIndex');
 const {
   registerForMeeting,
   meetingHealth,
@@ -8,6 +9,16 @@ const {
   registerForOrientationMeeting,
 } = require('../controllers/meetingController');
 
+attachRouteIndex(router, {
+  name: 'meeting',
+  routes: [
+    { method: 'GET', path: '/health' },
+    { method: 'POST', path: '/demo-eligibility' },
+    { method: 'POST', path: '/orientation-eligibility' },
+    { method: 'POST', path: '/orientation-register' },
+    { method: 'POST', path: '/register' },
+  ],
+});
 router.get('/health', meetingHealth);
 router.post('/demo-eligibility', demoMeetEligibility);
 router.post('/orientation-eligibility', orientationMeetEligibility);
