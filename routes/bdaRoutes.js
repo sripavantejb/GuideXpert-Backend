@@ -12,6 +12,19 @@ const {
 } = require('../controllers/bdaPortalController');
 
 const router = express.Router();
+const { attachRouteIndex } = require('../utils/routeIndex');
+
+attachRouteIndex(router, {
+  name: 'bda',
+  routes: [
+    { method: 'POST', path: '/login' },
+    { method: 'GET', path: '/me', note: 'auth required' },
+    { method: 'POST', path: '/logout', note: 'auth required' },
+    { method: 'GET', path: '/dashboard/stats', note: 'auth required' },
+    { method: 'GET', path: '/notifications', note: 'auth required' },
+    { method: 'GET', path: '/leads', note: 'auth required' },
+  ],
+});
 
 router.post('/login', login);
 router.get('/me', requireBda, me);
