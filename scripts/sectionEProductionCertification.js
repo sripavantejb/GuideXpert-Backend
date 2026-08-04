@@ -20,7 +20,7 @@ require('dotenv').config({ path: path.join(BACKEND, '.env') });
 
 const WEBHOOK =
   process.env.SECTION_E_WEBHOOK_URL ||
-  'https://guide-xpert-backend.vercel.app/webhook/gupshup';
+  'https://gxp-new-backend.vercel.app/webhook/gupshup';
 const PHONE10 = String(process.env.SECTION_E_PHONE || '9347763131').replace(/\D/g, '').slice(-10);
 const SOURCE = '91' + PHONE10;
 const OUT_DIR = path.join(BACKEND, 'smoke-results', 'sectionE');
@@ -144,7 +144,7 @@ function crmFingerprintChanged(before, after) {
 
 async function waitForProductionReady(maxWaitMs = 600000) {
   const started = Date.now();
-  const url = 'https://guide-xpert-backend.vercel.app/api/health';
+  const url = 'https://gxp-new-backend.vercel.app/api/health';
   while (Date.now() - started < maxWaitMs) {
     try {
       const health = await axios.get(url, { timeout: 20000 });

@@ -2,14 +2,14 @@
 /**
  * Smoke-test POST /api/counsellor/poster-downloads/track for every allowed posterKey.
  * Usage: node scripts/testPosterTrackKeys.js [baseUrl]
- * Example: node scripts/testPosterTrackKeys.js https://guide-xpert-backend.vercel.app
+ * Example: node scripts/testPosterTrackKeys.js https://gxp-new-backend.vercel.app
  */
 const https = require('https');
 const http = require('http');
 const { URL } = require('url');
 const { POSTER_KEYS, FORMATS } = require('../utils/posterDownloadConstants');
 
-const baseArg = process.argv[2] || 'https://guide-xpert-backend.vercel.app';
+const baseArg = process.argv[2] || 'https://gxp-new-backend.vercel.app';
 const base = baseArg.replace(/\/+$/, '');
 
 function postJson(path, body) {

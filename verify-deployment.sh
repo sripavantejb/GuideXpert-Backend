@@ -2,7 +2,7 @@
 # Verify backend deployment (run after deploying)
 # Success: health=200, influencer-links=401 (auth required, not 404)
 
-BASE="https://guide-xpert-backend.vercel.app/api"
+BASE="https://gxp-new-backend.vercel.app/api"
 
 echo "Verifying deployment..."
 echo ""

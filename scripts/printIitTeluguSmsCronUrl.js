@@ -10,7 +10,7 @@ const { getCronSecretForOutboundPing } = require('../utils/cronSecret');
 const BASE =
   process.env.BACKEND_PUBLIC_URL ||
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
-  'https://guide-xpert-backend.vercel.app';
+  'https://gxp-new-backend.vercel.app';
 
 const secret = getCronSecretForOutboundPing();
 

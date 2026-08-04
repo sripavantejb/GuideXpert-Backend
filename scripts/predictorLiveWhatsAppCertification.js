@@ -26,9 +26,9 @@ require('dotenv').config({ path: path.join(BACKEND, '.env') });
 const WEBHOOK =
   process.env.PREDICTOR_LIVE_WEBHOOK_URL ||
   process.env.SECTION_D_WEBHOOK_URL ||
-  'https://guide-xpert-backend.vercel.app/webhook/gupshup';
+  'https://gxp-new-backend.vercel.app/webhook/gupshup';
 const HEALTH =
-  process.env.PREDICTOR_LIVE_HEALTH_URL || 'https://guide-xpert-backend.vercel.app/api/health';
+  process.env.PREDICTOR_LIVE_HEALTH_URL || 'https://gxp-new-backend.vercel.app/api/health';
 const PHONE10 = String(process.env.PREDICTOR_LIVE_PHONE || '9347763131').replace(/\D/g, '').slice(-10);
 const SOURCE = '91' + PHONE10;
 const OUT_DIR = path.join(BACKEND, 'smoke-results', 'predictor');

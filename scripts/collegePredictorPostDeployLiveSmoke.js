@@ -19,7 +19,7 @@ const { performance } = require('perf_hooks');
 const PHONE = String(process.env.CERT_PHONE || '9347763131').replace(/\D/g, '').slice(-10);
 const SOURCE = '91' + PHONE;
 const WEBHOOK =
-  process.env.PREDICTOR_LIVE_WEBHOOK_URL || 'https://guide-xpert-backend.vercel.app/webhook/gupshup';
+  process.env.PREDICTOR_LIVE_WEBHOOK_URL || 'https://gxp-new-backend.vercel.app/webhook/gupshup';
 const WAIT_MS = Number(process.env.POST_DEPLOY_WAIT_MS || 4000);
 const OUT_JSON = path.join(__dirname, '../docs/COLLEGE_PREDICTOR_POST_DEPLOY_LIVE_SMOKE.json');
 const OUT_MD = path.join(__dirname, '../docs/COLLEGE_PREDICTOR_POST_DEPLOY_LIVE_SMOKE.md');

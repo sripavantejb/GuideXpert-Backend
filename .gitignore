@@ -11,3 +11,9 @@ config/sheets-service-account.json
 assets/resvg.wasm
 # Local certification / smoke artefacts — never commit
 smoke-results/
+# Pulled / generated env files (may contain secrets)
+.env.*
+!.env.example
+
+# Local one-off smoke scripts
+*.tmp.js

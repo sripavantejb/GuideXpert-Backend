@@ -112,7 +112,7 @@ async function pingCron(path, label) {
   const base =
     process.env.BACKEND_PUBLIC_URL ||
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
-    'https://guide-xpert-backend.vercel.app';
+    'https://gxp-new-backend.vercel.app';
   if (!secret) {
     console.log(`\n=== Cron ping ${label} === SKIPPED (no cron secret in .env)`);
     return;

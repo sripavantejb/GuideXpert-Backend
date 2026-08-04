@@ -20,7 +20,7 @@ console.log('='.repeat(50));
 const data = JSON.stringify({ mobile });
 
 const options = {
-  hostname: 'guide-xpert-backend.vercel.app',
+  hostname: 'gxp-new-backend.vercel.app',
   path: '/api/meet/cleanup',
   method: 'POST',
   headers: {

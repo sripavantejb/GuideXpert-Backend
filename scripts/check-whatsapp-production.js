@@ -2,11 +2,11 @@
 /**
  * Probe production WhatsApp / chatbot configuration (no secrets sent).
  * Usage: node scripts/check-whatsapp-production.js
- *        API_HOST=guide-xpert-backend.vercel.app node scripts/check-whatsapp-production.js
+ *        API_HOST=gxp-new-backend.vercel.app node scripts/check-whatsapp-production.js
  */
 const https = require('https');
 
-const host = process.env.API_HOST || 'guide-xpert-backend.vercel.app';
+const host = process.env.API_HOST || 'gxp-new-backend.vercel.app';
 
 function get(path) {
   return new Promise((resolve, reject) => {

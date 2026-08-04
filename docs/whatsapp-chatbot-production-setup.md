@@ -45,7 +45,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 ## Gupshup console
 
-1. **Callback URL:** `https://guide-xpert-backend.vercel.app/webhook/gupshup`  
+1. **Callback URL:** `https://gxp-new-backend.vercel.app/webhook/gupshup`  
    (Use your live API host if different.)
 
 2. **Webhook secret:** Send the same value as `GUPSHUP_WEBHOOK_SECRET` using either:
@@ -58,15 +58,15 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 ```bash
 # Config flags (after deploy)
-curl -sS https://guide-xpert-backend.vercel.app/api/health | jq .whatsapp
+curl -sS https://gxp-new-backend.vercel.app/api/health | jq .whatsapp
 
 # Webhook auth (should be 401 without secret, not 503)
 curl -sS -o /dev/null -w "%{http_code}\n" -X POST \
-  https://guide-xpert-backend.vercel.app/webhook/gupshup \
+  https://gxp-new-backend.vercel.app/webhook/gupshup \
   -H "Content-Type: application/json" -d '{"type":"message"}'
 
 # With secret (replace SECRET)
-curl -sS -X POST "https://guide-xpert-backend.vercel.app/webhook/gupshup" \
+curl -sS -X POST "https://gxp-new-backend.vercel.app/webhook/gupshup" \
   -H "Content-Type: application/json" \
   -H "x-webhook-secret: SECRET" \
   -d '{"type":"message","payload":{"source":"919876543210","id":"smoke-test","payload":{"type":"text","text":"hi"}}}'
@@ -89,7 +89,7 @@ CHATBOT_SCOPE_FIREWALL_SHADOW_MODE=0
 Verify on deploy:
 
 ```bash
-curl -sS https://guide-xpert-backend.vercel.app/api/health | jq '.scopeFirewall'
+curl -sS https://gxp-new-backend.vercel.app/api/health | jq '.scopeFirewall'
 # expect: enabled=true, shadowMode=false, enforceMode=true, productionReady=true
 ```
 

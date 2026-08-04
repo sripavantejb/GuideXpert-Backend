@@ -19,7 +19,7 @@ Vercel also runs `/api/cron/send-iit-telugu-sms` every minute (`vercel.json`). A
    ```
    Or build manually:
    ```
-   https://guide-xpert-backend.vercel.app/api/cron/send-iit-telugu-sms?key=<GUIDEXPERT_CRON_SECRET or CRON_SECRET>
+   https://gxp-new-backend.vercel.app/api/cron/send-iit-telugu-sms?key=<GUIDEXPERT_CRON_SECRET or CRON_SECRET>
    ```
 4. **Schedule:** every **1** minute (`* * * * *` or “Every minute” in the UI).
 5. **Request method:** `GET`.
