@@ -3,13 +3,13 @@
 require('../config/mongooseSafety');
 /**
  * Send audit messages to production Gupshup webhook and inspect MongoDB outbounds.
- * Uses guide-xpert-backend.vercel.app (actual chatbot host; www proxy returns 405 on /webhook).
+ * Uses gxp-new-backend.vercel.app (actual chatbot host; www proxy returns 405 on /webhook).
  */
 require('dotenv').config();
 const axios = require('axios');
 const mongoose = require('mongoose');
 
-const WEBHOOK = 'https://guide-xpert-backend.vercel.app/webhook/gupshup';
+const WEBHOOK = 'https://gxp-new-backend.vercel.app/webhook/gupshup';
 const PHONE = '919876543210';
 const REFUSAL_RE = /GuideXpert.*counselling assistant|cannot assist with programming/i;
 
@@ -42,13 +42,13 @@ async function sleep(ms) {
 
 async function main() {
   const health = await axios.get('https://www.guidexpert.co.in/api/health', { timeout: 15000 });
-  const vercelHealth = await axios.get('https://guide-xpert-backend.vercel.app/api/health', {
+  const vercelHealth = await axios.get('https://gxp-new-backend.vercel.app/api/health', {
     timeout: 15000,
   });
 
   console.log('=== Step 1: Production Health ===');
   console.log('www.guidexpert.co.in scopeFirewall:', health.data.scopeFirewall ?? 'ABSENT');
-  console.log('guide-xpert-backend.vercel.app scopeFirewall:', vercelHealth.data.scopeFirewall ?? 'ABSENT');
+  console.log('gxp-new-backend.vercel.app scopeFirewall:', vercelHealth.data.scopeFirewall ?? 'ABSENT');
 
   await mongoose.connect(process.env.MONGODB_URI);
   const inboundCol = mongoose.connection.db.collection('whatsappinboundmessages');

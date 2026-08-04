@@ -244,7 +244,7 @@ All commands run with `env -u MONGODB_URI -u MONGO_URI FLOW_V3_REQUIRE_MONGO=1` 
     │   (career_counselling_flow_v3, line 62). The flag is read by flowV3Rollout.js, which is
     │   called from chatbotOrchestratorService.js, guidedFlowProcessors.js AND
     │   guidedFlowOrchestrator.js. Flipping it makes V3 live. 
-    ├── **and it IS flipped, in production, right now:** GET https://guide-xpert-backend.vercel.app/api/health
+    ├── **and it IS flipped, in production, right now:** GET https://gxp-new-backend.vercel.app/api/health
     │   (fetched during this audit) → "flowV3": {"enabled": true, "mode": "live", "canaryPercent": 100}
     └── the local untracked .env mirrors this (ENABLED/MODE/CANARY set, pepper set,
         FLOW_V3_DEFAULT_BOOKING_SERVICE empty locally; production has it set to one_on_one)

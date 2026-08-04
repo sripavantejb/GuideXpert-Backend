@@ -6,7 +6,7 @@ const https = require('https');
 const testEndpoint = (path, method = 'GET', body = null) => {
   return new Promise((resolve, reject) => {
     const options = {
-      hostname: 'guide-xpert-backend.vercel.app',
+      hostname: 'gxp-new-backend.vercel.app',
       path: path,
       method: method,
       headers: {

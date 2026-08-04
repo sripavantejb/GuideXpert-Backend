@@ -6,7 +6,7 @@
 
 const https = require('https');
 
-const BASE_URL = 'guide-xpert-backend.vercel.app';
+const BASE_URL = 'gxp-new-backend.vercel.app';
 const colors = {
   reset: '\x1b[0m',
   red: '\x1b[31m',

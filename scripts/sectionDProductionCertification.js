@@ -18,7 +18,7 @@ require('dotenv').config({ path: path.join(BACKEND, '.env') });
 
 const WEBHOOK =
   process.env.SECTION_D_WEBHOOK_URL ||
-  'https://guide-xpert-backend.vercel.app/webhook/gupshup';
+  'https://gxp-new-backend.vercel.app/webhook/gupshup';
 const PHONE10 = String(process.env.SECTION_D_PHONE || '9347763131').replace(/\D/g, '').slice(-10);
 const SOURCE = '91' + PHONE10;
 const OUT_DIR = path.join(BACKEND, 'smoke-results', 'sectionD');
@@ -726,7 +726,7 @@ async function main() {
   console.log(' Started:', startedAt.toISOString());
   console.log('═══════════════════════════════════════════════\n');
 
-  const health = await axios.get('https://guide-xpert-backend.vercel.app/api/health', { timeout: 15000 });
+  const health = await axios.get('https://gxp-new-backend.vercel.app/api/health', { timeout: 15000 });
   console.log('Health ready:', health.data?.whatsapp?.ready, 'scope:', health.data?.scopeFirewall?.ready);
 
   await mongoose.connect(process.env.MONGODB_URI);

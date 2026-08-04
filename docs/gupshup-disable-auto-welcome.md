@@ -2,7 +2,7 @@
 
 ## Root cause (confirmed)
 
-GuideXpert uses Gupshup in **webhook mode** — every inbound message is forwarded to our API at `https://guide-xpert-backend.vercel.app/webhook/gupshup` and we reply via the session API.
+GuideXpert uses Gupshup in **webhook mode** — every inbound message is forwarded to our API at `https://gxp-new-backend.vercel.app/webhook/gupshup` and we reply via the session API.
 
 However Gupshup also has a **Bot Studio** layer that runs in parallel. Bot Studio has a built-in **Welcome Journey** that fires automatically for every message that does not match a configured User Journey keyword. Because our app handles all conversations (no Bot Studio User Journeys configured), Bot Studio considers the user "not inside any journey" for every message and fires the Welcome Journey on every single inbound — sending a separate "Welcome" bubble before our API reply arrives.
 
@@ -54,7 +54,7 @@ Look for one of:
 
 1. In the Gupshup console, go to your app → **Settings** or **Configuration**
 2. Find the **Callback URL** / **Webhook URL**
-3. It must be: `https://guide-xpert-backend.vercel.app/webhook/gupshup`
+3. It must be: `https://gxp-new-backend.vercel.app/webhook/gupshup`
 4. Save if you changed it
 
 ---

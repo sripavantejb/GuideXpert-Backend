@@ -19,7 +19,7 @@ require('dotenv').config({ path: path.join(BACKEND, '.env') });
 
 const WEBHOOK =
   process.env.SECTION_B_WEBHOOK_URL ||
-  'https://guide-xpert-backend.vercel.app/webhook/gupshup';
+  'https://gxp-new-backend.vercel.app/webhook/gupshup';
 const PHONE10 = String(process.env.SECTION_B_PHONE || '9347763131').replace(/\D/g, '').slice(-10);
 const SOURCE = '91' + PHONE10;
 const OUT_DIR = path.join(BACKEND, 'smoke-results', 'sectionB');
@@ -604,7 +604,7 @@ async function main() {
   let smokeStatus = null;
   try {
     const smoke = await axios.post(
-      'https://guide-xpert-backend.vercel.app/api/internal/smoke/send',
+      'https://gxp-new-backend.vercel.app/api/internal/smoke/send',
       { phone: PHONE10, message: 'probe' },
       { timeout: 15000, validateStatus: () => true }
     );
@@ -612,7 +612,7 @@ async function main() {
   } catch (e) {
     smokeStatus = e.message;
   }
-  const health = await axios.get('https://guide-xpert-backend.vercel.app/api/health', { timeout: 15000 });
+  const health = await axios.get('https://gxp-new-backend.vercel.app/api/health', { timeout: 15000 });
   console.log('Smoke endpoint HTTP:', smokeStatus, '(404 => secret not configured on Vercel)');
   console.log('Health ready:', health.data?.whatsapp?.ready, 'scope:', health.data?.scopeFirewall?.ready);
 
@@ -839,7 +839,7 @@ async function main() {
     executedAt: startedAt.toISOString(),
     completedAt: new Date().toISOString(),
     pipeline: {
-      inbound: 'POST https://guide-xpert-backend.vercel.app/webhook/gupshup (synthetic Gupshup payload)',
+      inbound: 'POST https://gxp-new-backend.vercel.app/webhook/gupshup (synthetic Gupshup payload)',
       processing: 'production backend claimed inbound → scope → IIT intent → expert/RAG/LLM',
       outbound: 'production whatsappOutboundService → Gupshup → Meta → WhatsApp 9347763131',
       notes: [
