@@ -8,6 +8,13 @@ const studentResourceSchema = new mongoose.Schema(
       trim: true,
       maxlength: 200,
     },
+    slug: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      maxlength: 220,
+      default: null,
+    },
     description: {
       type: String,
       trim: true,
@@ -60,5 +67,9 @@ const studentResourceSchema = new mongoose.Schema(
 );
 
 studentResourceSchema.index({ status: 1, publishedAt: -1, createdAt: -1 });
+studentResourceSchema.index(
+  { slug: 1 },
+  { unique: true, partialFilterExpression: { slug: { $type: 'string' } } }
+);
 
 module.exports = mongoose.model('StudentResource', studentResourceSchema);

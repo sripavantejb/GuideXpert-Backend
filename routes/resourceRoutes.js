@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const {
   publicList,
+  publicGetBySlug,
   requestDownload,
   verifyDownload,
   downloadFile,
@@ -14,6 +15,7 @@ const upload = multer({
 });
 
 router.get('/', publicList);
+router.get('/by-slug/:slug', publicGetBySlug);
 router.post('/:id/request-download', requestDownload);
 router.post('/:id/verify-download', verifyDownload);
 router.get('/:id/file', downloadFile);

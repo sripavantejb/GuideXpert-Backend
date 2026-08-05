@@ -27,6 +27,46 @@ function normalizePhone(phone) {
   return otpRepository.normalize(phone);
 }
 
+function slugifyTitle(title) {
+  const base = String(title || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 180);
+  return base || 'resource';
+}
+
+async function ensureUniqueSlug(title, excludeId = null) {
+  const base = slugifyTitle(title);
+  let candidate = base;
+  let n = 2;
+  for (;;) {
+    const filter = { slug: candidate };
+    if (excludeId) filter._id = { $ne: excludeId };
+    // eslint-disable-next-line no-await-in-loop
+    const existing = await StudentResource.findOne(filter).select('_id').lean();
+    if (!existing) return candidate;
+    candidate = `${base}-${n}`;
+    n += 1;
+    if (n > 500) {
+      candidate = `${base}-${Date.now().toString(36)}`;
+      return candidate;
+    }
+  }
+}
+
+async function ensureResourceSlug(doc) {
+  if (!doc) return doc;
+  if (doc.slug && String(doc.slug).trim()) return doc;
+  const slug = await ensureUniqueSlug(doc.title, doc._id);
+  doc.slug = slug;
+  await doc.save();
+  return doc;
+}
+
 function adminName(req) {
   return String(
     req.admin?.email || req.admin?.username || req.admin?.name || req.admin?.phone || ''
@@ -79,8 +119,12 @@ async function createResourceFromBuffer(buffer, meta, req) {
     mimeType: meta.mimeType || 'application/pdf',
   });
 
+  const title = resolvedTitle.slice(0, 200);
+  const slug = await ensureUniqueSlug(title);
+
   const created = await StudentResource.create({
-    title: resolvedTitle.slice(0, 200),
+    title,
+    slug,
     description: (meta.description || '').slice(0, 2000),
     fileName: meta.fileName,
     fileSize: buffer.length,
@@ -97,6 +141,7 @@ function toAdminItem(doc) {
   return {
     id: doc._id.toString(),
     title: doc.title,
+    slug: doc.slug || null,
     description: doc.description || '',
     fileName: doc.fileName,
     fileSize: doc.fileSize,
@@ -114,6 +159,7 @@ function toPublicItem(doc) {
   return {
     id: doc._id.toString(),
     title: doc.title,
+    slug: doc.slug || null,
     description: doc.description || '',
     fileName: doc.fileName,
     fileSize: doc.fileSize,
@@ -163,8 +209,14 @@ exports.adminList = async (req, res) => {
     const { status } = req.query || {};
     const filter = {};
     if (status === 'draft' || status === 'published') filter.status = status;
-    const list = await StudentResource.find(filter).sort({ createdAt: -1 }).lean();
-    return res.json({ success: true, data: list.map(toAdminItem) });
+    const list = await StudentResource.find(filter).sort({ createdAt: -1 });
+    const items = [];
+    for (const doc of list) {
+      // eslint-disable-next-line no-await-in-loop
+      await ensureResourceSlug(doc);
+      items.push(toAdminItem(doc.toObject()));
+    }
+    return res.json({ success: true, data: items });
   } catch (err) {
     console.error('[StudentResource] adminList:', err);
     return res.status(500).json({ success: false, message: 'Failed to list resources' });
@@ -400,6 +452,9 @@ exports.adminUpdate = async (req, res) => {
     if (typeof req.body?.description === 'string') {
       doc.description = req.body.description.trim().slice(0, 2000);
     }
+    if (!doc.slug) {
+      doc.slug = await ensureUniqueSlug(doc.title, doc._id);
+    }
     await doc.save();
     return res.json({ success: true, data: toAdminItem(doc.toObject()) });
   } catch (err) {
@@ -414,6 +469,9 @@ exports.adminPublish = async (req, res) => {
     if (!doc) return res.status(404).json({ success: false, message: 'Resource not found' });
     doc.status = 'published';
     doc.publishedAt = new Date();
+    if (!doc.slug) {
+      doc.slug = await ensureUniqueSlug(doc.title, doc._id);
+    }
     await doc.save();
     return res.json({ success: true, data: toAdminItem(doc.toObject()) });
   } catch (err) {
@@ -488,13 +546,57 @@ exports.adminDownloadLogs = async (req, res) => {
 
 exports.publicList = async (req, res) => {
   try {
-    const list = await StudentResource.find({ status: 'published' })
-      .sort({ publishedAt: -1, createdAt: -1 })
-      .lean();
-    return res.json({ success: true, data: list.map(toPublicItem) });
+    const list = await StudentResource.find({ status: 'published' }).sort({
+      publishedAt: -1,
+      createdAt: -1,
+    });
+    const items = [];
+    for (const doc of list) {
+      // eslint-disable-next-line no-await-in-loop
+      await ensureResourceSlug(doc);
+      items.push(toPublicItem(doc.toObject()));
+    }
+    return res.json({ success: true, data: items });
   } catch (err) {
     console.error('[StudentResource] publicList:', err);
     return res.status(500).json({ success: false, message: 'Failed to load resources' });
+  }
+};
+
+exports.publicGetBySlug = async (req, res) => {
+  try {
+    const slug = String(req.params.slug || '')
+      .trim()
+      .toLowerCase();
+    if (!slug) {
+      return res.status(400).json({ success: false, message: 'slug is required' });
+    }
+
+    let doc = await StudentResource.findOne({ slug, status: 'published' });
+    if (!doc) {
+      // Attempt backfill: match published docs missing slug by regenerating from title
+      const candidates = await StudentResource.find({
+        status: 'published',
+        $or: [{ slug: null }, { slug: { $exists: false } }, { slug: '' }],
+      });
+      for (const candidate of candidates) {
+        // eslint-disable-next-line no-await-in-loop
+        await ensureResourceSlug(candidate);
+        if (candidate.slug === slug) {
+          doc = candidate;
+          break;
+        }
+      }
+    }
+
+    if (!doc) {
+      return res.status(404).json({ success: false, message: 'Resource not found' });
+    }
+
+    return res.json({ success: true, data: toPublicItem(doc.toObject()) });
+  } catch (err) {
+    console.error('[StudentResource] publicGetBySlug:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load resource' });
   }
 };
 
